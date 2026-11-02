@@ -118,6 +118,7 @@ interface LayoutDeclaration {
 interface LayoutChange {
   readonly location: LayoutLocation
   readonly values: Map<string, CssNode | null>
+  readonly guardLast: Set<string>
 }
 type Declarations = Map<string, Map<string, LayoutDeclaration>>
 type LayoutChanges = Map<string, LayoutChange>
@@ -167,6 +168,35 @@ function placementKey(location: LayoutLocation): string {
       following,
     ]),
   ])
+}
+
+/** The geometry properties that guards nested in a component rule write. */
+function guardedProperties(nested: CssNode, selector: string): string[] {
+  const properties: string[] = []
+  walk(nested, {
+    visit: 'Rule',
+    enter(rule) {
+      if (anchoredSelector(rule.prelude) !== selector) return
+      rule.block.children.forEach((declaration) => {
+        if (declaration.type === 'Declaration' && isGeometry(declaration.property))
+          properties.push(declaration.property)
+      })
+    },
+  })
+  return properties
+}
+
+/** One property in the media scope `keepGuardsLast` compares. A guard's own media is not its
+ * owner's scope, so a guard path counts only the conditions around its first rule. */
+function guardKey({ path, media, selector }: LayoutLocation, property: string): string {
+  const owner = path?.findIndex(({ header }) => !header.startsWith('@'))
+  const scope = path
+    ? path
+        .slice(0, owner)
+        .map(({ header }) => `${header}{`)
+        .join('')
+    : media && `@media ${media}{`
+  return `${scope}${selector}{${property}`
 }
 
 function isLayerOrder(node: Rule | Atrule): boolean {
@@ -258,7 +288,11 @@ const textHeight = new Map([
   ['max-height', parse('max-height:none!important', { context: 'declaration' })],
 ])
 
-function layoutChanges(previous: Declarations, next: Declarations): LayoutChanges {
+function layoutChanges(
+  previous: Declarations,
+  next: Declarations,
+  guardLast: ReadonlySet<string>,
+): LayoutChanges {
   const changes: LayoutChanges = new Map()
   for (const key of new Set([...previous.keys(), ...next.keys()])) {
     const a = previous.get(key) ?? new Map<string, LayoutDeclaration>()
@@ -277,8 +311,10 @@ function layoutChanges(previous: Declarations, next: Declarations): LayoutChange
       const changed = changes.get(placement) ?? {
         location,
         values: new Map<string, CssNode | null>(),
+        guardLast: new Set<string>(),
       }
       changed.values.set(property, newValue?.declaration ?? null)
+      if (guardLast.has(guardKey(location, property))) changed.guardLast.add(property)
       changes.set(placement, changed)
     }
   }
@@ -443,51 +479,88 @@ function ensureContext(block: LayoutBlock, path: LayoutContext[]): Block {
   return ensureContext(next, remaining)
 }
 
+/** Every component rule, with its properties keyed by the media conditions around the rule. Only
+ * rules under identical conditions compare. Any other at-rule resets the scope and marks the rules
+ * inside it conditional: they can have the last word, but nothing moves into or out of them. */
+function eachComponentRule(
+  block: LayoutBlock,
+  visit: (
+    rule: Rule,
+    selector: string,
+    key: (property: string) => string,
+    conditional: boolean,
+  ) => void,
+  scope = '',
+  conditional = false,
+): void {
+  block.children.forEach((node) => {
+    if (node.type === 'Atrule') {
+      if (!node.block) return
+      const media = ident.decode(node.name).toLowerCase() === 'media'
+      // `layoutMedia` reads only the innermost at-rule, so `declarations()` drops outer media here.
+      const nested = media ? `${scope}${contextHeader(node)}{` : ''
+      eachComponentRule(node.block, visit, nested, conditional || !media)
+      return
+    }
+    if (node.type !== 'Rule') return
+    const selector = layoutSelector(node.prelude)
+    if (selector)
+      visit(node, selector, (property) => `${scope}${selector}{${property}`, conditional)
+  })
+}
+
+/** The keys whose last word in a sheet is a guard: a nested guard takes the key, and a declaration
+ * of the component rule takes it back. */
+function guardLastKeys(css: string): Set<string> {
+  const tree = parse(css)
+  if (tree.type !== 'StyleSheet') throw new Error('Sidans layout saknar sitt CSS-träd.')
+  const keys = new Set<string>()
+  eachComponentRule(tree, ({ block }, selector, key) => {
+    block.children.forEach((child) => {
+      if (child.type === 'Declaration') keys.delete(key(child.property))
+      else for (const property of guardedProperties(child, selector)) keys.add(key(property))
+    })
+  })
+  return keys
+}
+
 /** A guard nested in its component's own rule ties with that rule's declarations, so source
- * order alone decides. A sync can deliver either side first, even in one edit: a declaration
- * behind the guard replacing it moves directly ahead of that guard. Only rules under identical
- * media conditions compare, so a move never changes when the declaration applies. */
+ * order alone decides. A sync can deliver either side first, even in one edit, so a declaration
+ * behind the last guard for a key in `moved` goes directly ahead of that guard. A declaration
+ * between two guards stays, because the last guard already follows it. `moved` holds a key only
+ * when the edit changed that property or its guard and a guard has the last word on the key in the
+ * edited sheet. Only unconditional rules under identical media conditions compare, so a move never
+ * changes when the declaration applies. */
 function keepGuardsLast(
   tree: StyleSheet,
-  selectors: ReadonlySet<string>,
+  moved: ReadonlySet<string>,
   shrunk: Set<List<CssNode>>,
 ): void {
   const guards = new Map<string, { children: List<CssNode>; item: ListItem<CssNode> }>()
-  const visit = (block: LayoutBlock, scope: string): void => {
-    block.children.forEach((node) => {
-      if (node.type === 'Atrule') {
-        if (node.block && ident.decode(node.name).toLowerCase() === 'media')
-          visit(node.block, `${scope}${contextHeader(node)}{`)
+  eachComponentRule(tree, ({ block: { children } }, selector, key, conditional) => {
+    if (conditional) return
+    children.forEach((child, item) => {
+      if (child.type === 'Declaration') return
+      for (const property of guardedProperties(child, selector))
+        guards.set(key(property), { children, item })
+    })
+  })
+  const passed = new Set<string>()
+  eachComponentRule(tree, ({ block: { children } }, selector, key, conditional) => {
+    if (conditional) return
+    children.forEach((child, item) => {
+      if (child.type === 'Declaration') {
+        const guard = guards.get(key(child.property))
+        if (!guard || !moved.has(key(child.property)) || !passed.has(key(child.property))) return
+        children.remove(item)
+        shrunk.add(children)
+        guard.children.insertData(child, guard.item)
         return
       }
-      if (node.type !== 'Rule') return
-      const selector = layoutSelector(node.prelude)
-      if (!selector || !selectors.has(selector)) return
-      const { children } = node.block
-      children.forEach((child, item) => {
-        if (child.type === 'Declaration') {
-          const guard = guards.get(`${scope}${selector}{${child.property}`)
-          if (!guard) return
-          children.remove(item)
-          shrunk.add(children)
-          guard.children.insertData(child, guard.item)
-          return
-        }
-        walk(child, {
-          visit: 'Rule',
-          enter(rule) {
-            if (anchoredSelector(rule.prelude) !== selector) return
-            rule.block.children.forEach((declaration) => {
-              if (declaration.type !== 'Declaration' || !isGeometry(declaration.property)) return
-              const key = `${scope}${selector}{${declaration.property}`
-              if (!guards.has(key)) guards.set(key, { children, item })
-            })
-          },
-        })
-      })
+      for (const property of guardedProperties(child, selector))
+        if (guards.get(key(property))?.item === item) passed.add(key(property))
     })
-  }
-  visit(tree, '')
+  })
 }
 
 /** Rules a sync emptied leave the sheet with their emptied conditions. Authored empty blocks
@@ -514,7 +587,7 @@ function applyLayout(
   source?: Declarations,
 ): string {
   const mapped: LayoutChanges = new Map()
-  for (const { location, values } of changes.values()) {
+  for (const { location, values, guardLast } of changes.values()) {
     const target = targets?.get(location.selector)
     if (targets && !target && location.selector !== 'html body') continue
     const changed = source ? new Map<string, CssNode | null>() : new Map(values)
@@ -532,7 +605,7 @@ function applyLayout(
         ? { path: location.path.map((context) => mapContext(context, targets)) }
         : {}),
     }
-    if (changed.size) mapped.set(placementKey(next), { location: next, values: changed })
+    if (changed.size) mapped.set(placementKey(next), { location: next, values: changed, guardLast })
   }
   if (!mapped.size) return other
   const tree = parse(other)
@@ -589,15 +662,21 @@ function applyLayout(
     if (added.type !== 'StyleSheet') throw new Error('Sidans layout saknar sitt CSS-träd.')
     tree.children.appendList(added.children)
   }
-  const selectors = new Set([...mapped.values()].map(({ location }) => location.selector))
-  keepGuardsLast(tree, selectors, shrunk)
+  const moved = new Set<string>()
+  for (const { location, values, guardLast } of mapped.values())
+    for (const property of values.keys())
+      if (guardLast.has(property)) moved.add(guardKey(location, property))
+  keepGuardsLast(tree, moved, shrunk)
   dropEmptied(tree, shrunk)
   return generate(tree)
 }
 
 /** Copy only changed geometry, preserving independent colors and untouched layout drift. */
 export function syncLayout(before: string, after: string, other: string): string {
-  return applyLayout(layoutChanges(declarations(before), declarations(after)), other)
+  return applyLayout(
+    layoutChanges(declarations(before), declarations(after), guardLastKeys(after)),
+    other,
+  )
 }
 
 type Node = DefaultTreeAdapterMap['node']
@@ -698,7 +777,7 @@ export function syncPageLayout(
   const next = declarations(edited.content[lang].css[mode])
   // The canvas's legacy breakpoint repair is not an owner edit. With no geometry delta,
   // leave every other stored sheet untouched.
-  const changes = layoutChanges(previous, next)
+  const changes = layoutChanges(previous, next, guardLastKeys(edited.content[lang].css[mode]))
   if (!changes.size) return edited
   const otherLang = lang === 'sv' ? 'en' : 'sv'
   const otherMode = mode === 'light' ? 'dark' : 'light'
