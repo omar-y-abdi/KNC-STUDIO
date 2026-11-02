@@ -390,3 +390,200 @@ test('Home saves keep owner CSS and match the public About cascade', async ({ pa
     assert.equal(save.preview, 200, context)
   }
 })
+
+test('Home text edits keep the red About layer on public Home', async ({ page }) => {
+  const errors = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await page.setViewportSize({ width: 1600, height: 1000 })
+  await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
+  const result = await page.evaluate(async () => {
+    const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+    const { emptyDocument } = await import('/shared/cms.ts')
+    const { validateMarkup } = await import('/shared/cms-markup.ts')
+    const { composedCanvasPasses, extractComposedAbout, stripComposedCanvas } =
+      await import('/src/admin/cms/composedCanvas.ts')
+    const { connectCanvasStyles, parseCanvasCss, readCanvasCss } =
+      await import('/src/admin/cms/nativeCanvas.ts')
+    const { bindCmsRootStyles, canonicalizeCmsRootStyles } =
+      await import('/src/admin/cms/cmsRootStyles.ts')
+    const policy = {
+      siteOrigin: globalThis.location.origin,
+      storageOrigin: 'https://storage.example.test',
+    }
+    const homeHtml =
+      '<div data-knc-native="1"><div data-knc-surface="desktop-home"><h1 id="home-heading">Home</h1><div data-knc-slot="desktop-about"><section aria-labelledby="about-heading"></section></div></div><div data-knc-surface="mobile-home"><div data-knc-slot="mobile-about"><section aria-labelledby="about-heading"></section></div></div></div>'
+    const aboutHtml =
+      '<div data-knc-native="1"><section id="about-root" data-knc-surface="about" aria-labelledby="about-heading"><h2 id="about-heading">About</h2><div id="owner-card" class="card"></div></section></div>'
+    // The blue layer also styles a Home ID, which About's own copy must not keep.
+    const aboutCss =
+      '@layer{.card{color:red!important}}@layer{.card{color:blue!important}#home-heading{padding:1px}}'
+    const make = (path, html, css) => ({
+      id: path,
+      path,
+      kind: 'page',
+      name: { sv: path, en: path },
+      title: { sv: '', en: '' },
+      description: { sv: '', en: '' },
+      inMenu: true,
+      content: {
+        sv: { html, css: { light: css, dark: css } },
+        en: { html, css: { light: css, dark: css } },
+      },
+    })
+    const home = make('/', homeHtml, '')
+    const about = make('/about', aboutHtml, aboutCss)
+    const document = emptyDocument()
+    document.presentation.pages = [home, about]
+    const passes = composedCanvasPasses(
+      home,
+      document.presentation,
+      'sv',
+      'light',
+      'default',
+      'Desktop',
+      false,
+    )
+    let step = passes.next()
+    while (!step.done) step = passes.next()
+    const canvas = step.value
+    const host = globalThis.document.createElement('div')
+    host.style.width = '1500px'
+    host.style.height = '900px'
+    globalThis.document.body.append(host)
+    const editor = cmsGrapes.init({
+      container: host,
+      storageManager: false,
+      cssIcons: '',
+      telemetry: false,
+      avoidInlineStyle: true,
+      protectedCss: '',
+      mediaCondition: 'min-width',
+      selectorManager: { componentFirst: true },
+      components: canvas.html,
+      deviceManager: {
+        devices: [{ id: 'Desktop', width: '1440px', widthMedia: '769px' }],
+      },
+    })
+    const release = connectCanvasStyles(editor, canvas.projectStyles)
+    await new Promise((resolve) => editor.on('load', resolve))
+    editor.setDevice('Desktop')
+    try {
+      const wrapperId = editor.getWrapper().getId()
+      editor.Css.getAll().reset(
+        globalThis.structuredClone(
+          parseCanvasCss(bindCmsRootStyles(canvas.sheet, wrapperId), editor),
+        ),
+      )
+      editor.Components.getById('home-heading').components('Hem')
+      const html = editor.getHtml({ cleanId: false })
+      const css = canonicalizeCmsRootStyles(readCanvasCss(editor), wrapperId)
+      const storedHome = home.content.sv.css.light
+      const extracted = extractComposedAbout(html, css, about.content.sv.html, {
+        about: about.content.sv.css.light,
+        home: storedHome,
+      })
+      const stripped = stripComposedCanvas(html, css, 'default', {
+        about: extracted.css,
+        home: storedHome,
+      })
+      validateMarkup(extracted.html, extracted.css, policy, { native: true })
+      validateMarkup(stripped.html, stripped.css, policy, { native: true })
+      // Public Home renders Home's sheet, then About's sheet, in one document.
+      const render = (html, sheets) => {
+        const frame = globalThis.document.createElement('iframe')
+        frame.style.width = '1000px'
+        frame.style.border = '0'
+        globalThis.document.body.append(frame)
+        const doc = frame.contentDocument
+        const styles = sheets.map((sheet) => `<style>${sheet}</style>`).join('')
+        doc.open()
+        doc.write(`<!doctype html><html><head>${styles}</head><body>${html}</body></html>`)
+        doc.close()
+        const view = doc.defaultView
+        const heading = doc.getElementById('home-heading')
+        const measured = {
+          card: view.getComputedStyle(doc.querySelector('.card')).color,
+          padding: heading && view.getComputedStyle(heading).paddingTop,
+        }
+        frame.remove()
+        return measured
+      }
+      const before = render(homeHtml + aboutHtml, ['', aboutCss])
+      const after = render(stripped.html + extracted.html, [stripped.css, extracted.css])
+      const aboutOwn = render(extracted.html, [extracted.css])
+      // GrapesJS debounces its selector sync at 0 ms; that timer must not outlive the editor.
+      const canvasView = editor.Canvas.getDocument().defaultView
+      await new Promise((resolve) => canvasView.requestAnimationFrame(resolve))
+      await new Promise((resolve) => canvasView.requestAnimationFrame(resolve))
+      return {
+        before,
+        after,
+        aboutOwn,
+        storedHome: stripped.html,
+        storedHomeCss: stripped.css,
+        storedAboutCss: extracted.css,
+      }
+    } finally {
+      release()
+      editor.destroy()
+      host.remove()
+    }
+  })
+  await test.info().attach('home-text-edit-layers', {
+    body: JSON.stringify(result, null, 2),
+    contentType: 'application/json',
+  })
+  assert.deepEqual(errors, [])
+  assert.equal(result.before.card, 'rgb(255, 0, 0)')
+  assert.equal(result.after.card, 'rgb(255, 0, 0)')
+  assert.equal(result.aboutOwn.card, 'rgb(255, 0, 0)')
+  assert.equal(result.before.padding, '1px')
+  assert.equal(result.after.padding, '1px')
+  assert.ok(result.storedHome.includes('Hem'))
+})
+
+test('Home saves keep a stored layer copy ahead of the layer before it in About', async ({
+  page,
+}) => {
+  await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
+  const blue = '@layer{.card{color:blue!important}}'
+  const result = await page.evaluate(async (blue) => {
+    const { emptyDocument } = await import('/shared/cms.ts')
+    const { composedCanvas, extractComposedAbout, stripComposedCanvas } =
+      await import('/src/admin/cms/composedCanvas.ts')
+    const homeHtml =
+      '<div data-knc-native="1"><div data-knc-surface="desktop-home"><h1 id="home-heading">Home</h1><div data-knc-slot="desktop-about"><section aria-labelledby="about-heading"></section></div></div><div data-knc-surface="mobile-home"><div data-knc-slot="mobile-about"><section aria-labelledby="about-heading"></section></div></div></div>'
+    const aboutHtml =
+      '<div data-knc-native="1"><section id="about-root" data-knc-surface="about" aria-labelledby="about-heading"><h2 id="about-heading">About</h2><div id="owner-card" class="card"></div></section></div>'
+    const aboutCss = `@layer{.card{color:red!important}}${blue}`
+    const make = (path, html, css) => ({
+      id: path,
+      path,
+      kind: 'page',
+      name: { sv: path, en: path },
+      title: { sv: '', en: '' },
+      description: { sv: '', en: '' },
+      inMenu: true,
+      content: {
+        sv: { html, css: { light: css, dark: css } },
+        en: { html, css: { light: css, dark: css } },
+      },
+    })
+    const home = make('/', homeHtml, blue)
+    const about = make('/about', aboutHtml, aboutCss)
+    const pages = { ...emptyDocument().presentation, pages: [home, about] }
+    const canvas = composedCanvas(home, pages, 'sv', 'light')
+    const extracted = extractComposedAbout(canvas.html, canvas.css, aboutHtml, {
+      about: aboutCss,
+      home: blue,
+    })
+    const stripped = stripComposedCanvas(canvas.html, canvas.css, 'default', {
+      about: extracted.css,
+      home: blue,
+    })
+    return { about: extracted.css, aboutCss, home: stripped.css }
+  }, blue)
+  // The red layer may not join Home: it would take the stored copy's place on the public page.
+  assert.equal(result.home, blue)
+  assert.equal(result.about, result.aboutCss)
+})
