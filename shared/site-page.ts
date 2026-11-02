@@ -252,6 +252,13 @@ export function siteHeader(
   return `<header id="cms-site-header"><div class="cms-site-bar">${brand}<div class="cms-site-controls">${directions}${phone}${language}${theme}</div></div><nav id="cms-site-menu" aria-label="${sv ? 'Sidmeny' : 'Pages'}">${menu}</nav></header>`
 }
 
+/** The live site footer: the privacy and terms links in the served language and scheme. It is
+ * never stored, so the canvas locks it and capture drops it. */
+function siteFooter(lang: CmsLang, mode: ServedMode): string {
+  const sv = lang === 'sv'
+  return `<footer id="cms-site-footer"><a href="${escape(`/privacy${query(lang, mode)}`)}">${sv ? 'Integritetspolicy' : 'Privacy policy'}</a><a href="${escape(`/terms${query(lang, mode)}`)}">${sv ? 'Bokningsvillkor' : 'Booking terms'}</a></footer>`
+}
+
 /** The base sheet of every created page in the Worker and the editor canvas: the same bytes for
  * both languages and both schemes, after /tokens.css. Colours are the homepage palette tokens
  * (light-dark() on the root's colour scheme) under the owner's theme variables, so the header
@@ -284,7 +291,11 @@ export const SITE_PAGE_CSS = [
   '#cms-site-menu a{text-underline-offset:4px}',
   '#cms-site-menu a[aria-current="page"]{text-decoration:underline}',
   '#cms-site-content{min-width:0}',
-  '@media (max-width:768px){#cms-site-header .cms-site-bar{gap:10px;padding:12px 22px}#cms-site-header .cms-site-brand svg,#cms-site-header .cms-site-brand img{height:24px}#cms-site-header .cms-site-controls{gap:8px}#cms-site-header .cms-site-directions{gap:4px;padding:6px 8px;font-size:11px}#cms-site-header .cms-site-phone{gap:4px;font-size:12px}#cms-site-menu{gap:8px 18px;padding:10px 22px}}',
+  '#cms-site-footer{display:flex;flex-wrap:wrap;justify-content:center;gap:10px 24px;padding:14px 30px;border-top:.5px solid var(--knc-border,var(--bb-line));background:var(--knc-background,var(--bb-bg));font-size:13px;line-height:1.4}',
+  '#cms-site-footer a{color:var(--knc-muted,var(--bb-muted));text-decoration:none;text-underline-offset:4px}',
+  '#cms-site-footer a:hover{text-decoration:underline}',
+  '#cms-site-footer :focus-visible{outline:2px solid var(--knc-text,var(--bb-text));outline-offset:2px}',
+  '@media (max-width:768px){#cms-site-header .cms-site-bar{gap:10px;padding:12px 22px}#cms-site-header .cms-site-brand svg,#cms-site-header .cms-site-brand img{height:24px}#cms-site-header .cms-site-controls{gap:8px}#cms-site-header .cms-site-directions{gap:4px;padding:6px 8px;font-size:11px}#cms-site-header .cms-site-phone{gap:4px;font-size:12px}#cms-site-menu{gap:8px 18px;padding:10px 22px}#cms-site-footer{gap:8px 18px;padding:10px 22px}}',
 ].join('\n')
 
 /** Inline authored styles are a shared baseline for both themes. Give them stable selectors
@@ -338,7 +349,8 @@ function normalizedSitePageBody(
   }
 }
 
-/** Frozen chrome that pages created before the live header stored around their body. */
+/** Frozen chrome that pages created before the live header stored around their body. The live
+ * footer shares the id cms-site-footer, so capture never stores it. */
 const FROZEN_CHROME = new Set(['cms-site-header', 'cms-site-menu', 'cms-site-footer'])
 const FROZEN_WRAPPERS = new Set(['cms-site-shell', 'cms-site-content'])
 const FROZEN_STYLED = new Set(['cms-site-shell', ...FROZEN_CHROME])
@@ -488,7 +500,7 @@ export function dropDocumentChrome(document: CmsDocument): CmsDocument {
 }
 
 export interface SitePageRender {
-  /** The live header above `<div id="cms-site-content">` with the stored body. */
+  /** The live header above `<div id="cms-site-content">` with the stored body, then the live footer. */
   readonly html: string
   /** The page's own CSS per scheme; SITE_PAGE_CSS is the base sheet below it. */
   readonly css: Record<CmsMode, string>
@@ -516,8 +528,8 @@ export const isLiveSitePage = (page: CmsPage): boolean =>
   isSitePage(page) && !isFrozenSitePage(page)
 
 /** One renderer for the Worker, the editor canvas and the locked preview: the live header built
- * from the current presentation above the stored body. Takes current-format pages only
- * (isLiveSitePage); migrate a frozen page with dropFrozenChrome first. */
+ * from the current presentation above the stored body, and the live footer below it. Takes
+ * current-format pages only (isLiveSitePage); migrate a frozen page with dropFrozenChrome first. */
 export function renderSitePage(
   presentation: CmsPresentation,
   page: CmsPage,
@@ -527,7 +539,7 @@ export function renderSitePage(
 ): SitePageRender {
   const { variant: body, ids } = normalizedSitePageBody(page.content[lang], `${page.id}-${lang}`)
   return {
-    html: `${siteHeader(presentation, page, lang, mode, contact, ids)}<div id="cms-site-content">${body.html}</div>`,
+    html: `${siteHeader(presentation, page, lang, mode, contact, ids)}<div id="cms-site-content">${body.html}</div>${siteFooter(lang, mode)}`,
     css: { light: repairDesktopCss(body.css.light), dark: repairDesktopCss(body.css.dark) },
   }
 }

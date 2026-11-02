@@ -2,6 +2,7 @@ import type { CmsLang, CmsMode, CmsPage } from '../../../shared/cms'
 import privacyTemplate from '../../../public/privacy.html?raw'
 import termsTemplate from '../../../public/terms.html?raw'
 import contactTemplate from '../../../public/contact.html?raw'
+import contactEnglish from './contact.en.html?raw'
 import { INFORMATION_PAGE_PATHS } from '../../../shared/cms'
 import { CORE_PAGE_IDS } from './corePages'
 import { NATIVE_PUBLIC_PATHS } from '../../site/routeMetadata'
@@ -356,15 +357,22 @@ export async function readCorePageSource(): Promise<CmsPage[]> {
     const id = CORE_PAGE_IDS[index + 4]
     if (!name || !id) throw new Error('Informationssidans identitet saknas')
     const variant = { html: doc.body.innerHTML, css: { light: css, dark: css } }
+    const contact = path === '/contact'
     pages.push({
       id,
       path,
       kind: path === '/privacy' ? 'privacy' : path === '/terms' ? 'terms' : 'page',
       name: { sv: name[0], en: name[1] },
-      title: { sv: name[0], en: name[1] },
+      // The Worker derives an empty Contact title from the live business.
+      title: contact ? { sv: '', en: '' } : { sv: name[0], en: name[1] },
       description: { sv: '', en: '' },
       inMenu: false,
-      content: { sv: structuredClone(variant), en: structuredClone(variant) },
+      content: {
+        sv: structuredClone(variant),
+        en: structuredClone(
+          contact ? { html: contactEnglish.trim(), css: { light: css, dark: css } } : variant,
+        ),
+      },
     })
   }
   return pages

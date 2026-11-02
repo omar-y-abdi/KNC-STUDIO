@@ -204,6 +204,18 @@ const contactDiscovery = {
   ],
 }
 
+// As nativePages adopts Contact: no owner title or description, and the English template in `en`.
+const englishContact = readFileSync(
+  new URL('../../src/admin/cms/contact.en.html', import.meta.url),
+  'utf8',
+).trim()
+const adoptedContact: CmsPage = {
+  ...contact,
+  title: { sv: '', en: '' },
+  description: { sv: '', en: '' },
+  content: { sv: contact.content.sv, en: { ...contact.content.en, html: englishContact } },
+}
+
 describe('Worker CMS contact and static fallback', () => {
   afterEach(() => vi.restoreAllMocks())
 
@@ -256,13 +268,91 @@ describe('Worker CMS contact and static fallback', () => {
     expect(html).not.toMatch(/<script\b[^>]*type="module"/)
   })
 
+  it('answers the live Contact title and description when the owner set neither', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) =>
+      String(input).endsWith('/rpc/public_cms_presentation')
+        ? Response.json({ revision: 7, presentation: { ...presentation, pages: [adoptedContact] } })
+        : Response.json(contactDiscovery),
+    )
+    const html = await (await requestContact()).text()
+    const title = 'Kontakta Aktuell &amp; Salong – barbershop i Malmö'
+    expect(html).toContain(`<title id="business-title">${title}</title>`)
+    expect(html).toContain(`id="business-og-title" property="og:title" content="${title}"`)
+    expect(html).toContain(`id="business-twitter-title" name="twitter:title" content="${title}"`)
+    expect(html).toMatch(
+      /id="business-description"\s+name="description"\s+content="Officiell kontakt, adress och bokningsinformation för Aktuell &amp; Salong i Malmö\."/,
+    )
+  })
+
+  it('keeps an owner description on the CMS Contact', async () => {
+    const described = { ...contact, description: { sv: 'Ägarens beskrivning', en: '' } }
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) =>
+      String(input).endsWith('/rpc/public_cms_presentation')
+        ? Response.json({ revision: 7, presentation: { ...presentation, pages: [described] } })
+        : Response.json(contactDiscovery),
+    )
+    const html = await (await requestContact()).text()
+    expect(html).toMatch(
+      /id="business-description"\s+name="description"\s+content="Ägarens beskrivning"/,
+    )
+  })
+
+  it.each(['GET', 'HEAD'])(
+    'answers the CMS Contact with its agent headers on %s',
+    async (method) => {
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) =>
+        String(input).endsWith('/rpc/public_cms_presentation')
+          ? Response.json({ revision: 7, presentation: { ...presentation, pages: [contact] } })
+          : Response.json(contactDiscovery),
+      )
+      const response = await requestContact(method)
+      expect(response.status).toBe(200)
+      expect(response.headers.get('Link')).toBe('</llms.txt>; rel="describedby"')
+      expect(response.headers.get('Vary')).toContain('Accept')
+    },
+  )
+
+  it('answers ?lang=en with the English Contact, its live facts and the English default title', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) =>
+      String(input).endsWith('/rpc/public_cms_presentation')
+        ? Response.json({ revision: 7, presentation: { ...presentation, pages: [adoptedContact] } })
+        : Response.json(contactDiscovery),
+    )
+    const response = await worker.fetch(
+      new Request('https://bladeblendstudio.se/contact?lang=en'),
+      contactAssets,
+      noPublicContent,
+    )
+    const html = await response.text()
+    expect(html).toContain('<html lang="en"')
+    expect(html).toContain('<h1 id="contact-title">Contact Aktuell &amp; Salong</h1>')
+    expect(html).toContain('<dt>Visiting address</dt><dd>Ny &amp; Gata 12, 123 45 Malmö</dd>')
+    expect(html).toContain('<dt>Monday</dt><dd>10:00–12:00</dd>')
+    expect(html).toContain(
+      '<title id="business-title">Contact Aktuell &amp; Salong – barbershop in Malmö</title>',
+    )
+    expect(html).not.toContain('Besöksadress')
+  })
+
+  it('answers the Swedish Contact without ?lang', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) =>
+      String(input).endsWith('/rpc/public_cms_presentation')
+        ? Response.json({ revision: 7, presentation: { ...presentation, pages: [adoptedContact] } })
+        : Response.json(contactDiscovery),
+    )
+    const html = await (await requestContact()).text()
+    expect(html).toContain('<html lang="sv"')
+    expect(html).toContain('<dt>Besöksadress</dt><dd>Ny &amp; Gata 12, 123 45 Malmö</dd>')
+  })
+
   it('fills the CMS fragment without reserialising any shell bytes compared with terms', async () => {
     const opaque = '<meta NAME = "opaque" content=\'a &amp; b\' >'
     const markedShell = shell
       .replace('</head>', `${opaque}\r\n</head>`)
       .replace('<div id="root"></div>', '<!--page-start--><div id="root"></div><!--page-end-->')
       .replace('</body>', "<p DATA-opaque='tail'>Outside the page</p>\r\n</body>")
-    const reference = structuredClone(contact)
+    const described = { ...contact, description: { sv: 'Ägarens beskrivning', en: '' } }
+    const reference = structuredClone(described)
     reference.kind = 'terms'
     reference.path = '/terms'
     delete reference.layout
@@ -290,7 +380,7 @@ describe('Worker CMS contact and static fallback', () => {
       markedEnv,
       noPublicContent,
     )
-    published = contact
+    published = described
     const contactResponse = await worker.fetch(
       new Request('https://bladeblendstudio.se/contact'),
       markedEnv,

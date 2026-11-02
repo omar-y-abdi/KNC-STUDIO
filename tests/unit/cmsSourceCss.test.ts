@@ -146,6 +146,35 @@ it('accepts the imported contact body and rejects deletion of its live business 
   )
 })
 
+it('ships an English contact template with the same server-owned slots and lang=en links', () => {
+  const english = readFileSync(
+    new URL('../../src/admin/cms/contact.en.html', import.meta.url),
+    'utf8',
+  ).trim()
+  const swedish = readFileSync(new URL('../../public/contact.html', import.meta.url), 'utf8')
+  const body = swedish.slice(
+    swedish.indexOf('<body>') + '<body>'.length,
+    swedish.indexOf('</body>'),
+  )
+  const slots = (html: string) =>
+    html
+      .split(/\s+/)
+      .flatMap((token) => token.match(/^(?:id="[^"]*"|data-business-[a-z-]+)/) ?? [])
+      .sort()
+  expect(slots(english)).toEqual(slots(body))
+  expect(english).not.toMatch(/<script|<link/)
+  const internal = [...english.matchAll(/href="(\/[^"]*)"/g)].map((match) => match[1] ?? '')
+  expect(internal).toEqual(
+    expect.arrayContaining(['/booking?lang=en', '/terms?lang=en', '/privacy?lang=en']),
+  )
+  expect(internal.every((href) => href.includes('?lang=en'))).toBe(true)
+  const document = contactDocument()
+  const page = document.presentation.pages[0]
+  if (!page) throw new Error('Missing contact page')
+  page.content.en.html = english
+  expect(() => validateDocumentMarkupPlacements(document, policy)).not.toThrow()
+})
+
 it('parses safe custom properties and nested variable fallbacks', () => {
   const css = ':root{--surface:#fff;--space:12px}main{color:var(--fg,var(--fallback,#222))}'
   expect(() => validateMarkup('<main>Original site</main>', css, policy)).not.toThrow()
