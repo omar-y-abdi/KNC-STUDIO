@@ -134,7 +134,7 @@ test('CI documentation describes event coverage and the actual preparation owner
   assert.doesNotMatch(docs, /runs the complete graph|source identity verification and Furl setup/)
   assert.ok(
     docs.includes(
-      'Pull requests, pushes to `main`, and manual runs use the full Chromium and WebKit CMS matrices, each split across four shards',
+      'Pull requests, pushes to `main`, and manual runs use the full Chromium and WebKit CMS matrices, each split across nine shards',
     ),
   )
   assert.ok(docs.includes('Furl setup and regression tests belong to the quality job'))
