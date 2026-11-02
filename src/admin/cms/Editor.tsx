@@ -28,6 +28,7 @@ import {
   isReadOnlyPreview,
   isServerOwned,
   runtimeOwnedRole,
+  setCanvasPagePath,
   styleSectors,
 } from './editorPolicy'
 import { siteThemeCss } from '../../../shared/site-theme'
@@ -870,6 +871,10 @@ export function CmsEditor(props: Props): JSX.Element {
       const rules = structuredClone(compilation.rules)
       editor.select()
       setSelected(null)
+      // Contact slot ids are Worker-owned only on /contact. Record the page before the reused
+      // path's in-place update configures its children; that update runs inside the check below.
+      const canvasWrapper = editor.getWrapper()
+      if (canvasWrapper) setCanvasPagePath(canvasWrapper, props.page.path)
       const reused =
         previous?.pageId === props.page.id &&
         previous.device === props.device &&

@@ -345,6 +345,31 @@ describe('Worker CMS contact and static fallback', () => {
     expect(html).toContain('<dt>Besöksadress</dt><dd>Ny &amp; Gata 12, 123 45 Malmö</dd>')
   })
 
+  it('serves contact slot ids on a non-Contact CMS page exactly as authored', async () => {
+    const body =
+      '<main class="bb-page bb-doc"><h2 id="contact-title">Ägarens rubrik</h2><p id="contact-details">Telefon <span>031-555 12 34</span></p><h3 id="contact-hours">Ägarens öppettider</h3></main>'
+    // A created page: its stored body goes under the live header, as Studio creates it.
+    const visit = createSitePage({
+      id: '10000000-0000-4000-8000-000000000012',
+      path: '/visit',
+      name: { sv: 'Besök', en: 'Visit' },
+    })
+    visit.content.sv.html = body
+    visit.content.en.html = body
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) =>
+      String(input).endsWith('/rpc/public_cms_presentation')
+        ? Response.json({ revision: 7, presentation: { ...presentation, pages: [visit] } })
+        : Response.json(contactDiscovery),
+    )
+    const response = await worker.fetch(
+      new Request('https://bladeblendstudio.se/visit'),
+      env,
+      noPublicContent,
+    )
+    expect(response.status).toBe(200)
+    expect(await response.text()).toContain(body)
+  })
+
   it('fills the CMS fragment without reserialising any shell bytes compared with terms', async () => {
     const opaque = '<meta NAME = "opaque" content=\'a &amp; b\' >'
     const markedShell = shell

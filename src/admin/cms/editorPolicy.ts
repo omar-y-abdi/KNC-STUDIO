@@ -34,6 +34,9 @@ const protectedIds = new Set([
 ])
 const contactSlotIds = new Set(['contact-title', 'contact-details', 'contact-hours'])
 const contactSlotAttributes = ['data-business-name', 'data-business-city']
+// The page each canvas shows, keyed by its wrapper. It stays outside the model,
+// so exported HTML and project data never carry it.
+const canvasPaths = new WeakMap<Component, string>()
 
 // The marquee code moves these nodes or measures them; the individual transform
 // properties are transforms too. The gallery loop math also owns its tile sizes.
@@ -211,12 +214,29 @@ export const styleSectors = [
   },
 ]
 
-/** A Contact slot the Worker fills on every request. The name and city count only inside the Contact
- * page, because the legal pages carry the same attributes and stay editable. This runs for every
- * component on load, so it reads the raw attributes; getAttributes also resolves styles and ids. */
+/** Records the page a canvas shows. Studio sets it on every page apply, before configuring. */
+export function setCanvasPagePath(wrapper: Component, path: string): void {
+  canvasPaths.set(wrapper, path)
+}
+
+/** The page of the canvas holding this component, or undefined when no canvas recorded its root. */
+function canvasPath(component: Component): string | undefined {
+  let root = component
+  let parent = root.parent()
+  while (parent) {
+    root = parent
+    parent = root.parent()
+  }
+  return canvasPaths.get(root)
+}
+
+/** A Contact slot the Worker fills on every /contact request. The heading, details and hours ids
+ * count only on the /contact canvas. The name and city count only inside the Contact page, because
+ * the legal pages carry the same attributes and stay editable. This runs for every component on
+ * load, so it reads the raw attributes; getAttributes also resolves styles and ids. */
 function isContactSlot(component: Component): boolean {
   const attrs = component.get('attributes') ?? {}
-  if (contactSlotIds.has(String(attrs['id'] ?? ''))) return true
+  if (contactSlotIds.has(String(attrs['id'] ?? ''))) return canvasPath(component) === '/contact'
   if (!contactSlotAttributes.some((name) => attrs[name] !== undefined)) return false
   let parent = component.parent()
   while (parent) {
