@@ -641,7 +641,8 @@ function dropHomeItems(
 
 /** Home's stylesheet precedes About's on the public page, and About may not be mounted there.
  * Only an item About holds verbatim and Home never owned may leave. A layer copy would outrank
- * About's own, and a rule that lost an About ID would be a partial copy of it. */
+ * About's own, and a rule that lost an About ID would be a partial copy of it. A layer may leave
+ * only when no layer About lacks stays behind it: that layer would then precede it. */
 function dropAboutCopies(
   sheet: StyleSheet,
   sources: ReadonlyMap<CssNode, string>,
@@ -649,16 +650,23 @@ function dropAboutCopies(
 ): void {
   const about = storedItems(owners.about)
   const home = storedItems(owners.home)
-  sheet.children.forEach((node, item, list) => {
+  let keptLayer = false
+  sheet.children.forEachRight((node, item, list) => {
     const source = sources.get(node) ?? ''
     const remainder = generate(node)
+    const layered = hasLayer(node)
     if (
       about.has(source) &&
       !home.has(source) &&
       !home.has(remainder) &&
-      (source !== remainder || hasLayer(node))
-    )
+      (source !== remainder || layered) &&
+      !(layered && keptLayer)
+    ) {
       list.remove(item)
+      return
+    }
+    // A copy Home stored stays Home's: deduplication would hoist it over a layer it blocked here.
+    if (layered && !about.has(source)) keptLayer = true
   })
 }
 

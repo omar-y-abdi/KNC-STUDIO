@@ -500,6 +500,168 @@ describe('resize guards on a component rule', () => {
       '#authored{}@layer{#card{color:blue}}@media (min-width:769px){#card{zoom:.8}}',
     )
   })
+
+  const cardPage = (css: string): ReturnType<typeof createSitePage> => {
+    const page = createSitePage({
+      id: '10000000-0000-4000-8000-000000000002',
+      path: '/offers',
+      name: { sv: 'Ny', en: 'New' },
+    })
+    for (const lang of ['sv', 'en'] as const)
+      page.content[lang] = {
+        html: '<div id="card"><div></div></div>',
+        css: { light: css, dark: css },
+      }
+    return page
+  }
+  const variantSheets = (page: ReturnType<typeof createSitePage>): [string, ...string[]] => [
+    page.content.sv.css.light,
+    page.content.sv.css.dark,
+    page.content.en.css.light,
+    page.content.en.css.dark,
+  ]
+  const addMargin = (
+    page: ReturnType<typeof createSitePage>,
+  ): ReturnType<typeof createSitePage> => {
+    const edited = structuredClone(page)
+    edited.content.sv.css.light += '@media (min-width:769px){#card{margin-left:10px}}'
+    return syncPageLayout(page, edited, 'sv', 'light')
+  }
+  // The grouped rule also writes #card's width, so no move may cross it.
+  const grouped = (last: string): string =>
+    `#card{width:70%!important;${guard('card', '40%')}}#card, :where(#unused){width:80%!important}#card{width:${last}!important}`
+  const ungrouped = (last: string): string =>
+    `#card{width:70%!important;${guard('card', '40%')}}#card{width:${last}!important}`
+
+  it('keeps the authored width behind a grouped rule when an edit adds only margin', () => {
+    for (const sheet of variantSheets(addMargin(cardPage(grouped('90%'))))) {
+      expect(valuesOf(sheet, 'width')).toEqual(['70%', '40%', '80%', '90%'])
+      expect(valuesOf(sheet, 'margin-left')).toEqual(['10px'])
+      expect(sheet).not.toContain('{}')
+    }
+  })
+
+  it('does not move an unchanged width ahead of its guard when an edit changes other geometry', () => {
+    for (const sheet of variantSheets(addMargin(cardPage(ungrouped('90%'))))) {
+      expect(valuesOf(sheet, 'width')).toEqual(['70%', '40%', '90%'])
+      expect(valuesOf(sheet, 'margin-left')).toEqual(['10px'])
+    }
+  })
+
+  it('keeps a changed width after a grouped rule, so the grouped rule cannot win', () => {
+    const page = cardPage(grouped('90%'))
+    const edited = structuredClone(page)
+    edited.content.sv.css.light = grouped('95%')
+    const [edit, ...others] = variantSheets(syncPageLayout(page, edited, 'sv', 'light'))
+    expect(valuesOf(edit, 'width')).toEqual(['70%', '40%', '80%', '95%'])
+    for (const sheet of others) {
+      // Other sheets drop their stale top-level widths, then append the changed one after the group.
+      expect(valuesOf(sheet, 'width')).toEqual(['40%', '80%', '95%'])
+      expect(sheet).not.toContain('{}')
+    }
+  })
+
+  const editSheet = (before: string, after: string): [string, ...string[]] => {
+    const page = cardPage(before)
+    const edited = structuredClone(page)
+    edited.content.sv.css.light = after
+    return variantSheets(syncPageLayout(page, edited, 'sv', 'light'))
+  }
+  const middled = (middle: string, last: string): string =>
+    `#card{width:70%!important;${guard('card', '40%')}}${middle}#card{width:${last}!important}`
+
+  for (const [shape, middle, between] of [
+    ['with nothing between them', '', []],
+    [
+      'across a media-scoped grouped rule',
+      '@media (min-width:769px){#card, :where(#unused){width:80%!important}}',
+      ['80%'],
+    ],
+    [
+      'across an @supports grouped rule',
+      '@supports (display:grid){#card, :where(#unused){width:80%!important}}',
+      ['80%'],
+    ],
+  ] as const)
+    it(`keeps a changed width behind its guard ${shape}`, () => {
+      const [edit, ...others] = editSheet(middled(middle, '90%'), middled(middle, '95%'))
+      expect(valuesOf(edit, 'width')).toEqual(['70%', '40%', ...between, '95%'])
+      expect(edit).not.toContain('{}')
+      for (const sheet of others) {
+        // Other sheets drop their stale top-level widths, then append the changed one last.
+        expect(valuesOf(sheet, 'width')).toEqual(['40%', ...between, '95%'])
+        expect(sheet).not.toContain('{}')
+      }
+    })
+
+  it('keeps the Desktop order when an edit changes only a Mobile width', () => {
+    const sheet = (mobile: string): string =>
+      `${ungrouped('90%')}@media (max-width:768px){#card{width:${mobile}!important}}`
+    for (const variant of editSheet(sheet('50%'), sheet('55%')))
+      expect(valuesOf(variant, 'width')).toEqual(['70%', '40%', '90%', '55%'])
+  })
+
+  it('keeps an unchanged width behind a guard the edit changes', () => {
+    const sheet = (width: string): string =>
+      `#card{width:70%!important;${guard('card', width)}}#card{width:90%!important}`
+    for (const variant of editSheet(sheet('40%'), sheet('32%')))
+      expect(valuesOf(variant, 'width')).toEqual(['70%', '32%', '90%'])
+  })
+
+  it('does not move a changed width ahead of a guard the edited sheet lacks', () => {
+    const page = cardPage('#card{width:90%!important}')
+    for (const lang of ['sv', 'en'] as const)
+      page.content[lang].css.dark = `#card{${guard('card', '40%')}}#card{width:90%!important}`
+    const edited = structuredClone(page)
+    edited.content.sv.css.light = '#card{width:95%!important}'
+    const next = syncPageLayout(page, edited, 'sv', 'light')
+    for (const lang of ['sv', 'en'] as const) {
+      expect(valuesOf(next.content[lang].css.light, 'width')).toEqual(['95%'])
+      expect(valuesOf(next.content[lang].css.dark, 'width')).toEqual(['40%', '95%'])
+    }
+  })
+
+  const twoGuards = (width: string, middle = ''): string =>
+    `#card{width:70%!important;${guard('card', '40%')}}${middle}#card{width:${width}!important;${guard('card', '32%')}}`
+
+  it('moves a changed width between two guards ahead of the last one', () => {
+    const [edit, ...others] = editSheet(twoGuards('90%'), twoGuards('95%'))
+    expect(valuesOf(edit, 'width')).toEqual(['70%', '40%', '95%', '32%'])
+    for (const variant of others) {
+      expect(valuesOf(variant, 'width')).toEqual(['40%', '95%', '32%'])
+      expect(variant).not.toContain('{}')
+    }
+  })
+
+  const mobileRule = '@media (max-width:768px){#card{width:50%!important}}'
+
+  it('moves a changed width across nothing but the last guard', () => {
+    const [, ...others] = editSheet(twoGuards('90%', mobileRule), twoGuards('95%', mobileRule))
+    for (const variant of others)
+      expect(valuesOf(variant, 'width')).toEqual(['40%', '50%', '95%', '32%'])
+  })
+
+  it('leaves a width between two guards in place when the last guard changes', () => {
+    const sheet = (last: string): string =>
+      `#card{width:70%!important;${guard('card', '40%')}}${mobileRule}#card{width:90%!important;${guard('card', last)}}`
+    for (const variant of editSheet(sheet('32%'), sheet('30%')))
+      expect(valuesOf(variant, 'width')).toEqual(['70%', '40%', '50%', '90%', '30%'])
+  })
+
+  it('keeps a guard behind a width changed inside @supports inside @media', () => {
+    const sheet = (width: string): string =>
+      `#card{width:70%!important;${guard('card', '40%')}}@media (min-width:769px){@supports (display:grid){#card{width:${width}!important}}}`
+    const [, ...others] = editSheet(sheet('90%'), sheet('95%'))
+    for (const variant of others) expect(valuesOf(variant, 'width')).toEqual(['40%', '95%'])
+  })
+
+  for (const wrapper of ['@supports (display:grid)', '@layer'])
+    it(`keeps a guard behind a width changed inside ${wrapper}`, () => {
+      const sheet = (width: string): string =>
+        `#card{width:70%!important;${guard('card', '40%')}}${wrapper}{#card{width:${width}!important}}`
+      const [, ...others] = editSheet(sheet('90%'), sheet('95%'))
+      for (const variant of others) expect(valuesOf(variant, 'width')).toEqual(['40%', '95%'])
+    })
 })
 
 describe('site theme defaults and owner overrides', () => {
