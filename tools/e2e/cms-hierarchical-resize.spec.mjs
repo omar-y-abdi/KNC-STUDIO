@@ -200,6 +200,7 @@ test('cms-hierarchical-resize', async ({ page, context, browserName, evidenceDir
   const engine = browserName
   const out = evidenceDir
   await mkdir(out, { recursive: true })
+  await page.clock.setSystemTime(Date.now())
   const { backend, frame } = await openStudio(page, context, ['a', 'b', 'c', 'd'])
   // Mobile cards are Embla slides: a resize gives each card the requested layout width.
   const assertCardScale = (cards, reference, scale, message) => {
@@ -262,6 +263,9 @@ test('cms-hierarchical-resize', async ({ page, context, browserName, evidenceDir
       return css.match(/color:var\(--owner-mobile-color\)/g)?.length ?? 0
     }, groupSelector)
   assert.equal(await ownerBlocks(), 4, 'Mobile owner blocks survive viewport import')
+  // The Dator switch flushed the owner fixture. Cross the draft's 800 ms grouping boundary
+  // so the group resize starts its own undo step.
+  await page.clock.setSystemTime((await page.evaluate(() => Date.now())) + 1000)
   const before = await measure(frame)
   assert.equal(before.cards.length, 4)
   await select(page, groupSelector)
