@@ -114,18 +114,54 @@ const select = (page, selector) =>
     if (!component) throw new Error(`Missing component ${selector}`)
     editor.select(component)
   }, selector)
-const create = async (page) => {
+const create = async (page, { name = 'Reported page', path = '/reported-page' } = {}) => {
   await page.getByRole('button', { name: 'Mörk', exact: true }).click()
   await page.getByRole('button', { name: 'Mobil', exact: true }).click()
   await page.getByRole('button', { name: 'Skapa ny sida', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: 'Ny sida', exact: true })
-  await dialog.getByLabel('Sidnamn', { exact: true }).fill('Reported page')
-  await dialog.getByLabel('Adress', { exact: true }).fill('/reported-page')
+  await dialog.getByLabel('Sidnamn', { exact: true }).fill(name)
+  await dialog.getByLabel('Adress', { exact: true }).fill(path)
   await dialog.getByRole('button', { name: 'Skapa sida', exact: true }).click()
-  await page
-    .frameLocator('.gjs-frame')
-    .getByRole('heading', { name: 'Reported page', exact: true })
-    .waitFor()
+  await page.frameLocator('.gjs-frame').getByRole('heading', { name, exact: true }).waitFor()
+}
+// Contact-named ids on an ordinary page are plain content; the Worker fills them only on /contact.
+const VISIT_BODY =
+  '<main><h2 id="contact-title">Besöksadress</h2><p id="contact-details">Telefon <span>031-555 12 34</span></p><h3 id="contact-hours">Öppettider</h3><h3 id="owner-heading">Ägarens rubrik</h3></main>'
+const VISIT_SLOTS = [
+  '#contact-title',
+  '#contact-details',
+  '#contact-details span',
+  '#contact-hours',
+  '#owner-heading',
+]
+const CONTACT_SLOTS = ['#contact-title', '#contact-details', '#contact-hours']
+// A historical Contact body: the three ids without the managed marker or the business spans.
+const HISTORICAL_CONTACT_BODY =
+  '<main><h1 id="contact-title">Kontakt till salongen</h1><div id="contact-details"><p>Telefon 031-555 12 34</p></div><h2 id="contact-hours">Öppettider</h2></main>'
+// The inspector can keep a previous selection's state, so prove the selection changed first.
+const isSelected = (page, selector) =>
+  page.evaluate(async (selector) => {
+    const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+    const editor = cmsGrapes.editors.at(-1)
+    return editor.getSelected() === editor.getWrapper().find(selector)[0]
+  }, selector)
+const expectContactSlotsLocked = async (page) => {
+  const inspector = page.locator('#cms-inspector')
+  for (const selector of CONTACT_SLOTS) {
+    await select(page, selector)
+    expect(await isSelected(page, selector)).toBe(true)
+    await expect(
+      inspector.getByText('Uppgiften hämtas från Företag & SEO', { exact: false }),
+    ).toBeVisible()
+    await expect(inspector.getByLabel('Text', { exact: true })).toHaveCount(0)
+    await expect(inspector.getByRole('button', { name: 'Ta bort', exact: true })).toBeDisabled()
+  }
+  const editable = await page.evaluate(async (selectors) => {
+    const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+    const editor = cmsGrapes.editors.at(-1)
+    return selectors.map((selector) => editor.getWrapper().find(selector)[0].get('editable'))
+  }, CONTACT_SLOTS)
+  expect(editable).toEqual(CONTACT_SLOTS.map(() => false))
 }
 const openSector = async (page, name) => {
   const sector = page.getByRole('button', { name, exact: true })
@@ -612,6 +648,78 @@ test('contact slots are server-owned in Studio and the locked preview fills them
   })
   expect(legal.length).toBeGreaterThan(0)
   expect(legal.every((editable) => editable !== false)).toBe(true)
+})
+
+test('contact-named ids on an ordinary page stay editable, removable and copyable', async ({
+  page,
+  studio,
+}) => {
+  await create(page, { name: 'Besök', path: '/visit' })
+  const document = await studio.capture()
+  const visit = document.presentation.pages.find((item) => item.path === '/visit')
+  if (!visit) throw new Error('Missing created visit page')
+  visit.content.sv.html = VISIT_BODY
+  visit.content.en.html = VISIT_BODY
+  await page.getByRole('button', { name: 'Utkast & backup', exact: true }).click()
+  await page.locator('input[type=file][accept="application/json,.json"]').setInputFiles({
+    name: 'visit-contact-ids.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(document)),
+  })
+  await page.getByText('JSON-utkastet importerades', { exact: false }).waitFor()
+  await page.getByRole('button', { name: 'Avbryt', exact: true }).click()
+  await page.getByRole('button', { name: 'Besök', exact: true }).click()
+  await studio.frame.locator('#contact-title').waitFor()
+  const inspector = page.locator('#cms-inspector')
+  for (const selector of VISIT_SLOTS) {
+    await select(page, selector)
+    expect(await isSelected(page, selector)).toBe(true)
+    await expect(inspector.getByLabel(/^Text( \d)?$/).first()).toBeVisible()
+    await expect(inspector.getByRole('button', { name: 'Ta bort', exact: true })).toBeEnabled()
+    await expect(inspector.getByRole('button', { name: 'Duplicera', exact: true })).toBeEnabled()
+    await expect(inspector.getByText(/Uppgiften hämtas|Funktionsblocket är skyddat/)).toHaveCount(0)
+  }
+  const flags = await page.evaluate(async (selectors) => {
+    const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+    const editor = cmsGrapes.editors.at(-1)
+    return selectors.map((selector) => {
+      const node = editor.getWrapper().find(selector)[0]
+      return [node.get('editable'), node.get('removable'), node.get('copyable')]
+    })
+  }, VISIT_SLOTS)
+  expect(flags).toEqual(VISIT_SLOTS.map(() => [true, true, true]))
+})
+
+test('a marked Contact keeps its heading, details and hours locked', async ({ page, studio }) => {
+  const document = await studio.capture()
+  const contact = document.presentation.pages.find((item) => item.path === '/contact')
+  if (!contact) throw new Error('Missing Contact page')
+  expect(contact.content.sv.html).toContain('data-business-contact-page="1"')
+  await page.getByRole('button', { name: 'Kontakt', exact: true }).click()
+  await studio.frame.locator('#contact-title').waitFor()
+  await expectContactSlotsLocked(page)
+})
+
+test('an unmarked historical Contact keeps its heading, details and hours locked', async ({
+  page,
+  studio,
+}) => {
+  const document = await studio.capture()
+  const contact = document.presentation.pages.find((item) => item.path === '/contact')
+  if (!contact) throw new Error('Missing Contact page')
+  contact.content.sv.html = HISTORICAL_CONTACT_BODY
+  contact.content.en.html = HISTORICAL_CONTACT_BODY
+  await page.getByRole('button', { name: 'Utkast & backup', exact: true }).click()
+  await page.locator('input[type=file][accept="application/json,.json"]').setInputFiles({
+    name: 'historical-contact.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(document)),
+  })
+  await page.getByText('JSON-utkastet importerades', { exact: false }).waitFor()
+  await page.getByRole('button', { name: 'Avbryt', exact: true }).click()
+  await page.getByRole('button', { name: 'Kontakt', exact: true }).click()
+  await studio.frame.locator('#contact-title').waitFor()
+  await expectContactSlotsLocked(page)
 })
 
 test('the live footer stays locked through a rebuild and out of the stored body', async ({
