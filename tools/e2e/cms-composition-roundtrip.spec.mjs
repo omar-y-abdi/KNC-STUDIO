@@ -305,6 +305,10 @@ test('canvas style imports retain layer precedence, root selectors and declarati
       const editedWidth = doc.getElementById('editable').getBoundingClientRect().width
       editable.addStyle({ width: '25%' })
       await new Promise((resolve) => view.requestAnimationFrame(resolve))
+      // GrapesJS counts the edit from a zero-delay timer. Autosave is on here, so that count
+      // then saves and clears itself from a 1 ms timer. Let both timers finish first.
+      await new Promise((resolve) => globalThis.setTimeout(resolve, 0))
+      await new Promise((resolve) => globalThis.setTimeout(resolve, 1))
       const exported = readCanvasCss(editor)
       const styleElements = editor.Css.getAll()
         .models.filter((rule) => !rule.isNested())
