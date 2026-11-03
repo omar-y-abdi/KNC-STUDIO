@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
-import { emptyDocument, type CmsPage } from '../../shared/cms'
-import { validateMarkup } from '../../shared/cms-markup'
+import { emptyDocument, validateDocument, type CmsPage } from '../../shared/cms'
+import { validateDocumentMarkupPlacements, validateMarkup } from '../../shared/cms-markup'
 import { createSitePage, SITE_PAGE_CSS } from '../../shared/site-page'
 import { DEFAULT_BUSINESS, SCHEMA_DAYS, type BusinessOpeningHours } from '../../src/site/business'
 import worker, { renderContactMetadata } from '../../src/worker'
@@ -369,6 +369,87 @@ describe('Worker CMS contact and static fallback', () => {
     expect(response.status).toBe(200)
     expect(await response.text()).toContain(body)
   })
+
+  // Studio locks the name and city spans exactly where the Worker fills them. Each page below is
+  // what Edge stores after validation, so its body is already in the serialised form.
+  const businessSpans =
+    '<p>Hitta <span data-business-name="">Ägarens visningsnamn</span> i <span data-business-city="">Ägarens ort</span></p>'
+  const publishedPage = (page: CmsPage): CmsPage => {
+    const document = emptyDocument()
+    document.presentation.pages = [page]
+    validateDocument(document)
+    validateDocumentMarkupPlacements(document, {
+      siteOrigin: 'https://bladeblendstudio.se',
+      storageOrigin: 'https://fixture.invalid',
+    })
+    const [stored] = document.presentation.pages
+    if (!stored) throw new Error('Validation dropped the page')
+    return stored
+  }
+
+  it('fills the name and city spans of an unmarked historical CMS Contact', async () => {
+    const body =
+      '<main><h1 id="contact-title">Kontakt till salongen</h1>' +
+      businessSpans +
+      '<div id="contact-details"><p>Telefon 031-555 12 34</p></div><h2 id="contact-hours">Öppettider</h2></main>'
+    const historical = publishedPage({
+      ...contact,
+      content: {
+        sv: { ...contact.content.sv, html: body },
+        en: { ...contact.content.en, html: body },
+      },
+    })
+    expect(historical.content.sv.html).toBe(body)
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) =>
+      String(input).endsWith('/rpc/public_cms_presentation')
+        ? Response.json({ revision: 7, presentation: { ...presentation, pages: [historical] } })
+        : Response.json(contactDiscovery),
+    )
+    const response = await requestContact()
+    expect(response.status).toBe(200)
+    const html = await response.text()
+    expect(html).toContain(
+      '<p>Hitta <span data-business-name="">Aktuell &amp; Salong</span> i <span data-business-city="">Malmö</span></p>',
+    )
+    expect(html).not.toContain('Ägarens visningsnamn')
+    expect(html).not.toContain('Ägarens ort')
+  })
+
+  it.each([
+    [
+      'its body',
+      `<main data-business-contact-page="1"><h1 id="contact-title">Besök</h1>${businessSpans}</main>`,
+    ],
+    [
+      'a nested section',
+      `<main><section data-business-contact-page="1"><h2>Hitta hit</h2>${businessSpans}</section></main>`,
+    ],
+  ])(
+    'serves marked Contact markup in %s on another CMS page exactly as authored',
+    async (_where, body) => {
+      const visit = createSitePage({
+        id: '10000000-0000-4000-8000-000000000013',
+        path: '/visit',
+        name: { sv: 'Besök', en: 'Visit' },
+      })
+      visit.content.sv.html = body
+      visit.content.en.html = body
+      const stored = publishedPage(visit)
+      expect(stored.content.sv.html).toBe(body)
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) =>
+        String(input).endsWith('/rpc/public_cms_presentation')
+          ? Response.json({ revision: 7, presentation: { ...presentation, pages: [stored] } })
+          : Response.json(contactDiscovery),
+      )
+      const response = await worker.fetch(
+        new Request('https://bladeblendstudio.se/visit'),
+        env,
+        noPublicContent,
+      )
+      expect(response.status).toBe(200)
+      expect(await response.text()).toContain(body)
+    },
+  )
 
   it('fills the CMS fragment without reserialising any shell bytes compared with terms', async () => {
     const opaque = '<meta NAME = "opaque" content=\'a &amp; b\' >'

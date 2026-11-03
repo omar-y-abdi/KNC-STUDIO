@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import { gunzipSync } from 'node:zlib'
 import { EMAIL_NAMES } from '../../shared/cms.ts'
-import { renderSitePage } from '../../shared/site-page.ts'
+import { createSitePage, renderSitePage } from '../../shared/site-page.ts'
 import { defaultEmailTemplate } from '../../supabase/functions/_shared/email.ts'
 import { nativeBackend } from './cms-backend.mjs'
 import { loadWorker, routeWorkerDocuments } from './cms-render.mjs'
@@ -138,6 +138,19 @@ const CONTACT_SLOTS = ['#contact-title', '#contact-details', '#contact-hours']
 // A historical Contact body: the three ids without the managed marker or the business spans.
 const HISTORICAL_CONTACT_BODY =
   '<main><h1 id="contact-title">Kontakt till salongen</h1><div id="contact-details"><p>Telefon 031-555 12 34</p></div><h2 id="contact-hours">Öppettider</h2></main>'
+// The name and city spans as GrapesJS exports them. The Worker fills them on /contact, marked or
+// not, and serves them as authored on every other page.
+const BUSINESS_SPANS =
+  '<p>Hitta <span data-business-name="">Ägarens visningsnamn</span> i <span data-business-city="">Ägarens ort</span></p>'
+const BUSINESS_SLOTS = ['[data-business-name]', '[data-business-city]']
+const HISTORICAL_CONTACT_SPANS_BODY = HISTORICAL_CONTACT_BODY.replace(
+  '</h1>',
+  `</h1>${BUSINESS_SPANS}`,
+)
+// Imported or copied Contact markup that keeps its marker on another page, on the body itself and
+// on a nested section.
+const MARKED_VISIT_BODY = `<main data-business-contact-page="1"><h1 id="contact-title">Besök</h1>${BUSINESS_SPANS}</main>`
+const MARKED_SECTION_BODY = `<main><section data-business-contact-page="1"><h2>Hitta hit</h2>${BUSINESS_SPANS}</section></main>`
 // The inspector can keep a previous selection's state, so prove the selection changed first.
 const isSelected = (page, selector) =>
   page.evaluate(async (selector) => {
@@ -162,6 +175,75 @@ const expectContactSlotsLocked = async (page) => {
     return selectors.map((selector) => editor.getWrapper().find(selector)[0].get('editable'))
   }, CONTACT_SLOTS)
   expect(editable).toEqual(CONTACT_SLOTS.map(() => false))
+}
+// [editable, removable, copyable] of the name span, the city span and the paragraph holding them.
+const businessFlags = (page) =>
+  page.evaluate(async (selectors) => {
+    const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+    const editor = cmsGrapes.editors.at(-1)
+    const spans = selectors.map((selector) => editor.getWrapper().find(selector)[0])
+    return [...spans, spans[0].parent()].map((node) => [
+      node.get('editable'),
+      node.get('removable'),
+      node.get('copyable'),
+    ])
+  }, BUSINESS_SLOTS)
+const selectBusinessParagraph = (page) =>
+  page.evaluate(async () => {
+    const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+    const editor = cmsGrapes.editors.at(-1)
+    const paragraph = editor.getWrapper().find('[data-business-name]')[0].parent()
+    editor.select(paragraph)
+    return editor.getSelected() === paragraph
+  })
+// `state` is 'locked' where the Worker fills the spans and 'editable' where it serves them as authored.
+const expectBusinessSpans = async (page, state) => {
+  const locked = state === 'locked'
+  expect(await businessFlags(page)).toEqual([0, 1, 2].map(() => [!locked, !locked, !locked]))
+  const inspector = page.locator('#cms-inspector')
+  const remove = inspector.getByRole('button', { name: 'Ta bort', exact: true })
+  const copy = inspector.getByRole('button', { name: 'Duplicera', exact: true })
+  for (const selector of BUSINESS_SLOTS) {
+    await select(page, selector)
+    expect(await isSelected(page, selector)).toBe(true)
+    if (locked) {
+      await expect(
+        inspector.getByText('Uppgiften hämtas från Företag & SEO', { exact: false }),
+      ).toBeVisible()
+      await expect(inspector.getByLabel('Text', { exact: true })).toHaveCount(0)
+      await expect(remove).toBeDisabled()
+      await expect(copy).toBeDisabled()
+    } else {
+      await expect(inspector.getByText(/Uppgiften hämtas|Funktionsblocket är skyddat/)).toHaveCount(
+        0,
+      )
+      await expect(inspector.getByLabel('Text', { exact: true })).toBeVisible()
+      await expect(remove).toBeEnabled()
+      await expect(copy).toBeEnabled()
+    }
+  }
+  // The holding paragraph edits its own words either way, one field per text node.
+  expect(await selectBusinessParagraph(page)).toBe(true)
+  await expect(inspector.getByLabel(/^Text( \d)?$/).first()).toBeVisible()
+  if (locked) {
+    await expect(remove).toBeDisabled()
+    await expect(copy).toBeDisabled()
+  } else {
+    await expect(inspector.getByText(/Uppgiften hämtas|Funktionsblocket är skyddat/)).toHaveCount(0)
+    await expect(remove).toBeEnabled()
+    await expect(copy).toBeEnabled()
+  }
+}
+// The Studio JSON import, as the Contact tests below use it: it replaces the draft.
+const importDocument = async (page, document, name) => {
+  await page.getByRole('button', { name: 'Utkast & backup', exact: true }).click()
+  await page.locator('input[type=file][accept="application/json,.json"]').setInputFiles({
+    name,
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(document)),
+  })
+  await page.getByText('JSON-utkastet importerades', { exact: false }).waitFor()
+  await page.getByRole('button', { name: 'Avbryt', exact: true }).click()
 }
 const openSector = async (page, name) => {
   const sector = page.getByRole('button', { name, exact: true })
@@ -721,6 +803,244 @@ test('an unmarked historical Contact keeps its heading, details and hours locked
   await studio.frame.locator('#contact-title').waitFor()
   await expectContactSlotsLocked(page)
 })
+
+test('a marked Contact locks its name and city spans while legal name spans stay editable', async ({
+  page,
+  studio,
+}) => {
+  const document = await studio.capture()
+  const contact = document.presentation.pages.find((item) => item.path === '/contact')
+  if (!contact) throw new Error('Missing Contact page')
+  expect(contact.content.sv.html).toContain('data-business-contact-page="1"')
+  await page.getByRole('button', { name: 'Kontakt', exact: true }).click()
+  await studio.frame.locator('#contact-title').waitFor()
+  await expectBusinessSpans(page, 'locked')
+  // A published legal body keeps the owner's words in these spans: the Worker fills only /contact.
+  await page.getByRole('button', { name: 'Integritetspolicy', exact: true }).click()
+  await studio.frame.locator('[data-business-name]').first().waitFor()
+  const inspector = page.locator('#cms-inspector')
+  await select(page, '[data-business-name]')
+  expect(await isSelected(page, '[data-business-name]')).toBe(true)
+  await expect(inspector.getByLabel('Text', { exact: true })).toBeVisible()
+  await expect(inspector.getByText(/Uppgiften hämtas|Funktionsblocket är skyddat/)).toHaveCount(0)
+  await expect(inspector.getByRole('button', { name: 'Ta bort', exact: true })).toBeEnabled()
+  await expect(inspector.getByRole('button', { name: 'Duplicera', exact: true })).toBeEnabled()
+  const legal = await page.evaluate(async () => {
+    const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+    return cmsGrapes.editors
+      .at(-1)
+      .getWrapper()
+      .find('[data-business-name]')
+      .map((node) => node.get('editable'))
+  })
+  expect(legal.length).toBeGreaterThan(0)
+  expect(legal.every((editable) => editable !== false)).toBe(true)
+})
+
+test('an unmarked historical Contact also locks its name and city spans', async ({
+  page,
+  studio,
+}) => {
+  const document = await studio.capture()
+  const contact = document.presentation.pages.find((item) => item.path === '/contact')
+  if (!contact) throw new Error('Missing Contact page')
+  contact.content.sv.html = HISTORICAL_CONTACT_SPANS_BODY
+  contact.content.en.html = HISTORICAL_CONTACT_SPANS_BODY
+  await importDocument(page, document, 'historical-contact-spans.json')
+  await page.getByRole('button', { name: 'Kontakt', exact: true }).click()
+  await studio.frame.locator('#contact-title').waitFor()
+  await expectBusinessSpans(page, 'locked')
+  await expectContactSlotsLocked(page)
+})
+
+for (const nested of [false, true])
+  test(`marked Contact markup ${nested ? 'in a nested section ' : ''}on another page stays editable, removable and copyable`, async ({
+    page,
+    studio,
+  }) => {
+    await create(page, { name: 'Besök', path: '/visit' })
+    const document = await studio.capture()
+    const visit = document.presentation.pages.find((item) => item.path === '/visit')
+    if (!visit) throw new Error('Missing created visit page')
+    const body = nested ? MARKED_SECTION_BODY : MARKED_VISIT_BODY
+    visit.content.sv.html = body
+    visit.content.en.html = body
+    await importDocument(page, document, 'visit-contact-marker.json')
+    await page.getByRole('button', { name: 'Besök', exact: true }).click()
+    await studio.frame.locator('[data-business-name]').waitFor()
+    await expectBusinessSpans(page, 'editable')
+  })
+
+// Two owners' businesses, each different from the default business the seed publishes.
+const NORD_BUSINESS = {
+  name: 'Ateljé Nord A',
+  street: 'Storgatan 1',
+  postalCode: '753 20',
+  city: 'Uppsala',
+  phone: '018-12 34 56',
+  tel: '+4618123456',
+  email: 'nord@example.test',
+  maps: 'https://maps.example.test/uppsala',
+}
+const SYD_BUSINESS = {
+  name: 'Studio Syd B',
+  street: 'Lilla Torg 2',
+  postalCode: '211 34',
+  city: 'Lund',
+  phone: '046-765 43 21',
+  tel: '+46467654321',
+  email: 'syd@example.test',
+  maps: 'https://maps.example.test/lund',
+}
+const businessSettings = (business) => ({
+  business_name: business.name,
+  business_street: business.street,
+  business_postal_code: business.postalCode,
+  business_city: business.city,
+  business_phone_display: business.phone,
+  business_phone_tel: business.tel,
+  business_email: business.email,
+  business_maps_href: business.maps,
+})
+const businessAddress = (business) => `${business.street}, ${business.postalCode} ${business.city}`
+// A preview's Contact page shows `own` business, and neither the default nor `other`.
+const expectPreviewContact = async (frame, lang, own, other) => {
+  await expect(frame.locator('#contact-title')).toHaveText(
+    `${lang === 'sv' ? 'Kontakta' : 'Contact'} ${own.name}`,
+  )
+  await expect(frame.locator('[data-business-name]')).toHaveText(own.name)
+  await expect(frame.locator('[data-business-city]')).toHaveText(own.city)
+  const details = frame.locator('#contact-details')
+  for (const value of [businessAddress(own), own.phone, own.email])
+    await expect(details).toContainText(value)
+  for (const value of ['Geijersgatan 10', businessAddress(other)])
+    await expect(details).not.toContainText(value)
+}
+// A preview's created page carries the live header with `own` phone and directions.
+const expectPreviewHeader = async (frame, own) => {
+  const phone = frame.locator('#cms-site-header .cms-site-phone')
+  await expect(phone).toHaveText(own.phone)
+  await expect(phone).toHaveAttribute('href', `tel:${own.tel}`)
+  await expect(frame.locator('#cms-site-header .cms-site-directions')).toHaveAttribute(
+    'href',
+    own.maps,
+  )
+}
+
+// The captured document with a created page carrying the live header, once with each business.
+const businessDocuments = async (studio) => {
+  const captured = await studio.capture()
+  const visit = createSitePage({
+    id: '90000000-0000-4000-8000-000000000011',
+    path: '/visit',
+    name: { sv: 'Besök', en: 'Visit' },
+  })
+  const withBusiness = (business) => {
+    const document = globalThis.structuredClone(captured)
+    Object.assign(document.settings, businessSettings(business))
+    document.presentation.pages.push(globalThis.structuredClone(visit))
+    return document
+  }
+  return { today: withBusiness(NORD_BUSINESS), older: withBusiness(SYD_BUSINESS) }
+}
+const PREVIEW_PAGES = {
+  sv: { contact: 'Kontakt', visit: 'Besök' },
+  en: { contact: 'Contact', visit: 'Visit' },
+}
+// Imports the draft in `lang`. The editor's locked preview already reads the draft's business.
+const openBusinessDraft = async (page, studio, document, lang) => {
+  await importDocument(page, document, 'business-today.json')
+  await page.getByRole('button', { name: lang.toUpperCase(), exact: true }).click()
+  await page.getByRole('button', { name: PREVIEW_PAGES[lang].contact, exact: true }).click()
+  await studio.frame.locator('#contact-title').waitFor()
+  await page.getByRole('button', { name: 'Lås vy', exact: true }).click()
+  await expectPreviewContact(
+    page.frameLocator('.cms-live-preview iframe'),
+    lang,
+    NORD_BUSINESS,
+    SYD_BUSINESS,
+  )
+  await page.getByRole('button', { name: 'Lås upp', exact: true }).click()
+}
+
+for (const lang of ['sv', 'en']) {
+  test(`the style preview shows the draft's business (${lang})`, async ({ page, studio }) => {
+    const { today } = await businessDocuments(studio)
+    await openBusinessDraft(page, studio, today, lang)
+    await page.getByRole('button', { name: 'Webbplatsens stil', exact: true }).click()
+    const style = page.getByRole('region', { name: 'Stilförhandsvisning', exact: true })
+    const preview = page.frameLocator('.cms-theme-preview iframe')
+    await style
+      .getByLabel('Sida', { exact: true })
+      .selectOption({ label: PREVIEW_PAGES[lang].contact })
+    await expectPreviewContact(preview, lang, NORD_BUSINESS, SYD_BUSINESS)
+    await style
+      .getByLabel('Sida', { exact: true })
+      .selectOption({ label: PREVIEW_PAGES[lang].visit })
+    await expectPreviewHeader(preview, NORD_BUSINESS)
+    expect(studio.backend.writes).toEqual([])
+    expect(studio.backend.requests.map(({ operation }) => operation)).not.toContain('publish')
+  })
+
+  test(`the history preview shows each revision's own business (${lang})`, async ({
+    page,
+    context,
+    studio,
+  }) => {
+    const { today, older } = await businessDocuments(studio)
+    // Revision 9 holds today's draft and revision 7 an older business. This route answers both
+    // history reads; every other request reaches the native backend.
+    const revisions = new Map([
+      [9, today],
+      [7, older],
+    ])
+    await routeApi(context, [
+      [
+        '**/functions/v1/cms-studio',
+        (route, headers) => {
+          const body = route.request().postDataJSON()
+          if (body.operation === 'history')
+            return route.fulfill({
+              headers,
+              json: [...revisions.keys()].map((revision) => ({
+                revision,
+                created_at: '2026-10-30T12:00:00Z',
+                summary: 'Publicerat sidinnehåll',
+              })),
+            })
+          if (body.operation === 'revision')
+            return route.fulfill({ headers, json: { document: revisions.get(body.revision) } })
+          return route.fallback()
+        },
+      ],
+    ])
+    await openBusinessDraft(page, studio, today, lang)
+    const names = PREVIEW_PAGES[lang]
+    await page.getByRole('button', { name: 'Historik', exact: true }).click()
+    for (const [revision, own, other] of [
+      [7, SYD_BUSINESS, NORD_BUSINESS],
+      [9, NORD_BUSINESS, SYD_BUSINESS],
+    ]) {
+      await page
+        .locator('.cms-history-row')
+        .filter({ has: page.getByText(`v${revision}`, { exact: true }) })
+        .getByRole('button', { name: 'Granska', exact: true })
+        .click()
+      const review = page.getByRole('dialog', { name: `Granska version ${revision}`, exact: true })
+      const preview = page.frameLocator('.cms-history-preview iframe')
+      // The label wraps the select, so its text includes every option: select it by its class.
+      const pages = review.locator('.cms-history-page-select select')
+      await pages.selectOption({ label: names.contact })
+      await expectPreviewContact(preview, lang, own, other)
+      await pages.selectOption({ label: names.visit })
+      await expectPreviewHeader(preview, own)
+      await page.keyboard.press('Escape')
+      await review.waitFor({ state: 'detached' })
+    }
+    expect(studio.backend.writes).toEqual([])
+    expect(studio.backend.requests.map(({ operation }) => operation)).not.toContain('publish')
+  })
+}
 
 test('the live footer stays locked through a rebuild and out of the stored body', async ({
   page,
