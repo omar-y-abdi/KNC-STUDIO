@@ -1,4 +1,8 @@
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
+import { gunzipSync } from 'node:zlib'
+import { emptyDocument } from '../../shared/cms.ts'
+import { nativeBackend } from './cms-backend.mjs'
 import { test } from './fixtures.mjs'
 import { harnessOrigin } from './origins.mjs'
 
@@ -186,6 +190,7 @@ for (const layered of [false, true]) {
             const stripped = stripComposedCanvas(html, css, 'default', {
               about: extracted.css,
               home: storedHome,
+              aboutHtml: about.content.sv.html,
             })
             validateMarkup(extracted.html, extracted.css, policy, { native: true })
             validateMarkup(stripped.html, stripped.css, policy, { native: true })
@@ -331,7 +336,7 @@ test('Home saves keep owner CSS and match the public About cascade', async ({ pa
         about: about.content.sv.css.light,
         home: storedHome,
       })
-      const owners = { about: extracted.css, home: storedHome }
+      const owners = { about: extracted.css, home: storedHome, aboutHtml: about.content.sv.html }
       const stripped = stripComposedCanvas(canvas.html, canvas.css, 'default', owners)
       const repeated = stripComposedCanvas(stripped.html, stripped.css, 'default', owners)
       const partial = stripComposedCanvas(canvas.html, canvas.css).css
@@ -485,6 +490,7 @@ test('Home text edits keep the red About layer on public Home', async ({ page })
       const stripped = stripComposedCanvas(html, css, 'default', {
         about: extracted.css,
         home: storedHome,
+        aboutHtml: about.content.sv.html,
       })
       validateMarkup(extracted.html, extracted.css, policy, { native: true })
       validateMarkup(stripped.html, stripped.css, policy, { native: true })
@@ -580,6 +586,7 @@ test('Home saves keep a stored layer copy ahead of the layer before it in About'
     const stripped = stripComposedCanvas(canvas.html, canvas.css, 'default', {
       about: extracted.css,
       home: blue,
+      aboutHtml,
     })
     return { about: extracted.css, aboutCss, home: stripped.css }
   }, blue)
@@ -916,6 +923,7 @@ for (const {
           const exported = stripComposedCanvas(nativeExport.html, exportedCss, 'default', {
             about: aboutExport.css,
             home: storedHome,
+            aboutHtml: about.content.sv.html,
           })
           const nextHome = globalThis.structuredClone(home)
           nextHome.content.sv = {
@@ -1174,9 +1182,30 @@ const repeatedLayers = [
       '@layer first{.card{color:red!important;background-color:red}}',
     wins: { card: 'rgb(255, 0, 0)', background: 'rgb(0, 0, 255)' },
   },
+  {
+    // Home's Desktop surface holds no About slot, so the canvas imports About's sheet without
+    // About's section. About keeps its stored sheet; Home keeps its own copy of About's layer
+    // ahead of its blue one.
+    name: 'a Home without a Desktop About slot keeps its layers and leaves About as stored',
+    homeHtml:
+      '<div data-knc-native="1"><div data-knc-surface="desktop-home"><h1 id="home-heading">Home</h1></div><div data-knc-surface="mobile-home"><div data-knc-slot="mobile-about"><section aria-labelledby="about-heading"></section></div></div></div>',
+    homeCss: '@layer{.card{color:red!important}}@layer{.card{color:blue!important}}',
+    aboutCss: '@layer{.card{color:red!important}}',
+    aboutSaved: '@layer{.card{color:red!important}}',
+    wins: { card: 'rgb(255, 0, 0)' },
+    extracts: false,
+  },
 ]
 
-for (const { name, homeCss, aboutCss, wins, aboutSaved } of repeatedLayers) {
+for (const {
+  name,
+  homeHtml,
+  homeCss,
+  aboutCss,
+  wins,
+  aboutSaved,
+  extracts = true,
+} of repeatedLayers) {
   test(`Home saves keep repeated layer blocks in their cascade order (${name})`, async ({
     page,
   }) => {
@@ -1184,17 +1213,19 @@ for (const { name, homeCss, aboutCss, wins, aboutSaved } of repeatedLayers) {
     page.on('pageerror', (error) => errors.push(error.message))
     await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
     const result = await page.evaluate(
-      async ({ homeCss, aboutCss }) => {
+      async ({ homeCss, aboutCss, homeMarkup }) => {
         const { emptyDocument, validateDocument } = await import('/shared/cms.ts')
         const { validateDocumentMarkupPlacements } = await import('/shared/cms-markup.ts')
         const { CORE_PAGE_IDS } = await import('/src/admin/cms/corePages.ts')
         const { composedCanvas, extractComposedAbout, stripComposedCanvas } =
           await import('/src/admin/cms/composedCanvas.ts')
+        const { nativeCanvas } = await import('/src/admin/cms/nativeCanvas.ts')
         const policy = {
           siteOrigin: globalThis.location.origin,
           storageOrigin: 'https://storage.example.test',
         }
         const homeHtml =
+          homeMarkup ??
           '<div data-knc-native="1"><div data-knc-surface="desktop-home"><h1 id="home-heading">Home</h1><div data-knc-slot="desktop-about"><section aria-labelledby="about-heading"></section></div></div><div data-knc-surface="mobile-home"><div data-knc-slot="mobile-about"><section aria-labelledby="about-heading"></section></div></div></div>'
         const aboutHtml =
           '<div data-knc-native="1"><section id="about-root" data-knc-surface="about" aria-labelledby="about-heading"><h2 id="about-heading">About</h2><div id="owner-card" class="card"></div></section></div>'
@@ -1268,24 +1299,34 @@ for (const { name, homeCss, aboutCss, wins, aboutSaved } of repeatedLayers) {
             about: about.content.sv.css.light,
             home: storedHome,
           })
+          // As Editor.tsx saves Home: without About's section on the canvas there is nothing to
+          // extract, About keeps its stored sheet, and that sheet, in the form the canvas
+          // imported it, owns its copies on the canvas.
           const stripped = stripComposedCanvas(canvas.html, canvas.css, 'default', {
-            about: extracted.css,
+            about: extracted?.css ?? nativeCanvas(about.content.sv, 'light').css,
             home: storedHome,
+            aboutHtml: about.content.sv.html,
           })
           home.content.sv = {
             html: stripped.html,
             css: { ...home.content.sv.css, light: stripped.css },
           }
-          about.content.sv = {
-            html: extracted.html,
-            css: { ...about.content.sv.css, light: extracted.css },
-          }
+          if (extracted)
+            about.content.sv = {
+              html: extracted.html,
+              css: { ...about.content.sv.css, light: extracted.css },
+            }
           validate()
-          saves.push({ home: stripped.css, about: extracted.css, paint: paint() })
+          saves.push({
+            extracted: extracted !== null,
+            home: stripped.css,
+            about: about.content.sv.css.light,
+            paint: paint(),
+          })
         }
         return { before, saves }
       },
-      { homeCss, aboutCss },
+      { homeCss, aboutCss, homeMarkup: homeHtml },
     )
     await test.info().attach('home-save-repeated-layers', {
       body: JSON.stringify(result, null, 2),
@@ -1296,6 +1337,11 @@ for (const { name, homeCss, aboutCss, wins, aboutSaved } of repeatedLayers) {
       assert.equal(result.before.home[property], value, `The fixture paints ${property} ${value}`)
     for (const [round, save] of result.saves.entries()) {
       const context = JSON.stringify({ name, round, before: result.before, ...save })
+      assert.equal(
+        save.extracted,
+        extracts,
+        `A Home save extracts About exactly when About's section is on the canvas: ${context}`,
+      )
       assert.deepEqual(
         save.paint,
         result.before,
@@ -1307,5 +1353,416 @@ for (const { name, homeCss, aboutCss, wins, aboutSaved } of repeatedLayers) {
       } else if (aboutSaved !== undefined)
         assert.equal(save.about, aboutSaved, `About's sheet after a Home save: ${context}`)
     }
+  })
+}
+
+// Home saves in the Studio itself, on the adopted presentation. Home's light Swedish sheet holds
+// its own copy of an About layer ahead of a second layer; About's holds that layer and, per case,
+// rules for its heading that the canvas import marks !important: bare-ID rules of a baseline
+// element inside an at-rule. No baseline or stored rule sets the heading properties these rules
+// set, so the heading's paint changes only when one of them is lost or overtaken.
+const aboutLayer = '@layer{.scp0{color:red!important}}'
+const homeLayers = `${aboutLayer}@layer{.scp0{color:blue!important}}`
+const layeredHeading = '@layer{#om-oss-heading{text-decoration-line:underline}}'
+const mediaHeading = '@media (min-width:769px){#om-oss-heading{text-transform:uppercase}}'
+// One layer for a heading rule and a class rule. The canvas import marks only the heading rule
+// !important, so only About's sheet in that imported form holds the layer as the canvas does.
+const mixedLayer =
+  '@layer{#om-oss-heading{text-decoration-line:underline}.scp0{outline-style:dotted}}'
+const importedHeading = new Map([
+  [layeredHeading, '@layer{#om-oss-heading{text-decoration-line:underline!important}}'],
+  [mediaHeading, '@media (min-width:769px){#om-oss-heading{text-transform:uppercase!important}}'],
+])
+const homeCopy = 'knc-desktop-home-0-i1-i0-i1'
+const desktopAboutSlot =
+  /<div id="knc-desktop-home-0-i1-i2" data-knc-slot="knc-desktop-home-0-i1-i2"[^>]*><section aria-labelledby="preview-shared-3" data-knc-baseline="\{\}"><\/section><\/div>/g
+const studioSaves = [
+  { name: 'a Home without a Desktop About slot', slot: false, about: [aboutLayer] },
+  {
+    name: 'a Home without a Desktop About slot, About with a layered heading rule',
+    slot: false,
+    about: [aboutLayer, layeredHeading],
+  },
+  {
+    name: 'a Home without a Desktop About slot, About with a heading rule inside @media',
+    slot: false,
+    about: [aboutLayer, mediaHeading],
+  },
+  {
+    name: 'a Home without a Desktop About slot, About with a layer of a heading and a class rule',
+    slot: false,
+    about: [aboutLayer, mixedLayer],
+  },
+  {
+    name: 'a Home with its Desktop About slot, About with both heading rules',
+    slot: true,
+    about: [aboutLayer, layeredHeading, mediaHeading],
+  },
+]
+const lightSv = (document, path) =>
+  document.presentation.pages.find((item) => item.path === path).content.sv
+const aboutPage = (document) => document.presentation.pages.find((item) => item.path === '/about')
+
+// Public paint as the Worker serves Home: Home's markup, then About's, each baseline element with
+// its source style inline (the fixture sets no theme tokens), Home's sheet, then About's. About
+// alone renders only in the Studio, on its own sheet.
+function studioPaint(page, document) {
+  return page.evaluate(
+    ({ home, about }) => {
+      const render = (html, sheets) => {
+        const frame = globalThis.document.createElement('iframe')
+        frame.style.width = '1000px'
+        frame.style.border = '0'
+        globalThis.document.body.append(frame)
+        const doc = frame.contentDocument
+        const styles = sheets.map((sheet) => `<style>${sheet}</style>`).join('')
+        doc.open()
+        doc.write(`<!doctype html><html><head>${styles}</head><body>${html}</body></html>`)
+        doc.close()
+        for (const element of doc.querySelectorAll('[data-knc-baseline][data-knc-light]'))
+          element.setAttribute('style', element.getAttribute('data-knc-light'))
+        const view = doc.defaultView
+        const link = view.getComputedStyle(doc.getElementById('knc-about-0-i1-i0'))
+        const heading = view.getComputedStyle(doc.getElementById('om-oss-heading'))
+        const measured = {
+          link: link.color,
+          decoration: heading.textDecorationLine,
+          transform: heading.textTransform,
+        }
+        frame.remove()
+        return measured
+      }
+      return {
+        home: render(home.html + about.html, [home.css.light, about.css.light]),
+        about: render(about.html, [about.css.light]),
+      }
+    },
+    { home: lightSv(document, '/'), about: lightSv(document, '/about') },
+  )
+}
+
+// Each sheet's top-level items as the CSSOM reads them, without empty rules, which paint nothing.
+// A conditional block of plain rules counts rule by rule, as the canvas keeps each rule on its
+// own. Also the items that name an ID in About's section.
+function studioItems(page, sheets, aboutHtml) {
+  return page.evaluate(
+    ({ sheets, aboutHtml }) => {
+      const section = new globalThis.DOMParser()
+        .parseFromString(aboutHtml, 'text/html')
+        .querySelector('[data-knc-surface="about"]')
+      const ids = new Set([section, ...section.querySelectorAll('[id]')].map((node) => node.id))
+      const filled = (rule) =>
+        !(rule instanceof globalThis.CSSStyleRule) ||
+        rule.style.length > 0 ||
+        (rule.cssRules?.length ?? 0) > 0
+      return sheets.map((css) => {
+        const sheet = new globalThis.CSSStyleSheet()
+        sheet.replaceSync(css)
+        const items = [...sheet.cssRules].flatMap((rule) => {
+          if (
+            !(rule instanceof globalThis.CSSConditionRule) ||
+            ![...rule.cssRules].every((child) => child instanceof globalThis.CSSStyleRule)
+          )
+            return filled(rule) ? [rule.cssText] : []
+          const condition = rule.cssText.slice(0, rule.cssText.indexOf('{'))
+          return [...rule.cssRules].filter(filled).map((child) => `${condition}{${child.cssText}}`)
+        })
+        return {
+          items,
+          about: items.filter((item) =>
+            [...item.matchAll(/#([\w-]+)/g)].some(([, id]) => ids.has(id)),
+          ),
+        }
+      })
+    },
+    { sheets, aboutHtml },
+  )
+}
+
+// The items of `items` left over once each item of `other` has matched one equal item.
+function unmatched(items, other) {
+  const left = new Map()
+  for (const item of other) left.set(item, (left.get(item) ?? 0) + 1)
+  return items.filter((item) => {
+    const count = left.get(item) ?? 0
+    if (count) left.set(item, count - 1)
+    return !count
+  })
+}
+
+for (const { name, slot, about: aboutRules } of studioSaves) {
+  test(`Studio Home saves keep Home's sheet and About's (${name})`, async ({ page, context }) => {
+    const errors = []
+    page.on('pageerror', (error) => errors.push(error.message))
+    await page.setViewportSize({ width: 1440, height: 900 })
+    const raw = {
+      ...emptyDocument(),
+      presentation: JSON.parse(
+        gunzipSync(await readFile(new URL('./fixtures/presentation.json.gz', import.meta.url))),
+      ).presentation,
+    }
+    const rawHome = lightSv(raw, '/')
+    assert.equal(rawHome.html.match(desktopAboutSlot)?.length, 1, 'Home has one Desktop About slot')
+    if (!slot) rawHome.html = rawHome.html.replace(desktopAboutSlot, '')
+    rawHome.css.light += homeLayers
+    lightSv(raw, '/about').css.light += aboutRules.join('')
+    await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
+    // The backend holds the adopted document, so each save shows only what that save writes.
+    const { stored, adopted } = await page.evaluate(async (document) => {
+      const { normalizeDocument } = await import('/src/admin/cms/normalizeDocument.ts')
+      const stored = normalizeDocument(document)
+      return { stored, adopted: normalizeDocument(stored) === stored }
+    }, raw)
+    assert.equal(adopted, true, 'The stored document is already adopted')
+    assert.deepEqual(stored.presentation.themes.light, {}, 'The fixture sets no theme tokens')
+    const backend = await nativeBackend(context, stored)
+    await context.route('**/cms-public/source', (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: '<!doctype html><html data-knc-source-listening="1"><script>addEventListener("message",e=>{document.documentElement.dataset.kncSourceError=e.data.id;document.documentElement.dataset.kncSourceFailure="Offline source"})</script></html>',
+      }),
+    )
+    const before = await studioPaint(page, stored)
+    const paints = {
+      link: 'rgb(255, 0, 0)',
+      decoration:
+        aboutRules.includes(layeredHeading) || aboutRules.includes(mixedLayer)
+          ? 'underline'
+          : 'none',
+      transform: aboutRules.includes(mediaHeading) ? 'uppercase' : 'none',
+    }
+    const saves = []
+    for (const round of [1, 2]) {
+      // Each save opens the Studio on the stored document, as an owner's next visit does.
+      if (round > 1) await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
+      await page.evaluate(async () =>
+        (await import('/tools/e2e/admin-harness.tsx')).mountCmsStudioHarness(),
+      )
+      const frame = page.frameLocator('.gjs-frame').first()
+      await frame.locator('[data-knc-surface="desktop-home"]').waitFor({ timeout: 90000 })
+      // Save after the deferred About preview exists: its copy must not reach Home either.
+      await page
+        .locator('.cms-editor-canvas[data-cms-about-preview-ready="true"]')
+        .waitFor({ timeout: 90000 })
+      const slots = await frame.locator('[data-editor-about-slot]').count()
+      const copy = `Studio Home save ${round}`
+      await frame.locator(`[data-knc-surface="desktop-home"] [id="${homeCopy}"]`).click()
+      await page.locator('#cms-inspector').getByLabel('Text', { exact: true }).fill(copy)
+      await page.getByRole('button', { name: 'Publicera', exact: true }).click()
+      await page.waitForFunction(
+        (revision) =>
+          globalThis.document.querySelector('.cms-status')?.textContent ===
+          `Publicerad · rev ${revision}`,
+        round + 1,
+        { timeout: 45000 },
+      )
+      const saved = globalThis.structuredClone(backend.document)
+      saves.push({ slots, copy, saved, paint: await studioPaint(page, saved) })
+    }
+    // About's sheet as the canvas imports it: its heading rules gain !important.
+    let expectedAbout = lightSv(stored, '/about').css.light
+    for (const rule of aboutRules) {
+      assert.equal(expectedAbout.split(rule).length, 2, `About stores ${rule} once`)
+      expectedAbout = expectedAbout.replace(rule, importedHeading.get(rule) ?? rule)
+    }
+    const [storedHome, home1, home2, importedAbout, about1, about2] = await studioItems(
+      page,
+      [
+        lightSv(stored, '/').css.light,
+        ...saves.map(({ saved }) => lightSv(saved, '/').css.light),
+        expectedAbout,
+        ...saves.map(({ saved }) => lightSv(saved, '/about').css.light),
+      ],
+      lightSv(stored, '/about').html,
+    )
+    const homes = [home1, home2]
+    const abouts = [about1, about2]
+    const layers = ({ items }) => items.filter((item) => item.startsWith('@layer'))
+    await test.info().attach('studio-home-saves', {
+      body: JSON.stringify(
+        {
+          before,
+          saves: saves.map(({ slots, copy, paint }, index) => ({
+            slots,
+            copy,
+            paint,
+            layers: layers(homes[index]),
+            aboutRulesInHome: homes[index].about.length,
+            added: unmatched(homes[index].items, storedHome.items),
+            dropped: unmatched(storedHome.items, homes[index].items),
+          })),
+        },
+        null,
+        2,
+      ),
+      contentType: 'application/json',
+    })
+    assert.deepEqual(errors, [])
+    assert.deepEqual(before, { home: paints, about: paints }, 'The fixture paints as designed')
+    assert.deepEqual(storedHome.about, [], "Home stores no rule for About's section")
+    for (const [index, save] of saves.entries()) {
+      const context = `${name}, save ${index + 1}`
+      const home = homes[index]
+      assert.equal(
+        save.slots,
+        slot ? 1 : 0,
+        `About's section is on the Desktop canvas exactly when Home has its Desktop slot: ${context}`,
+      )
+      assert.ok(
+        lightSv(save.saved, '/').html.includes(`>${save.copy}<`),
+        `The Home text edit is saved: ${context}`,
+      )
+      assert.deepEqual(
+        layers(home),
+        layers(storedHome),
+        `Home keeps its two layers, in their order: ${context}`,
+      )
+      assert.equal(
+        home.about.length,
+        0,
+        `Home takes in no rule for About's section; it took ${home.about.length}, first ${JSON.stringify(home.about.slice(0, 3))}: ${context}`,
+      )
+      const added = unmatched(home.items, storedHome.items)
+      const dropped = unmatched(storedHome.items, home.items)
+      assert.equal(
+        added.length + dropped.length,
+        0,
+        `Home keeps exactly its stored rules; added ${JSON.stringify(added.slice(0, 3))} (${added.length}), dropped ${JSON.stringify(dropped.slice(0, 3))} (${dropped.length}): ${context}`,
+      )
+      assert.deepEqual(
+        save.paint,
+        before,
+        `Public Home and About alone paint as before: ${context}`,
+      )
+      if (!slot)
+        assert.deepEqual(
+          aboutPage(save.saved),
+          aboutPage(stored),
+          `About is never written: ${context}`,
+        )
+      else {
+        const missing = unmatched(importedAbout.items, abouts[index].items)
+        const gained = unmatched(abouts[index].items, importedAbout.items)
+        assert.equal(
+          missing.length + gained.length,
+          0,
+          `About keeps every rule, its heading rules as the canvas imported them; missing ${JSON.stringify(missing.slice(0, 3))}, gained ${JSON.stringify(gained.slice(0, 3))}: ${context}`,
+        )
+      }
+    }
+    if (slot)
+      assert.deepEqual(
+        aboutPage(saves[1].saved),
+        aboutPage(saves[0].saved),
+        `About holds from the first save on: ${name}`,
+      )
+    // The adopted Home sheet is not a fixed point of a Studio save. The canvas keeps each rule of
+    // a conditional block on its own, and composing the canvas gives Home's copies of the rules
+    // About shares the place of About's copies (composedCanvas.ts, where About's sheet is
+    // imported). From the first save on, the sheet holds.
+    assert.equal(
+      lightSv(saves[1].saved, '/').css.light,
+      lightSv(saves[0].saved, '/').css.light,
+      `Home's sheet holds from the first save on: ${name}`,
+    )
+  })
+}
+
+// Home's export keeps no rule for an element of About's section, also when the canvas lacks that
+// element, and keeps its own rules for an element of Home's markup that carries an About ID.
+const aboutSectionRules = [
+  {
+    name: "an About element removed from the Desktop slot's section",
+    slot: true,
+    homeCss: '#home-heading{color:blue}',
+    removed: 'owner-note',
+    kept: ['#home-heading{color:blue}'],
+    gone: '#owner-note',
+  },
+  {
+    name: "a Home element with an ID of About's section",
+    slot: false,
+    homeMarkup: '<p id="owner-note">Home</p>',
+    homeCss: '#home-heading{color:blue}#owner-note{color:green}',
+    kept: ['#home-heading{color:blue}', '#owner-note{color:green}'],
+  },
+]
+
+for (const { name, slot, homeMarkup = '', homeCss, removed, kept, gone } of aboutSectionRules) {
+  test(`Home saves keep no rule for About's section (${name})`, async ({ page }) => {
+    const errors = []
+    page.on('pageerror', (error) => errors.push(error.message))
+    await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
+    const result = await page.evaluate(
+      async ({ slot, homeMarkup, homeCss, removed }) => {
+        const { emptyDocument } = await import('/shared/cms.ts')
+        const { composedCanvas, extractComposedAbout, stripComposedCanvas } =
+          await import('/src/admin/cms/composedCanvas.ts')
+        const { nativeCanvas } = await import('/src/admin/cms/nativeCanvas.ts')
+        const desktopSlot = slot
+          ? '<div data-knc-slot="desktop-about"><section aria-labelledby="about-heading"></section></div>'
+          : ''
+        const homeHtml =
+          `<div data-knc-native="1"><div data-knc-surface="desktop-home"><h1 id="home-heading">Home</h1>${homeMarkup}${desktopSlot}</div>` +
+          '<div data-knc-surface="mobile-home"><div data-knc-slot="mobile-about"><section aria-labelledby="about-heading"></section></div></div></div>'
+        const aboutHtml =
+          '<div data-knc-native="1"><section id="about-root" data-knc-surface="about" aria-labelledby="about-heading"><h2 id="about-heading">About</h2><div id="owner-card" class="card"></div><p id="owner-note">About</p></section></div>'
+        const aboutCss = '.card{width:50%}#owner-note{color:red}'
+        const make = (path, html, css) => ({
+          id: path,
+          path,
+          kind: 'page',
+          name: { sv: path, en: path },
+          title: { sv: '', en: '' },
+          description: { sv: '', en: '' },
+          inMenu: true,
+          content: {
+            sv: { html, css: { light: css, dark: css } },
+            en: { html, css: { light: css, dark: css } },
+          },
+        })
+        const home = make('/', homeHtml, homeCss)
+        const about = make('/about', aboutHtml, aboutCss)
+        const pages = { ...emptyDocument().presentation, pages: [home, about] }
+        const canvas = composedCanvas(home, pages, 'sv', 'light')
+        // The owner deleted one of About's elements on the canvas; the canvas keeps its rule.
+        const edited = new globalThis.DOMParser().parseFromString(canvas.html, 'text/html')
+        if (removed) edited.querySelector(`[data-editor-about-slot] [id="${removed}"]`).remove()
+        const html = edited.body.innerHTML
+        // As Editor.tsx saves Home.
+        const extracted = extractComposedAbout(html, canvas.css, aboutHtml, {
+          about: aboutCss,
+          home: homeCss,
+        })
+        const stripped = stripComposedCanvas(html, canvas.css, 'default', {
+          about: extracted?.css ?? nativeCanvas(about.content.sv, 'light').css,
+          home: homeCss,
+          aboutHtml,
+        })
+        return { extracted: extracted !== null, canvas: canvas.css, home: stripped.css }
+      },
+      { slot, homeMarkup, homeCss, removed },
+    )
+    await test.info().attach('home-save-about-section-rules', {
+      body: JSON.stringify(result, null, 2),
+      contentType: 'application/json',
+    })
+    const context = JSON.stringify({ name, ...result })
+    assert.deepEqual(errors, [])
+    assert.equal(
+      result.extracted,
+      slot,
+      `A Home save extracts About exactly when About's section is on the canvas: ${context}`,
+    )
+    assert.ok(
+      result.canvas.includes('#owner-note{color:red}'),
+      `The canvas holds About's rule: ${context}`,
+    )
+    for (const rule of kept) assert.ok(result.home.includes(rule), `Home keeps ${rule}: ${context}`)
+    if (gone)
+      assert.ok(
+        !result.home.includes(gone),
+        `Home keeps no rule for ${gone}, which About's section holds: ${context}`,
+      )
   })
 }

@@ -54,6 +54,7 @@ import {
   connectCanvasStyles,
   exportNativeCanvas,
   legalCanvasBase,
+  nativeCanvas,
   parseCanvasCss,
   parseCanvasSheet,
   readCanvasCss,
@@ -601,7 +602,17 @@ export function CmsEditor(props: Props): JSX.Element {
         nativeExport.html,
         exportedCss,
         composedScene,
-        aboutExport ? { about: aboutExport.css, home: storedHome } : undefined,
+        // The extracted About sheet owns its copies here. With none extracted, About's stored
+        // sheet does, in the form the canvas imported it.
+        aboutOwner
+          ? {
+              about:
+                aboutExport?.css ??
+                nativeCanvas(aboutOwner.content[current.lang], current.mode).css,
+              home: storedHome,
+              aboutHtml: aboutOwner.content[current.lang].html,
+            }
+          : undefined,
       )
       const fragment = pageFragment(exported.html, wrapperId)
       const persisted = {

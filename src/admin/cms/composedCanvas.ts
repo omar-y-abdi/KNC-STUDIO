@@ -601,6 +601,11 @@ interface ComposedOwners {
   home: string
 }
 
+/** Home's export also needs About's stored markup: it names the section Home keeps no rule for. */
+interface ComposedHomeOwners extends ComposedOwners {
+  aboutHtml: string
+}
+
 /** GrapesJS imports a conditional block as one rule per child, so match either stored form. */
 function storedItems(css: string): Set<string> {
   const items = new Set<string>()
@@ -804,11 +809,12 @@ function dropHomeItems(
 }
 
 /** Home's stylesheet precedes About's on the public page, and About may not be mounted there.
+ * Rules for About's section are gone before this runs, except for IDs Home's own markup holds.
  * Only an item About holds verbatim and Home does not own may leave. Of equal layered items Home
  * owns as many as it stored, so About's copy of a layer Home also stored leaves and Home's stays.
  * A layer copy would outrank About's own, and a rule that lost an About ID would be a partial copy
- * of it. A layer may leave only when no layer About lacks stays behind it: that layer would then
- * precede it. */
+ * of it; an intact unlayered item is shared site CSS and stays. A layer may leave only when no
+ * layer About lacks stays behind it: that layer would then precede it. */
 function dropAboutCopies(
   sheet: StyleSheet,
   sources: ReadonlyMap<CssNode, string>,
@@ -836,13 +842,27 @@ function dropAboutCopies(
   })
 }
 
+/** The IDs of About's stored section, read as extractComposedAbout reads the stored original. A
+ * page without that section names none. */
+function storedAboutIds(html: string): string[] {
+  const section = new DOMParser()
+    .parseFromString(html, 'text/html')
+    .querySelector('[data-knc-surface="about"]')
+  if (!section) return []
+  return [section, ...section.querySelectorAll('[id]')]
+    .map((node) => node.id)
+    .filter((id) => id !== '')
+}
+
 /** Derived About previews never belong to the Home document. Persist only their slot marker;
- * the next render fills it from About again. Prune stale preview selectors and duplicate CSS. */
+ * the next render fills it from About again. Prune stale preview selectors and duplicate CSS.
+ * Home's export keeps no rule for About's section: with owners, every ID of About's stored
+ * section leaves too, also where the canvas lacks its element, unless Home's own markup holds it. */
 export function stripComposedCanvas(
   html: string,
   css: string,
   scene: CmsScene = 'default',
-  owners?: ComposedOwners,
+  owners?: ComposedHomeOwners,
 ): { html: string; css: string } {
   const doc = new DOMParser().parseFromString(html, 'text/html')
   if (isBookingStage(scene)) return { html: stripBookingScene(doc, scene), css }
@@ -866,6 +886,11 @@ export function stripComposedCanvas(
     for (const attr of [...section.attributes])
       if (attr.name !== 'aria-labelledby') section.removeAttribute(attr.name)
     section.setAttribute('data-knc-baseline', '{}')
+  }
+  if (owners) {
+    // The slot sections are empty now, so each ID left in the document is Home's own.
+    const own = new Set([...doc.querySelectorAll('[id]')].map((node) => node.id))
+    for (const id of storedAboutIds(owners.aboutHtml)) if (!own.has(id)) discarded.add(id)
   }
   const sheet = parse(css) as StyleSheet
   const sources = new Map(sheet.children.toArray().map((node) => [node, generate(node)]))
