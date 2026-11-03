@@ -1390,10 +1390,25 @@ test('cms-hierarchical-resize: the Studio nests a first guard ahead of a narrow-
     )
 })
 
-for (const [label, card, before, after] of [
+for (const [label, card, before, after, image] of [
   ['an aspect-ratio card stays square', { 'aspect-ratio': '1' }, [100, 100], [80, 80]],
   // Control: a stretched card fills its track, so its width follows the height change.
   ['a stretched card keeps its share of the track', {}, [400, 100], [320, 80]],
+  // An image card declares no aspect ratio; its 1200x630 file gives it one.
+  [
+    'an image card keeps the proportions of its file',
+    { padding: '0px', 'border-width': '0px' },
+    [(100 * 1200) / 630, 100],
+    [(80 * 1200) / 630, 80],
+    '/og-image.png',
+  ],
+  // An explicit stretch fills the track, also for a card with an aspect ratio.
+  [
+    'an explicitly stretched aspect-ratio card keeps its share of the track',
+    { 'aspect-ratio': '1', 'justify-self': 'stretch' },
+    [400, 100],
+    [320, 80],
+  ],
 ]) {
   test(`cms-hierarchical-resize: ${label} after a Desktop height change`, async ({
     page,
@@ -1401,12 +1416,18 @@ for (const [label, card, before, after] of [
   }) => {
     const { frame } = await openStudio(page, context, ['a', 'b'])
     await page.evaluate(
-      async ({ selector, card }) => {
+      async ({ selector, card, image }) => {
         const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
         const group = cmsGrapes.editors.at(-1).getWrapper().find(selector)[0]
         // Two 400px tracks; each card is a 100px border box with no automatic minimum width.
         group.addStyle({ 'grid-template-columns': '400px 400px', gap: '0px' })
-        for (const item of group.components())
+        for (const child of [...group.components()]) {
+          // An image takes the place of the card, with the card's identity.
+          const [item] = image
+            ? child.replaceWith(
+                `<img id="${child.getId()}" data-knc-source="${child.getAttributes()['data-knc-source']}" src="${image}" alt="">`,
+              )
+            : [child]
           item.addStyle({
             width: 'auto',
             height: '100px',
@@ -1414,8 +1435,9 @@ for (const [label, card, before, after] of [
             'min-width': '0px',
             ...card,
           })
+        }
       },
-      { selector: groupSelector, card },
+      { selector: groupSelector, card, image },
     )
     const grid = await frame.locator(groupSelector).evaluate((group) => {
       const style = group.ownerDocument.defaultView.getComputedStyle(group)
@@ -1423,17 +1445,25 @@ for (const [label, card, before, after] of [
     })
     assert.deepEqual(grid, { display: 'grid', columns: '400px 400px' }, 'The strip has two tracks')
     const sizes = async (stage, expected) => {
-      const { cards } = await measure(frame)
+      // An image card has the proportions of its file once the file is decoded.
+      await frame
+        .locator(`${groupSelector} > img`)
+        .evaluateAll((images) => Promise.all(images.map((item) => item.decode())))
+      const cards = await frame.locator(groupSelector).evaluate((group) =>
+        [...group.children].map((card) => {
+          const rect = card.getBoundingClientRect()
+          return { width: rect.width, height: rect.height }
+        }),
+      )
       assert.equal(cards.length, 2, `${stage}: both barber cards render`)
       for (const [index, item] of cards.entries())
         assert.ok(
-          Math.abs(item.rect.width - expected[0]) < 1 &&
-            Math.abs(item.rect.height - expected[1]) < 1,
-          `${stage}: card ${index} is ${item.rect.width}x${item.rect.height}, not ${expected.join('x')}`,
+          Math.abs(item.width - expected[0]) < 1 && Math.abs(item.height - expected[1]) < 1,
+          `${stage}: card ${index} is ${item.width}x${item.height}, not ${expected.join('x')}`,
         )
     }
     await sizes('Before', before)
-    await select(page, `${groupSelector} > div:first-child`)
+    await select(page, `${groupSelector} > :first-child`)
     await height(page, 80)
     await sizes('After the height change', after)
     // Leaving Desktop exports the sheet, and returning imports it again.
