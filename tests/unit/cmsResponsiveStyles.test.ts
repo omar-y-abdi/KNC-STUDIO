@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { gunzipSync } from 'node:zlib'
 import { parseFragment, type DefaultTreeAdapterMap } from 'parse5'
-import { generate, parse, walk, type StyleSheet } from 'css-tree'
+import { generate, parse, walk, type CssNode, type List, type StyleSheet } from 'css-tree'
 import {
   canvasDevice,
   editorDevices,
@@ -661,6 +661,66 @@ describe('resize guards on a component rule', () => {
         `#card{width:70%!important;${guard('card', '40%')}}${wrapper}{#card{width:${width}!important}}`
       const [, ...others] = editSheet(sheet('90%'), sheet('95%'))
       for (const variant of others) expect(valuesOf(variant, 'width')).toEqual(['40%', '95%'])
+    })
+
+  // One grouped Desktop block: a resize guard, then a deliberate narrow-Desktop rule. All three
+  // widths apply at 820px, so the 90% rule wins there only while it stays last.
+  const narrowDesktop = (first: string, width: string, appended = ''): string =>
+    `@media (min-width:769px){${first}#card{width:70%!important;${guard('card', width)}}@media (max-width:1100px){#card{width:90%!important}}}${appended}`
+  const resizeAfterPadding = (
+    first: string,
+    padded: string,
+    resized: string,
+  ): [string, ...string[]] => {
+    let page = cardPage(narrowDesktop(first, '40%'))
+    // Two separate edits, each synchronized from the stored result of the one before.
+    for (const css of [padded, resized]) {
+      const edited = structuredClone(page)
+      edited.content.sv.css.light = css
+      page = syncPageLayout(page, edited, 'sv', 'light')
+    }
+    return variantSheets(page)
+  }
+  const paddingRule = '@media (min-width:769px){#card{padding-left:10px}}'
+  const resizedRule = '@media (min-width:769px){#card{padding-left:10px;zoom:0.8}}'
+
+  // The editor imports the grouped block as one rule, so a Desktop edit adds a separate rule. The
+  // padding change empties the first #card block in the other sheets, and only there.
+  for (const [shape, padded, resized] of [
+    [
+      'adds a Desktop rule',
+      narrowDesktop('#card{padding-left:1px}', '40%', paddingRule),
+      narrowDesktop('#card{padding-left:1px}', '32%', resizedRule),
+    ],
+    [
+      'changes the first rule in place',
+      narrowDesktop('#card{padding-left:10px}', '40%'),
+      narrowDesktop('#card{padding-left:10px}', '32%'),
+    ],
+  ] as const)
+    it(`replaces a resized guard ahead of a later narrow-Desktop rule after an edit that ${shape}`, () => {
+      const [edit, ...others] = resizeAfterPadding('#card{padding-left:1px}', padded, resized)
+      expect(edit).toBe(resized)
+      for (const sheet of others) {
+        // 40% is replaced, not kept beside 32%, and 32% stays ahead of the narrow-Desktop rule.
+        expect(valuesOf(sheet, 'width')).toEqual(['70%', '32%', '90%'])
+        expect(valuesOf(sheet, 'padding-left')).toEqual(['10px'])
+      }
+    })
+
+  // Controls: the counterparts keep the earlier block, so the guard keeps its identity.
+  for (const [control, first] of [
+    ['keeps another declaration', '#card{padding-left:1px;color:black}'],
+    ['styles another element', '#other{padding-left:1px}'],
+  ] as const)
+    it(`replaces a resized guard in place when the earlier block ${control}`, () => {
+      const [edit, ...others] = resizeAfterPadding(
+        first,
+        narrowDesktop(first, '40%', paddingRule),
+        narrowDesktop(first, '32%', resizedRule),
+      )
+      for (const sheet of [edit, ...others])
+        expect(valuesOf(sheet, 'width')).toEqual(['70%', '32%', '90%'])
     })
 })
 
