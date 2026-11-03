@@ -533,6 +533,64 @@ async function verifyDeliveryStatus(page) {
   await purged.waitFor({ state: 'detached' })
 }
 
+async function deliveryRaceControl(page, action) {
+  await page.evaluate(
+    async (action) => (await import('/tools/e2e/admin-harness.tsx')).deliveryRaceControl(action),
+    action,
+  )
+}
+
+// An older log page asked for before both lists reload belongs to the list that was replaced.
+// Landing after the reloaded first page, it must neither replace that page nor raise a notice.
+async function verifyDeliveryReloadRace(page, trigger, stale) {
+  await page.goto(`${baseUrl}/tools/e2e/admin-harness.html`, { waitUntil: 'domcontentloaded' })
+  await page.evaluate(
+    async (stale) => (await import('/tools/e2e/admin-harness.tsx')).mountDeliveryRaceHarness(stale),
+    stale,
+  )
+  const failedRead = page
+    .getByRole('alert')
+    .filter({ hasText: 'Kunde inte läsa misslyckade mejlleveranser.' })
+  await failedRead.waitFor()
+  const log = page.getByRole('list', { name: 'Mejllogg', exact: true })
+  await log.getByText('Mejl två', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Visa fler', exact: true }).click()
+  await page.getByRole('button', { name: 'Hämtar …', exact: true }).waitFor()
+  if (trigger === 'retry')
+    await failedRead.getByRole('button', { name: 'Försök igen', exact: true }).click()
+  else await deliveryRaceControl(page, 'swap-port')
+  await log.getByText('Nytt mejl', { exact: true }).waitFor()
+  await deliveryRaceControl(page, 'release')
+  // Observe a painted turn after the held page settled.
+  await afterPaint(page)
+  const subjects = () => log.locator('li strong').allTextContents()
+  const reloaded = await subjects()
+  assert.deepEqual(
+    reloaded,
+    ['Nytt mejl', 'Mejl ett'],
+    `the held older page replaced the reloaded log: ${JSON.stringify(reloaded)}`,
+  )
+  const alerts = await page.getByRole('alert').allTextContents()
+  assert.deepEqual(alerts, [], `the abandoned page raised a notice: ${JSON.stringify(alerts)}`)
+  await page.getByRole('button', { name: 'Visa fler', exact: true }).click()
+  await log.getByText('Mejl tre', { exact: true }).waitFor()
+  const appended = await subjects()
+  assert.deepEqual(
+    appended,
+    ['Nytt mejl', 'Mejl ett', 'Mejl två', 'Mejl tre'],
+    `the next page did not append the older entries in order: ${JSON.stringify(appended)}`,
+  )
+  await page.getByRole('button', { name: 'Visa fler', exact: true }).waitFor({ state: 'detached' })
+  const cursors = await page.evaluate(async () =>
+    (await import('/tools/e2e/admin-harness.tsx')).deliveryStatusCursors(),
+  )
+  assert.deepEqual(
+    cursors,
+    [null, '2096-01-03T09:00:00.000002+00:00', null, '2096-01-03T10:00:00.000003+00:00'],
+    `the next page did not continue from the reloaded first page: ${JSON.stringify(cursors)}`,
+  )
+}
+
 async function settingsControl(page, action) {
   return page.evaluate(
     async (action) => (await import('/tools/e2e/admin-harness.tsx')).settingsControl(action),
@@ -2737,6 +2795,7 @@ export {
   verifyAdminSession,
   verifyMutationReentry,
   verifyDeliveryStatus,
+  verifyDeliveryReloadRace,
   verifySettingsCancellation,
   verifyContactOwnership,
   verifyDelayedCatalog,

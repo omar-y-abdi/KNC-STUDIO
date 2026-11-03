@@ -5,6 +5,7 @@ import {
   verifyAdminSession,
   verifyMutationReentry,
   verifyDeliveryStatus,
+  verifyDeliveryReloadRace,
   verifySettingsCancellation,
   verifyContactOwnership,
   verifyDelayedCatalog,
@@ -36,6 +37,12 @@ const cases = [
     ['target ' + kind, (page) => verifyMutationReentry(page, kind, 'target', true)],
   ]),
   ['delivery status', verifyDeliveryStatus],
+  ...['retry', 'port'].flatMap((trigger) =>
+    ['page', 'error'].map((stale) => [
+      `delivery reload race ${trigger} ${stale}`,
+      (page) => verifyDeliveryReloadRace(page, trigger, stale),
+    ]),
+  ),
   ...['owner', 'barber', 'load-failure', 'revisit-during-save'].map((scenario) => [
     'settings cancellation ' + scenario,
     (page) => verifySettingsCancellation(page, scenario),

@@ -566,6 +566,94 @@ export function mountDeliveryStatusHarness(): void {
   render(h(DeliveryStatus, { port }), root())
 }
 
+let deliveryRace: { release: () => void; swapPort: () => void } | undefined
+
+/** Releases the held older log page, or gives the mounted view the same port as a new object. */
+export function deliveryRaceControl(action: 'release' | 'swap-port'): void {
+  if (deliveryRace === undefined) throw new Error('delivery race harness not mounted')
+  if (action === 'release') deliveryRace.release()
+  else deliveryRace.swapPort()
+}
+
+/** Log pages of two entries. The first load lists Mejl ett and Mejl två; every later first page
+ * has a newer mail on top, so its cursor is Mejl ett. The older page asked for after Mejl två is
+ * held until released, then answers `stale`. The failed list fails its first read only. */
+export function mountDeliveryRaceHarness(stale: 'page' | 'error'): void {
+  deliveryCursors = []
+  const gate = deferred()
+  const entry = (id: string, subject: string, createdAt: string) => ({
+    id,
+    createdAt,
+    kind: 'auth_recovery' as const,
+    recipient: 'ada@example.com',
+    subject,
+    outcome: { status: 'sent' as const },
+    attemptCount: 1,
+  })
+  const newest = entry(
+    '55555555-5555-4555-8555-555555555550',
+    'Nytt mejl',
+    '2096-01-03T11:00:00.000004+00:00',
+  )
+  const one = entry(
+    '55555555-5555-4555-8555-555555555551',
+    'Mejl ett',
+    '2096-01-03T10:00:00.000003+00:00',
+  )
+  const two = entry(
+    '55555555-5555-4555-8555-555555555552',
+    'Mejl två',
+    '2096-01-03T09:00:00.000002+00:00',
+  )
+  const three = entry(
+    '55555555-5555-4555-8555-555555555553',
+    'Mejl tre',
+    '2096-01-03T08:00:00.000001+00:00',
+  )
+  const after = (last: typeof one) => ({ before: last.createdAt, beforeId: last.id })
+  let failedReads = 0
+  let firstPages = 0
+  const port: DeliveryStatusPort = {
+    listFailed: () => {
+      failedReads += 1
+      return Promise.resolve(
+        failedReads === 1 ? err('network', 'Kunde inte läsa misslyckade mejlleveranser.') : ok([]),
+      )
+    },
+    retry: () => Promise.resolve(ok(true)),
+    discard: () => Promise.resolve(ok(true)),
+    listLog: (cursor) => {
+      deliveryCursors = [...deliveryCursors, cursor?.before ?? null]
+      if (cursor === null) {
+        firstPages += 1
+        return Promise.resolve(
+          firstPages === 1
+            ? ok({ entries: [one, two], next: after(two) })
+            : ok({ entries: [newest, one], next: after(one) }),
+        )
+      }
+      if (cursor.before === two.createdAt)
+        return gate.promise.then(() =>
+          stale === 'error'
+            ? err('network', 'Kunde inte läsa leveransstatus för mejl.')
+            : ok({ entries: [three], next: after(three) }),
+        )
+      return Promise.resolve(
+        cursor.before === one.createdAt
+          ? ok({ entries: [two, three], next: null })
+          : ok({ entries: [], next: null }),
+      )
+    },
+    readCopy: () => Promise.resolve(err('not_found', 'Kopian har rensats (äldre än 30 dagar).')),
+  }
+  const target = root()
+  deliveryRace = {
+    release: gate.release,
+    swapPort: () => render(h(DeliveryStatus, { port: { ...port } }), target),
+  }
+  render(h(DeliveryStatus, { port }), target)
+}
+
 type SettingsAction = 'load' | 'release-save' | 'unmount' | 'remount' | 'snapshot'
 let settingsHarness:
   | {
