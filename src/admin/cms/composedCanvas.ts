@@ -7,6 +7,7 @@ import {
   List,
   parse,
   walk,
+  type Block,
   type CssNode,
   type ListItem,
   type Rule,
@@ -541,13 +542,15 @@ export function moveBookingScene(editor: Editor, scene: CmsScene, device: Canvas
 }
 
 function deduplicateRules(sheet: CssNode): void {
-  // GrapesJS merges repeated media/keyframe blocks, so deduplicate their children too.
+  // GrapesJS merges repeated media/keyframe blocks, so deduplicate their children too. Only an
+  // earlier unlayered copy is inert. A layered item is a layer of its own or names a layer where
+  // it stands, so equal text does not make two of them interchangeable.
   walk(sheet, {
     leave(node: CssNode) {
       if (node.type !== 'StyleSheet' && node.type !== 'Block') return
       const seen = new Map<string, { item: Parameters<typeof node.children.remove>[0] }>()
       node.children.forEach((child, item) => {
-        if (child.type !== 'Rule' && child.type !== 'Atrule') return
+        if ((child.type !== 'Rule' && child.type !== 'Atrule') || hasLayer(child)) return
         const key = generate(child)
         const earlier = seen.get(key)
         if (earlier) node.children.remove(earlier.item)
@@ -615,8 +618,117 @@ function storedItems(css: string): Set<string> {
   return items
 }
 
+/** Home's items precede About's on the canvas, so of equal layered items Home owns the first ones,
+ * as many as it stored. */
+function homeOwned(
+  sheet: StyleSheet,
+  sources: ReadonlyMap<CssNode, string>,
+  home: string,
+): Set<CssNode> {
+  const stored = new Map<string, number>()
+  for (const node of parseCanvasSheet(home).children) {
+    if (!hasLayer(node)) continue
+    const text = generate(node)
+    stored.set(text, (stored.get(text) ?? 0) + 1)
+  }
+  const owned = new Set<CssNode>()
+  sheet.children.forEach((node) => {
+    const source = sources.get(node) ?? ''
+    const left = stored.get(source) ?? 0
+    if (!left) return
+    stored.set(source, left - 1)
+    owned.add(node)
+  })
+  return owned
+}
+
+/** A top-level layer that an item names. */
+interface LayerMention {
+  /** A named layer by its name; an anonymous layer, a layer of its own, by its block. */
+  readonly layer: string | CssNode
+  /** The item's rules from the item itself down to the layer rule. The layer is named only while
+   * every rule above it applies, so a mention with no rule above it always applies. */
+  readonly path: readonly CssNode[]
+  /** The layer holds an !important declaration. */
+  readonly important: boolean
+}
+
+/** The top-level layers an item names, in source order. A sublayer such as `a.b`, or a layer
+ * inside a layer, takes its place within its top layer. */
+function layerMentions(node: CssNode): LayerMention[] {
+  const mentions: LayerMention[] = []
+  const path: CssNode[] = []
+  let depth = 0
+  walk(node, {
+    enter(child: CssNode) {
+      if (child.type !== 'Atrule' && child.type !== 'Rule') return
+      path.push(child)
+      if (child.type !== 'Atrule' || ident.decode(child.name).toLowerCase() !== 'layer') return
+      if (depth++ > 0) return
+      let important = false
+      walk(child, {
+        visit: 'Declaration',
+        enter(declaration) {
+          if (declaration.important) important = true
+        },
+      })
+      const list = child.prelude?.type === 'AtrulePrelude' ? child.prelude.children.first : null
+      const layers: (string | CssNode)[] = []
+      if (!child.prelude) layers.push(child)
+      else if (list && String(list.type) === 'LayerList' && 'children' in list && list.children)
+        list.children.forEach((layer) => {
+          const name = generate(layer)
+          const dot = name.search(/[^\\]\./)
+          layers.push(dot < 0 ? name : name.slice(0, dot + 1))
+        })
+      else layers.push(generate(child.prelude))
+      for (const layer of layers) mentions.push({ layer, path: [...path], important })
+    },
+    leave(child: CssNode) {
+      if (child.type !== 'Atrule' && child.type !== 'Rule') return
+      path.pop()
+      if (child.type === 'Atrule' && ident.decode(child.name).toLowerCase() === 'layer') depth--
+    },
+  })
+  return mentions
+}
+
+/** An item cut down to some of its layer mentions: each named layer emptied, inside the rules that
+ * hold it in the item. It names those layers exactly where and when the item did, and holds
+ * nothing else. */
+function skeleton(node: CssNode, mentions: readonly LayerMention[], depth = 0): CssNode[] {
+  if (node.type !== 'Atrule' && node.type !== 'Rule') return []
+  const here = mentions.filter(({ path }) => path[depth] === node)
+  if (here.every(({ path }) => path.length === depth + 1))
+    return here.flatMap(({ layer }) =>
+      typeof layer === 'string'
+        ? (parse(`@layer ${layer}{}`) as StyleSheet).children.toArray()
+        : [],
+    )
+  const children = (node.block?.children.toArray() ?? []).flatMap((child) =>
+    skeleton(child, here, depth + 1),
+  )
+  const block: Block = { type: 'Block', children: new List<CssNode>().fromArray(children) }
+  return [{ ...node, block }]
+}
+
 /** A Home item stays out of About unless About stored it or names it: a remainder would follow
- * Home's rule on the public page and override it. Anything unproven stays, so nothing is lost. */
+ * Home's rule on the public page and override it. Anything unproven stays, so nothing is lost. A
+ * layered item Home owns counts as Home's even where About stored the same text: About's own copy
+ * follows it on the canvas.
+ * Dropping Home's items must also leave About's own cascade as it was. Only a kept item that About
+ * did not store can name a layer before About's own blocks do, and it fixes that layer's place only
+ * where it always applies: a condition can keep it from naming the layer at all. That matters when
+ * it puts one of About's named layers behind a layer About orders after it, or behind a new layer
+ * when both hold !important declarations: the new layer's would then win. The dropped Home items
+ * that named About's layer earlier then leave an empty copy of it, inside the rules that held it,
+ * up to the first that always applies. The copies go directly before the first kept item that needs
+ * them, in About's order, so About opened on its own keeps that order, and a kept item before them
+ * still loses to About's block with its normal declarations. Home keeps every mention the copies
+ * repeat, so the public page, which renders Home's sheet first, does not change. Without
+ * !important on both sides a new layer needs none: its normal declarations lose to About's later
+ * block, and !important beats normal in any order. An anonymous layer of About's needs none
+ * either. It is keyed by its own block, so no Home item names it. */
 function dropHomeItems(
   sheet: StyleSheet,
   sources: ReadonlyMap<CssNode, string>,
@@ -625,24 +737,78 @@ function dropHomeItems(
 ): void {
   const about = storedItems(owners.about)
   const home = storedItems(owners.home)
-  sheet.children.forEach((node, item, list) => {
+  const owned = homeOwned(sheet, sources, owners.home)
+  const held = new Set<CssNode>()
+  const homeItems = new Set<CssNode>()
+  sheet.children.forEach((node) => {
     const source = sources.get(node) ?? ''
     const remainder = generate(node)
-    if (about.has(source) || about.has(remainder)) return
+    if (!owned.has(node) && (about.has(source) || about.has(remainder))) {
+      held.add(node)
+      return
+    }
     // The canvas has one body, so an unstored root rule belongs to the Home being edited.
     const root = bindCmsRootStyles(source, 'root') !== source
     if (
       (root || home.has(source) || home.has(remainder)) &&
       !namesId(node, (id) => aboutIds.has(id))
     )
-      list.remove(item)
+      homeItems.add(node)
+  })
+  const entries = sheet.children
+    .toArray()
+    .flatMap((node) => layerMentions(node).map((mention) => ({ node, mention })))
+  // A kept mention fixes a layer's place for what follows it when it is About's own or always
+  // applies.
+  const settled = (layer: string | CssNode, at: number): boolean =>
+    entries
+      .slice(0, at)
+      .some(
+        ({ node, mention }) =>
+          mention.layer === layer &&
+          !homeItems.has(node) &&
+          (held.has(node) || mention.path.length === 1),
+      )
+  const important = (layer: string | CssNode): boolean =>
+    entries.some(
+      ({ node, mention }) => mention.layer === layer && mention.important && !homeItems.has(node),
+    )
+  const order = [
+    ...new Set(entries.filter(({ node }) => held.has(node)).map(({ mention }) => mention.layer)),
+  ]
+  const placed = new Set<LayerMention>()
+  const copies = new Map<CssNode, CssNode[]>()
+  entries.forEach(({ node, mention: opened }, at) => {
+    if (homeItems.has(node)) return
+    const rank = order.indexOf(opened.layer)
+    for (const layer of order) {
+      if (layer === opened.layer || settled(layer, at)) continue
+      if (rank < 0 ? !(important(opened.layer) && important(layer)) : order.indexOf(layer) > rank)
+        continue
+      const named = entries
+        .slice(0, at)
+        .filter(({ node, mention }) => homeItems.has(node) && mention.layer === layer)
+      const always = named.findIndex(({ mention }) => mention.path.length === 1)
+      for (const { node: dropped, mention } of always < 0 ? named : named.slice(0, always + 1)) {
+        if (placed.has(mention)) continue
+        placed.add(mention)
+        copies.set(node, [...(copies.get(node) ?? []), ...skeleton(dropped, [mention])])
+      }
+    }
+  })
+  sheet.children.forEach((node, item, list) => {
+    const before = copies.get(node)
+    if (before) list.insertList(new List<CssNode>().fromArray(before), item)
+    if (homeItems.has(node)) list.remove(item)
   })
 }
 
 /** Home's stylesheet precedes About's on the public page, and About may not be mounted there.
- * Only an item About holds verbatim and Home never owned may leave. A layer copy would outrank
- * About's own, and a rule that lost an About ID would be a partial copy of it. A layer may leave
- * only when no layer About lacks stays behind it: that layer would then precede it. */
+ * Only an item About holds verbatim and Home does not own may leave. Of equal layered items Home
+ * owns as many as it stored, so About's copy of a layer Home also stored leaves and Home's stays.
+ * A layer copy would outrank About's own, and a rule that lost an About ID would be a partial copy
+ * of it. A layer may leave only when no layer About lacks stays behind it: that layer would then
+ * precede it. */
 function dropAboutCopies(
   sheet: StyleSheet,
   sources: ReadonlyMap<CssNode, string>,
@@ -650,6 +816,7 @@ function dropAboutCopies(
 ): void {
   const about = storedItems(owners.about)
   const home = storedItems(owners.home)
+  const owned = homeOwned(sheet, sources, owners.home)
   let keptLayer = false
   sheet.children.forEachRight((node, item, list) => {
     const source = sources.get(node) ?? ''
@@ -657,15 +824,14 @@ function dropAboutCopies(
     const layered = hasLayer(node)
     if (
       about.has(source) &&
-      !home.has(source) &&
-      !home.has(remainder) &&
+      (layered ? !owned.has(node) : !home.has(source) && !home.has(remainder)) &&
       (source !== remainder || layered) &&
       !(layered && keptLayer)
     ) {
       list.remove(item)
       return
     }
-    // A copy Home stored stays Home's: deduplication would hoist it over a layer it blocked here.
+    // A kept item About also holds is Home's own or already blocked; About's copies follow Home's.
     if (layered && !about.has(source)) keptLayer = true
   })
 }
