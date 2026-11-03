@@ -3,7 +3,7 @@
 // unresolved delivery cannot be deleted, purged or removed with its barber until delivery finishes
 // or the owner marks it handled here.
 import type { JSX } from 'preact'
-import { useEffect, useState } from 'preact/hooks'
+import { useEffect, useRef, useState } from 'preact/hooks'
 import type { EmailSendKind, EmailSendOutcome } from '../../../shared/email-send-log'
 import {
   discardFailedBookingEmailDelivery,
@@ -122,9 +122,20 @@ export function DeliveryStatus({ port = defaultPort }: { port?: DeliveryStatusPo
     readonly copy: Loaded<EmailSendLogCopy>
   } | null>(null)
   const [reload, setReload] = useState(0)
+  // Bumped each time both lists load anew; a further page of the older log that lands after that is
+  // dropped, and so is its error. Försök igen bumps it on the click itself, since the effect runs
+  // only after the next paint. A new port bumps it in the effect alone, which leaves that window
+  // open, but production mounts <DeliveryStatus /> without a port (DomainPanels.tsx), so its port
+  // never changes.
+  const loadGeneration = useRef(0)
+  const retry = (): void => {
+    loadGeneration.current += 1
+    setReload((count) => count + 1)
+  }
 
   useEffect(() => {
     let active = true
+    loadGeneration.current += 1
     setFailed({ state: 'loading' })
     setLog({ state: 'loading' })
     void port.listFailed().then((result) => {
@@ -171,8 +182,10 @@ export function DeliveryStatus({ port = defaultPort }: { port?: DeliveryStatusPo
 
   const loadMore = async (current: LogState): Promise<void> => {
     if (current.next === null) return
+    const generation = loadGeneration.current
     setLog({ state: 'ready', value: { ...current, more: 'loading' } })
     const result = await port.listLog(current.next)
+    if (loadGeneration.current !== generation) return
     if (!result.ok) {
       setLog({ state: 'ready', value: { ...current, more: 'idle' } })
       setNotice(result.error.message)
@@ -223,7 +236,7 @@ export function DeliveryStatus({ port = defaultPort }: { port?: DeliveryStatusPo
         {failed.state === 'error' && (
           <p class="cms-notice" role="alert">
             <span>{failed.message}</span>
-            <button type="button" onClick={() => setReload((count) => count + 1)}>
+            <button type="button" onClick={retry}>
               Försök igen
             </button>
           </p>
@@ -286,7 +299,7 @@ export function DeliveryStatus({ port = defaultPort }: { port?: DeliveryStatusPo
         {log.state === 'error' && (
           <p class="cms-notice" role="alert">
             <span>{log.message}</span>
-            <button type="button" onClick={() => setReload((count) => count + 1)}>
+            <button type="button" onClick={retry}>
               Försök igen
             </button>
           </p>

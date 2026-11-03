@@ -541,7 +541,9 @@ async function deliveryRaceControl(page, action) {
 }
 
 // An older log page asked for before both lists reload belongs to the list that was replaced.
-// Landing after the reloaded first page, it must neither replace that page nor raise a notice.
+// Landing after the reloaded first page, or (`retry-window`) right after the retry click's own
+// handler and before the reload that click starts, it must neither replace that page nor raise a
+// notice.
 async function verifyDeliveryReloadRace(page, trigger, stale) {
   await page.goto(`${baseUrl}/tools/e2e/admin-harness.html`, { waitUntil: 'domcontentloaded' })
   await page.evaluate(
@@ -556,11 +558,11 @@ async function verifyDeliveryReloadRace(page, trigger, stale) {
   await log.getByText('Mejl två', { exact: true }).waitFor()
   await page.getByRole('button', { name: 'Visa fler', exact: true }).click()
   await page.getByRole('button', { name: 'Hämtar …', exact: true }).waitFor()
-  if (trigger === 'retry')
-    await failedRead.getByRole('button', { name: 'Försök igen', exact: true }).click()
-  else await deliveryRaceControl(page, 'swap-port')
+  if (trigger === 'retry-window') await deliveryRaceControl(page, 'release-after-click')
+  if (trigger === 'port') await deliveryRaceControl(page, 'swap-port')
+  else await failedRead.getByRole('button', { name: 'Försök igen', exact: true }).click()
   await log.getByText('Nytt mejl', { exact: true }).waitFor()
-  await deliveryRaceControl(page, 'release')
+  if (trigger !== 'retry-window') await deliveryRaceControl(page, 'release')
   // Observe a painted turn after the held page settled.
   await afterPaint(page)
   const subjects = () => log.locator('li strong').allTextContents()

@@ -241,6 +241,23 @@ describe('a created page under a homepage logo whose text contains URL(', () => 
       expect(references).toEqual(['cms-logo-paint'])
     },
   )
+
+  // Of the SVG attributes that can name an id with url(), the validators accept only fill, stroke,
+  // clip-path and mask on a logo (style and data-knc-* are stripped from it), so only those four
+  // are renamed. Allowing one of these means renaming it too.
+  it.each(['filter', 'marker-start', 'marker-mid', 'marker-end', 'cursor'])(
+    'cannot publish a logo whose %s names one of its ids',
+    (name) => {
+      const presentation = withLogo(
+        `<svg viewBox="0 0 10 10">${gradient}<rect width="10" height="10" ${name}="url(#paint)"></rect></svg>`,
+      )
+      const document = { ...emptyDocument(), presentation }
+      expect(() => {
+        validateDocument(document)
+        validateDocumentMarkupPlacements(document, policy)
+      }).toThrow(`Unsupported attribute ${name}`)
+    },
+  )
 })
 
 // A created page as main (93ff329) stored it: `html` is main's createSitePage output, byte for byte,
@@ -289,6 +306,10 @@ function setHref(link: Element, href: string): void {
   link.attrs = link.attrs.map((item) => (item.name === 'href' ? { ...item, value: href } : item))
 }
 const otherLang = (lang: CmsLang): CmsLang => (lang === 'sv' ? 'en' : 'sv')
+// The mode main's theme action named for each requested mode, read from main's own
+// renderSitePage (light, dark) and renderIndependentSitePage (auto) on LEGACY_HTML: the other
+// pinned mode, and dark when the response follows the OS.
+const MAIN_THEME_MODE = { light: 'dark', dark: 'light', auto: 'dark' } as const
 
 describe('a created page stored with a frozen header by main', () => {
   afterEach(() => {
@@ -315,7 +336,7 @@ describe('a created page stored with a frozen header by main', () => {
       (['light', 'dark', 'auto'] as const).map((mode) => ({ lang, mode })),
     ),
   )(
-    '$lang $mode: the language switch keeps the shown mode; the stored page and CSS are served intact',
+    '$lang $mode: the language switch keeps the shown mode and the theme switch matches main; the stored page and CSS are served intact',
     async ({ lang, mode }) => {
       const page = legacyPage()
       const stored = page.content[lang]
@@ -327,11 +348,9 @@ describe('a created page stored with a frozen header by main', () => {
       expect(value(action(served, 'cms-site-action-language'), 'href')).toBe(language)
       const expected = withId(parseFragment(stored.html), 'cms-site-shell')
       setHref(action(expected, 'cms-site-action-language'), language)
-      // Dark: main's Worker also pointed the theme action at mode=light. This tree serves the stored
-      // mode=dark, which CMS_THEME_SCRIPT retargets in the browser; whether the Worker retargets it
-      // as well is not settled, so that one href is left out of the comparison.
-      if (mode === 'dark')
-        for (const tree of [served, expected]) setHref(action(tree, 'cms-site-action-theme'), '')
+      const theme = `/hemsida?lang=${lang}&mode=${MAIN_THEME_MODE[mode]}`
+      expect(value(action(served, 'cms-site-action-theme'), 'href')).toBe(theme)
+      setHref(action(expected, 'cms-site-action-theme'), theme)
       expect(serializeOuter(served)).toBe(serializeOuter(expected))
       expect(html).toContain(stored.html.slice(stored.html.indexOf('<nav id="cms-site-menu"')))
       for (const scheme of mode === 'auto' ? (['light', 'dark'] as const) : [mode])
@@ -354,5 +373,46 @@ describe('a created page stored with a frozen header by main', () => {
     ).toBe('/hemsida?lang=en&mode=dark')
     const stored = page.content.sv.html
     expect(html).toContain(stored.slice(stored.indexOf('<nav id="cms-site-menu"')))
+  })
+
+  it('finds untagged actions by their labels and rewrites only their href values, in their own quotes', async () => {
+    // Main's Studio edited the whole stored page, header included; main matched an action without
+    // its class by the label it gave the action.
+    const edited = LEGACY_HTML.sv
+      .replace(' class="cms-site-action-language"', '')
+      .replace(' class="cms-site-action-theme"', '')
+      .replace('href="/hemsida?lang=en&amp;mode=light"', "href='/hemsida?lang=en&mode=light'")
+      .replace('title="Växla ljust/mörkt"', "title='Växla ljust/mörkt'")
+    expect(edited).not.toContain('cms-site-action-')
+    const page = legacyPage({ sv: edited, en: LEGACY_HTML.en })
+    const html = await serve(withLegacy(page), '/hemsida?lang=sv&mode=dark')
+    expect(html).toContain(
+      edited
+        .replace("href='/hemsida?lang=en&mode=light'", "href='/hemsida?lang=en&amp;mode=dark'")
+        .replace('href="/hemsida?lang=sv&amp;mode=dark"', 'href="/hemsida?lang=sv&amp;mode=light"'),
+    )
+  })
+
+  it.each([
+    ['an action title', 'title="Växla ljust/mörkt"', 'title="Växla ljust/mörkt </header>"'],
+    [
+      'a comment',
+      '<header id="cms-site-header">',
+      '<header id="cms-site-header"><!-- </header> -->',
+    ],
+  ])('retargets both actions when the first </header> sits in %s', async (_where, from, to) => {
+    const edited = LEGACY_HTML.sv.replace(from, to)
+    // The markup up to the first `</header>` leaves out the theme action, so only the whole
+    // markup's parse finds both.
+    expect(edited.indexOf('</header>')).toBeLessThan(
+      edited.indexOf(' class="cms-site-action-theme"'),
+    )
+    const page = legacyPage({ sv: edited, en: LEGACY_HTML.en })
+    const html = await serve(withLegacy(page), '/hemsida?lang=sv&mode=dark')
+    expect(html).toContain(
+      edited
+        .replace('href="/hemsida?lang=en&amp;mode=light"', 'href="/hemsida?lang=en&amp;mode=dark"')
+        .replace('href="/hemsida?lang=sv&amp;mode=dark"', 'href="/hemsida?lang=sv&amp;mode=light"'),
+    )
   })
 })

@@ -43,6 +43,11 @@ const cases = [
       (page) => verifyDeliveryReloadRace(page, trigger, stale),
     ]),
   ),
+  // An error, unlike a page, leaves a notice that the reload does not clear.
+  [
+    'delivery reload race retry-window error',
+    (page) => verifyDeliveryReloadRace(page, 'retry-window', 'error'),
+  ],
   ...['owner', 'barber', 'load-failure', 'revisit-during-save'].map((scenario) => [
     'settings cancellation ' + scenario,
     (page) => verifySettingsCancellation(page, scenario),
