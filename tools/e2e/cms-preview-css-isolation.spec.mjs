@@ -587,3 +587,451 @@ test('Home saves keep a stored layer copy ahead of the layer before it in About'
   assert.equal(result.home, blue)
   assert.equal(result.about, result.aboutCss)
 })
+
+// A Home save can leave a Home layer rule that styles an About ID in About's own sheet. On public
+// Home, an earlier Home block puts About's named layer before that rule's layer. About's own sheet
+// must keep that layer order, or About opened on its own lets the rule win a cascade it lost on Home.
+const layerOrders = [
+  {
+    name: 'an empty named layer orders an anonymous one',
+    homeCss: '@layer first {} @layer { #owner-card { color: blue !important } }',
+  },
+  {
+    name: 'a layer statement orders an anonymous one',
+    homeCss: '@layer first; @layer { #owner-card { color: blue !important } }',
+  },
+  {
+    name: 'the named layer styles an About ID itself',
+    homeCss:
+      '@layer first { #owner-card { --anchor: 1; } } @layer { #owner-card { color: blue !important } }',
+  },
+  {
+    name: 'the anonymous layer styles only Home',
+    homeCss: '@layer first {} @layer { #home-heading { color: blue !important } }',
+  },
+]
+// The name of the first layer a sheet mentions: '' for an anonymous layer.
+const firstLayerName = (css) => /@layer\s*([^\s{;,]*)/.exec(css)?.[1]
+
+for (const { name, homeCss } of layerOrders) {
+  test(`Home text saves keep the About layer order About opens with (${name})`, async ({
+    page,
+  }) => {
+    const errors = []
+    page.on('pageerror', (error) => errors.push(error.message))
+    await page.setViewportSize({ width: 1600, height: 1000 })
+    await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
+    const result = await page.evaluate(async (homeCss) => {
+      const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+      const { emptyDocument, validateDocument } = await import('/shared/cms.ts')
+      const { validateDocumentMarkupPlacements } = await import('/shared/cms-markup.ts')
+      const { CORE_PAGE_IDS } = await import('/src/admin/cms/corePages.ts')
+      const { composedCanvasPasses, extractComposedAbout, stripComposedCanvas } =
+        await import('/src/admin/cms/composedCanvas.ts')
+      const { connectCanvasStyles, exportNativeCanvas, parseCanvasCss, readCanvasCss } =
+        await import('/src/admin/cms/nativeCanvas.ts')
+      const { bindCmsRootStyles, canonicalizeCmsRootStyles } =
+        await import('/src/admin/cms/cmsRootStyles.ts')
+      const { syncResponsiveText } = await import('/src/admin/cms/responsiveText.ts')
+      const { syncPageLayout } = await import('/src/admin/cms/responsiveStyles.ts')
+      const policy = {
+        siteOrigin: globalThis.location.origin,
+        storageOrigin: 'https://storage.example.test',
+      }
+      const homeHtml =
+        '<div data-knc-native="1"><div data-knc-surface="desktop-home"><h1 id="home-heading">Home</h1><div data-knc-slot="desktop-about"><section aria-labelledby="about-heading"></section></div></div><div data-knc-surface="mobile-home"><div data-knc-slot="mobile-about"><section aria-labelledby="about-heading"></section></div></div></div>'
+      const aboutHtml =
+        '<div data-knc-native="1"><section id="about-root" data-knc-surface="about" aria-labelledby="about-heading"><h2 id="about-heading">About</h2><div id="owner-card" class="card"></div></section></div>'
+      const aboutCss = '@layer first { .card { color: red !important } }'
+      const make = (id, path, html, css) => ({
+        id,
+        path,
+        kind: 'page',
+        name: { sv: path, en: path },
+        title: { sv: '', en: '' },
+        description: { sv: '', en: '' },
+        inMenu: true,
+        content: {
+          sv: { html, css: { light: css, dark: css } },
+          en: { html, css: { light: css, dark: css } },
+        },
+      })
+      const document = emptyDocument()
+      document.presentation.pages = [
+        make(CORE_PAGE_IDS[0], '/', homeHtml, homeCss),
+        make(CORE_PAGE_IDS[1], '/about', aboutHtml, aboutCss),
+      ]
+      // The publication validators accept every stored state. They canonicalize a copy.
+      const validate = () => {
+        const copy = globalThis.structuredClone(document)
+        validateDocument(copy)
+        validateDocumentMarkupPlacements(copy, policy)
+      }
+      validate()
+      const stored = (path) => document.presentation.pages.find((item) => item.path === path)
+      // Open a page as Editor.tsx does: its composed tree, then its bound and masked sheet.
+      const mount = async (page) => {
+        const passes = composedCanvasPasses(
+          page,
+          document.presentation,
+          'sv',
+          'light',
+          'default',
+          'Desktop',
+          false,
+        )
+        let step = passes.next()
+        while (!step.done) step = passes.next()
+        const canvas = step.value
+        const host = globalThis.document.createElement('div')
+        host.style.width = '1500px'
+        host.style.height = '900px'
+        globalThis.document.body.append(host)
+        const editor = cmsGrapes.init({
+          container: host,
+          storageManager: false,
+          cssIcons: '',
+          telemetry: false,
+          avoidInlineStyle: true,
+          protectedCss: '',
+          mediaCondition: 'min-width',
+          selectorManager: { componentFirst: true },
+          components: canvas.html,
+          deviceManager: {
+            devices: [{ id: 'Desktop', width: '1440px', widthMedia: '769px' }],
+          },
+        })
+        const release = connectCanvasStyles(editor, canvas.projectStyles)
+        await new Promise((resolve) => editor.on('load', resolve))
+        editor.setDevice('Desktop')
+        const wrapperId = editor.getWrapper().getId()
+        editor.Css.getAll().reset(
+          globalThis.structuredClone(
+            parseCanvasCss(bindCmsRootStyles(canvas.sheet, wrapperId), editor),
+          ),
+        )
+        const view = editor.Canvas.getDocument().defaultView
+        const settle = async () => {
+          await new Promise((resolve) => view.requestAnimationFrame(resolve))
+          await new Promise((resolve) => view.requestAnimationFrame(resolve))
+        }
+        await settle()
+        const close = async () => {
+          // GrapesJS debounces its selector sync at 0 ms; that timer must not outlive the editor.
+          await settle()
+          release()
+          editor.destroy()
+          host.remove()
+        }
+        return { editor, view, wrapperId, close }
+      }
+      // The flush in Editor.tsx: read the canvas, sync responsive text, export both owners.
+      const saveHomeText = async (text) => {
+        const home = stored('/')
+        const about = stored('/about')
+        const session = await mount(home)
+        try {
+          const { editor, wrapperId } = session
+          editor.Components.getById('home-heading').components(text)
+          let html = editor.getHtml({ cleanId: false })
+          const css = readCanvasCss(editor)
+          syncResponsiveText(editor, home.content.sv.html, html)
+          html = editor.getHtml({ cleanId: false })
+          const nativeExport = exportNativeCanvas(html, css, 'light')
+          const exportedCss = canonicalizeCmsRootStyles(nativeExport.css, wrapperId)
+          const storedHome = home.content.sv.css.light
+          const aboutExport = extractComposedAbout(
+            nativeExport.html,
+            exportedCss,
+            about.content.sv.html,
+            { about: about.content.sv.css.light, home: storedHome },
+          )
+          const exported = stripComposedCanvas(nativeExport.html, exportedCss, 'default', {
+            about: aboutExport.css,
+            home: storedHome,
+          })
+          const nextHome = globalThis.structuredClone(home)
+          nextHome.content.sv = {
+            html: exported.html,
+            css: { ...home.content.sv.css, light: exported.css },
+          }
+          const nextAbout = globalThis.structuredClone(about)
+          nextAbout.content.sv = {
+            html: aboutExport.html,
+            css: { ...about.content.sv.css, light: aboutExport.css },
+          }
+          const saved = [
+            syncPageLayout(home, nextHome, 'sv', 'light'),
+            syncPageLayout(about, nextAbout, 'sv', 'light'),
+          ]
+          document.presentation.pages = document.presentation.pages.map(
+            (item) => saved.find((next) => next.id === item.id) ?? item,
+          )
+        } finally {
+          await session.close()
+        }
+      }
+      // Studio opens About on its own canvas, from the stored About page alone.
+      const reopenAbout = async () => {
+        const session = await mount(stored('/about'))
+        try {
+          const card = session.editor.Canvas.getDocument().getElementById('owner-card')
+          return {
+            card: session.view.getComputedStyle(card).color,
+            css: canonicalizeCmsRootStyles(readCanvasCss(session.editor), session.wrapperId),
+          }
+        } finally {
+          await session.close()
+        }
+      }
+      // Public Home renders Home's sheet, then About's sheet, in one document.
+      const render = (html, sheets) => {
+        const frame = globalThis.document.createElement('iframe')
+        frame.style.width = '1000px'
+        frame.style.border = '0'
+        globalThis.document.body.append(frame)
+        const doc = frame.contentDocument
+        const styles = sheets.map((sheet) => `<style>${sheet}</style>`).join('')
+        doc.open()
+        doc.write(`<!doctype html><html><head>${styles}</head><body>${html}</body></html>`)
+        doc.close()
+        const card = doc.defaultView.getComputedStyle(doc.getElementById('owner-card')).color
+        frame.remove()
+        return card
+      }
+      const paint = () => {
+        const home = stored('/').content.sv
+        const about = stored('/about').content.sv
+        return {
+          home: render(home.html + about.html, [home.css.light, about.css.light]),
+          about: render(about.html, [about.css.light]),
+        }
+      }
+      const before = paint()
+      const saves = []
+      for (const text of ['Hem', 'Home']) {
+        await saveHomeText(text)
+        validate()
+        saves.push({
+          text,
+          homeHtml: stored('/').content.sv.html,
+          homeCss: stored('/').content.sv.css.light,
+          aboutCss: stored('/about').content.sv.css.light,
+          paint: paint(),
+          reopened: await reopenAbout(),
+        })
+      }
+      return { before, saves }
+    }, homeCss)
+    await test.info().attach('home-save-layer-order', {
+      body: JSON.stringify(result, null, 2),
+      contentType: 'application/json',
+    })
+    assert.deepEqual(errors, [])
+    const red = 'rgb(255, 0, 0)'
+    assert.deepEqual(result.before, { home: red, about: red }, 'Layer first wins before any save')
+    for (const [round, save] of result.saves.entries()) {
+      const context = JSON.stringify({ name, round, ...save })
+      assert.ok(save.homeHtml.includes(`>${save.text}</h1>`), context)
+      if (round) {
+        assert.equal(save.homeCss, result.saves[round - 1].homeCss, context)
+        assert.equal(save.aboutCss, result.saves[round - 1].aboutCss, context)
+      }
+      assert.equal(save.paint.home, red, context)
+      assert.equal(
+        save.paint.about,
+        red,
+        `About opened on its own must keep the declaration that won before the Home save: ${context}`,
+      )
+      assert.equal(save.reopened.card, red, `The reopened About canvas must keep it: ${context}`)
+      for (const css of [save.aboutCss, save.reopened.css])
+        assert.equal(
+          firstLayerName(css),
+          'first',
+          `About must establish layer first before its anonymous layer: ${context}`,
+        )
+    }
+  })
+}
+
+// Every anonymous @layer block is a layer of its own, and a named layer takes its place at its
+// first block. Equal block text therefore does not make two blocks interchangeable: a normal
+// declaration prefers the later layer, an !important one the earlier.
+const repeatedLayers = [
+  {
+    name: 'About !important layers red, blue, red',
+    homeCss: '',
+    aboutCss:
+      '@layer{.card{color:red!important}}@layer{.card{color:blue!important}}@layer{.card{color:red!important}}',
+    wins: { card: 'rgb(255, 0, 0)' },
+  },
+  {
+    name: 'About normal layers red, blue, red',
+    homeCss: '',
+    aboutCss: '@layer{.card{color:red}}@layer{.card{color:blue}}@layer{.card{color:red}}',
+    wins: { card: 'rgb(255, 0, 0)' },
+  },
+  {
+    name: 'About layers red, blue, red in both priorities',
+    homeCss: '',
+    aboutCss:
+      '@layer{.card{color:red!important;background-color:red}}' +
+      '@layer{.card{color:blue!important;background-color:blue}}' +
+      '@layer{.card{color:red!important;background-color:red}}',
+    wins: { card: 'rgb(255, 0, 0)', background: 'rgb(255, 0, 0)' },
+  },
+  {
+    name: 'Home !important layers red, blue, red',
+    homeCss:
+      '@layer{#home-heading{color:red!important}}@layer{#home-heading{color:blue!important}}@layer{#home-heading{color:red!important}}',
+    aboutCss: '',
+    wins: { heading: 'rgb(255, 0, 0)' },
+  },
+  {
+    // The F1 layers: Home keeps the blue layer's copy, because that copy styles Home's heading.
+    name: 'About layers red, then blue with a Home rule',
+    homeCss: '',
+    aboutCss:
+      '@layer{.card{color:red!important}}@layer{.card{color:blue!important}#home-heading{padding:1px}}',
+    wins: { card: 'rgb(255, 0, 0)', padding: '1px' },
+  },
+  {
+    name: 'About named layers a, b, a',
+    homeCss: '',
+    aboutCss: '@layer a{.card{color:red}}@layer b{.card{color:blue}}@layer a{.card{color:red}}',
+    wins: { card: 'rgb(0, 0, 255)' },
+  },
+]
+
+for (const { name, homeCss, aboutCss, wins } of repeatedLayers) {
+  test(`Home saves keep repeated layer blocks in their cascade order (${name})`, async ({
+    page,
+  }) => {
+    const errors = []
+    page.on('pageerror', (error) => errors.push(error.message))
+    await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
+    const result = await page.evaluate(
+      async ({ homeCss, aboutCss }) => {
+        const { emptyDocument, validateDocument } = await import('/shared/cms.ts')
+        const { validateDocumentMarkupPlacements } = await import('/shared/cms-markup.ts')
+        const { CORE_PAGE_IDS } = await import('/src/admin/cms/corePages.ts')
+        const { composedCanvas, extractComposedAbout, stripComposedCanvas } =
+          await import('/src/admin/cms/composedCanvas.ts')
+        const policy = {
+          siteOrigin: globalThis.location.origin,
+          storageOrigin: 'https://storage.example.test',
+        }
+        const homeHtml =
+          '<div data-knc-native="1"><div data-knc-surface="desktop-home"><h1 id="home-heading">Home</h1><div data-knc-slot="desktop-about"><section aria-labelledby="about-heading"></section></div></div><div data-knc-surface="mobile-home"><div data-knc-slot="mobile-about"><section aria-labelledby="about-heading"></section></div></div></div>'
+        const aboutHtml =
+          '<div data-knc-native="1"><section id="about-root" data-knc-surface="about" aria-labelledby="about-heading"><h2 id="about-heading">About</h2><div id="owner-card" class="card"></div></section></div>'
+        const make = (id, path, html, css) => ({
+          id,
+          path,
+          kind: 'page',
+          name: { sv: path, en: path },
+          title: { sv: '', en: '' },
+          description: { sv: '', en: '' },
+          inMenu: true,
+          content: {
+            sv: { html, css: { light: css, dark: css } },
+            en: { html, css: { light: css, dark: css } },
+          },
+        })
+        const document = emptyDocument()
+        document.presentation.pages = [
+          make(CORE_PAGE_IDS[0], '/', homeHtml, homeCss),
+          make(CORE_PAGE_IDS[1], '/about', aboutHtml, aboutCss),
+        ]
+        // The publication validators accept every stored state. They canonicalize a copy.
+        const validate = () => {
+          const copy = globalThis.structuredClone(document)
+          validateDocument(copy)
+          validateDocumentMarkupPlacements(copy, policy)
+        }
+        validate()
+        const stored = (path) => document.presentation.pages.find((item) => item.path === path)
+        // Public Home renders Home's sheet, then About's sheet, in one document.
+        const render = (html, sheets) => {
+          const frame = globalThis.document.createElement('iframe')
+          frame.style.width = '1000px'
+          frame.style.border = '0'
+          globalThis.document.body.append(frame)
+          const doc = frame.contentDocument
+          const styles = sheets.map((sheet) => `<style>${sheet}</style>`).join('')
+          doc.open()
+          doc.write(`<!doctype html><html><head>${styles}</head><body>${html}</body></html>`)
+          doc.close()
+          const view = doc.defaultView
+          const card = view.getComputedStyle(doc.getElementById('owner-card'))
+          const heading = doc.getElementById('home-heading')
+          const measured = {
+            card: card.color,
+            background: card.backgroundColor,
+            ...(heading && {
+              heading: view.getComputedStyle(heading).color,
+              padding: view.getComputedStyle(heading).paddingTop,
+            }),
+          }
+          frame.remove()
+          return measured
+        }
+        const paint = () => {
+          const home = stored('/').content.sv
+          const about = stored('/about').content.sv
+          return {
+            home: render(home.html + about.html, [home.css.light, about.css.light]),
+            about: render(about.html, [about.css.light]),
+          }
+        }
+        const before = paint()
+        const saves = []
+        for (let round = 0; round < 3; round++) {
+          const home = stored('/')
+          const about = stored('/about')
+          const canvas = composedCanvas(home, document.presentation, 'sv', 'light')
+          const storedHome = home.content.sv.css.light
+          const extracted = extractComposedAbout(canvas.html, canvas.css, about.content.sv.html, {
+            about: about.content.sv.css.light,
+            home: storedHome,
+          })
+          const stripped = stripComposedCanvas(canvas.html, canvas.css, 'default', {
+            about: extracted.css,
+            home: storedHome,
+          })
+          home.content.sv = {
+            html: stripped.html,
+            css: { ...home.content.sv.css, light: stripped.css },
+          }
+          about.content.sv = {
+            html: extracted.html,
+            css: { ...about.content.sv.css, light: extracted.css },
+          }
+          validate()
+          saves.push({ home: stripped.css, about: extracted.css, paint: paint() })
+        }
+        return { before, saves }
+      },
+      { homeCss, aboutCss },
+    )
+    await test.info().attach('home-save-repeated-layers', {
+      body: JSON.stringify(result, null, 2),
+      contentType: 'application/json',
+    })
+    assert.deepEqual(errors, [])
+    for (const [property, value] of Object.entries(wins))
+      assert.equal(result.before.home[property], value, `The fixture paints ${property} ${value}`)
+    for (const [round, save] of result.saves.entries()) {
+      const context = JSON.stringify({ name, round, before: result.before, ...save })
+      assert.deepEqual(
+        save.paint,
+        result.before,
+        `Home save ${round + 1} must keep the public Home and About cascade: ${context}`,
+      )
+      if (round) {
+        assert.equal(save.home, result.saves[round - 1].home, context)
+        assert.equal(save.about, result.saves[round - 1].about, context)
+      }
+    }
+  })
+}
