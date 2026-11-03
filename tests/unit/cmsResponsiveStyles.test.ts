@@ -671,8 +671,9 @@ describe('resize guards on a component rule', () => {
     first: string,
     padded: string,
     resized: string,
+    fixture = narrowDesktop,
   ): [string, ...string[]] => {
-    let page = cardPage(narrowDesktop(first, '40%'))
+    let page = cardPage(fixture(first, '40%'))
     // Two separate edits, each synchronized from the stored result of the one before.
     for (const css of [padded, resized]) {
       const edited = structuredClone(page)
@@ -721,6 +722,274 @@ describe('resize guards on a component rule', () => {
       )
       for (const sheet of [edit, ...others])
         expect(valuesOf(sheet, 'width')).toEqual(['70%', '32%', '90%'])
+    })
+
+  // A guard inside @supports is named by its nearest differently headed siblings: the #card rules
+  // around it. Removing the emptied first rule renumbers those as well.
+  const supported =
+    (later: string) =>
+    (first: string, width: string, appended = ''): string =>
+      `@media (min-width:769px){${first}#card{width:70%!important}@supports (display:grid){#card{${guard('card', width)}}}${later}}${appended}`
+  const laterRules = [
+    [
+      'a narrow-Desktop rule',
+      '#card{color:red}@media (max-width:1100px){#card{width:90%!important}}',
+    ],
+    ['a later Desktop rule', '#card{width:90%!important}'],
+  ] as const
+  for (const [shape, later] of laterRules)
+    it(`replaces a resized guard inside @supports ahead of ${shape} after a padding edit`, () => {
+      const fixture = supported(later)
+      const first = '#card{padding-left:1px}'
+      const resized = fixture(first, '32%', resizedRule)
+      const [edit, ...others] = resizeAfterPadding(
+        first,
+        fixture(first, '40%', paddingRule),
+        resized,
+        fixture,
+      )
+      expect(edit).toBe(resized)
+      for (const sheet of others) {
+        expect(valuesOf(sheet, 'width')).toEqual(['70%', '32%', '90%'])
+        expect(valuesOf(sheet, 'padding-left')).toEqual(['10px'])
+      }
+    })
+
+  it('keeps the guard identity when the next resize is made in a synced sheet', () => {
+    const first = '#card{padding-left:1px}'
+    let page = cardPage(narrowDesktop(first, '40%'))
+    const edit = (mode: 'light' | 'dark', css: string): void => {
+      const edited = structuredClone(page)
+      edited.content.sv.css[mode] = css
+      page = syncPageLayout(page, edited, 'sv', mode)
+    }
+    edit('light', narrowDesktop(first, '40%', paddingRule))
+    edit('light', narrowDesktop(first, '32%', resizedRule))
+    // The dark sheet dropped the emptied rule, so it numbers the guard's rule one lower than light.
+    edit('dark', page.content.sv.css.dark.replace('32%', '25.6%'))
+    for (const sheet of variantSheets(page))
+      expect(valuesOf(sheet, 'width')).toEqual(['70%', '25.6%', '90%'])
+  })
+
+  // The cleanup still drops the rules a sync emptied.
+  for (const [shape, before, after] of [
+    [
+      'the same edit removes the guard after it',
+      narrowDesktop('#card{padding-left:1px}', '40%'),
+      '@media (min-width:769px){#card{padding-left:10px}#card{width:70%!important}@media (max-width:1100px){#card{width:90%!important}}}',
+    ],
+    [
+      'it styles another element',
+      narrowDesktop('#other{padding-left:1px}', '40%'),
+      narrowDesktop(
+        '#other{padding-left:1px}',
+        '40%',
+        '@media (min-width:769px){#other{padding-left:10px}}',
+      ),
+    ],
+  ] as const)
+    it(`drops an emptied rule when ${shape}`, () => {
+      const page = cardPage(before)
+      for (const lang of ['sv', 'en'] as const) page.content[lang].html += '<div id="other"></div>'
+      const edited = structuredClone(page)
+      edited.content.sv.css.light = after
+      const [, ...others] = variantSheets(syncPageLayout(page, edited, 'sv', 'light'))
+      for (const sheet of others) {
+        expect(sheet).not.toContain('{}')
+        expect(valuesOf(sheet, 'padding-left')).toEqual(['10px'])
+      }
+    })
+
+  /** The four sheets after each edit, each synchronized from the stored result of the one before. */
+  const syncEach = (start: string, edits: readonly string[]): [string, ...string[]][] => {
+    let page = cardPage(start)
+    return edits.map((css) => {
+      const edited = structuredClone(page)
+      edited.content.sv.css.light = css
+      page = syncPageLayout(page, edited, 'sv', 'light')
+      return variantSheets(page)
+    })
+  }
+  const original = narrowDesktop('#card{padding-left:1px}', '40%')
+  // The edited sheet drops its first rule as well, directly or after a padding edit has emptied
+  // the other sheets' copy of it. Then all four sheets hold the same rules around the guard again.
+  const droppedFirst = [
+    ['before the resize', [narrowDesktop('', '40%'), narrowDesktop('', '32%')], []],
+    [
+      'after a padding edit that adds a rule',
+      [
+        narrowDesktop('#card{padding-left:1px}', '40%', paddingRule),
+        narrowDesktop('', '40%', paddingRule),
+        narrowDesktop('', '32%', resizedRule),
+      ],
+      ['10px'],
+    ],
+    [
+      'after a padding edit in place',
+      [
+        narrowDesktop('#card{padding-left:10px}', '40%'),
+        narrowDesktop('', '40%'),
+        narrowDesktop('', '32%'),
+      ],
+      [],
+    ],
+    [
+      'in the same edit as the resize',
+      [
+        narrowDesktop('#card{padding-left:1px}', '40%', paddingRule),
+        narrowDesktop('', '32%', resizedRule),
+      ],
+      ['10px'],
+    ],
+  ] as const
+  for (const [shape, edits, padding] of droppedFirst)
+    it(`replaces a resized guard in place when the edited sheet drops its first rule ${shape}`, () => {
+      const sheets = syncEach(original, edits).at(-1) ?? []
+      expect(sheets).toHaveLength(4)
+      for (const sheet of sheets) {
+        expect(valuesOf(sheet, 'width')).toEqual(['70%', '32%', '90%'])
+        expect(valuesOf(sheet, 'padding-left')).toEqual(padding)
+      }
+    })
+
+  it('replaces two resized guards in place after a padding edit empties the rule before both', () => {
+    const block = (first: string, widths: [string, string], appended = ''): string =>
+      `@media (min-width:769px){${first}#card{width:70%!important;${guard('card', widths[0])}}#card{width:75%!important;${guard('card', widths[1])}}@media (max-width:1100px){#card{width:90%!important}}}${appended}`
+    const first = '#card{padding-left:1px}'
+    const sheets = syncEach(block(first, ['40%', '35%']), [
+      block(first, ['40%', '35%'], paddingRule),
+      block(first, ['32%', '28%'], resizedRule),
+    ]).at(-1)
+    for (const sheet of sheets ?? [])
+      expect(valuesOf(sheet, 'width')).toEqual(['70%', '32%', '75%', '28%', '90%'])
+    expect(sheets).toHaveLength(4)
+  })
+
+  // What a guard competes with, in source order: each declaration of a property that a guard
+  // writes, with every rule and at-rule around it and the guards marked. Values may differ per
+  // sheet, so they are left out.
+  const guardLayout = (css: string): string[] => {
+    const found: { scope: string[]; property: string }[] = []
+    const visit = (nodes: List<CssNode> | undefined, scope: string[]): void =>
+      nodes?.forEach((node) => {
+        if (node.type === 'Declaration') found.push({ scope, property: node.property })
+        else if (node.type === 'Rule')
+          visit(node.block.children, [...scope, generate(node.prelude)])
+        else if (node.type === 'Atrule')
+          visit(node.block?.children, [
+            ...scope,
+            `@${node.name}${node.prelude ? ` ${generate(node.prelude)}` : ''}`,
+          ])
+      })
+    const tree = parse(css)
+    if (tree.type !== 'StyleSheet') throw new Error('The stylesheet is missing')
+    visit(tree.children, [])
+    const isGuard = (scope: string[]): boolean => scope.at(-1)?.startsWith('&:where(') ?? false
+    const guarded = new Set(
+      found.filter(({ scope }) => isGuard(scope)).map(({ property }) => property),
+    )
+    return found
+      .filter(({ property }) => guarded.has(property))
+      .map(({ scope, property }) =>
+        [...scope, isGuard(scope) ? `${property} (guard)` : property].join(' > '),
+      )
+  }
+
+  // After every sync, each sheet holds the guard where the edited sheet holds it, between the
+  // same rules, so the next resize finds it there.
+  for (const [sequence, start, edits] of [
+    [
+      'a padding edit that adds a rule',
+      original,
+      [
+        narrowDesktop('#card{padding-left:1px}', '40%', paddingRule),
+        narrowDesktop('#card{padding-left:1px}', '32%', resizedRule),
+      ],
+    ],
+    [
+      'a padding edit in place',
+      original,
+      [
+        narrowDesktop('#card{padding-left:10px}', '40%'),
+        narrowDesktop('#card{padding-left:10px}', '32%'),
+      ],
+    ],
+    ...laterRules.map(([shape, later]) => {
+      const fixture = supported(later)
+      const first = '#card{padding-left:1px}'
+      return [
+        `a padding edit before a guard inside @supports ahead of ${shape}`,
+        fixture(first, '40%'),
+        [fixture(first, '40%', paddingRule), fixture(first, '32%', resizedRule)],
+      ] as const
+    }),
+    ...droppedFirst.map(
+      ([shape, edits]) =>
+        [`the edited sheet dropping its first rule ${shape}`, original, edits] as const,
+    ),
+  ] as const)
+    it(`gives every sheet the edited sheet's guard layout after each sync of ${sequence}`, () => {
+      for (const [edit, ...others] of syncEach(start, edits)) {
+        const layout = guardLayout(edit)
+        expect(layout.filter((entry) => entry.endsWith('(guard)'))).toHaveLength(1)
+        for (const sheet of others) expect(guardLayout(sheet)).toEqual(layout)
+      }
+    })
+
+  // A sync appends a changed plain rule at the end, so another sheet can hold more rules under a
+  // header than the edited sheet. They follow every earlier one, so the guard's bound still holds.
+  it('nests a first guard in place when the sync appended a copy of the rule that bounds it', () => {
+    const sheet = (other: string, guarded = ''): string =>
+      `@media (min-width:769px){#card{width:70%!important${guarded}}@media (max-width:1100px){#card{width:90%!important}}}#other{color:red;width:${other}}@media (min-width:769px){#card{padding-left:1px}}`
+    let page = cardPage(sheet('10px'))
+    for (const lang of ['sv', 'en'] as const) page.content[lang].html += '<div id="other"></div>'
+    for (const css of [sheet('20px'), sheet('20px', `;${guard('card', '32%')}`)]) {
+      const edited = structuredClone(page)
+      edited.content.sv.css.light = css
+      page = syncPageLayout(page, edited, 'sv', 'light')
+    }
+    const [edit, ...others] = variantSheets(page)
+    for (const variant of others) {
+      expect(variant).toContain('#other{color:red}')
+      expect(variant).toContain('#other{width:20px}')
+      expect(guardLayout(variant)).toEqual(guardLayout(edit))
+    }
+  })
+
+  // Controls: no sync drops a rule here, so a rule that gains its first guard or loses its last
+  // one leaves every sheet numbered alike. The four sheets start alike, and every sync keeps them.
+  const desktop = (rules: string): string =>
+    `@media (min-width:769px){${rules}@media (max-width:1100px){#card{width:90%!important}}}`
+  const sized = (width: string, guarded = ''): string =>
+    `#card{width:${width}!important${guarded && `;${guard('card', guarded)}`}}`
+  for (const [shape, start, edits] of [
+    [
+      'an earlier rule gains a guard while a later guard is resized',
+      desktop(sized('70%') + sized('80%', '40%')),
+      [desktop(sized('70%', '50%') + sized('80%', '32%'))],
+    ],
+    [
+      'an earlier rule gains a guard, then a later guard is resized',
+      desktop(sized('70%') + sized('80%', '40%')),
+      [
+        desktop(sized('70%', '50%') + sized('80%', '40%')),
+        desktop(sized('70%', '50%') + sized('80%', '32%')),
+      ],
+    ],
+    [
+      'an earlier rule loses its guard, then a later guard is resized',
+      desktop(sized('70%', '50%') + sized('80%', '40%')),
+      [desktop(sized('70%') + sized('80%', '40%')), desktop(sized('70%') + sized('80%', '32%'))],
+    ],
+    [
+      'a first resize nests a guard in its rule, then the next one resizes it',
+      desktop(sized('70%')),
+      [desktop(sized('70%', '32%')), desktop(sized('70%', '25.6%'))],
+    ],
+  ] as const)
+    it(`keeps every sheet equal to the edited sheet when ${shape}`, () => {
+      for (const [edit, ...others] of syncEach(start, edits))
+        for (const sheet of others) expect(sheet).toBe(edit)
     })
 })
 
