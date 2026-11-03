@@ -9,7 +9,7 @@ import { EMAIL_NAMES } from '../../shared/cms.ts'
 import { createSitePage, renderSitePage } from '../../shared/site-page.ts'
 import { defaultEmailTemplate } from '../../supabase/functions/_shared/email.ts'
 import { nativeBackend } from './cms-backend.mjs'
-import { loadWorker, routeWorkerDocuments } from './cms-render.mjs'
+import { loadWorker, renderPublicDocument, routeWorkerDocuments } from './cms-render.mjs'
 import { expect, test as baseTest } from './fixtures.mjs'
 import { harnessOrigin } from './origins.mjs'
 const base = harnessOrigin
@@ -644,9 +644,10 @@ test('contact remains core after import with another id, a name edit and menu vi
     }
   }, edited.presentation)
   expect(links.native).toBe(false)
-  expect(links.spa).toEqual(['/review-created'])
-  expect(links.derived).toContain('/review-created')
-  expect(links.derived).not.toContain('/contact')
+  // Contact can be in the menu, as on main (owner decision, 2026-11-03): Visa i meny lists it with
+  // the created pages, in presentation order.
+  expect(links.spa).toEqual(['/contact', '/review-created'])
+  expect(links.derived).toEqual(['/', '/booking', '/about', '/contact', '/review-created'])
   await page.getByRole('button', { name: 'Lås vy', exact: true }).click()
   const preview = page.locator('.cms-live-preview iframe')
   await expect(preview).toHaveAttribute('sandbox', 'allow-same-origin')
@@ -657,6 +658,41 @@ test('contact remains core after import with another id, a name edit and menu vi
   await expect(
     page.frameLocator('.cms-live-preview iframe').locator('#cms-site-shell'),
   ).toHaveCount(0)
+})
+
+// Visa i meny is offered only where it has an effect: on created pages and on Contact.
+test('Visa i meny shows only on Contact and created pages, and puts Contact in the live header', async ({
+  page,
+  studio,
+}) => {
+  await create(page, { name: 'Besök', path: '/visit' })
+  const meta = page.locator('.cms-page-meta')
+  const menu = meta.getByLabel('Visa i meny', { exact: true })
+  const open = async (name, path) => {
+    await page.getByRole('button', { name, exact: true }).click()
+    await page.getByRole('button', { name: 'Sidinställningar', exact: true }).click()
+    await expect(meta.getByLabel('Adress', { exact: true })).toHaveValue(path)
+  }
+  // Om oss has no page of its own here: it is edited on Startsida.
+  for (const [name, path] of [
+    ['Startsida', '/'],
+    ['Bokning', '/booking'],
+    ['Mina bokningar', '/my-bookings'],
+    ['Integritetspolicy', '/privacy'],
+    ['Bokningsvillkor', '/terms'],
+  ]) {
+    await open(name, path)
+    await expect(menu).toHaveCount(0)
+  }
+  await open('Besök', '/visit')
+  await expect(menu).toBeChecked()
+  await studio.frame.locator('#cms-site-menu a[href^="/visit?"]').waitFor()
+  await expect(studio.frame.locator('#cms-site-menu a[href^="/contact?"]')).toHaveCount(0)
+  await open('Kontakt', '/contact')
+  await expect(menu).not.toBeChecked()
+  await menu.check()
+  await open('Besök', '/visit')
+  await expect(studio.frame.locator('#cms-site-menu a[href^="/contact?"]')).toHaveText('Kontakt')
 })
 
 test('contact slots are server-owned in Studio and the locked preview fills them', async ({
@@ -718,6 +754,7 @@ test('contact slots are server-owned in Studio and the locked preview fills them
   await expect(preview.locator('#contact-title')).toHaveText('Kontakta Salongen Kontakt')
   await expect(preview.locator('#contact-details')).toContainText('031-555 12 34')
   await page.getByRole('button', { name: 'Lås upp', exact: true }).click()
+  // Företag & SEO fills the legal name spans too (owner decision, 2026-11-03), so they lock.
   await page.getByRole('button', { name: 'Integritetspolicy', exact: true }).click()
   await studio.frame.locator('[data-business-name]').first().waitFor()
   const legal = await page.evaluate(async () => {
@@ -729,7 +766,82 @@ test('contact slots are server-owned in Studio and the locked preview fills them
       .map((node) => node.get('editable'))
   })
   expect(legal.length).toBeGreaterThan(0)
-  expect(legal.every((editable) => editable !== false)).toBe(true)
+  expect(legal.every((editable) => editable === false)).toBe(true)
+})
+
+// The locked preview fills the legal slots from the draft's business, as Contact's does (owner
+// decision, 2026-11-03). The draft holds no cancellation window, so those slots show what is
+// stored. No default or fixture carries this business, so only a fill can show it.
+const LEGAL_PREVIEW_BUSINESS = {
+  business_name: 'Ateljé Väst & Co',
+  business_legal_name: 'Väst <Juridik> AB',
+  business_org_number: '559123-4567',
+  business_email: 'vast@example.test',
+  business_phone_display: '0303-98 76 54',
+  business_phone_tel: '+46303987654',
+  business_street: 'Strandgatan 3',
+  business_postal_code: '442 31',
+  business_city: 'Kungälv',
+}
+
+test('the locked preview fills every legal slot from the draft except the cancellation window', async ({
+  page,
+  studio,
+}) => {
+  const document = await studio.capture()
+  Object.assign(document.settings, LEGAL_PREVIEW_BUSINESS)
+  const terms = document.presentation.pages.find((item) => item.path === '/terms')
+  if (!terms) throw new Error('Missing terms page')
+  for (const lang of ['sv', 'en']) {
+    terms.content[lang].html = terms.content[lang].html
+      .replace(/(<p id="cancellation-policy-sv"[^>]*>)[^<]*/, '$1Lagrad avbokningstext')
+      .replace(/(<p id="cancellation-policy-en"[^>]*>)[^<]*/, '$1Stored cancellation text')
+    expect(terms.content[lang].html).toContain('>Lagrad avbokningstext</p>')
+    expect(terms.content[lang].html).toContain('>Stored cancellation text</p>')
+  }
+  await importDocument(page, document, 'legal-preview.json')
+  const business = LEGAL_PREVIEW_BUSINESS
+  const details = [
+    business.business_name,
+    business.business_legal_name,
+    business.business_org_number,
+    `${business.business_street}, ${business.business_postal_code} ${business.business_city}`,
+    business.business_email,
+    business.business_phone_display,
+  ]
+  const preview = page.frameLocator('.cms-live-preview iframe')
+  for (const [name, names, contacts] of [
+    ['Integritetspolicy', 4, 2],
+    ['Bokningsvillkor', 1, 1],
+  ]) {
+    await page.getByRole('button', { name, exact: true }).click()
+    await studio.frame.getByRole('heading', { name, exact: true }).waitFor()
+    await page.getByRole('button', { name: 'Lås vy', exact: true }).click()
+    await expect(preview.locator('[data-business-name]')).toHaveText(
+      Array.from({ length: names }, () => business.business_name),
+    )
+    const contact = preview.locator('[data-business-contact] a')
+    await expect(contact).toHaveText(
+      Array.from({ length: contacts }, () => business.business_email),
+    )
+    for (let index = 0; index < contacts; index++)
+      await expect(contact.nth(index)).toHaveAttribute('href', `mailto:${business.business_email}`)
+    for (const lang of ['sv', 'en'])
+      for (const value of details)
+        await expect(preview.locator(`#legal-business-details-${lang}`)).toContainText(value)
+    if (name === 'Integritetspolicy')
+      await expect(preview.locator('[data-business-controller]')).toHaveText([
+        business.business_legal_name,
+        business.business_legal_name,
+      ])
+    else {
+      await expect(preview.locator('#cancellation-policy-sv')).toHaveText('Lagrad avbokningstext')
+      await expect(preview.locator('#cancellation-policy-en')).toHaveText(
+        'Stored cancellation text',
+      )
+    }
+    await page.getByRole('button', { name: 'Lås upp', exact: true }).click()
+  }
 })
 
 test('contact-named ids on an ordinary page stay editable, removable and copyable', async ({
@@ -804,7 +916,7 @@ test('an unmarked historical Contact keeps its heading, details and hours locked
   await expectContactSlotsLocked(page)
 })
 
-test('a marked Contact locks its name and city spans while legal name spans stay editable', async ({
+test('a marked Contact locks its name and city spans, and the legal pages lock their name spans', async ({
   page,
   studio,
 }) => {
@@ -815,16 +927,19 @@ test('a marked Contact locks its name and city spans while legal name spans stay
   await page.getByRole('button', { name: 'Kontakt', exact: true }).click()
   await studio.frame.locator('#contact-title').waitFor()
   await expectBusinessSpans(page, 'locked')
-  // A published legal body keeps the owner's words in these spans: the Worker fills only /contact.
+  // The Worker fills these spans on the legal pages too, from the same Företag & SEO name, so the
+  // owner never enters it page by page (owner decision, 2026-11-03).
   await page.getByRole('button', { name: 'Integritetspolicy', exact: true }).click()
   await studio.frame.locator('[data-business-name]').first().waitFor()
   const inspector = page.locator('#cms-inspector')
   await select(page, '[data-business-name]')
   expect(await isSelected(page, '[data-business-name]')).toBe(true)
-  await expect(inspector.getByLabel('Text', { exact: true })).toBeVisible()
-  await expect(inspector.getByText(/Uppgiften hämtas|Funktionsblocket är skyddat/)).toHaveCount(0)
-  await expect(inspector.getByRole('button', { name: 'Ta bort', exact: true })).toBeEnabled()
-  await expect(inspector.getByRole('button', { name: 'Duplicera', exact: true })).toBeEnabled()
+  await expect(inspector.getByLabel('Text', { exact: true })).toHaveCount(0)
+  await expect(inspector.locator('.cms-lock-note')).toContainText(
+    'Uppgiften hämtas från Företag & SEO.',
+  )
+  await expect(inspector.getByRole('button', { name: 'Ta bort', exact: true })).toBeDisabled()
+  await expect(inspector.getByRole('button', { name: 'Duplicera', exact: true })).toBeDisabled()
   const legal = await page.evaluate(async () => {
     const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
     return cmsGrapes.editors
@@ -834,7 +949,7 @@ test('a marked Contact locks its name and city spans while legal name spans stay
       .map((node) => node.get('editable'))
   })
   expect(legal.length).toBeGreaterThan(0)
-  expect(legal.every((editable) => editable !== false)).toBe(true)
+  expect(legal.every((editable) => editable === false)).toBe(true)
 })
 
 test('an unmarked historical Contact also locks its name and city spans', async ({
@@ -1071,6 +1186,174 @@ test('stored styling on Contact slot children looks the same in Studio, the lock
     await visitor.close()
     await rendering.close()
   }
+})
+
+// Företag & SEO fills every legal business slot on every page that needs it, so the owner never
+// enters it page by page (owner decision, 2026-11-03). Studio locks exactly the slots the Worker
+// fills, from the same definitions (src/site/businessSlots.ts), and only on /privacy and /terms.
+const LEGAL_PAGES = [
+  [
+    'Integritetspolicy',
+    '/privacy',
+    [
+      '[data-business-name]',
+      '[data-business-controller]',
+      '[data-business-contact]',
+      '#legal-business-details-sv',
+      '#legal-business-details-en',
+    ],
+  ],
+  [
+    'Bokningsvillkor',
+    '/terms',
+    [
+      '[data-business-name]',
+      '[data-business-contact]',
+      '#legal-business-details-sv',
+      '#legal-business-details-en',
+      '#cancellation-policy-sv',
+      '#cancellation-policy-en',
+    ],
+  ],
+]
+// The note names the setting that fills the slot; the cancellation window is a booking setting.
+const legalSource = (selector) =>
+  selector.startsWith('#cancellation-policy')
+    ? 'Uppgiften hämtas från Avbokningsfrist under Inställningar.'
+    : 'Uppgiften hämtas från Företag & SEO.'
+
+for (const [name, , slots] of LEGAL_PAGES)
+  test(`${name} locks every business slot the Worker fills and names its setting`, async ({
+    page,
+    studio,
+  }) => {
+    await page.getByRole('button', { name, exact: true }).click()
+    await studio.frame.locator('[data-business-name]').first().waitFor()
+    const inspector = page.locator('#cms-inspector')
+    const remove = inspector.getByRole('button', { name: 'Ta bort', exact: true })
+    const copy = inspector.getByRole('button', { name: 'Duplicera', exact: true })
+    for (const selector of slots) {
+      await select(page, selector)
+      expect(await isSelected(page, selector)).toBe(true)
+      await expect(inspector.locator('.cms-lock-note')).toContainText(legalSource(selector))
+      await expect(inspector.getByLabel('Text', { exact: true })).toHaveCount(0)
+      await expect(remove).toBeDisabled()
+      await expect(copy).toBeDisabled()
+    }
+    // Every match in both languages is locked, and the Worker regenerates its children, so only
+    // the slot itself takes styling.
+    const flags = await page.evaluate(async (selectors) => {
+      const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+      const wrapper = cmsGrapes.editors.at(-1).getWrapper()
+      return selectors.flatMap((selector) =>
+        wrapper.find(selector).flatMap((slot) =>
+          [slot, ...slot.find('*')].map((node) => ({
+            selector,
+            root: node === slot,
+            editable: node.get('editable'),
+            stylable: node.get('stylable'),
+          })),
+        ),
+      )
+    }, slots)
+    expect(flags.some(({ root }) => !root)).toBe(true)
+    for (const flag of flags)
+      expect(flag).toEqual({ ...flag, editable: false, stylable: flag.root })
+    // The paragraph around a span keeps the owner's own words, one field per text node.
+    expect(await selectBusinessParagraph(page)).toBe(true)
+    await expect(inspector.getByLabel(/^Text( \d)?$/).first()).toBeVisible()
+    await expect(remove).toBeDisabled()
+    await expect(copy).toBeDisabled()
+  })
+
+test('the Worker fills every business slot of the legal pages Studio exports', async ({
+  studio,
+}) => {
+  const exported = await studio.capture()
+  const rendering = await loadWorker()
+  try {
+    // The harness serves empty business settings, so the Worker fills in the default business.
+    const name = 'Blade &amp; Blend Studio'
+    const email = 'booking@mail.bladeblendstudio.se'
+    for (const [, path] of LEGAL_PAGES) {
+      const { status, body } = await renderPublicDocument(rendering.worker, {
+        url: `${base}${path}`,
+        presentation: exported.presentation,
+        shell: SOURCE_SHELL,
+      })
+      expect(status).toBe(200)
+      expect(body).toContain('data-cms-public="1"')
+      expect(body).toContain(`<span data-business-name="">${name}</span>`)
+      expect(body).not.toMatch(new RegExp(`<span data-business-name="">(?!${name}<)`))
+      expect(body).toContain(
+        `<span data-business-contact=""><a href="mailto:${email}">${email}</a></span>`,
+      )
+      expect(body).not.toContain('kontaktuppgifterna på startsidan / home page contact details')
+      expect(body).toContain(
+        `<div id="legal-business-details-sv"><dl><dt>Salong</dt><dd>${name}</dd>`,
+      )
+      expect(body).toContain(
+        `<div id="legal-business-details-en"><dl><dt>Salon</dt><dd>${name}</dd>`,
+      )
+      if (path === '/privacy')
+        for (const lang of ['sv', 'en'])
+          expect(body).toContain(`<span data-business-controller="${lang}">${name}</span>`)
+      else {
+        expect(body).toContain(
+          '<p id="cancellation-policy-sv">Avboka senast 24 timmar före den bokade tiden.</p>',
+        )
+        expect(body).toContain(
+          '<p id="cancellation-policy-en">Cancel at least 24 hours before your appointment.</p>',
+        )
+      }
+    }
+  } finally {
+    await rendering.close()
+  }
+})
+
+// Legal markup on a created page is the owner's own content: the Worker serves it as authored.
+const LEGAL_VISIT_BODY =
+  '<main><p>Hos <span data-business-name="">Ägarens namn</span> och <span data-business-controller="sv">Ägarens bolag</span></p><div id="legal-business-details-sv">Ägarens uppgifter</div><p id="cancellation-policy-sv">Ägarens avbokning</p><p><span data-business-contact="">Ägarens kontakt</span></p></main>'
+const LEGAL_VISIT_SLOTS = [
+  '[data-business-name]',
+  '[data-business-controller]',
+  '#legal-business-details-sv',
+  '#cancellation-policy-sv',
+  '[data-business-contact]',
+]
+
+test('legal slot markup on a created page stays editable, removable and copyable', async ({
+  page,
+  studio,
+}) => {
+  await create(page, { name: 'Besök', path: '/visit' })
+  const document = await studio.capture()
+  const visit = document.presentation.pages.find((item) => item.path === '/visit')
+  if (!visit) throw new Error('Missing created visit page')
+  visit.content.sv.html = LEGAL_VISIT_BODY
+  visit.content.en.html = LEGAL_VISIT_BODY
+  await importDocument(page, document, 'visit-legal-slots.json')
+  await page.getByRole('button', { name: 'Besök', exact: true }).click()
+  await studio.frame.locator('#legal-business-details-sv').waitFor()
+  const inspector = page.locator('#cms-inspector')
+  for (const selector of LEGAL_VISIT_SLOTS) {
+    await select(page, selector)
+    expect(await isSelected(page, selector)).toBe(true)
+    await expect(inspector.getByLabel('Text', { exact: true })).toBeVisible()
+    await expect(inspector.getByRole('button', { name: 'Ta bort', exact: true })).toBeEnabled()
+    await expect(inspector.getByRole('button', { name: 'Duplicera', exact: true })).toBeEnabled()
+    await expect(inspector.getByText(/Uppgiften hämtas|Funktionsblocket är skyddat/)).toHaveCount(0)
+  }
+  const flags = await page.evaluate(async (selectors) => {
+    const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+    const editor = cmsGrapes.editors.at(-1)
+    return selectors.map((selector) => {
+      const node = editor.getWrapper().find(selector)[0]
+      return [node.get('editable'), node.get('removable'), node.get('copyable')]
+    })
+  }, LEGAL_VISIT_SLOTS)
+  expect(flags).toEqual(LEGAL_VISIT_SLOTS.map(() => [true, true, true]))
 })
 
 // Two owners' businesses, each different from the default business the seed publishes.

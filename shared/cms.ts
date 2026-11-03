@@ -447,6 +447,9 @@ export function isCreatedPagePath(path: string): boolean {
 
 export const isSitePage = (page: Pick<CmsPage, 'kind' | 'path'>): boolean =>
   page.kind === 'page' && isCreatedPagePath(page.path)
+/** A page the site menu may list when it is shown in the menu: a created page, or Contact. */
+export const isMenuPage = (page: Pick<CmsPage, 'kind' | 'path'>): boolean =>
+  isSitePage(page) || (page.kind === 'page' && page.path === '/contact')
 function validCssValue(value: string): boolean {
   return (
     value.length <= 160 &&
