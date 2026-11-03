@@ -652,7 +652,7 @@ describe('resize guards on a component rule', () => {
     const sheet = (width: string): string =>
       `#card{width:70%!important;${guard('card', '40%')}}@media (min-width:769px){@supports (display:grid){#card{width:${width}!important}}}`
     const [, ...others] = editSheet(sheet('90%'), sheet('95%'))
-    for (const variant of others) expect(valuesOf(variant, 'width')).toEqual(['40%', '95%'])
+    for (const variant of others) expect(valuesOf(variant, 'width')).toEqual(['70%', '40%', '95%'])
   })
 
   for (const wrapper of ['@supports (display:grid)', '@layer'])
@@ -660,7 +660,8 @@ describe('resize guards on a component rule', () => {
       const sheet = (width: string): string =>
         `#card{width:70%!important;${guard('card', '40%')}}${wrapper}{#card{width:${width}!important}}`
       const [, ...others] = editSheet(sheet('90%'), sheet('95%'))
-      for (const variant of others) expect(valuesOf(variant, 'width')).toEqual(['40%', '95%'])
+      for (const variant of others)
+        expect(valuesOf(variant, 'width')).toEqual(['70%', '40%', '95%'])
     })
 
   // One grouped Desktop block: a resize guard, then a deliberate narrow-Desktop rule. All three
@@ -1192,6 +1193,91 @@ describe('conditional component geometry', () => {
           expect(scoped(next.content[lang].css[mode], 'width')).toEqual(
             scoped(sheet('220px'), 'width'),
           )
+    })
+
+  // A text element's changed width brings its text height along, under the same conditions.
+  it('adds the text height of a conditional width change under its conditions', () => {
+    const sheet = (width: string): string =>
+      `@media (min-width:769px){@supports (display:grid){#card{width:${width}!important}}}`
+    const page = cardPage(sheet('200px'))
+    for (const lang of ['sv', 'en'] as const) page.content[lang].html = '<p id="card">Text</p>'
+    const edited = structuredClone(page)
+    edited.content.sv.css.light = sheet('220px')
+    const next = syncPageLayout(page, edited, 'sv', 'light')
+    for (const lang of ['sv', 'en'] as const)
+      for (const mode of ['light', 'dark'] as const)
+        for (const [property, value] of [
+          ['width', '220px'],
+          ['height', 'auto'],
+          ['max-height', 'none'],
+        ] as const)
+          expect(scoped(next.content[lang].css[mode], property)).toEqual([
+            `@media (min-width:769px) > @supports (display:grid) > #card > ${property}:${value}!important`,
+          ])
+  })
+
+  // A changed rule goes back where the edited sheet holds it: ahead of a later rule for the same
+  // element, which keeps the last word wherever both apply.
+  for (const [shape, sheet] of [
+    [
+      'ahead of a narrow-Desktop rule',
+      (width: string): string =>
+        `#card{width:${width}}@media (max-width:1100px){#card{width:20px}}`,
+    ],
+    [
+      'in its Desktop group ahead of a narrow-Desktop rule',
+      (width: string): string =>
+        `@media (min-width:769px){#card{width:${width}}@media (max-width:1100px){#card{width:20px}}}`,
+    ],
+    [
+      'ahead of a same-selector rule inside @supports',
+      (width: string): string => `#card{width:${width}}@supports (display:grid){#card{width:20px}}`,
+    ],
+  ] as const)
+    it(`keeps a changed width ${shape}`, () => {
+      expect(syncLayout(sheet('10px'), sheet('11px'), sheet('10px'))).toBe(sheet('11px'))
+    })
+
+  // Where the edited sheet holds the changed rule after the later one, the change comes last.
+  it('appends a changed width that the edited sheet holds after a narrow-Desktop rule', () => {
+    const narrow = '@media (max-width:1100px){#card{width:20px}}'
+    const before = `#card{width:10px}${narrow}`
+    expect(syncLayout(before, `${before}#card{width:11px}`, before)).toBe(
+      `${narrow}#card{width:11px}`,
+    )
+  })
+
+  // Only a later plain rule for the same element holds a change back from the end.
+  for (const [follower, later] of [
+    ["another element's rule", '#other{width:5px}'],
+    ['a resolver override', '.sec :where(#card){width:5px}'],
+  ] as const)
+    it(`keeps a changed Desktop width after the element's unconditional rule when ${follower} follows`, () => {
+      const sheet = (width: string): string =>
+        `#card{width:50%}@media (min-width:769px){#card{width:${width}}}${later}`
+      const result = syncLayout(sheet('10px'), sheet('11px'), sheet('10px'))
+      expect(scoped(result, 'width').filter((entry) => !entry.endsWith('width:5px'))).toEqual([
+        '#card > width:50%',
+        '@media (min-width:769px) > #card > width:11px',
+      ])
+    })
+
+  // Each anonymous layer is a layer of its own, so a change stays in the layer it was made in.
+  for (const [layer, after] of [
+    ['the first', '@layer{#card{width:25px}}@layer{#card{width:30px}}'],
+    ['the second', '@layer{#card{width:20px}}@layer{#card{width:35px}}'],
+  ] as const)
+    it(`keeps a width changed in ${layer} of two anonymous layers inside that layer`, () => {
+      const before = '@layer{#card{width:20px}}@layer{#card{width:30px}}'
+      expect(syncLayout(before, after, before)).toBe(after)
+    })
+
+  // A new conditional rule arrives under its conditions and leaves the unconditional rule alone.
+  for (const wrapper of ['@supports (display:grid)', '@layer owners'])
+    it(`adds a same-selector rule inside ${wrapper} that another sheet lacks`, () => {
+      const before = '#card{width:10px;color:blue}'
+      const after = `#card{width:10px;color:red}${wrapper}{#card{width:20px}}`
+      expect(syncLayout(before, after, before)).toBe(`${before}${wrapper}{#card{width:20px}}`)
     })
 })
 
