@@ -647,7 +647,23 @@ export function CmsEditor(props: Props): JSX.Element {
             [current.mode]: aboutExport.css,
           },
         }
-        pages.push(syncPageLayout(aboutOwner, about, current.lang, current.mode))
+        // Import and export mark conditional and changed owner declarations important, so a
+        // sheet stored without passing the canvas differs from its own export. The About part of
+        // the canvas before this edit differs from this export only by the edit.
+        const checkpointExport = exportNativeCanvas(
+          checkpoint.current.html,
+          checkpoint.current.css,
+          current.mode,
+        )
+        const aboutBaseline = extractComposedAbout(
+          checkpointExport.html,
+          canonicalizeCmsRootStyles(checkpointExport.css, wrapperId),
+          before.html,
+          { about: before.css[current.mode], home: storedHome },
+        )
+        const baseline = structuredClone(aboutOwner)
+        if (aboutBaseline) baseline.content[current.lang].css[current.mode] = aboutBaseline.css
+        pages.push(syncPageLayout(baseline, about, current.lang, current.mode))
       }
       const updatedPresentation = {
         ...current.presentation,
