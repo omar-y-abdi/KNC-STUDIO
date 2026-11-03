@@ -708,8 +708,8 @@ interface PlainRule {
   readonly items: readonly { readonly block: LayoutBlock; readonly item: ListItem<CssNode> }[]
 }
 
-/** Every plain component rule in source order, with its conditions numbered as `declarations()`
- * numbers them. */
+/** Every plain component rule in source order, also one a layer inside another rule holds, with
+ * its conditions numbered as `declarations()` numbers them. */
 function plainRules(
   block: LayoutBlock,
   conditions: LayoutContext[] = [],
@@ -728,11 +728,13 @@ function plainRules(
     if (node.type === 'Rule') {
       const selector = layoutSelector(node.prelude)
       if (selector) rules.push({ rule: node, selector, conditions, items: here })
-    } else if (node.block) {
-      const ordered = !isLayerOrder(node) && ident.decode(node.name).toLowerCase() === 'layer'
-      const context = { header, position: index, ...(ordered ? { occurrence } : {}) }
-      rules.push(...plainRules(node.block, [...conditions, context], here))
     }
+    if (!node.block) return
+    const ordered =
+      !isLayerOrder(node) &&
+      (node.type === 'Rule' || ident.decode(node.name).toLowerCase() === 'layer')
+    const context = { header, position: index, ...(ordered ? { occurrence } : {}) }
+    rules.push(...plainRules(node.block, [...conditions, context], here))
   })
   return rules
 }

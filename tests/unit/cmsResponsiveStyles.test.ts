@@ -1279,6 +1279,27 @@ describe('conditional component geometry', () => {
       const after = `#card{width:10px;color:red}${wrapper}{#card{width:20px}}`
       expect(syncLayout(before, after, before)).toBe(`${before}${wrapper}{#card{width:20px}}`)
     })
+
+  // A rule can hold another element's rule inside a layer. The change replaces that copy.
+  for (const layer of ['@layer', '@layer owners'])
+    it(`replaces a width changed in ${layer} nested in a parent rule`, () => {
+      const sheet = (width: string): string => `#parent{${layer}{#card{width:${width}}}}`
+      expect(syncLayout(sheet('10px'), sheet('11px'), sheet('10px'))).toBe(sheet('11px'))
+    })
+
+  // The nested copy has conditions of its own, so a change outside the parent rule leaves it.
+  for (const [shape, changed] of [
+    ['a top-level rule for the element', (width: string): string => `#card{width:${width}}`],
+    [
+      'the element in a top-level layer',
+      (width: string): string => `@layer{#card{width:${width}}}`,
+    ],
+  ] as const)
+    it(`leaves a width in a layer nested in a parent rule alone when ${shape} changes`, () => {
+      const sheet = (width: string): string => `${changed(width)}#parent{@layer{#card{width:20px}}}`
+      const result = syncLayout(sheet('10px'), sheet('11px'), sheet('10px'))
+      expect(scoped(result, 'width').sort()).toEqual(scoped(sheet('11px'), 'width').sort())
+    })
 })
 
 describe('site theme defaults and owner overrides', () => {
