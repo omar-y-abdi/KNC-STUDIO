@@ -45,8 +45,10 @@ async function openStudio(page) {
   await mountStudio(page)
 }
 
-// What identifies the page's current document and module lifetime.
-const lifetime = (page) => page.evaluate(() => globalThis.performance.timeOrigin)
+// What identifies the page's current document and module lifetime: a token the first read in a
+// document creates. A reload starts a new document without it; exit/reopen keeps it.
+const lifetime = (page) =>
+  page.evaluate(() => (globalThis.cmsLifetime ??= globalThis.crypto.randomUUID()))
 
 async function reopenStudio(page) {
   const before = await lifetime(page)
