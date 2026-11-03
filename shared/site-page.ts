@@ -2,6 +2,7 @@ import { repairDesktopCss } from './cms-device-css.ts'
 import { generate, parse, walk, type Atrule, type CssNode, type Rule } from 'css-tree'
 import { parseFragment, serialize, serializeOuter, type DefaultTreeAdapterMap } from 'parse5'
 import {
+  isMenuPage,
   isSitePage,
   type CmsDocument,
   type CmsLang,
@@ -57,7 +58,8 @@ const query = (lang: CmsLang, mode: ServedMode): string =>
   `?lang=${lang}${mode ? `&mode=${mode}` : ''}`
 
 /** The site menu in the served language and scheme: the three native pages, then every created
- * page shown in the menu. A deleted page is simply absent from `presentation.pages`. */
+ * page and Contact shown in the menu, in presentation order. A deleted page is simply absent from
+ * `presentation.pages`. */
 export function menuLinks(
   presentation: CmsPresentation,
   lang: CmsLang,
@@ -74,7 +76,7 @@ export function menuLinks(
       label: lang === 'sv' ? sv : en,
     })),
     ...presentation.pages
-      .filter((page) => page.inMenu && isSitePage(page))
+      .filter((page) => page.inMenu && isMenuPage(page))
       .map((page) => ({ href: `${page.path}${query(lang, mode)}`, label: page.name[lang] })),
   ]
 }

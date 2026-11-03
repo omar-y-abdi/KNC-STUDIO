@@ -169,6 +169,31 @@ describe('a created page is its body under the live homepage header', () => {
     expect(dark).toContain('class="cms-site-action-language" href="/hemsida?lang=sv&amp;mode=dark"')
   })
 
+  // Contact can be in the menu, as on main (owner decision, 2026-11-03): Visa i meny lists it with
+  // the created pages, in presentation order. No other core page is ever listed.
+  it('lists Contact with the created pages, in presentation order, while Visa i meny is on', () => {
+    const contactPage = createSitePage({
+      id: crypto.randomUUID(),
+      path: '/contact',
+      name: { sv: 'Kontakt', en: 'Contact' },
+    })
+    const presentation = presentationWith(
+      created('/sida-a', 'Sida A'),
+      contactPage,
+      created('/sida-b', 'Sida B'),
+    )
+    for (const page of presentation.pages) page.inMenu = true
+    const paths = (): readonly string[] =>
+      menuLinks(presentation, 'sv', 'light').map((link) => link.href.split('?')[0] ?? '')
+    expect(paths()).toEqual(['/', '/booking', '/about', '/sida-a', '/contact', '/sida-b'])
+    expect(menuLinks(presentation, 'en', 'dark')).toContainEqual({
+      href: '/contact?lang=en&mode=dark',
+      label: 'Contact',
+    })
+    contactPage.inMenu = false
+    expect(paths()).toEqual(['/', '/booking', '/about', '/sida-a', '/sida-b'])
+  })
+
   it('ends with a live footer linking the privacy policy and booking terms, never stored', () => {
     const page = created('/hemsida', 'Ny sida')
     const presentation = presentationWith(page)

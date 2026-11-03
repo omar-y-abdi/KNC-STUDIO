@@ -1,4 +1,3 @@
-import { parseFragment, serialize, type DefaultTreeAdapterMap } from 'parse5'
 import type { CmsLang, CmsPage } from '../../shared/cms'
 import {
   EMPTY_BUSINESS_FACTS,
@@ -8,6 +7,7 @@ import {
   type BusinessSettings,
   type SchemaDay,
 } from './business'
+import { CONTACT_SLOTS, fillSlots } from './businessSlots'
 
 export function escapeAttribute(value: string): string {
   return value
@@ -78,8 +78,6 @@ function contactHours(facts: BusinessDiscoveryFacts, lang: CmsLang): string {
   )
 }
 
-/** Studio may add attributes or nested markup to a slot. Match its identity in the parsed tree,
- * retaining the owner's element and styling while replacing only the authoritative content. */
 function contactSlots(
   html: string,
   business: BusinessSettings,
@@ -87,31 +85,13 @@ function contactSlots(
   details: string,
   hours: string,
 ): string {
-  const fragment = parseFragment(html)
-  const ids = new Map([
-    ['contact-title', escapeElementText(heading + ' ' + business.name)],
-    ['contact-details', details],
-    ['contact-hours', hours],
-  ])
-  const attributes = new Map([
-    ['data-business-name', escapeElementText(business.name)],
-    ['data-business-city', escapeElementText(business.city)],
-  ])
-  const visit = (node: DefaultTreeAdapterMap['node']): void => {
-    if ('attrs' in node) {
-      const content = node.attrs
-        .map((attr) => (attr.name === 'id' ? ids.get(attr.value) : attributes.get(attr.name)))
-        .find((value) => value !== undefined)
-      if (content !== undefined) {
-        node.childNodes = parseFragment(content).childNodes
-        for (const child of node.childNodes) child.parentNode = node
-        return
-      }
-    }
-    if ('childNodes' in node) node.childNodes.forEach(visit)
-  }
-  visit(fragment)
-  return serialize(fragment)
+  return fillSlots(html, CONTACT_SLOTS, {
+    'contact-title': escapeElementText(heading + ' ' + business.name),
+    'contact-details': details,
+    'contact-hours': hours,
+    'data-business-name': escapeElementText(business.name),
+    'data-business-city': escapeElementText(business.city),
+  })
 }
 
 /** The Contact body with its server-owned slots filled from the live business and schedule. */

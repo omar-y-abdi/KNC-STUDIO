@@ -8,6 +8,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/ho
 import {
   cmsFontFaceCss,
   isCreatedPagePath,
+  isMenuPage,
   isSitePage,
   validateDocument,
   type CmsAsset,
@@ -762,21 +763,24 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
           onInput={(e) => editMeta('description', e.currentTarget.value)}
         />
       </label>
-      <label>
-        <span>
-          <input
-            type="checkbox"
-            checked={page.inMenu}
-            onChange={(e) => {
-              const checked = e.currentTarget.checked
-              editPageMetadata((next) => {
-                next.inMenu = checked
-              })
-            }}
-          />{' '}
-          Visa i meny
-        </span>
-      </label>
+      {/* Only these pages can appear in the menu, so only they offer the choice. */}
+      {isMenuPage(page) && (
+        <label>
+          <span>
+            <input
+              type="checkbox"
+              checked={page.inMenu}
+              onChange={(e) => {
+                const checked = e.currentTarget.checked
+                editPageMetadata((next) => {
+                  next.inMenu = checked
+                })
+              }}
+            />{' '}
+            Visa i meny
+          </span>
+        </label>
+      )}
       {!protectedIds.has(page.id) && isSitePage(page) && (
         <div class="cms-actions-row">
           <button

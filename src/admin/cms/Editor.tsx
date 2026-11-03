@@ -29,6 +29,7 @@ import {
   isServerOwned,
   runtimeOwnedRole,
   setCanvasPagePath,
+  slotSource,
   styleSectors,
 } from './editorPolicy'
 import { siteThemeCss } from '../../../shared/site-theme'
@@ -1211,6 +1212,8 @@ export function CmsEditor(props: Props): JSX.Element {
       ? selected.components().filter((child: Component) => child.is('textnode'))
       : []
   const readOnly = selected ? isReadOnlyPreview(selected) : false
+  // The policy's flag, which the style manager reads too: nudges and advanced CSS follow it.
+  const stylable = selected?.get('stylable') !== false
   const logoText = tag === 'svg' ? (selected?.find('text') ?? []) : []
 
   if (loadError) throw loadError
@@ -1480,8 +1483,8 @@ export function CmsEditor(props: Props): JSX.Element {
                   )}
                 </>
               )}
-              <h3>Finjustera</h3>
-              <div class="cms-nudge-grid">
+              <h3 hidden={!stylable}>Finjustera</h3>
+              <div class="cms-nudge-grid" hidden={!stylable}>
                 <button
                   type="button"
                   aria-label="Flytta åt vänster"
@@ -1528,7 +1531,7 @@ export function CmsEditor(props: Props): JSX.Element {
               {isProtected(selected) && (
                 <p class="cms-lock-note">
                   {serverOwned
-                    ? 'Uppgiften hämtas från Företag & SEO och bokningsschemat. Utseendet får ändras.'
+                    ? `Uppgiften hämtas från ${slotSource(selected)}. ${stylable ? 'Utseendet får ändras.' : 'Välj fältet runt den för att ändra utseendet.'}`
                     : 'Funktionsblocket är skyddat. Utseendet får ändras; kopplingen till runtime bevaras.'}
                 </p>
               )}
@@ -1554,7 +1557,7 @@ export function CmsEditor(props: Props): JSX.Element {
             <div id="cms-traits" />
             <div id="cms-styles" />
           </div>
-          {selected && !readOnly && (
+          {selected && !readOnly && stylable && (
             <details class="cms-advanced">
               <summary>Avancerad CSS</summary>
               <label>

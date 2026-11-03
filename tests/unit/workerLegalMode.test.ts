@@ -451,43 +451,131 @@ describe('Worker CMS contact and static fallback', () => {
     },
   )
 
-  it('serves the name spans of a published CMS legal page as authored', async () => {
-    const source = publicFile('/privacy.html')
-    const body = source
-      .slice(source.indexOf('<body>') + '<body>'.length, source.indexOf('</body>'))
-      .replace(
-        '<span data-business-name>salongen</span> · Senast',
-        '<span data-business-name>Ägarens namn</span> · Senast',
-      )
-    const privacy = publishedPage({
-      ...terms,
-      id: '10000000-0000-4000-8000-000000000005',
-      kind: 'privacy',
-      path: '/privacy',
-      name: { sv: 'Integritetspolicy', en: 'Privacy policy' },
-      title: { sv: 'Integritetspolicy', en: 'Privacy policy' },
-      content: {
-        sv: { ...terms.content.sv, html: body },
-        en: { ...terms.content.en, html: body },
-      },
-    })
-    // Edge stores the attribute reserialised; the Worker's legal fill matches only the bare form.
-    const owner = '<span data-business-name="">Ägarens namn</span> · Senast'
-    expect(privacy.content.sv.html).toContain(owner)
+  // Företag & SEO fills every legal business slot on every page that needs it, so the owner never
+  // enters it page by page (owner decision, 2026-11-03). Studio locks the same slots on the same
+  // pages. Each page below is what Edge stores after validation, in the serialised form.
+  const legalBody = (path: '/privacy' | '/terms'): string => {
+    const source = publicFile(`${path}.html`)
+    return source.slice(source.indexOf('<body>') + '<body>'.length, source.indexOf('</body>'))
+  }
+  const legalPage = (path: '/privacy' | '/terms', html: string): CmsPage => {
+    const content = { sv: { ...terms.content.sv, html }, en: { ...terms.content.en, html } }
+    return publishedPage(
+      path === '/privacy'
+        ? {
+            ...terms,
+            id: '10000000-0000-4000-8000-000000000005',
+            kind: 'privacy',
+            path,
+            name: { sv: 'Integritetspolicy', en: 'Privacy policy' },
+            title: { sv: 'Integritetspolicy', en: 'Privacy policy' },
+            content,
+          }
+        : { ...terms, content },
+    )
+  }
+  const legalDiscovery = {
+    ...contactDiscovery,
+    settings: {
+      ...contactDiscovery.settings,
+      business_legal_name: 'Aktuell <Juridik> AB',
+      business_org_number: '556016-0680',
+      cancellation_policy_hours: '48',
+    },
+  }
+  // `discovery` null: Företag & SEO cannot be read.
+  const requestLegal = async (page: CmsPage, discovery: unknown = legalDiscovery) => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) =>
       String(input).endsWith('/rpc/public_cms_presentation')
-        ? Response.json({ revision: 7, presentation: { ...presentation, pages: [privacy] } })
-        : Response.json(contactDiscovery),
+        ? Response.json({ revision: 7, presentation: { ...presentation, pages: [page] } })
+        : discovery === null
+          ? new Response(null, { status: 503 })
+          : Response.json(discovery),
     )
     const response = await worker.fetch(
-      new Request('https://bladeblendstudio.se/privacy'),
+      new Request(`https://bladeblendstudio.se${page.path}`),
       env,
       noPublicContent,
     )
     expect(response.status).toBe(200)
-    const html = await response.text()
+    return response.text()
+  }
+
+  it('fills the name spans of a published CMS legal page from Företag & SEO', async () => {
+    const body = legalBody('/privacy').replace(
+      '<span data-business-name>salongen</span> · Senast',
+      '<span data-business-name>Ägarens namn</span> · Senast',
+    )
+    const privacy = legalPage('/privacy', body)
+    expect(privacy.content.sv.html).toContain(
+      '<span data-business-name="">Ägarens namn</span> · Senast',
+    )
+    const html = await requestLegal(privacy, contactDiscovery)
     expect(html).toContain('data-cms-public="1"')
-    expect(html).toContain(owner)
+    expect(html).toContain('<span data-business-name="">Aktuell &amp; Salong</span> · Senast')
+    expect(html).not.toContain('Ägarens namn')
+  })
+
+  it.each([
+    ['/privacy', 4, 2],
+    ['/terms', 1, 1],
+  ] as const)(
+    'fills every business slot of the published CMS %s page, escaped',
+    async (path, names, contacts) => {
+      const page = legalPage(path, legalBody(path))
+      const html = await requestLegal(page)
+      const filled = (pattern: RegExp): number => html.match(pattern)?.length ?? 0
+      expect(filled(/<span data-business-name="">Aktuell &amp; Salong<\/span>/g)).toBe(names)
+      expect(html).not.toMatch(/<span data-business-name="">(?!Aktuell &amp; Salong<)/)
+      expect(
+        filled(
+          /<span data-business-contact=""><a href="mailto:current@example\.test">current@example\.test<\/a><\/span>/g,
+        ),
+      ).toBe(contacts)
+      expect(html).not.toContain('kontaktuppgifterna på startsidan / home page contact details')
+      expect(html).toContain(
+        '<div id="legal-business-details-sv"><dl><dt>Salong</dt><dd>Aktuell &amp; Salong</dd><dt>Juridiskt företagsnamn</dt><dd>Aktuell &lt;Juridik&gt; AB</dd><dt>Organisationsnummer</dt><dd>556016-0680</dd><dt>Adress</dt><dd>Ny &amp; Gata 12, 123 45 Malmö</dd><dt>E-post</dt><dd>current@example.test</dd><dt>Telefon</dt><dd>040-123 45 67</dd></dl></div>',
+      )
+      expect(html).toContain(
+        '<div id="legal-business-details-en"><dl><dt>Salon</dt><dd>Aktuell &amp; Salong</dd><dt>Legal business name</dt><dd>Aktuell &lt;Juridik&gt; AB</dd><dt>Registration number</dt><dd>556016-0680</dd><dt>Address</dt><dd>Ny &amp; Gata 12, 123 45 Malmö</dd><dt>Email</dt><dd>current@example.test</dd><dt>Phone</dt><dd>040-123 45 67</dd></dl></div>',
+      )
+      if (path === '/privacy') {
+        expect(html).toContain(
+          '<span data-business-controller="sv">Aktuell &lt;Juridik&gt; AB</span>',
+        )
+        expect(html).toContain(
+          '<span data-business-controller="en">Aktuell &lt;Juridik&gt; AB</span>',
+        )
+      } else {
+        expect(html).toContain(
+          '<p id="cancellation-policy-sv">Avboka senast 48 timmar före den bokade tiden.</p>',
+        )
+        expect(html).toContain(
+          '<p id="cancellation-policy-en">Cancel at least 48 hours before your appointment.</p>',
+        )
+      }
+    },
+  )
+
+  it('serves a CMS legal page as authored when Företag & SEO cannot be read', async () => {
+    const page = legalPage('/terms', legalBody('/terms'))
+    const html = await requestLegal(page, null)
+    expect(html).toContain(page.content.sv.html)
+  })
+
+  it('serves legal slot markup on another CMS page exactly as authored', async () => {
+    const body =
+      '<main><p><span data-business-name="">Ägarens namn</span> och <span data-business-controller="sv">Ägarens bolag</span></p><div id="legal-business-details-sv"><p>Ägarens uppgifter</p></div><p id="cancellation-policy-sv">Ägarens avbokning</p><span data-business-contact=""><a href="/">Ägarens kontakt</a></span></main>'
+    const visit = createSitePage({
+      id: '10000000-0000-4000-8000-000000000014',
+      path: '/visit',
+      name: { sv: 'Besök', en: 'Visit' },
+    })
+    visit.content.sv.html = body
+    visit.content.en.html = body
+    const stored = publishedPage(visit)
+    expect(stored.content.sv.html).toBe(body)
+    expect(await requestLegal(stored)).toContain(body)
   })
 
   it('fills the CMS fragment without reserialising any shell bytes compared with terms', async () => {

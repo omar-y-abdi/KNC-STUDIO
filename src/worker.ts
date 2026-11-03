@@ -13,6 +13,7 @@ import {
   renderContactFragment,
   renderContactPage,
 } from './site/contactPage'
+import { renderLegalFragment, renderLegalPage } from './site/legalPage'
 import { repairDesktopCss } from '../shared/cms-device-css'
 import { siteThemeCss } from '../shared/site-theme'
 import { themeDeclarations } from '../shared/site-theme-declarations'
@@ -749,53 +750,17 @@ export function renderLegalMetadata(
       ? `Bokning, priser, avbokning och kontakt hos ${business.name}.`
       : `Så hanterar ${business.name} bokningsuppgifter, cookies, e-post och kalenderkoppling.`,
   )
-  rendered = rendered.replaceAll(
-    /<span data-business-name\s*>[^<]*<\/span\s*>/g,
-    () => `<span data-business-name>${escapeElementText(business.name)}</span>`,
+  // Only the body is parsed and filled as on a CMS legal page; the head is never reserialised.
+  const opening = /<body\b[^>]*>/i.exec(rendered)
+  const end = rendered.lastIndexOf('</body>')
+  if (!opening || end < opening.index + opening[0].length)
+    return renderLegalFragment(rendered, business)
+  const start = opening.index + opening[0].length
+  return (
+    rendered.slice(0, start) +
+    renderLegalFragment(rendered.slice(start, end), business) +
+    rendered.slice(end)
   )
-  rendered = rendered.replaceAll(
-    /<span data-business-controller="(sv|en)"\s*>[^<]*<\/span\s*>/g,
-    (_match, lang: string) =>
-      `<span data-business-controller="${lang}">${escapeElementText(business.legalName || business.name)}</span>`,
-  )
-  const contact =
-    business.email === ''
-      ? '<a href="/">Kontakt / Contact</a>'
-      : `<a href="mailto:${escapeAttribute(business.email)}">${escapeElementText(business.email)}</a>`
-  rendered = rendered.replaceAll(
-    /<span data-business-contact\s*>[\s\S]*?<\/span\s*>/g,
-    () => `<span data-business-contact>${contact}</span>`,
-  )
-  for (const lang of ['sv', 'en'] as const) {
-    const rows: readonly (readonly [string, string])[] = [
-      [lang === 'sv' ? 'Salong' : 'Salon', business.name],
-      [lang === 'sv' ? 'Juridiskt företagsnamn' : 'Legal business name', business.legalName],
-      [lang === 'sv' ? 'Organisationsnummer' : 'Registration number', business.organizationNumber],
-      [lang === 'sv' ? 'Adress' : 'Address', formatBusinessAddress(business)],
-      [lang === 'sv' ? 'E-post' : 'Email', business.email],
-      [lang === 'sv' ? 'Telefon' : 'Phone', business.phoneDisplay],
-    ]
-    const details = rows
-      .filter(([, value]) => value !== '')
-      .map(
-        ([label, value]) =>
-          `<dt>${escapeElementText(label)}</dt><dd>${escapeElementText(value)}</dd>`,
-      )
-      .join('')
-    rendered = replaceElementContent(
-      rendered,
-      `legal-business-details-${lang}`,
-      `<dl>${details}</dl>`,
-    )
-    rendered = replaceElementText(
-      rendered,
-      `cancellation-policy-${lang}`,
-      lang === 'sv'
-        ? `Avboka senast ${business.cancellationPolicyHours} timmar före den bokade tiden.`
-        : `Cancel at least ${business.cancellationPolicyHours} hours before your appointment.`,
-    )
-  }
-  return rendered
 }
 
 function priceRange(facts: BusinessDiscoveryFacts): string | null {
@@ -1156,7 +1121,9 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
               discovery?.business ?? DEFAULT_BUSINESS,
               discovery?.facts ?? EMPTY_BUSINESS_FACTS,
             )
-          : cmsPage
+          : (cmsPage.path === '/privacy' || cmsPage.path === '/terms') && discovery
+            ? renderLegalPage(cmsPage, lang, discovery.business)
+            : cmsPage
       let body = renderCmsPage(
         await index.text(),
         page,
@@ -1185,8 +1152,6 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
           `<script type="application/json" id="cms-native-state">${state}</script></head>`,
         )
       }
-      if (cmsPage.path === '/privacy' || cmsPage.path === '/terms')
-        body = renderLegalMetadata(body, cmsPage.path, discovery?.business ?? null)
       return new Response(request.method === 'HEAD' ? null : body, {
         status: index.status,
         headers,
