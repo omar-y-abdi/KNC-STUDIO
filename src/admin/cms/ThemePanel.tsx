@@ -2,6 +2,7 @@ import type { JSX } from 'preact'
 import { useRef, useState } from 'preact/hooks'
 import type { CmsDocument, CmsLang, CmsMode, CmsPage } from '../../../shared/cms'
 import { SITE_THEME_DEFAULTS } from '../../../shared/site-theme'
+import { resolveBusinessSettings } from '../../site/business'
 import { LivePreview } from './LivePreview'
 import { CmsIcon } from './Icon'
 import { compactWorkspace } from './useResponsivePanels'
@@ -51,6 +52,7 @@ export function ThemePanel({
     ...SITE_THEME_DEFAULTS[mode],
     ...document.presentation.themes[mode],
   }
+  const business = resolveBusinessSettings(new Map(Object.entries(document.settings)))
   const update = (key: string, value: string): void => {
     const next = structuredClone(document)
     next.presentation.themes[mode][key] = value
@@ -181,6 +183,7 @@ export function ThemePanel({
           <LivePreview
             page={page}
             presentation={document.presentation}
+            business={business}
             lang={lang}
             mode={mode}
             device={device}
