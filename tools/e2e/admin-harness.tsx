@@ -568,11 +568,19 @@ export function mountDeliveryStatusHarness(): void {
 
 let deliveryRace: { release: () => void; swapPort: () => void } | undefined
 
-/** Releases the held older log page, or gives the mounted view the same port as a new object. */
-export function deliveryRaceControl(action: 'release' | 'swap-port'): void {
-  if (deliveryRace === undefined) throw new Error('delivery race harness not mounted')
-  if (action === 'release') deliveryRace.release()
-  else deliveryRace.swapPort()
+/** Releases the held older log page now or right after the next click's own handlers, or gives the
+ * mounted view the same port as a new object. */
+export function deliveryRaceControl(action: 'release' | 'release-after-click' | 'swap-port'): void {
+  const race = deliveryRace
+  if (race === undefined) throw new Error('delivery race harness not mounted')
+  if (action === 'release') race.release()
+  // A trusted click runs a microtask checkpoint after each listener, so a release from a capture
+  // listener would land before the clicked button's own handler. Bubbling to the document, this
+  // listener runs after that handler, and the held page then lands in the same click's microtasks,
+  // before any effect the handler scheduled for after the next paint.
+  else if (action === 'release-after-click')
+    document.addEventListener('click', () => race.release(), { once: true })
+  else race.swapPort()
 }
 
 /** Log pages of two entries. The first load lists Mejl ett and Mejl två; every later first page
