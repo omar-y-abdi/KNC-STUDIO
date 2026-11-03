@@ -588,32 +588,199 @@ test('Home saves keep a stored layer copy ahead of the layer before it in About'
   assert.equal(result.about, result.aboutCss)
 })
 
-// A Home save can leave a Home layer rule that styles an About ID in About's own sheet. On public
-// Home, an earlier Home block puts About's named layer before that rule's layer. About's own sheet
-// must keep that layer order, or About opened on its own lets the rule win a cascade it lost on Home.
+// A Home save can leave a Home layer rule that styles an About ID in About's own sheet. After every
+// save, public Home paints as it did before, and About opened on its own paints as it did before:
+// a text change on Home never changes About's cascade. Where a dropped Home block named one of
+// About's layers before that rule's layer, About's sheet keeps an empty copy of the block, inside
+// the same conditions and directly before that rule, when the order decides a cascade: About's
+// layers in About's own order, or a new layer whose !important declarations would outrank About's.
+// Home's declarations never stay, and Home's order of About's layers never replaces About's own.
+// About's layers a and b: an !important color prefers the earlier layer and a normal background
+// the later one, so a before b paints both red, and b before a paints both blue.
+const aboutLayers =
+  '@layer a { .card { color: red !important; background-color: blue } } ' +
+  '@layer b { .card { color: blue !important; background-color: red } }'
+const savedAboutLayers =
+  '@layer a{.card{color:red!important;background-color:blue}}' +
+  '@layer b{.card{color:blue!important;background-color:red}}'
 const layerOrders = [
   {
     name: 'an empty named layer orders an anonymous one',
     homeCss: '@layer first {} @layer { #owner-card { color: blue !important } }',
+    aboutSaved:
+      '@layer first{}@layer{#owner-card{color:blue!important}}@layer first{.card{color:red!important}}',
   },
   {
     name: 'a layer statement orders an anonymous one',
     homeCss: '@layer first; @layer { #owner-card { color: blue !important } }',
+    aboutSaved:
+      '@layer first{}@layer{#owner-card{color:blue!important}}@layer first{.card{color:red!important}}',
   },
   {
     name: 'the named layer styles an About ID itself',
     homeCss:
       '@layer first { #owner-card { --anchor: 1; } } @layer { #owner-card { color: blue !important } }',
+    aboutSaved:
+      '@layer first{#owner-card{--anchor:1}}@layer{#owner-card{color:blue!important}}@layer first{.card{color:red!important}}',
   },
   {
     name: 'the anonymous layer styles only Home',
     homeCss: '@layer first {} @layer { #home-heading { color: blue !important } }',
+    aboutSaved: '@layer first{.card{color:red!important}}',
+  },
+  {
+    name: 'Home names About layers in About order',
+    homeCss: '@layer a {} @layer b {}',
+    aboutCss: aboutLayers,
+    aboutSaved: savedAboutLayers,
+    wins: { card: 'rgb(255, 0, 0)', background: 'rgb(255, 0, 0)' },
+  },
+  {
+    name: 'Home names About layers in the other order',
+    homeCss: '@layer b {} @layer a {}',
+    aboutCss: aboutLayers,
+    aboutSaved: savedAboutLayers,
+    wins: { card: 'rgb(0, 0, 255)', background: 'rgb(0, 0, 255)' },
+    alone: { card: 'rgb(255, 0, 0)', background: 'rgb(255, 0, 0)' },
+  },
+  {
+    name: 'a Home block with declarations names the layer first',
+    homeCss:
+      '@layer first { .home-note { color: green } #home-heading { color: green } } ' +
+      '@layer { #owner-card { color: blue !important } }',
+    aboutSaved:
+      '@layer first{}@layer{#owner-card{color:blue!important}}@layer first{.card{color:red!important}}',
+  },
+  {
+    name: 'a later Home block names a placed layer again',
+    homeCss:
+      '@layer b { .home-note { color: green } } ' +
+      '@supports (display: block) { @layer a { .home-aside { color: green } } @layer b { .home-tail { color: green } } }',
+    aboutCss: aboutLayers,
+    aboutSaved: savedAboutLayers,
+    wins: { card: 'rgb(0, 0, 255)', background: 'rgb(0, 0, 255)' },
+    alone: { card: 'rgb(255, 0, 0)', background: 'rgb(255, 0, 0)' },
+  },
+  {
+    name: 'About orders its layers against the order Home gives them',
+    homeCss: '@layer a { .home-note { color: green } } @layer b {}',
+    aboutCss:
+      '@layer b { .card { color: blue !important } } @layer a {} @layer a { .card { color: red !important } }',
+    aboutSaved:
+      '@layer b{.card{color:blue!important}}@layer a{}@layer a{.card{color:red!important}}',
+    wins: { card: 'rgb(255, 0, 0)' },
+    alone: { card: 'rgb(0, 0, 255)' },
+  },
+  {
+    name: 'a Home block names the layer first inside a condition',
+    homeCss:
+      '@media (max-width: 1px) { @layer first { .home-note { color: green } } } ' +
+      '@media (max-width: 1px) { @layer { #owner-card { color: blue !important } } }',
+    aboutSaved:
+      '@media (max-width:1px){@layer first{}}' +
+      '@media (max-width:1px){@layer{#owner-card{color:blue!important}}}' +
+      '@layer first{.card{color:red!important}}',
+  },
+  {
+    name: 'a new layer with normal declarations only needs no empty block',
+    homeCss: '@layer first {} @layer { #owner-card { background-color: blue } }',
+    aboutCss: '@layer first { .card { color: red !important; background-color: red } }',
+    aboutSaved:
+      '@layer{#owner-card{background-color:blue}}@layer first{.card{color:red!important;background-color:red}}',
+    wins: { card: 'rgb(255, 0, 0)', background: 'rgb(0, 0, 255)' },
+    alone: { card: 'rgb(255, 0, 0)', background: 'rgb(255, 0, 0)' },
+  },
+  {
+    name: 'Home names the first About layer before a moved rule names the second',
+    homeCss: '@layer a {} @layer b { #owner-card { --anchor: 1; } }',
+    aboutCss: aboutLayers,
+    aboutSaved: `@layer a{}@layer b{#owner-card{--anchor:1}}${savedAboutLayers}`,
+    wins: { card: 'rgb(255, 0, 0)', background: 'rgb(255, 0, 0)' },
+  },
+  {
+    name: 'a conditional Home block names the layer before an unconditional one',
+    homeCss:
+      '@media (max-width: 1px) { @layer first { .home-note { color: green } } } ' +
+      '@layer first {} @layer { #owner-card { color: blue !important } }',
+    aboutSaved:
+      '@media (max-width:1px){@layer first{}}@layer first{}' +
+      '@layer{#owner-card{color:blue!important}}@layer first{.card{color:red!important}}',
+  },
+  {
+    name: 'a later conditional Home block names the layer again',
+    homeCss:
+      '@layer first { .home-note { color: green } } ' +
+      '@supports (display: block) { @layer first { .home-tail { color: green } } } ' +
+      '@layer { #owner-card { color: blue !important } }',
+    aboutSaved:
+      '@layer first{}@layer{#owner-card{color:blue!important}}@layer first{.card{color:red!important}}',
+  },
+  {
+    name: 'a moved rule names the first About layer after Home names the second',
+    homeCss: '@layer b {} @layer a { #owner-card { --anchor: 1; } }',
+    aboutCss: aboutLayers,
+    aboutSaved: `@layer a{#owner-card{--anchor:1}}${savedAboutLayers}`,
+    wins: { card: 'rgb(0, 0, 255)', background: 'rgb(0, 0, 255)' },
+    alone: { card: 'rgb(255, 0, 0)', background: 'rgb(255, 0, 0)' },
+  },
+  {
+    name: 'a moved rule names the layer before the anonymous one',
+    homeCss:
+      '@layer first {} @layer first { #owner-card { --anchor: 1; } } ' +
+      '@layer { #owner-card { color: blue !important } }',
+    aboutSaved:
+      '@layer first{#owner-card{--anchor:1}}@layer{#owner-card{color:blue!important}}@layer first{.card{color:red!important}}',
+  },
+  {
+    name: "a new layer's !important meets only normal declarations",
+    homeCss:
+      '@layer first { .home-note { color: green !important } } ' +
+      '@layer { #owner-card { border-color: blue !important; background-color: blue } }',
+    aboutCss: '@layer first { .card { background-color: red } }',
+    aboutSaved:
+      '@layer{#owner-card{border-color:blue!important;background-color:blue}}@layer first{.card{background-color:red}}',
+    wins: { background: 'rgb(0, 0, 255)' },
+    alone: { background: 'rgb(255, 0, 0)' },
+  },
+  {
+    name: 'a moved rule names its layer inside a condition, then outside it',
+    homeCss:
+      '@media (max-width: 1px) { @layer first { .home-note { color: green } } } ' +
+      '@media (max-width: 1px) { @layer n { #owner-card { color: blue !important } } } ' +
+      '@layer first {} @layer n { #owner-card { color: blue !important } }',
+    aboutSaved:
+      '@media (max-width:1px){@layer first{}}' +
+      '@media (max-width:1px){@layer n{#owner-card{color:blue!important}}}' +
+      '@layer first{}@layer n{#owner-card{color:blue!important}}@layer first{.card{color:red!important}}',
+  },
+  {
+    name: 'a moved rule names the layer inside a condition before the anonymous one',
+    homeCss:
+      '@layer first {} @media (max-width: 1px) { @layer first { #owner-card { --anchor: 1; } } } ' +
+      '@layer { #owner-card { color: blue !important } }',
+    aboutSaved:
+      '@media (max-width:1px){@layer first{#owner-card{--anchor:1}}}@layer first{}' +
+      '@layer{#owner-card{color:blue!important}}@layer first{.card{color:red!important}}',
+  },
+  {
+    name: 'About names its layers first inside a condition',
+    homeCss: '@layer a {}',
+    aboutCss: `@media (max-width: 1px) { @layer a {} @layer b {} } ${aboutLayers}`,
+    aboutSaved: `@media (max-width:1px){@layer a{}@layer b{}}${savedAboutLayers}`,
+    wins: { card: 'rgb(255, 0, 0)', background: 'rgb(255, 0, 0)' },
   },
 ]
 // The name of the first layer a sheet mentions: '' for an anonymous layer.
 const firstLayerName = (css) => /@layer\s*([^\s{;,]*)/.exec(css)?.[1]
 
-for (const { name, homeCss } of layerOrders) {
+for (const {
+  name,
+  homeCss,
+  aboutCss = '@layer first { .card { color: red !important } }',
+  aboutSaved,
+  wins = { card: 'rgb(255, 0, 0)' },
+  alone = wins,
+} of layerOrders) {
   test(`Home text saves keep the About layer order About opens with (${name})`, async ({
     page,
   }) => {
@@ -621,7 +788,8 @@ for (const { name, homeCss } of layerOrders) {
     page.on('pageerror', (error) => errors.push(error.message))
     await page.setViewportSize({ width: 1600, height: 1000 })
     await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
-    const result = await page.evaluate(async (homeCss) => {
+    const sheets = { homeCss, aboutCss }
+    const result = await page.evaluate(async ({ homeCss, aboutCss }) => {
       const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
       const { emptyDocument, validateDocument } = await import('/shared/cms.ts')
       const { validateDocumentMarkupPlacements } = await import('/shared/cms-markup.ts')
@@ -642,7 +810,6 @@ for (const { name, homeCss } of layerOrders) {
         '<div data-knc-native="1"><div data-knc-surface="desktop-home"><h1 id="home-heading">Home</h1><div data-knc-slot="desktop-about"><section aria-labelledby="about-heading"></section></div></div><div data-knc-surface="mobile-home"><div data-knc-slot="mobile-about"><section aria-labelledby="about-heading"></section></div></div></div>'
       const aboutHtml =
         '<div data-knc-native="1"><section id="about-root" data-knc-surface="about" aria-labelledby="about-heading"><h2 id="about-heading">About</h2><div id="owner-card" class="card"></div></section></div>'
-      const aboutCss = '@layer first { .card { color: red !important } }'
       const make = (id, path, html, css) => ({
         id,
         path,
@@ -776,8 +943,9 @@ for (const { name, homeCss } of layerOrders) {
         const session = await mount(stored('/about'))
         try {
           const card = session.editor.Canvas.getDocument().getElementById('owner-card')
+          const style = session.view.getComputedStyle(card)
           return {
-            card: session.view.getComputedStyle(card).color,
+            paint: { card: style.color, background: style.backgroundColor },
             css: canonicalizeCmsRootStyles(readCanvasCss(session.editor), session.wrapperId),
           }
         } finally {
@@ -795,9 +963,10 @@ for (const { name, homeCss } of layerOrders) {
         doc.open()
         doc.write(`<!doctype html><html><head>${styles}</head><body>${html}</body></html>`)
         doc.close()
-        const card = doc.defaultView.getComputedStyle(doc.getElementById('owner-card')).color
+        const card = doc.defaultView.getComputedStyle(doc.getElementById('owner-card'))
+        const measured = { card: card.color, background: card.backgroundColor }
         frame.remove()
-        return card
+        return measured
       }
       const paint = () => {
         const home = stored('/').content.sv
@@ -822,33 +991,40 @@ for (const { name, homeCss } of layerOrders) {
         })
       }
       return { before, saves }
-    }, homeCss)
+    }, sheets)
     await test.info().attach('home-save-layer-order', {
       body: JSON.stringify(result, null, 2),
       contentType: 'application/json',
     })
     assert.deepEqual(errors, [])
-    const red = 'rgb(255, 0, 0)'
-    assert.deepEqual(result.before, { home: red, about: red }, 'Layer first wins before any save')
+    for (const [property, value] of Object.entries(wins))
+      assert.equal(result.before.home[property], value, `Public Home paints ${property} ${value}`)
+    for (const [property, value] of Object.entries(alone))
+      assert.equal(result.before.about[property], value, `About alone paints ${property} ${value}`)
     for (const [round, save] of result.saves.entries()) {
       const context = JSON.stringify({ name, round, ...save })
       assert.ok(save.homeHtml.includes(`>${save.text}</h1>`), context)
       if (round) {
         assert.equal(save.homeCss, result.saves[round - 1].homeCss, context)
         assert.equal(save.aboutCss, result.saves[round - 1].aboutCss, context)
-      }
-      assert.equal(save.paint.home, red, context)
-      assert.equal(
+      } else assert.equal(save.aboutCss, aboutSaved, `About's sheet after a Home save: ${context}`)
+      assert.ok(!save.aboutCss.includes('#home-heading'), `About keeps no Home rule: ${context}`)
+      assert.deepEqual(save.paint.home, result.before.home, context)
+      assert.deepEqual(
         save.paint.about,
-        red,
-        `About opened on its own must keep the declaration that won before the Home save: ${context}`,
+        result.before.about,
+        `About opened on its own must paint as it did before the Home save: ${context}`,
       )
-      assert.equal(save.reopened.card, red, `The reopened About canvas must keep it: ${context}`)
+      assert.deepEqual(
+        save.reopened.paint,
+        result.before.about,
+        `The reopened About canvas must paint as About did before the Home save: ${context}`,
+      )
       for (const css of [save.aboutCss, save.reopened.css])
         assert.equal(
           firstLayerName(css),
-          'first',
-          `About must establish layer first before its anonymous layer: ${context}`,
+          firstLayerName(aboutSaved),
+          `About must name its first layer as its saved sheet does: ${context}`,
         )
     }
   })
@@ -901,9 +1077,106 @@ const repeatedLayers = [
     aboutCss: '@layer a{.card{color:red}}@layer b{.card{color:blue}}@layer a{.card{color:red}}',
     wins: { card: 'rgb(0, 0, 255)' },
   },
+  {
+    name: 'Home named layers a, b, a in both priorities',
+    homeCss:
+      '@layer a { #home-heading { color: red; padding: 2px !important } } ' +
+      '@layer b { #home-heading { color: blue; padding: 1px !important } } ' +
+      '@layer a { #home-heading { color: red; padding: 2px !important } }',
+    aboutCss: '',
+    aboutSaved: '',
+    wins: { heading: 'rgb(0, 0, 255)', padding: '2px' },
+  },
+  // Home's and About's sheets can hold the same block. Home's items come first on the canvas, so
+  // each page keeps its own copy, and Home's empty layer stays ahead of Home's later layers.
+  {
+    name: 'Home keeps its empty named layer ahead of its own later layer',
+    homeCss:
+      '@layer first {} @layer z { .card { color: blue !important } } ' +
+      '@layer { #owner-card { color: blue !important } }',
+    aboutCss: '@layer first { .card { color: red !important } }',
+    aboutSaved:
+      '@layer first{}@layer{#owner-card{color:blue!important}}@layer first{.card{color:red!important}}',
+    wins: { card: 'rgb(255, 0, 0)' },
+  },
+  {
+    name: 'Home keeps its empty named layer ahead of a conditional block of that layer',
+    homeCss:
+      '@layer first {} @supports (display: block) { @layer first { .home-tail { color: green } } } ' +
+      '@layer { #owner-card { color: blue !important } }',
+    aboutCss: '@layer first { .card { color: red !important } }',
+    aboutSaved:
+      '@layer first{}@layer{#owner-card{color:blue!important}}@layer first{.card{color:red!important}}',
+    wins: { card: 'rgb(255, 0, 0)' },
+  },
+  {
+    name: 'a named layer orders a moved layer, then a Home-only layer follows',
+    homeCss:
+      '@layer first {} @layer { #owner-card { color: blue !important } } ' +
+      '@layer { #home-heading { color: blue !important } }',
+    aboutCss: '@layer first { .card { color: red !important } }',
+    aboutSaved:
+      '@layer first{}@layer{#owner-card{color:blue!important}}@layer first{.card{color:red!important}}',
+    wins: { card: 'rgb(255, 0, 0)', heading: 'rgb(0, 0, 255)' },
+  },
+  {
+    name: 'a Home block with declarations names the layer before a moved one',
+    homeCss:
+      '@layer first { .home-note { color: green } #home-heading { color: green } } ' +
+      '@layer { #owner-card { color: blue !important } }',
+    aboutCss: '@layer first { .card { color: red !important } }',
+    aboutSaved:
+      '@layer first{}@layer{#owner-card{color:blue!important}}@layer first{.card{color:red!important}}',
+    wins: { card: 'rgb(255, 0, 0)', heading: 'rgb(0, 128, 0)' },
+  },
+  {
+    name: 'Home and About hold the same empty layer and order their layers differently',
+    homeCss: '@layer a {} @layer b {}',
+    aboutCss:
+      '@layer b { .card { color: blue !important } } @layer a {} @layer a { .card { color: red !important } }',
+    aboutSaved:
+      '@layer b{.card{color:blue!important}}@layer a{}@layer a{.card{color:red!important}}',
+    wins: { card: 'rgb(255, 0, 0)' },
+  },
+  {
+    // About opened on its own keeps About's order a, b; public Home keeps Home's order b, a.
+    name: 'Home names About layers in the other order before a moved layer',
+    homeCss: '@layer b {} @layer a {} @layer { #owner-card { color: green !important } }',
+    aboutCss: aboutLayers,
+    aboutSaved: `@layer a{}@layer b{}@layer{#owner-card{color:green!important}}${savedAboutLayers}`,
+    wins: { card: 'rgb(0, 0, 255)', background: 'rgb(0, 0, 255)' },
+  },
+  {
+    // The moved layer with normal declarations stays ahead of the empty copy, as it was ahead of
+    // About's block: About's background still wins when About opens on its own.
+    name: 'a moved layer with normal declarations precedes the one that needs the empty layer',
+    homeCss:
+      '@layer first {} @layer { #owner-card { background-color: blue } } ' +
+      '@layer { #owner-card { color: blue !important } }',
+    aboutCss: '@layer first { .card { color: red !important; background-color: red } }',
+    aboutSaved:
+      '@layer{#owner-card{background-color:blue}}@layer first{}' +
+      '@layer{#owner-card{color:blue!important}}' +
+      '@layer first{.card{color:red!important;background-color:red}}',
+    wins: { card: 'rgb(255, 0, 0)', background: 'rgb(0, 0, 255)' },
+  },
+  {
+    name: 'a moved conditional block names the layer between two moved layers',
+    homeCss:
+      '@layer first {} @layer { #owner-card { background-color: blue } } ' +
+      '@media (max-width: 1px) { @layer first { #owner-card { --anchor: 1; } } } ' +
+      '@layer { #owner-card { color: blue !important } }',
+    aboutCss: '@layer first { .card { color: red !important; background-color: red } }',
+    aboutSaved:
+      '@layer{#owner-card{background-color:blue}}' +
+      '@media (max-width:1px){@layer first{#owner-card{--anchor:1}}}@layer first{}' +
+      '@layer{#owner-card{color:blue!important}}' +
+      '@layer first{.card{color:red!important;background-color:red}}',
+    wins: { card: 'rgb(255, 0, 0)', background: 'rgb(0, 0, 255)' },
+  },
 ]
 
-for (const { name, homeCss, aboutCss, wins } of repeatedLayers) {
+for (const { name, homeCss, aboutCss, wins, aboutSaved } of repeatedLayers) {
   test(`Home saves keep repeated layer blocks in their cascade order (${name})`, async ({
     page,
   }) => {
@@ -1031,7 +1304,8 @@ for (const { name, homeCss, aboutCss, wins } of repeatedLayers) {
       if (round) {
         assert.equal(save.home, result.saves[round - 1].home, context)
         assert.equal(save.about, result.saves[round - 1].about, context)
-      }
+      } else if (aboutSaved !== undefined)
+        assert.equal(save.about, aboutSaved, `About's sheet after a Home save: ${context}`)
     }
   })
 }
