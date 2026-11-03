@@ -44,7 +44,7 @@
     "embla-carousel-auto-scroll": "8.6.0"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "5.20261023.1",
+    "@cloudflare/workers-types": "5.20261031.1",
     "@eslint/js": "^9.39.4",
     "@playwright/test": "1.61.1",
     "@preact/preset-vite": "^2.10.5",
@@ -65,7 +65,7 @@
     "typescript-eslint": "^8.61.1",
     "vite": "8.1.6",
     "vitest": "^4.1.12",
-    "wrangler": "4.153.0",
+    "wrangler": "4.156.0",
     "@types/css-tree": "2.3.11",
     "@types/fontkit": "2.0.9"
   }
