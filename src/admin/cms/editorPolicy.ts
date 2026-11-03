@@ -231,19 +231,15 @@ function canvasPath(component: Component): string | undefined {
 }
 
 /** A Contact slot the Worker fills on every /contact request. The heading, details and hours ids
- * count only on the /contact canvas. The name and city count only inside the Contact page, because
- * the legal pages carry the same attributes and stay editable. This runs for every component on
- * load, so it reads the raw attributes; getAttributes also resolves styles and ids. */
+ * count only on the /contact canvas. The name and city count only on the /contact canvas too, with
+ * or without the Contact marker, as the Worker fills them there; every other page serves them as
+ * authored and keeps them editable. This runs for every component on load, so it reads the raw
+ * attributes; getAttributes also resolves styles and ids. */
 function isContactSlot(component: Component): boolean {
   const attrs = component.get('attributes') ?? {}
   if (contactSlotIds.has(String(attrs['id'] ?? ''))) return canvasPath(component) === '/contact'
   if (!contactSlotAttributes.some((name) => attrs[name] !== undefined)) return false
-  let parent = component.parent()
-  while (parent) {
-    if (parent.getAttributes()['data-business-contact-page'] === '1') return true
-    parent = parent.parent()
-  }
-  return false
+  return canvasPath(component) === '/contact'
 }
 
 /** Filled by the Worker: the component or one of its ancestors is a Contact slot. */

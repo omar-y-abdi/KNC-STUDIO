@@ -1190,6 +1190,7 @@ export function CmsEditor(props: Props): JSX.Element {
           page={props.page}
           presentation={props.preview}
           {...(props.draft ? { draft: props.draft } : {})}
+          business={contact}
           lang={props.lang}
           mode={props.mode}
           device={props.device}

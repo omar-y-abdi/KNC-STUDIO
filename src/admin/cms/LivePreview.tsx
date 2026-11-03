@@ -13,7 +13,7 @@ import {
   type SiteContact,
   type SitePageRender,
 } from '../../../shared/site-page'
-import { resolveBusinessSettings } from '../../site/business'
+import type { BusinessSettings } from '../../site/business'
 import { renderContactFragment } from '../../site/contactPage'
 import type { CmsScene } from '../../cms/Scene'
 import { NATIVE_PUBLIC_PATHS } from '../../site/routeMetadata'
@@ -41,6 +41,7 @@ export function LivePreview({
   page,
   presentation,
   draft,
+  business,
   lang,
   mode,
   device,
@@ -52,6 +53,9 @@ export function LivePreview({
   page: CmsPage
   presentation: CmsPresentation
   draft?: CmsDocument
+  /** The business of the document this preview shows: a created page's live header and the
+   * Contact slots render from it. The native frame reads `draft` instead. */
+  business: BusinessSettings
   lang: CmsLang
   mode: CmsMode
   device: 'Desktop' | 'Mobile'
@@ -150,7 +154,6 @@ export function LivePreview({
       )
     return () => clearTimeout(deadline.current)
   }, [connected, native, page.path, presentation, draft, lang, mode, device, scene, attempt])
-  const business = resolveBusinessSettings(new Map(Object.entries(draft?.settings ?? {})))
   const sitePage = isSitePage(page)
   const site = sitePage ? previewSitePage(presentation, page, lang, mode, business) : null
   // lazy dev: the draft holds no schedule, so #contact-hours shows its fallback; fetch public
