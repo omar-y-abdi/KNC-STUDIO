@@ -1216,3 +1216,176 @@ test('cms-hierarchical-resize: the Studio keeps the next resize ahead of a narro
   await assertImports('Published reload', reference)
   await assertResized(await exportDraft(page), 'Published reload')
 })
+
+// The same grouped Desktop block before any resize, so the resize after the padding edit nests the
+// card's first guard. Every sheet must hold it ahead of the narrow-Desktop rule.
+test('cms-hierarchical-resize: the Studio nests a first guard ahead of a narrow-Desktop rule after a padding edit', async ({
+  page,
+  context,
+  newContext,
+}) => {
+  const exportDraft = async (target) => {
+    await target.getByRole('button', { name: 'Utkast & backup', exact: true }).click()
+    const downloaded = target.waitForEvent('download')
+    await target
+      .getByRole('dialog', { name: 'Utkast & backup' })
+      .getByRole('button', { name: 'Export', exact: true })
+      .click()
+    const stream = await (await downloaded).createReadStream()
+    assert.ok(stream, 'The backup must be readable')
+    const chunks = []
+    for await (const chunk of stream) chunks.push(chunk)
+    await target
+      .getByRole('dialog', { name: 'Utkast & backup' })
+      .getByRole('button', { name: 'Stäng panel', exact: true })
+      .click()
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'))
+  }
+  const aboutOf = (document) => document.presentation.pages.find((item) => item.path === '/about')
+  // A first Studio builds the About page from the live source. Its card IDs differ per language.
+  const captureContext = await newContext({
+    viewport: { width: 1440, height: 1000 },
+    reducedMotion: 'reduce',
+  })
+  const capturePage = await captureContext.newPage()
+  await openStudio(capturePage, captureContext, ['a', 'b'])
+  const captured = await exportDraft(capturePage)
+  const ids = await capturePage.evaluate(
+    ({ about, selector }) =>
+      Object.fromEntries(
+        ['sv', 'en'].map((lang) => {
+          const strip = new globalThis.DOMParser()
+            .parseFromString(about.content[lang].html, 'text/html')
+            .querySelector(selector)
+          const card = [...(strip?.children ?? [])].find(
+            (node) => node.id && node.hasAttribute('data-knc-source'),
+          )
+          if (!card) throw new Error(`The ${lang} barber card is missing`)
+          return [lang, card.id]
+        }),
+      ),
+    { about: aboutOf(captured), selector: groupSelector },
+  )
+  await captureContext.close()
+  const grouped = (id) =>
+    `@media (min-width:769px){#${id}{padding-left:1px!important}#${id}{width:70%!important}@media (max-width:1100px){#${id}{width:90%!important}}}`
+  const seeded = globalThis.structuredClone(captured)
+  for (const lang of ['sv', 'en'])
+    for (const mode of ['light', 'dark'])
+      aboutOf(seeded).content[lang].css[mode] += grouped(ids[lang])
+  await page.clock.setSystemTime(Date.now())
+  const { frame } = await openStudio(page, context, ['a', 'b'], seeded)
+  const sheetsOf = (document) =>
+    [
+      ['sv', 'light'],
+      ['sv', 'dark'],
+      ['en', 'light'],
+      ['en', 'dark'],
+    ].map(([lang, mode]) => ({
+      lang,
+      mode,
+      id: ids[lang],
+      css: aboutOf(document).content[lang].css[mode],
+    }))
+  // A property's values in source order, from the rules with any of the given selectors.
+  const declared = (css, selectors, property) => {
+    const values = []
+    walk(parse(css), {
+      visit: 'Rule',
+      enter(rule) {
+        if (!selectors.includes(generate(rule.prelude))) return
+        rule.block.children.forEach((node) => {
+          if (node.type === 'Declaration' && node.property === property)
+            values.push(generate(node.value))
+        })
+      },
+    })
+    return values
+  }
+  const probe = await context.newPage()
+  await probe.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
+  // Each saved sheet renders in an iframe of the exact breakpoint width, with no body margin.
+  const ratios = (document) =>
+    probe.evaluate(
+      (sheets) =>
+        sheets.flatMap(({ lang, mode, id, css }) =>
+          [390, 820, 1440].map((size) => {
+            const frame = globalThis.document.createElement('iframe')
+            frame.style.width = `${size}px`
+            frame.style.height = '200px'
+            frame.style.border = '0'
+            globalThis.document.body.append(frame)
+            const doc = frame.contentDocument
+            doc.open()
+            doc.write(
+              `<!doctype html><html><head><style>html,body{margin:0}${css}</style></head><body><div id="${id}"><div></div></div></body></html>`,
+            )
+            doc.close()
+            const card = doc.getElementById(id)
+            const ratio =
+              card.getBoundingClientRect().width / card.parentElement.getBoundingClientRect().width
+            frame.remove()
+            return { lang, mode, size, ratio }
+          }),
+        ),
+      sheetsOf(document),
+    )
+
+  const stored = await exportDraft(page)
+  for (const { lang, mode, id, css } of sheetsOf(stored))
+    assert.ok(css.includes(grouped(id)), `Load: ${lang}/${mode} lost the grouped block`)
+  assert.equal((await measure(frame)).cards[0].id, ids.sv, 'Load: the canvas edits another card')
+
+  // 1. A Desktop padding edit on the card's own rule.
+  await page.evaluate(async (selector) => {
+    const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+    const [card] = cmsGrapes.editors.at(-1).getWrapper().find(selector)[0].components()
+    card.addStyle({ 'padding-left': '10px' })
+  }, groupSelector)
+  const padded = await exportDraft(page)
+  for (const { lang, mode, id, css } of sheetsOf(padded)) {
+    const where = `Padding edit, ${lang}/${mode}`
+    assert.deepEqual(declared(css, [`&:where(#${id})`], 'width'), [], `${where}: a guard appeared`)
+    const padding = declared(css, [`#${id}`], 'padding-left')
+    assert.equal(padding.at(-1), '10px', `${where}: the new padding is not last`)
+    // The edited sheet keeps its block. The others drop the old padding, which empties the
+    // first rule of their block.
+    if (lang === 'sv' && mode === 'light')
+      assert.ok(css.includes(grouped(id)), `${where}: the export rewrote the grouped block`)
+    else assert.deepEqual(padding, ['10px'], `${where}: the first rule kept its padding`)
+  }
+  // Cross the draft's 800 ms grouping boundary so the resize starts its own undo step.
+  await page.clock.setSystemTime((await page.evaluate(() => Date.now())) + 1000)
+
+  // 2. The card's first resize, which nests its guard after the authored 70%.
+  await select(page, `${groupSelector} > div:first-child`)
+  await height(page, (await measure(frame)).cards[0].rect.height * 0.8)
+  const resized = await exportDraft(page)
+  const [edited, ...others] = sheetsOf(resized)
+  const guard = declared(edited.css, [`&:where(#${edited.id})`], 'width')
+  assert.equal(guard.length, 1, `Resize: the edited sheet holds ${JSON.stringify(guard)}`)
+  const widths = ({ id, css }) => declared(css, [`#${id}`, `&:where(#${id})`], 'width')
+  assert.deepEqual(
+    widths(edited).slice(-3),
+    ['70%', guard[0], '90%'],
+    'Resize: the edited sheet holds the guard elsewhere',
+  )
+  for (const sheet of others)
+    assert.deepEqual(
+      widths(sheet),
+      widths(edited),
+      `Resize, ${sheet.lang}/${sheet.mode}: the first guard follows the narrow-Desktop rule`,
+    )
+  const resizedRatios = await ratios(resized)
+  const edit = (size) =>
+    resizedRatios.find((row) => row.lang === 'sv' && row.mode === 'light' && row.size === size)
+      .ratio
+  // The edited sheet ends on 90% at 820px and on the new guard at 1440px.
+  assert.ok(Math.abs(edit(820) - edit(1440)) > 0.1, 'Resize: 820px renders as 1440px')
+  // Every other theme and language renders as the edited sheet at each width.
+  for (const row of resizedRatios)
+    assert.ok(
+      Math.abs(row.ratio - edit(row.size)) < 0.001,
+      `Resize: ${JSON.stringify({ ...row, edited: edit(row.size) })}`,
+    )
+})
