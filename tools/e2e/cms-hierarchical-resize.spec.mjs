@@ -854,3 +854,107 @@ test('cms-hierarchical-resize: a grouped rule never carries a resize guard past 
       assert.equal(row.marginLeft, row.size === 1440 ? '10px' : '0px', context)
   }
 })
+
+test('cms-hierarchical-resize: removing an emptied rule never moves the next resize past a narrow-Desktop rule', async ({
+  page,
+}) => {
+  const errors = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
+  const result = await page.evaluate(async () => {
+    const { syncPageLayout } = await import('/src/admin/cms/responsiveStyles.ts')
+    const { createSitePage } = await import('/shared/site-page.ts')
+    const guard = (width) => `@media (min-width:769px){&:where(#card){width:${width}!important}}`
+    // The inner narrow-Desktop media keeps this Desktop block one rule in the editor, so a
+    // Desktop edit either adds a separate rule or changes the first one in place.
+    const grouped = (first, width, appended = '') =>
+      `@media (min-width:769px){${first}#card{width:70%!important;${guard(width)}}@media (max-width:1100px){#card{width:90%!important}}}${appended}`
+    const runs = [
+      [
+        'separate rule',
+        grouped(
+          '#card{padding-left:1px}',
+          '40%',
+          '@media (min-width:769px){#card{padding-left:10px}}',
+        ),
+        grouped(
+          '#card{padding-left:1px}',
+          '32%',
+          '@media (min-width:769px){#card{padding-left:10px;zoom:0.8}}',
+        ),
+      ],
+      [
+        'in place',
+        grouped('#card{padding-left:10px}', '40%'),
+        grouped('#card{padding-left:10px}', '32%'),
+      ],
+    ]
+    // Each variant renders in an iframe of the exact breakpoint width, with no body margin.
+    const measure = (css, size) => {
+      const frame = globalThis.document.createElement('iframe')
+      frame.style.width = `${size}px`
+      frame.style.height = '200px'
+      frame.style.border = '0'
+      globalThis.document.body.append(frame)
+      const doc = frame.contentDocument
+      doc.open()
+      doc.write(
+        `<!doctype html><html><head><style>html,body{margin:0}${css}</style></head><body><div id="card"><div></div></div></body></html>`,
+      )
+      doc.close()
+      const card = doc.getElementById('card')
+      const ratio =
+        card.getBoundingClientRect().width / card.parentElement.getBoundingClientRect().width
+      frame.remove()
+      return ratio
+    }
+    const report = []
+    for (const [name, ...edits] of runs) {
+      const initial = grouped('#card{padding-left:1px}', '40%')
+      let current = createSitePage({
+        id: '10000000-0000-4000-8000-000000000002',
+        path: '/offers',
+        name: { sv: 'Ny', en: 'New' },
+      })
+      for (const lang of ['sv', 'en'])
+        current.content[lang] = {
+          html: '<div id="card"><div></div></div>',
+          css: { light: initial, dark: initial },
+        }
+      // A Desktop padding edit, then a resize of the 40% guard, each synced from the stored result.
+      for (const css of edits) {
+        const edited = globalThis.structuredClone(current)
+        edited.content.sv.css.light = css
+        current = syncPageLayout(current, edited, 'sv', 'light')
+      }
+      for (const lang of ['sv', 'en'])
+        for (const mode of ['light', 'dark'])
+          for (const size of [390, 820, 1440])
+            report.push({
+              name,
+              lang,
+              mode,
+              size,
+              ratio: measure(current.content[lang].css[mode], size),
+            })
+    }
+    return { report, unstyled: measure('', 390) }
+  })
+  assert.deepEqual(errors, [])
+  assert.equal(result.report.length, 24)
+  const edited = (name, size) =>
+    result.report.find(
+      (row) => row.name === name && row.lang === 'sv' && row.mode === 'light' && row.size === size,
+    ).ratio
+  for (const name of ['separate rule', 'in place']) {
+    // The edited sheet ends on 90% at 820px and on the resized guard at 1440px; Mobile on neither.
+    assert.ok(Math.abs(edited(name, 820) - edited(name, 1440)) > 0.1, `${name}: 820px as 1440px`)
+    assert.ok(Math.abs(edited(name, 390) - result.unstyled) < 0.001, `${name}: Mobile is styled`)
+  }
+  // Every other theme and language renders as the edited sheet at each width.
+  for (const row of result.report)
+    assert.ok(
+      Math.abs(row.ratio - edited(row.name, row.size)) < 0.001,
+      JSON.stringify({ ...row, edited: edited(row.name, row.size) }),
+    )
+})
