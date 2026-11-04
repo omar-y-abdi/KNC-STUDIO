@@ -53,8 +53,8 @@ select is(
 
 select ok(
   has_function_privilege(
-    'service_role', 'public.internal_delete_gallery_image(uuid,text)', 'EXECUTE'),
-  'service-role image gateway owns durable gallery cleanup'
+    'service_role', 'public.internal_queue_storage_deletion(text,text)', 'EXECUTE'),
+  'service-role workers retain durable gallery cleanup for existing jobs and failed uploads'
 );
 
 select * from finish();

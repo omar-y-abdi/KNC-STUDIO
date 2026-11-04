@@ -1,6 +1,7 @@
 -- pgTAP — site_content + site_settings (Task 2 §2, migration 0018).
--- Verifies the tables exist with expected constraints and shipped CMS defaults. RLS mirrors the
--- audited about_content posture (anon read / owner write) and is covered structurally by 05_admin_rls.
+-- Verifies the tables exist with expected constraints and shipped CMS defaults. Public reads remain;
+-- CMS publication owns content writes and only cancellation enforcement is directly owner-writable.
+-- The role boundary is exercised by 05_admin_rls and 70_cms_single_writer.
 
 begin;
 select plan(13);
