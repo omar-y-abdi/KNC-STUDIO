@@ -707,6 +707,26 @@ describe('an owner element that carries a live chrome id', () => {
   )
 })
 
+describe('the body capture keeps from an edited render', () => {
+  it('finds the generated chrome by its place when the owner removed or duplicated the wrapper', () => {
+    const page = withSvBody(chromeIdBody('cms-site-footer'))
+    const html = renderSitePage(presentationWith(page), page, 'sv', 'light', contact).html
+    const wrapped = `<div id="cms-site-content">${page.content.sv.html}</div>`
+    expect(html).toContain(wrapped)
+    expect(sitePageBody(html.replace(wrapped, ''))).toBe('')
+    const copy = `<div id="cms-site-content-2">${page.content.sv.html}</div>`
+    expect(sitePageBody(html.replace(wrapped, `${wrapped}${copy}`))).toBe(
+      `${page.content.sv.html}${copy}`,
+    )
+    // Without the generated footer the last element is the wrapper, which holds the body.
+    const footerless = html.slice(0, html.indexOf(wrapped) + wrapped.length)
+    expect(footerless.endsWith('</footer>')).toBe(false)
+    expect(sitePageBody(footerless)).toBe(page.content.sv.html)
+    // A body is not a render: nothing in it is chrome.
+    expect(sitePageBody(wrapped)).toBe(wrapped)
+  })
+})
+
 describe('the ids a created page allocates for its inline styles', () => {
   const id = '12222222-2222-4222-8222-222222222222'
   const taken = `cms-page-${id}-sv-0`
@@ -767,6 +787,11 @@ describe('the frozen chrome rules the migration drops', () => {
     ['flat', '#cms-site-header{display:none}'],
     ['nested', ':root{& #cms-site-header{display:none}}'],
     ['escaped', String.raw`#cms\2d site-header{display:none}`],
+    ['escaped attribute value', String.raw`[id=cms\2d site-header]{display:none}`],
+    ['escaped attribute name', String.raw`[i\64="cms-site-header"]{display:none}`],
+    ['uppercase attribute name', '[ID="cms-site-header"]{display:none}'],
+    ['case-insensitive quoted value', '[id="CMS-SITE-HEADER" i]{display:none}'],
+    ['case-insensitive unquoted value', '[id=CMS-SITE-HEADER I]{display:none}'],
   ])('drops the %s rule that hides the frozen header', (_shape, css) => {
     const page = frozenWith(css)
     expectAccepted(page)
@@ -776,6 +801,29 @@ describe('the frozen chrome rules the migration drops', () => {
       for (const mode of ['light', 'dark'] as const)
         expect(migrated.content[lang].css[mode]).not.toContain('display:none')
   })
+
+  // Without the i flag an attribute value keeps its case, so these name no frozen id.
+  it.each([
+    ['s flag', '[id="CMS-SITE-HEADER" s]{display:none}'],
+    ['no flag', '[id="CMS-SITE-HEADER"]{display:none}'],
+  ])('keeps a rule whose case-sensitive value names no frozen id: %s', (_shape, css) => {
+    expect(() => validateMarkup('', css, policy)).not.toThrow()
+    expect(withoutFrozenChromeCss(css)).toBe(css)
+  })
+
+  it.each([
+    [':root{color:blue;& #cms-site-header{display:none}}', ':root{color:blue;}'],
+    [
+      '.owned{color:blue;@media (min-width:1px){& #cms-site-header{display:none}}}',
+      '.owned{color:blue;}',
+    ],
+  ])(
+    'keeps every other byte of a rule whose nested rule hid the frozen header: %s',
+    (css, kept) => {
+      expect(() => validateMarkup('', css, policy)).not.toThrow()
+      expect(withoutFrozenChromeCss(css)).toBe(kept)
+    },
+  )
 
   it('keeps the order named layers are first declared in when a layer block held only chrome', () => {
     const css =

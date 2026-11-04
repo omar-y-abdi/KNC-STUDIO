@@ -86,6 +86,10 @@ async function startupSamples(newContext, doc, verify) {
       const page = await context.newPage()
       const errors = []
       page.on('pageerror', (error) => errors.push(error.message))
+      // End to end: from just before navigation to the visible stored page. Unlike the in-page
+      // clock, which starts once the first response has created the document, it includes the
+      // request and the wait for that response.
+      const started = Date.now()
       await page.goto(`${base}/admin/cms/`, { waitUntil: 'domcontentloaded' })
       await page
         .locator('.cms-editor-canvas[data-cms-canvas-ready="true"]')
@@ -95,9 +99,10 @@ async function startupSamples(newContext, doc, verify) {
         .first()
         .locator('[data-knc-surface="mobile-home"]')
         .waitFor()
+      const endToEndMs = Date.now() - started
       // Let PerformanceObserver deliver the task containing the readiness mark.
       await page.evaluate(() => new Promise((resolve) => window.setTimeout(resolve, 0)))
-      samples.push(await page.evaluate(() => globalThis.cmsStartupSample()))
+      samples.push({ ...(await page.evaluate(() => globalThis.cmsStartupSample())), endToEndMs })
       if (index === 2 && verify) await verify(page)
       assert.deepEqual(errors, [], 'no unhandled startup errors')
       assert.deepEqual(backend.writes, [])
@@ -107,6 +112,7 @@ async function startupSamples(newContext, doc, verify) {
   }
   return {
     samples,
+    endToEndMs: median(samples.map((sample) => sample.endToEndMs)),
     readyMs: median(samples.map((sample) => sample.readyMs)),
     cpuMs: median(samples.map((sample) => sample.cpuMs)),
     longestTaskMs: samples.every((sample) => sample.longestTaskMs !== null)
@@ -224,6 +230,11 @@ test('stored-page-independent-of-source', async ({ newContext }, testInfo) => {
     contentType: 'application/json',
   })
   assert.ok(metrics.readyMs < 3000, `Median stored startup: ${metrics.readyMs}ms; budget 3000ms`)
+  // The in-page median above cannot see a slow first response; this gate does.
+  assert.ok(
+    metrics.endToEndMs < 3000,
+    `Median stored startup from navigation: ${metrics.endToEndMs}ms; budget 3000ms`,
+  )
 })
 
 test('real-fixture startup uses median in-page CPU and longest-task budgets', async ({

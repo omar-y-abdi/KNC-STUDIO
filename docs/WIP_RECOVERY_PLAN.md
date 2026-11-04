@@ -65,10 +65,16 @@ commit solely to record the preceding successful CI run.
 
 Canonical CssRule models and exported CSS must remain unchanged by preview rendering.
 In both engines, the stored-page and real-fixture startup checks each load the editor three
-times, each in a fresh context, and assert that the median time from document start to the
-`cms:startup:ready` mark is under 3,000 ms (`tools/e2e/cms-startup.spec.mjs`). The
-synchronous editor spans that the startup checks report are browser instrumentation, not OS
-or Edge CPU measurements.
+times, each in a fresh context (`tools/e2e/cms-startup.spec.mjs`). Both assert that the median
+in-page time, from the document's init script to the `cms:startup:ready` mark, is under
+3,000 ms. That clock starts only once the first response has created the document, so it
+excludes the request and the wait for that response. The stored-page check also asserts that
+the median end-to-end time, from immediately before `page.goto` until the canvas is ready and
+the mobile Home surface is visible in its frame, is under 3,000 ms; this gate includes the
+response wait. The real-fixture check has no end-to-end gate; it also asserts at least five
+separate editor work passes in every sample, median editor work under 2,500 ms and, where the
+browser reports long tasks, a median longest task under 1,250 ms. The synchronous editor spans
+that the startup checks report are browser instrumentation, not OS or Edge CPU measurements.
 
 Native priority uses the existing complete normalization policy only for targeted native
 IDs, including inactive contexts. Current-frame measurements replace stale Desktop
