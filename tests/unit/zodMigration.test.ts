@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   adminDeleteBookingsResponse,
+  emailSendLogCopy,
+  emailSendLogEntryRow,
   failedBookingEmailDeliveryRow,
   serviceRow,
 } from '../../src/admin/adminSchemas'
@@ -20,7 +22,27 @@ const delivery = {
   event: 'booking_confirmed',
   attempt_count: 1,
   last_error_code: null,
+  sent_kinds: ['barber'],
+  customer_name: 'Ada Kund',
+  customer_email: 'ada@example.com',
+  customer_phone: null,
+  booking_start_at: '2040-02-29T12:30:59Z',
+  barber_name: 'Hassan',
+  barber_email: 'hassan@example.com',
 }
+const loggedEmail = {
+  id: ID,
+  created_at: '2040-02-29T12:30:59Z',
+  last_attempt_at: '2040-02-29T12:30:59Z',
+  kind: 'customer_confirmation',
+  recipient: 'ada@example.com',
+  subject: 'Bokningsbekräftelse',
+  status: 'sent',
+  error_code: null,
+  booking_id: ID,
+  attempt_count: 1,
+}
+const loggedCopy = { id: ID, subject: 'Bokningsbekräftelse', html: '<p>Hej</p>', text_body: 'Hej' }
 const customer = (start_at: unknown) => ({
   ok: true,
   session_proof: 'a'.repeat(64),
@@ -52,6 +74,10 @@ describe('Zod 4 migration preserves wire contracts', () => {
     expect(
       failedBookingEmailDeliveryRow.safeParse({ ...delivery, id, failed_at: null }).success,
     ).toBe(true)
+    expect(emailSendLogEntryRow.safeParse({ ...loggedEmail, id, booking_id: id }).success).toBe(
+      true,
+    )
+    expect(emailSendLogCopy.safeParse({ ...loggedCopy, id }).success).toBe(true)
   })
 
   it.each(['not-a-uuid', `${ID}x`, ID.replace('-', ''), `g${ID.slice(1)}`])(
@@ -62,6 +88,9 @@ describe('Zod 4 migration preserves wire contracts', () => {
         bookingReceiptResponse.safeParse({ receipt_proof: 'a'.repeat(64), booking: { id } })
           .success,
       ).toBe(false)
+      expect(emailSendLogEntryRow.safeParse({ ...loggedEmail, id }).success).toBe(false)
+      expect(emailSendLogEntryRow.safeParse({ ...loggedEmail, booking_id: id }).success).toBe(false)
+      expect(emailSendLogCopy.safeParse({ ...loggedCopy, id }).success).toBe(false)
     },
   )
 
@@ -83,6 +112,16 @@ describe('Zod 4 migration preserves wire contracts', () => {
     })
     expect(adminResult.success).toBe(true)
     if (adminResult.success) expect(adminResult.data.failed_at).toBe(timestamp)
+    const logResult = emailSendLogEntryRow.safeParse({
+      ...loggedEmail,
+      created_at: timestamp,
+      last_attempt_at: timestamp,
+    })
+    expect(logResult.success).toBe(true)
+    if (logResult.success) {
+      expect(logResult.data.created_at).toBe(timestamp)
+      expect(logResult.data.last_attempt_at).toBe(timestamp)
+    }
   })
 
   it.each([
@@ -103,6 +142,12 @@ describe('Zod 4 migration preserves wire contracts', () => {
       expect(
         failedBookingEmailDeliveryRow.safeParse({ ...delivery, failed_at: timestamp }).success,
       ).toBe(false)
+    expect(emailSendLogEntryRow.safeParse({ ...loggedEmail, created_at: timestamp }).success).toBe(
+      false,
+    )
+    expect(
+      emailSendLogEntryRow.safeParse({ ...loggedEmail, last_attempt_at: timestamp }).success,
+    ).toBe(false)
   })
 
   it.each([

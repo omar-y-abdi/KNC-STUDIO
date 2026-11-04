@@ -171,7 +171,8 @@ describe('deleteBookings', () => {
       ok: false,
       error: {
         kind: 'validation',
-        message: 'Bokningen har mejl som måste levereras eller hanteras först.',
+        message:
+          'Bokningen har mejl som måste levereras eller hanteras först. Ägaren hanterar dem i Studio → Mejl → Leveransstatus.',
       },
     })
   })
@@ -232,7 +233,8 @@ describe('purgeHistory', () => {
       ok: false,
       error: {
         kind: 'validation',
-        message: 'Historiken innehåller mejl som måste levereras eller hanteras först.',
+        message:
+          'Historiken innehåller mejl som måste levereras eller hanteras först. Hantera dem i Studio → Mejl → Leveransstatus.',
       },
     })
   })
