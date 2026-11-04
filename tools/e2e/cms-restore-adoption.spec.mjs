@@ -45,16 +45,19 @@ async function openStudio(page) {
   await mountStudio(page)
 }
 
+// What identifies the page's current document and module lifetime.
+const lifetime = (page) => page.evaluate(() => globalThis.performance.timeOrigin)
+
 async function reopenStudio(page) {
-  const timeOrigin = await page.evaluate(() => globalThis.performance.timeOrigin)
+  const before = await lifetime(page)
   if (await page.getByRole('dialog', { name: 'Utkast & backup', exact: true }).count())
     await closeBackup(page)
   await page.getByTitle('Tillbaka till Admin', { exact: true }).click()
   await expect(page.locator('.knc-cms-studio')).toHaveCount(0)
   await mountStudio(page)
   assert.equal(
-    await page.evaluate(() => globalThis.performance.timeOrigin),
-    timeOrigin,
+    await lifetime(page),
+    before,
     'Exit/reopen must retain the same document and module lifetime',
   )
 }
@@ -398,9 +401,23 @@ async function checkAutosaveRecovery(context, reopen) {
   assert.equal(backend.requests.filter((request) => request.operation === 'publish').length, 1)
 }
 
+// WebKit has returned timeOrigin values 1 ms apart within one page. Drift on every read.
+async function reopenStudioWhileClockDrifts(page) {
+  await page.evaluate(() => {
+    const origin = globalThis.performance.timeOrigin
+    let reads = 0
+    Object.defineProperty(globalThis.performance, 'timeOrigin', {
+      configurable: true,
+      get: () => origin + reads++,
+    })
+  })
+  await reopenStudio(page)
+}
+
 for (const [method, reopen] of [
   ['reloading Studio', openStudio],
   ['exiting and reopening Studio in the same page', reopenStudio],
+  ['exiting and reopening Studio while the page clock drifts', reopenStudioWhileClockDrifts],
 ]) {
   test(`cms-restore-adoption a migration-only autosave stays eligible after ${method}`, async ({
     context,
@@ -408,3 +425,16 @@ for (const [method, reopen] of [
     await checkAutosaveRecovery(context, reopen)
   })
 }
+
+test('cms-restore-adoption reloading Studio starts a new lifetime', async ({ context }) => {
+  await nativeBackend(context)
+  const page = await context.newPage()
+  await openStudio(page)
+  const before = await lifetime(page)
+  await openStudio(page)
+  assert.notEqual(
+    await lifetime(page),
+    before,
+    'A reload must start a new document and module lifetime',
+  )
+})
