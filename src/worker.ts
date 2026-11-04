@@ -415,8 +415,10 @@ const THEME_ACTION = 'cms-site-action-theme'
  * response, as main's Worker pointed them on every response: the language action at the other
  * language in `mode`, the theme action at the other mode (dark when `mode` is null and the response
  * follows the OS; CMS_THEME_SCRIPT then retargets a tagged one in the browser). An action is found
- * by its class or, without one, by the label main gave it. Only those href values change, each in
- * its own quotes; every other stored byte stays, so an action found by its label stays untagged. */
+ * by its class or, without one, by the label main gave it. Those href values change, each in its
+ * own quotes, and a theme action found by its label also regains its `cms-site-action-theme` class
+ * so CMS_THEME_SCRIPT can retarget it in the browser; a language action found by its label stays
+ * untagged, its rewritten href already at the other language. Every other stored byte stays. */
 function withFrozenActionLinks(
   html: string,
   path: string,
@@ -489,6 +491,24 @@ function withFrozenActionLinks(
             end: location.endOffset,
             text: `${head}${quote}${value}${quote}`,
           })
+        }
+        // Restore the theme action's class so CMS_THEME_SCRIPT (a.cms-site-action-theme) can
+        // retarget it from auto-dark; the language action needs none, its href is already correct.
+        if (themeToggle && !taggedTheme) {
+          const classLocation = node.sourceCodeLocation?.attrs?.['class']
+          const quote = classLocation ? html.charAt(classLocation.endOffset - 1) : ''
+          if (classLocation && (quote === '"' || quote === "'")) {
+            // Add the token inside the quoted class value, before its closing quote.
+            replacements.push({
+              start: classLocation.endOffset - 1,
+              end: classLocation.endOffset - 1,
+              text: ` ${THEME_ACTION}`,
+            })
+          } else if (!classLocation && node.sourceCodeLocation?.startTag) {
+            // No class attribute: add one just after the `<a` tag name.
+            const at = node.sourceCodeLocation.startTag.startOffset + 1 + node.tagName.length
+            replacements.push({ start: at, end: at, text: ` class="${THEME_ACTION}"` })
+          }
         }
       }
     }
