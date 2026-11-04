@@ -605,21 +605,23 @@ export function CmsEditor(props: Props): JSX.Element {
             { about: aboutOwner.content[current.lang].css[current.mode], home: storedHome },
           )
         : null
+      // Home's part of this export and of the checkpoint is stripped with the same owners. In each
+      // canvas, the About sheet extracted from it owns its copies. With none extracted, About's
+      // stored sheet does, in the form the canvas imported it.
+      const homeOwners = (extracted: { css: string } | null) =>
+        aboutOwner
+          ? {
+              about:
+                extracted?.css ?? nativeCanvas(aboutOwner.content[current.lang], current.mode).css,
+              home: storedHome,
+              aboutHtml: aboutOwner.content[current.lang].html,
+            }
+          : undefined
       const exported = stripComposedCanvas(
         nativeExport.html,
         exportedCss,
         composedScene,
-        // The extracted About sheet owns its copies here. With none extracted, About's stored
-        // sheet does, in the form the canvas imported it.
-        aboutOwner
-          ? {
-              about:
-                aboutExport?.css ??
-                nativeCanvas(aboutOwner.content[current.lang], current.mode).css,
-              home: storedHome,
-              aboutHtml: aboutOwner.content[current.lang].html,
-            }
-          : undefined,
+        homeOwners(aboutExport),
       )
       const fragment = pageFragment(exported.html, wrapperId)
       const persisted = {
@@ -634,7 +636,32 @@ export function CmsEditor(props: Props): JSX.Element {
           [current.mode]: persisted.css,
         },
       }
-      next = syncPageLayout(current.page, next, current.lang, current.mode)
+      // Import and export mark conditional and changed owner declarations important, so a
+      // sheet stored without passing the canvas differs from its own export. Every page compares
+      // with the canvas before this edit, exported, canonicalized and stripped as this export is,
+      // so the two differ only by the edit. On Home, its About part is compared the same way.
+      const checkpointExport = exportNativeCanvas(
+        checkpoint.current.html,
+        checkpoint.current.css,
+        current.mode,
+      )
+      const checkpointCss = canonicalizeCmsRootStyles(checkpointExport.css, wrapperId)
+      const aboutBaseline = aboutOwner
+        ? extractComposedAbout(
+            checkpointExport.html,
+            checkpointCss,
+            aboutOwner.content[current.lang].html,
+            { about: aboutOwner.content[current.lang].css[current.mode], home: storedHome },
+          )
+        : null
+      const pageBaseline = structuredClone(current.page)
+      pageBaseline.content[current.lang].css[current.mode] = stripComposedCanvas(
+        checkpointExport.html,
+        checkpointCss,
+        composedScene,
+        homeOwners(aboutBaseline),
+      ).css
+      next = syncPageLayout(pageBaseline, next, current.lang, current.mode)
       persisted.css = next.content[current.lang].css[current.mode]
       const pages = [next]
       if (aboutOwner && aboutExport) {
@@ -647,20 +674,6 @@ export function CmsEditor(props: Props): JSX.Element {
             [current.mode]: aboutExport.css,
           },
         }
-        // Import and export mark conditional and changed owner declarations important, so a
-        // sheet stored without passing the canvas differs from its own export. The About part of
-        // the canvas before this edit differs from this export only by the edit.
-        const checkpointExport = exportNativeCanvas(
-          checkpoint.current.html,
-          checkpoint.current.css,
-          current.mode,
-        )
-        const aboutBaseline = extractComposedAbout(
-          checkpointExport.html,
-          canonicalizeCmsRootStyles(checkpointExport.css, wrapperId),
-          before.html,
-          { about: before.css[current.mode], home: storedHome },
-        )
         const baseline = structuredClone(aboutOwner)
         if (aboutBaseline) baseline.content[current.lang].css[current.mode] = aboutBaseline.css
         pages.push(syncPageLayout(baseline, about, current.lang, current.mode))
