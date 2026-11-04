@@ -1,7 +1,14 @@
 import { readFileSync } from 'node:fs'
+import { parse, type DefaultTreeAdapterMap } from 'parse5'
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
-import { emptyDocument, validateDocument, type CmsPage } from '../../shared/cms'
+import {
+  emptyDocument,
+  validateDocument,
+  type CmsPage,
+  type CmsPresentation,
+} from '../../shared/cms'
 import { validateDocumentMarkupPlacements, validateMarkup } from '../../shared/cms-markup'
+import { CMS_BUILT_ASSETS } from '../../shared/cms-built-assets'
 import { createSitePage, SITE_PAGE_CSS } from '../../shared/site-page'
 import { DEFAULT_BUSINESS, SCHEMA_DAYS, type BusinessOpeningHours } from '../../src/site/business'
 import worker, { renderContactMetadata } from '../../src/worker'
@@ -702,5 +709,217 @@ describe('Worker CMS contact and static fallback', () => {
     expect(assets).toHaveBeenCalledOnce()
     const input = assets.mock.calls[0]?.[0]
     expect(input instanceof Request ? new URL(input.url).pathname : '').toBe('/index.html')
+  })
+})
+
+// A.B01: owner CSS whose css-tree-generated form materializes an HTML raw-text boundary. The
+// submitted string carries no literal "</", so the current checkCss accepts it; modeCss and
+// repairDesktopCss then emit a literal </style><meta ...> and the <style> interpolation turns it
+// into an active element. The Worker trusts the stored document (publicCmsFromWire validates the
+// presentation only), so these serve the payload as a document published before any validation fix.
+// The materializing part, free of quotes so it nests inside either a double-quoted stylesheet
+// string or a single-quoted inline-style string. The refresh meta needs no quotes: its content is
+// one space-free token.
+const BOUNDARY_META = `\\3c /style\\3e \\3c meta http-equiv=refresh content=0;url=https://attacker.invalid/a10-navigation\\3e `
+const MODE_PAYLOAD = `p::before{content:"${BOUNDARY_META}"}@media(prefers-color-scheme:dark){p{color:white}}`
+const REPAIR_PAYLOAD = `p::before{content:"${BOUNDARY_META}"}@media(max-width:1440px){#x{color:red}}`
+// HTML end tags are case-insensitive, so </STYLE> closes a <style> just as </style> does.
+const UPPER_META = `\\3c /STYLE\\3e \\3c meta http-equiv=refresh content=0;url=https://attacker.invalid/a10-navigation\\3e `
+const UPPER_PAYLOAD = `p::before{content:"${UPPER_META}"}@media(prefers-color-scheme:dark){p{color:white}}`
+const INLINE_PAYLOAD_HTML = `<main id="x"><p id="y" style="content:'${BOUNDARY_META}'">t</p></main>`
+const boundaryPolicy = {
+  siteOrigin: 'https://bladeblendstudio.se',
+  storageOrigin: 'https://fixture.invalid',
+  builtAssets: CMS_BUILT_ASSETS,
+}
+
+function httpEquivElements(html: string): number {
+  let count = 0
+  const visit = (node: DefaultTreeAdapterMap['node']): void => {
+    if ('attrs' in node && node.attrs.some((attr) => attr.name === 'http-equiv')) count += 1
+    if ('childNodes' in node) for (const child of node.childNodes) visit(child)
+  }
+  visit(parse(html))
+  return count
+}
+const occurrences = (html: string, token: string): number => html.split(token).length - 1
+const boundaryPage = (content: CmsPage['content']['sv']): CmsPage => {
+  const page = createSitePage({
+    id: '20000000-0000-4000-8000-0000000000b0',
+    path: '/hemsida',
+    name: { sv: 'Ny sida', en: 'New page' },
+  })
+  for (const lang of ['sv', 'en'] as const) page.content[lang] = { ...content }
+  return page
+}
+async function serveBoundary(presentation: CmsPresentation, path: string): Promise<string> {
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) =>
+    String(input).endsWith('/rpc/public_cms_presentation')
+      ? Response.json({ revision: 7, presentation })
+      : new Response(null, { status: 503 }),
+  )
+  const response = await worker.fetch(
+    new Request(`https://bladeblendstudio.se${path}`),
+    env,
+    noPublicContent,
+  )
+  expect(response.status).toBe(200)
+  return response.text()
+}
+
+describe('Worker CMS stylesheet boundary (A.B01)', () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  it.each([
+    ['prefers-color-scheme (modeCss)', MODE_PAYLOAD, '</style><meta'],
+    ['max-width:1440px (repairDesktopCss)', REPAIR_PAYLOAD, '</style><meta'],
+    ['uppercase end tag', UPPER_PAYLOAD, '</STYLE><meta'],
+  ])(
+    'keeps a stored boundary payload inert in the served sheet: %s',
+    async (_label, css, boundary) => {
+      const presentation = {
+        ...emptyDocument().presentation,
+        pages: [
+          boundaryPage({ html: '<main id="b"><p>t</p></main>', css: { light: css, dark: css } }),
+        ],
+      }
+      const html = await serveBoundary(presentation, '/hemsida')
+      // The injected </style> closes the sheet early and the <meta http-equiv=refresh> becomes a
+      // real element; a correct embedding neutralizes "</" so no stray closer or active element.
+      expect(httpEquivElements(html)).toBe(0)
+      expect(html).not.toContain(boundary)
+      // The owner's CSS still reaches the page as inert text; the fix must not drop it.
+      expect(html).toContain('a10-navigation')
+    },
+  )
+
+  it('keeps an inline-style boundary payload inert after it is hoisted into a sheet', async () => {
+    const pcss = '@media(prefers-color-scheme:dark){p{color:red}}'
+    const page = boundaryPage({ html: INLINE_PAYLOAD_HTML, css: { light: pcss, dark: pcss } })
+    const html = await serveBoundary({ ...emptyDocument().presentation, pages: [page] }, '/hemsida')
+    expect(httpEquivElements(html)).toBe(0)
+    expect(html).not.toContain('</style><meta')
+    expect(html).toContain('a10-navigation')
+  })
+
+  it('preserves ordinary CSS escapes that are not raw-text boundaries', async () => {
+    // "<b>" has no slash and "a>b" no "<": neither can close a <style>, so both stay as served.
+    // The space after "\3e" is the CSS escape terminator, so the decoded content is "<b>a>b".
+    const css = `p::before{content:"\\3c b\\3e a>b"}@media(prefers-color-scheme:dark){p{color:red}}`
+    const presentation = {
+      ...emptyDocument().presentation,
+      pages: [
+        boundaryPage({ html: '<main id="b"><p>t</p></main>', css: { light: css, dark: css } }),
+      ],
+    }
+    const html = await serveBoundary(presentation, '/hemsida')
+    expect(sheet(html, 'cms-page-light')).toBe('p::before{content:"<b>a>b"}')
+    // These oracles must be achievable on a correct render: a benign page has no active http-equiv
+    // element and balanced <style>/</style> tokens, and never the raw-text boundary.
+    expect(httpEquivElements(html)).toBe(0)
+    expect(occurrences(html, '</style>')).toBe(occurrences(html, '<style'))
+    expect(html).not.toContain('</style><meta')
+  })
+
+  it('serves escapes verbatim when neither modeCss nor repairDesktopCss runs', async () => {
+    // No prefers-color-scheme and no 1440px: both transforms return the string untouched, so the
+    // escapes are served as stored. A fix that always re-parses and regenerates would break this.
+    const css = `p::before{content:"\\3c b\\3e"}`
+    const presentation = {
+      ...emptyDocument().presentation,
+      pages: [
+        boundaryPage({ html: '<main id="b"><p>t</p></main>', css: { light: css, dark: css } }),
+      ],
+    }
+    const html = await serveBoundary(presentation, '/hemsida')
+    expect(sheet(html, 'cms-page-light')).toBe('p::before{content:"\\3c b\\3e"}')
+  })
+
+  it.each([
+    [
+      'a stylesheet',
+      (page: CmsPage): void => {
+        for (const lang of ['sv', 'en'] as const)
+          page.content[lang].css = { light: MODE_PAYLOAD, dark: MODE_PAYLOAD }
+      },
+    ],
+    [
+      'a repair-path stylesheet',
+      (page: CmsPage): void => {
+        for (const lang of ['sv', 'en'] as const)
+          page.content[lang].css = { light: REPAIR_PAYLOAD, dark: REPAIR_PAYLOAD }
+      },
+    ],
+    [
+      'an inline style',
+      (page: CmsPage): void => {
+        for (const lang of ['sv', 'en'] as const) page.content[lang].html = INLINE_PAYLOAD_HTML
+      },
+    ],
+  ])('rejects a boundary payload in %s at publication', (_label, mutate) => {
+    const page = createSitePage({
+      id: '20000000-0000-4000-8000-0000000000b1',
+      path: '/hemsida',
+      name: { sv: 'Ny', en: 'New' },
+    })
+    mutate(page)
+    const document = {
+      ...emptyDocument(),
+      presentation: { ...emptyDocument().presentation, pages: [page] },
+    }
+    expect(() => {
+      validateDocument(document)
+      validateDocumentMarkupPlacements(document, boundaryPolicy)
+    }).toThrow('Unsafe stylesheet boundary')
+  })
+})
+
+// A.R05: the CMS render branch rewrites <link rel="canonical"> but not <meta property="og:url">, so
+// a published Contact keeps the index shell's homepage og:url while its canonical is /contact.
+describe('Worker CMS Contact Open Graph identity (A.R05)', () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  const ogContactAssets = {
+    ...env,
+    ASSETS: {
+      fetch: async (input: Request | URL | string): Promise<Response> =>
+        new URL(input instanceof Request ? input.url : input).pathname === '/contact.html'
+          ? new Response(contactSource, { headers: { 'Content-Type': 'text/html' } })
+          : env.ASSETS.fetch(input),
+    },
+  }
+  const serveContact = async (published: CmsPresentation | null, path: string): Promise<string> => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) =>
+      String(input).endsWith('/rpc/public_cms_presentation') && published
+        ? Response.json({ revision: 7, presentation: published })
+        : new Response(null, { status: 503 }),
+    )
+    const response = await worker.fetch(
+      new Request(`https://bladeblendstudio.se${path}`),
+      ogContactAssets,
+      noPublicContent,
+    )
+    expect(response.status).toBe(200)
+    return response.text()
+  }
+  const ogUrl = (html: string): string | undefined =>
+    /<meta\b[^>]*property="og:url"[^>]*content="([^"]*)"/i.exec(html)?.[1]
+  const canonical = (html: string): string | undefined =>
+    /<link\b[^>]*rel="canonical"[^>]*href="([^"]*)"/i.exec(html)?.[1]
+
+  it.each(['/contact', '/contact?lang=en', '/contact?mode=dark'])(
+    'gives the CMS-rendered Contact its own og:url matching canonical (%s)',
+    async (path) => {
+      const html = await serveContact({ ...presentation, pages: [adoptedContact] }, path)
+      expect(html).toContain('data-cms-public="1"')
+      expect(canonical(html)).toBe('https://bladeblendstudio.se/contact')
+      expect(ogUrl(html)).toBe('https://bladeblendstudio.se/contact')
+    },
+  )
+
+  it('keeps the static Contact fallback og:url when the CMS lookup fails', async () => {
+    const html = await serveContact(null, '/contact')
+    expect(html).not.toContain('data-cms-public="1"')
+    expect(ogUrl(html)).toBe('https://bladeblendstudio.se/contact')
   })
 })
