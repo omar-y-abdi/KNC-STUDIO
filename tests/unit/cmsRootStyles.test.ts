@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { parse, walk } from 'css-tree'
+import { generate, parse, walk } from 'css-tree'
 import { bindCmsRootStyles, canonicalizeCmsRootStyles } from '../../src/admin/cms/cmsRootStyles'
 import { syncLayout } from '../../src/admin/cms/responsiveStyles'
 
 describe('CMS document root styles', () => {
+  it('binds an already parsed sheet in place without a generate/parse round trip', () => {
+    const sheet = parse('html body{--layout:var(--columns,1fr 2fr);color:red}')
+    expect(bindCmsRootStyles(sheet, 'editor-root')).toBe(sheet)
+    expect(generate(sheet)).toBe('#editor-root{--layout:var(--columns,1fr 2fr);color:red}')
+  })
   it('rewrites only an exact root selector in lists and nested media', () => {
     const css =
       '@media(min-width:769px){#inao,#inao2,#inao:hover,#inao .child,.inao,[data-ref="#inao"]{background-image:url("/mark.svg#inao")}}'

@@ -1,4 +1,5 @@
 import type { CmsDocument, CmsPage } from '../../../shared/cms'
+import { CORE_PAGE_PATHS, INFORMATION_PAGE_PATHS } from '../../../shared/cms'
 import { generate, ident, parse, walk } from 'css-tree'
 import { pageScenes } from '../../cms/Scene'
 
@@ -9,24 +10,37 @@ export const CORE_PAGE_IDS = [
   '10000000-0000-4000-8000-000000000004',
   '10000000-0000-4000-8000-000000000005',
   '10000000-0000-4000-8000-000000000006',
+  '10000000-0000-4000-8000-000000000007',
 ] as const
 
 /** Stored layouts are already editable. Missing optional scenes/motion metadata
  * are an upgrade, not a prerequisite for opening the owner's document. */
+function hasPageLayout(document: CmsDocument, path: string): boolean {
+  const page = document.presentation.pages.find((item) => item.path === path)
+  return Boolean(
+    page &&
+    ['sv', 'en'].every((lang) => {
+      const html = page.content[lang as 'sv' | 'en'].html
+      return (
+        html.trim() &&
+        (INFORMATION_PAGE_PATHS.includes(path) || html.includes('data-knc-native="1"'))
+      )
+    }),
+  )
+}
+
 export function hasCorePageLayouts(document: CmsDocument): boolean {
-  return ['/', '/about', '/booking', '/my-bookings', '/privacy', '/terms'].every((path) => {
-    const page = document.presentation.pages.find((item) => item.path === path)
-    return (
-      page &&
-      ['sv', 'en'].every((lang) => {
-        const html = page.content[lang as 'sv' | 'en'].html
-        return (
-          html.trim() &&
-          (path === '/privacy' || path === '/terms' || html.includes('data-knc-native="1"'))
-        )
-      })
-    )
-  })
+  return CORE_PAGE_PATHS.every((path) => hasPageLayout(document, path))
+}
+
+/** Pre-Contact publications already have editable layouts. Add Contact with the optional source
+ * upgrade; its absence must never make those stored pages depend on source availability. */
+export function canOpenStoredPages(document: CmsDocument): boolean {
+  return CORE_PAGE_PATHS.every(
+    (path) =>
+      (path === '/contact' && !document.presentation.pages.some((page) => page.path === path)) ||
+      hasPageLayout(document, path),
+  )
 }
 
 let sourcePages: readonly CmsPage[] = []
@@ -35,10 +49,10 @@ let loading: Promise<CmsPage[]> | undefined
 /** A published complete document already contains the source layout. Capture only missing/legacy
  * templates instead of replaying every live scene on each visit to Studio. */
 export function needsCorePageSource(document: CmsDocument): boolean {
-  for (const path of ['/', '/about', '/booking', '/my-bookings', '/privacy', '/terms']) {
+  for (const path of CORE_PAGE_PATHS) {
     const page = document.presentation.pages.find((item) => item.path === path)
     if (!page) return true
-    if (path === '/privacy' || path === '/terms') continue
+    if (INFORMATION_PAGE_PATHS.includes(path)) continue
     for (const variant of Object.values(page.content)) {
       if (!variant.html.includes('data-knc-native="1"')) return true
       const tree = new DOMParser().parseFromString(variant.html, 'text/html')
@@ -158,7 +172,12 @@ function repairReadOnlyPreviews(html: string, source: string): string {
   return changed ? current.body.innerHTML : html
 }
 
-/** Missing pages may come only from the rendered production components or existing legal files. */
+/** Preserve identity for callers comparing next.document === recovered. */
+export function withCorePages(document: CmsDocument): CmsDocument {
+  return hasCorePageLayouts(document) ? document : ensureCorePages(document)
+}
+
+/** Missing pages may come only from rendered production components or existing information files. */
 export function ensureCorePages(
   document: CmsDocument,
   source: readonly CmsPage[] = sourcePages,
@@ -170,6 +189,9 @@ export function ensureCorePages(
       next.presentation.pages.push(structuredClone(page))
       paths.add(page.path)
     } else {
+      // Information pages are authored bodies, not native scenes. Keep their bytes intact;
+      // normalizeDocument separately handles the recognized legacy legal upgrade.
+      if (INFORMATION_PAGE_PATHS.includes(page.path)) continue
       const existing = next.presentation.pages.find((item) => item.path === page.path)
       if (existing)
         for (const lang of ['sv', 'en'] as const) {

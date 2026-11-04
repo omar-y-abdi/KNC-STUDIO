@@ -15,6 +15,33 @@ export function updateNativeCanvas(editor: Editor, html: string, rules: CssRuleJ
   if (!wrapper || !html.includes('data-knc-native="1"')) return false
   const parsed = editor.Parser.parseHtml(html, { asDocument: false })
   if (parsed.css?.length) return false
+  return updateChildren(editor, wrapper, children(parsed.html), rules)
+}
+
+/** Patch only the generated live header when its structure still matches. The authored body,
+ * selection and CSS stay intact; structural header changes use the normal canvas import. */
+export function updateSiteHeader(editor: Editor, html: string): boolean {
+  const header = editor.Components.getById('cms-site-header')
+  if (!header) return false
+  const parsed = editor.Parser.parseHtml(html, { asDocument: false })
+  const definitions = children(parsed.html)
+  const definition = definitions[0]
+  if (
+    parsed.css?.length ||
+    definitions.length !== 1 ||
+    definition?.['tagName'] !== 'header' ||
+    !equalAttributes(header.getAttributes(), definition['attributes'] ?? {})
+  )
+    return false
+  return updateChildren(editor, header, children(definition.components))
+}
+
+function updateChildren(
+  editor: Editor,
+  root: Component,
+  definitions: Definition[],
+  rules?: CssRuleJSON[],
+): boolean {
   const changes: (() => void)[] = []
   const inline: (() => void)[] = []
   const plan = (parent: Component, definitions: Definition[]): boolean => {
@@ -100,12 +127,12 @@ export function updateNativeCanvas(editor: Editor, html: string, rules: CssRuleJ
     }
     return true
   }
-  if (!plan(wrapper, children(parsed.html))) return false
+  if (!plan(root, definitions)) return false
   editor.UndoManager.skip(() => {
     for (const change of changes) change()
     // One collection reset renders CSS into a fragment instead of appending every
     // new rule into the live canvas. Preserve rule order and GrapesJS media handling.
-    editor.Css.getAll().reset(rules)
+    if (rules) editor.Css.getAll().reset(rules)
     for (const apply of inline) apply()
   })
   return true

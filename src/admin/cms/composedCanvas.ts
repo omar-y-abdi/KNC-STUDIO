@@ -1,9 +1,10 @@
 import { configureComponent } from './editorPolicy'
 import type { Component, Editor } from 'grapesjs'
-import { generate, ident, parse, walk, type CssNode } from 'css-tree'
+import { clone, generate, ident, parse, walk, type CssNode, type StyleSheet } from 'css-tree'
 import type { CmsLang, CmsMode, CmsPage, CmsPresentation } from '../../../shared/cms'
 import type { CmsScene } from '../../cms/Scene'
-import { nativeCanvas } from './nativeCanvas'
+import { nativeCanvasTree, parseCanvasCss, type CanvasTree } from './nativeCanvas'
+import { bindCmsRootStyles } from './cmsRootStyles'
 
 type CanvasDevice = 'Desktop' | 'Mobile'
 const bookingStages = ['booking-options', 'booking-details', 'booking-confirmation'] as const
@@ -52,89 +53,126 @@ function stripBookingScene(doc: Document, scene: (typeof bookingStages)[number])
   return doc.body.innerHTML
 }
 
-/** Home edits one canonical About tree. The inactive device gets a derived preview only. */
-export function composedCanvas(
+export interface ComposedCanvasTree extends CanvasTree {
+  /** No cloned DOM, rewritten IDs or preview CSS exists until this is called. */
+  aboutPreview?: () => CanvasTree
+}
+
+/** Separate native conversions so startup can give input a turn between the full-page passes. */
+export function* composedCanvasPasses(
   page: CmsPage,
   presentation: CmsPresentation,
   lang: CmsLang,
   mode: CmsMode,
   scene: CmsScene = 'default',
   device: CanvasDevice = 'Desktop',
-): { html: string; css: string } {
-  const content = nativeCanvas(page.content[lang], mode)
-  if (page.path === '/booking' && isBookingStage(scene))
-    return composeBookingScene(content, scene, device)
+  deferAbout = true,
+): Generator<void, ComposedCanvasTree> {
+  const content = nativeCanvasTree(page.content[lang], mode)
+  yield
+  if (page.path === '/booking' && isBookingStage(scene)) {
+    const booking = composeBookingScene({ html: content.html, css: '' }, scene, device)
+    return { ...content, html: booking.html }
+  }
   if (page.path !== '/') return content
   const about = presentation.pages.find((item) => item.path === '/about')
   if (!about) return content
-  const shared = nativeCanvas(about.content[lang], mode)
+  const shared = nativeCanvasTree(about.content[lang], mode)
+  yield
   const doc = new DOMParser().parseFromString(content.html, 'text/html')
   const source = new DOMParser()
     .parseFromString(shared.html, 'text/html')
     .querySelector('[data-knc-surface="about"]')
   if (!source) return content
-  const css = parse(content.css)
+  const css = content.sheet
   walk(css, {
     visit: 'Rule',
     enter(rule, item, list) {
       if (generate(rule.prelude).includes('preview-shared-') && item && list) list.remove(item)
     },
   })
-  const rules = [generate(css)]
-  let count = 0
+  let inactive = false
   for (const slot of doc.querySelectorAll('[data-knc-slot]')) {
     // About is the named section at a runtime slot boundary, on both Home surfaces.
     if (!slot.querySelector(':scope > section[aria-labelledby]')) continue
-    const copy = source.cloneNode(true) as Element
     if (slot.closest(`[data-knc-surface="${device.toLowerCase()}-home"]`)) {
       // An editor-only boundary allows descendants to retain their canonical identities.
       // Export restores the runtime slot and writes this subtree back to the About owner.
       slot.setAttribute('data-editor-about-slot', slot.getAttribute('data-knc-slot') ?? '')
       slot.removeAttribute('data-knc-slot')
-      slot.replaceChildren(copy)
-      rules.push(shared.css)
+      slot.replaceChildren(source.cloneNode(true))
       continue
     }
-    const ids = new Map<string, string>()
-    for (const node of [copy, ...copy.querySelectorAll('*')]) {
-      if (node.id) {
-        const id = `preview-shared-${count++}`
-        ids.set(node.id, id)
-        node.id = id
-      }
-      for (const attr of [
-        'data-knc-source',
-        'data-knc-slot',
-        'data-knc-required',
-        'data-knc-surface',
-      ])
-        node.removeAttribute(attr)
-    }
-    for (const node of [copy, ...copy.querySelectorAll('*')]) {
-      for (const name of ['aria-labelledby', 'aria-describedby', 'for']) {
-        const value = node.getAttribute(name)
-        if (value)
-          node.setAttribute(
-            name,
-            value
-              .split(' ')
-              .map((id) => ids.get(id) ?? id)
-              .join(' '),
-          )
-      }
-    }
-    slot.replaceChildren(copy)
-    const sheet = parse(shared.css)
-    walk(sheet, {
-      visit: 'IdSelector',
-      enter(selector) {
-        const next = ids.get(ident.decode(selector.name))
-        if (next) selector.name = ident.encode(next)
-      },
-    })
-    rules.push(generate(sheet))
+    inactive = true
   }
-  const combined = parse(rules.join('\n'))
+  // The canonical About tree supplies all shared class/at-rules immediately. Only derived
+  // ID selectors are added later; global rules keep the same order as the eager composition.
+  css.children.appendList((clone(shared.sheet) as StyleSheet).children)
+  if (inactive && deferAbout) {
+    const ids = new Set([source, ...source.querySelectorAll('[id]')].map((node) => node.id))
+    const globals = clone(shared.sheet) as StyleSheet
+    filterSelectors(globals, (id) => ids.has(ident.decode(id.name)), false)
+    css.children.appendList(globals.children)
+  } else if (inactive) {
+    const preview = aboutPreview(source, shared)
+    const copy = new DOMParser().parseFromString(preview.html, 'text/html')
+    for (const slot of doc.querySelectorAll('[data-knc-slot]')) {
+      if (slot.querySelector(':scope > section[aria-labelledby]'))
+        slot.replaceChildren(...[...copy.body.childNodes].map((node) => node.cloneNode(true)))
+    }
+    css.children.appendList(preview.sheet.children)
+  }
+  deduplicateUnlayeredRules(css)
+  return {
+    html: doc.body.innerHTML,
+    sheet: css,
+    ...(inactive && deferAbout ? { aboutPreview: () => aboutPreview(source, shared) } : {}),
+  }
+}
+
+function aboutPreview(source: Element, shared: CanvasTree): CanvasTree {
+  const copy = source.cloneNode(true) as Element
+  const ids = new Map<string, string>()
+  let count = 0
+  for (const node of [copy, ...copy.querySelectorAll('*')]) {
+    if (node.id) {
+      const id = `preview-shared-${count++}`
+      ids.set(node.id, id)
+      node.id = id
+    }
+    for (const attr of [
+      'data-knc-source',
+      'data-knc-slot',
+      'data-knc-required',
+      'data-knc-surface',
+    ])
+      node.removeAttribute(attr)
+  }
+  for (const node of [copy, ...copy.querySelectorAll('*')]) {
+    for (const name of ['aria-labelledby', 'aria-describedby', 'for']) {
+      const value = node.getAttribute(name)
+      if (value)
+        node.setAttribute(
+          name,
+          value
+            .split(' ')
+            .map((id) => ids.get(id) ?? id)
+            .join(' '),
+        )
+    }
+  }
+  const sheet = clone(shared.sheet) as StyleSheet
+  walk(sheet, {
+    visit: 'IdSelector',
+    enter(selector) {
+      const next = ids.get(ident.decode(selector.name))
+      if (next) selector.name = ident.encode(next)
+    },
+  })
+  return { html: copy.outerHTML, sheet }
+}
+
+function deduplicateUnlayeredRules(combined: CssNode): void {
   // Home and both About copies share source rules. Import each identical rule once.
   // Layer declarations establish order on first occurrence, so retain them verbatim.
   let layered = false
@@ -145,7 +183,92 @@ export function composedCanvas(
     },
   })
   if (!layered) deduplicateRules(combined)
-  return { html: doc.body.innerHTML, css: layered ? rules.join('\n') : generate(combined) }
+}
+
+/** Static comparison consumers still receive both responsive surfaces. */
+export function composedCanvas(
+  page: CmsPage,
+  presentation: CmsPresentation,
+  lang: CmsLang,
+  mode: CmsMode,
+  scene: CmsScene = 'default',
+  device: CanvasDevice = 'Desktop',
+): { html: string; css: string } {
+  const passes = composedCanvasPasses(page, presentation, lang, mode, scene, device, false)
+  let step = passes.next()
+  while (!step.done) step = passes.next()
+  const content = step.value
+  return { html: content.html, css: generate(content.sheet) }
+}
+
+/** Install the deferred tree once, before either idle completion or the first ownership move. */
+export function installHomeAboutPreview(editor: Editor, create: () => CanvasTree): void {
+  const wrapper = editor.getWrapper()
+  const slot = wrapper
+    ?.find('[data-knc-slot]')
+    .find((candidate) =>
+      candidate
+        .components()
+        .some(
+          (child: Component) =>
+            child.get('tagName') === 'section' && child.getAttributes()['aria-labelledby'],
+        ),
+    )
+  if (!slot) return
+  const preview = create()
+  // Shared class rules already exist. Add only selectors for the new derived identities.
+  filterSelectors(preview.sheet, (id) => ident.decode(id.name).startsWith('preview-shared-'), true)
+  // Non-rule definitions (fonts, keyframes and layer declarations) were imported with the
+  // shared globals. Retain only the containers of the new ID rules.
+  walk(preview.sheet, {
+    visit: 'Atrule',
+    leave(node, item, list) {
+      let hasRule = false
+      if (node.block)
+        walk(node.block, {
+          visit: 'Rule',
+          enter() {
+            hasRule = true
+          },
+        })
+      if (!hasRule && item && list) list.remove(item)
+    },
+  })
+  const rules = parseCanvasCss(bindCmsRootStyles(preview.sheet, wrapper?.getId() ?? ''), editor)
+  editor.UndoManager.skip(() => {
+    editor.Css.addCollection(rules)
+    slot.components(preview.html)
+    const configure = (component: Component): void => {
+      configureComponent(component, { silent: true })
+      component.components().forEach(configure)
+    }
+    slot.components().forEach(configure)
+  })
+}
+
+function filterSelectors(
+  sheet: CssNode,
+  matches: (id: { name: string }) => boolean,
+  retain: boolean,
+): void {
+  walk(sheet, {
+    visit: 'Rule',
+    enter(rule, item, list) {
+      if (rule.prelude.type !== 'SelectorList') return
+      rule.prelude.children.forEach((selector, selectorItem) => {
+        let found = false
+        walk(selector, {
+          visit: 'IdSelector',
+          enter(id) {
+            if (matches(id)) found = true
+          },
+        })
+        if (found !== retain && rule.prelude.type === 'SelectorList')
+          rule.prelude.children.remove(selectorItem)
+      })
+      if (!rule.prelude.children.size && item && list) list.remove(item)
+    },
+  })
 }
 
 /** Only ownership moves on a Home device switch; both responsive trees already exist. */

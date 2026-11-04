@@ -174,4 +174,25 @@ describe('Home/About layout provenance', () => {
     layouts.captured(unchanged, old)
     expect(layouts.stale(unchanged, emptyDocument())).toBe(false)
   })
+
+  it('goes stale on an appearance preset change but not on an unrelated setting', () => {
+    const layouts = new LayoutProvenance()
+    const draft = new CmsDraft(emptyDocument(), 1, 'published')
+    for (const [key, value] of [
+      ['homepage_logo_scale', 'xl'],
+      ['homepage_scale', 'sm'],
+      ['homepage_logo_style', 'monochrome'],
+      ['about_scale', 'lg'],
+    ] as const) {
+      const next = { ...draft.base, settings: { ...draft.base.settings, [key]: value } }
+      expect(resourceLayoutsChanged(draft.base, next)).toBe(true)
+    }
+    const unrelated = { ...draft.base, settings: { ...draft.base.settings, x: '1' } }
+    expect(resourceLayoutsChanged(draft.base, unrelated)).toBe(false)
+    commit(draft, layouts, {
+      ...draft.document,
+      settings: { ...draft.document.settings, about_scale: 'lg' },
+    })
+    expect(layouts.stale(draft.document, draft.base)).toBe(true)
+  })
 })

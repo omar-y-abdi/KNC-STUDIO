@@ -1,14 +1,14 @@
-import { generate, parse, walk } from 'css-tree'
+import { generate, parse, walk, type CssNode } from 'css-tree'
 
 const documentRoot = 'html body'
 
 function rewriteRootSelector(
-  css: string,
+  css: string | CssNode,
   wrapperId: string,
   direction: 'bind' | 'canonicalize',
-): string {
+): string | CssNode {
   if (!wrapperId) return css
-  const tree = parse(css)
+  const tree = typeof css === 'string' ? parse(css) : css
   let changed = false
   walk(tree, {
     visit: 'Rule',
@@ -38,15 +38,17 @@ function rewriteRootSelector(
       })
     },
   })
-  return changed ? generate(tree) : css
+  return typeof css === 'string' ? (changed ? generate(tree) : css) : tree
 }
 
 /** Use the editor's selectable wrapper for stored document-body rules. */
-export function bindCmsRootStyles(css: string, wrapperId: string): string {
+export function bindCmsRootStyles(css: string, wrapperId: string): string
+export function bindCmsRootStyles(css: CssNode, wrapperId: string): CssNode
+export function bindCmsRootStyles(css: string | CssNode, wrapperId: string): string | CssNode {
   return rewriteRootSelector(css, wrapperId, 'bind')
 }
 
 /** Persist root styles against the real page body, never a transient GrapesJS ID. */
 export function canonicalizeCmsRootStyles(css: string, wrapperId: string): string {
-  return rewriteRootSelector(css, wrapperId, 'canonicalize')
+  return rewriteRootSelector(css, wrapperId, 'canonicalize') as string
 }
