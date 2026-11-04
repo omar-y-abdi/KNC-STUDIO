@@ -50,6 +50,11 @@ describe('styleLeaves', () => {
       '.x{@media(min-width:1px){color:red;@supports(display:block){color:blue}color:green}}',
       '.x{@media(min-width:1px){color:red;color:green;@supports(display:block){color:blue}}}',
     ],
+    [
+      'declaration order between two nested at-rules',
+      '.x{color:red;@media(min-width:1px){color:pink}@media(min-width:1px){color:blue}color:green}',
+      '.x{color:red;@media(min-width:1px){color:pink}color:green;@media(min-width:1px){color:blue}}',
+    ],
   ])('tells sheets apart that differ in %s', (_, first, second) => {
     expect(styleLeaves(first)).not.toEqual(styleLeaves(second))
   })
