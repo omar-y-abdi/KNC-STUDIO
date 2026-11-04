@@ -693,6 +693,11 @@ export function renderCmsPage(
     /(<link\b[^>]*rel="canonical"[^>]*href=")[^"]*(")/i,
     `$1${escapeAttribute(canonicalUrl)}$2`,
   )
+  // og:url shares the page's canonical identity; the index shell carries the homepage's.
+  rendered = rendered.replace(
+    /(<meta\b[^>]*property="og:url"[^>]*content=")[^"]*(")/i,
+    `$1${escapeAttribute(canonicalUrl)}$2`,
+  )
   // The shell's pre-paint grey must not survive under authored CSS (the two-tone /terms page).
   rendered = rendered.replace(
     '</head>',
