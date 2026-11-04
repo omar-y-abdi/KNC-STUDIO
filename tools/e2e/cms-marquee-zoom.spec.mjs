@@ -945,6 +945,276 @@ test.describe('stored marquee', () => {
       'The published draft lost the inspector color',
     )
   })
+
+  /** The selection of exactly these components, in this order: the Style Manager targets the
+   * rule of each one and shows the last (grapesjs 0.23.6). */
+  const selectionOf = (ids) => ({
+    selected: ids,
+    targets: ids.map((id) => `#${id}`),
+    shown: `#${ids.at(-1)}`,
+  })
+
+  /** Both color controls showing their defaults over the empty rule of the selected `id`. */
+  const shownDefaults = (id) => ({
+    selected: id,
+    target: `#${id}`,
+    stored: false,
+    color: 'black',
+    borderColor: 'black',
+  })
+
+  /** The Studio over the stored legacy About page, published as revision 2, with the checks the
+   * added-selection tests make against that revision. `source` names the captured source. */
+  async function publishedStudio(newContext, source) {
+    const captureContext = await newContext({ viewport: { width: 1440, height: 900 } })
+    await nativeBackend(captureContext)
+    await fixtureRoutes(captureContext, barbers)
+    const capturePage = await captureContext.newPage()
+    await mountStudio(capturePage)
+    // Only owner edits create backups; the captured source alone is pristine.
+    await capturePage.getByRole('textbox', { name: 'Namn', exact: true }).fill(source)
+    const { captured, ids } = await capturePage.evaluate(async () => {
+      const session = await (await import('/src/admin/cms/backup.ts')).cmsBackups()
+      await session.flush()
+      const backup = await session.own()
+      if (!backup) throw new Error('The CMS source was not captured')
+      const about = backup.document.presentation.pages.find((page) => page.path === '/about')
+      const ids = {}
+      for (const lang of ['sv', 'en']) {
+        const tree = new globalThis.DOMParser().parseFromString(
+          about.content[lang].html,
+          'text/html',
+        )
+        const group = tree.querySelector('[data-knc-fold="barber-marquee"][data-knc-source]')
+        const cards = [...(group?.children ?? [])].filter((card) => card.id)
+        if (!group?.id || cards.length !== 4) throw new Error(`The ${lang} barber strip is missing`)
+        ids[lang] = { strip: group.id, cards: cards.map((card) => card.id) }
+      }
+      return { captured: backup.document, ids }
+    })
+    await captureContext.close()
+
+    const context = await newContext({ viewport: { width: 1440, height: 900 } })
+    context.setDefaultTimeout(15000)
+    const backend = await nativeBackend(context, withLegacyZoom(captured, ids, 'Om oss (rev 1)'))
+    await fixtureRoutes(context, barbers)
+    const page = await context.newPage()
+    await mountStudio(page)
+    // The Studio status and the canvas HTML and CSS that it exports.
+    const canvas = () =>
+      page.evaluate(async () => {
+        const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+        const { readCanvasCss } = await import('/src/admin/cms/nativeCanvas.ts')
+        const editor = cmsGrapes.editors.at(-1)
+        return {
+          status: globalThis.document.querySelector('.cms-status')?.textContent,
+          html: editor.getHtml({ cleanId: false }),
+          css: readCanvasCss(editor),
+        }
+      })
+    // The draft as the owner exports it.
+    const exportDraft = async () => {
+      await page.getByRole('button', { name: 'Utkast & backup', exact: true }).click()
+      const downloaded = page.waitForEvent('download')
+      await page
+        .getByRole('dialog', { name: 'Utkast & backup' })
+        .getByRole('button', { name: 'Export', exact: true })
+        .click()
+      const stream = await (await downloaded).createReadStream()
+      assert.ok(stream, 'The backup must be readable')
+      const chunks = []
+      for await (const chunk of stream) chunks.push(chunk)
+      await page
+        .getByRole('dialog', { name: 'Utkast & backup' })
+        .getByRole('button', { name: 'Stäng panel', exact: true })
+        .click()
+      return JSON.parse(Buffer.concat(chunks).toString('utf8'))
+    }
+    const difference = (previous, next) => {
+      if (previous === next) return null
+      let offset = 0
+      while (offset < previous.length && previous[offset] === next[offset]) offset++
+      return {
+        offset,
+        beforeLength: previous.length,
+        afterLength: next.length,
+        before: previous.slice(Math.max(0, offset - 160), offset + 320),
+        after: next.slice(Math.max(0, offset - 160), offset + 320),
+      }
+    }
+    const record = async () => ({ ...(await canvas()), draft: await exportDraft() })
+
+    // Load: the stored legacy zoom opens as an unpublished width-form draft.
+    await page
+      .locator('.cms-status')
+      .filter({ hasText: /^(Opublicerade ändringar|Publicerad · rev 1)$/ })
+      .waitFor()
+    const loaded = await record()
+    assert.equal(loaded.status, 'Opublicerade ändringar', 'Load kept the stored legacy zoom')
+    await publish(page, 2)
+    const published = await record()
+    assert.equal(published.status, 'Publicerad · rev 2')
+
+    // The canvas CSS read at one stage still equals the published CSS.
+    const assertCss = (stage, css) => {
+      const changed = difference(published.css, css)
+      assert.equal(
+        changed,
+        null,
+        `${stage} changed the exported canvas: ${JSON.stringify(changed)}`,
+      )
+    }
+    // The exported canvas, the status and the exported draft still equal the published ones.
+    const assertUnchanged = async (stage) => {
+      const current = await record()
+      const differences = {
+        html: difference(published.html, current.html),
+        css: difference(published.css, current.css),
+      }
+      assert.deepEqual(
+        differences,
+        { html: null, css: null },
+        `${stage} changed the exported canvas: ${JSON.stringify(differences)}`,
+      )
+      assert.equal(current.status, 'Publicerad · rev 2', `${stage} changed the draft status`)
+      assert.deepEqual(current.draft, published.draft, `${stage} changed the exported draft`)
+    }
+    // The colors in every rule of each named component id.
+    const colorsOf = (named) =>
+      page.evaluate(async (named) => {
+        const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+        const editor = cmsGrapes.editors.at(-1)
+        const of = (id) =>
+          editor.Css.getAll()
+            .filter((rule) => rule.selectorsToString() === `#${id}`)
+            .map((rule) => String(rule.getStyle().color ?? '').replace(/\s*!important$/i, ''))
+            .filter(Boolean)
+        return Object.fromEntries(Object.entries(named).map(([name, id]) => [name, of(id)]))
+      }, named)
+    // A real color edit in the inspector reaches the rule of each selected component and of no
+    // other named one, and the draft then publishes as revision 3.
+    const assertColorEdit = async (selected, others) => {
+      const named = { ...selected, ...others }
+      const uncolored = await colorsOf(named)
+      const colorField = page.locator('#cms-inspector .gjs-sm-property__color input').first()
+      await colorField.fill('#123456')
+      await colorField.press('Enter')
+      await colorField.press('Tab')
+      await page.getByText('Opublicerade ändringar', { exact: true }).waitFor()
+      const colored = await colorsOf(named)
+      const colors = JSON.stringify({ uncolored, colored })
+      for (const name of Object.keys(others))
+        assert.deepEqual(
+          colored[name],
+          uncolored[name],
+          `The color edit reached the ${name}: ${colors}`,
+        )
+      for (const name of Object.keys(selected))
+        assert.deepEqual(
+          colored[name].filter((value) => !uncolored[name].includes(value)),
+          ['#123456'],
+          `The color edit did not reach the selected ${name}: ${colors}`,
+        )
+      await publish(page, 3)
+      assert.ok(
+        JSON.stringify(backend.document.presentation.pages).includes('#123456'),
+        'The published draft lost the inspector color',
+      )
+    }
+    return { page, assertCss, assertUnchanged, assertColorEdit }
+  }
+
+  // A ctrl or shift click adds to the selection through setSelected, which emits
+  // component:select:before for the added component and then component:selected, and removes
+  // nothing, so no component:deselected precedes the color commit (grapesjs 0.23.6). A pointer
+  // click on a tile reaches its photo, which fills the tile and is selectable itself, so the
+  // test adds the second tile through setSelected directly: editor.select([first, second])
+  // emits the same events for it. With both tiles selected, the Style Manager targets the rules
+  // of both and shows the last one.
+  test('adding a component to the selection never writes what the color controls show into the published draft', async ({
+    newContext,
+  }) => {
+    test.setTimeout(600_000)
+    const { page, assertCss, assertUnchanged, assertColorEdit } = await publishedStudio(
+      newContext,
+      'Tilläggstestets källa',
+    )
+    // Both color controls show their defaults over the first tile's empty rule, then the second
+    // tile joins the selection. The canvas CSS is read once the Style Manager targets both.
+    const added = await page.evaluate(async () => {
+      const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+      const { readCanvasCss } = await import('/src/admin/cms/nativeCanvas.ts')
+      const editor = cmsGrapes.editors.at(-1)
+      const tick = (ms) => new Promise((resolve) => globalThis.setTimeout(resolve, ms))
+      const [track] = editor.getWrapper().find('[data-knc-fold="gallery-track"]')
+      const [first, second] = (track?.components() ?? []).filter(
+        (child) => child.getAttributes()['data-knc-fold'] === 'gallery-tile',
+      )
+      if (!first || !second) throw new Error('The gallery track lacks two tiles')
+      const styles = editor.StyleManager
+      const color = styles.getProperty('typography', 'color')
+      const borderColor = styles
+        .getProperty('surface', 'border')
+        ?.getProperties()
+        .find((property) => property.getName() === 'border-color')
+      if (!color?.view || !borderColor?.view) throw new Error('The color controls are missing')
+      const shown = (property) =>
+        globalThis.document.querySelector(`#cms-styles .gjs-sm-property__${property} input`)?.value
+      // As PropertyView.render does: each control shows its value, or the default without one.
+      const showDefaults = () => {
+        for (const property of [color, borderColor]) property.view.setValue(property.getValue())
+        return {
+          selected: editor.getSelected()?.getId(),
+          target: styles.getSelected()?.selectorsToString(),
+          stored: [color, borderColor].some((property) => property.hasValue()),
+          color: shown('color'),
+          borderColor: shown('border-color'),
+        }
+      }
+      const selection = () => ({
+        selected: editor.getSelectedAll().map((component) => component.getId()),
+        targets: styles.getSelectedAll().map((target) => target.selectorsToString()),
+        shown: styles.getSelected()?.selectorsToString(),
+      })
+      editor.select(first)
+      await tick(50)
+      const overFirst = showDefaults()
+      editor.select([first, second])
+      await tick(50)
+      const both = selection()
+      const css = readCanvasCss(editor)
+      // Past Studio's change debounce, so a change the selection made has reached the status.
+      await tick(400)
+      return {
+        track: track.getId(),
+        first: first.getId(),
+        second: second.getId(),
+        states: { overFirst, both },
+        css,
+      }
+    })
+    const { track, first, second, states } = added
+    await test.info().attach('added-selection-state', {
+      body: JSON.stringify({ track, first, second, ...states }, null, 2),
+      contentType: 'application/json',
+    })
+    const evidence = JSON.stringify(states)
+    assert.deepEqual(
+      states.overFirst,
+      shownDefaults(first),
+      `The color controls do not show their defaults over the first tile's rule: ${evidence}`,
+    )
+    // The selection is checked first, so a CSS change belongs to the second tile's commit.
+    assert.deepEqual(
+      states.both,
+      selectionOf([first, second]),
+      `Adding the second tile did not select and target both tiles: ${evidence}`,
+    )
+    assertCss('Adding the second tile to the selection', added.css)
+    await assertUnchanged('The added selection')
+    // The Style Manager targets both tiles, so a real color edit reaches both and never the track.
+    await assertColorEdit({ 'first tile': first, 'second tile': second }, { track })
+  })
 })
 test.describe('source adoption', () => {
   // Paths that cms-marquee-zoom.spec.mjs does not reach: the asynchronous source upgrade of a stored
