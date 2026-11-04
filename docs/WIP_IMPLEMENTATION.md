@@ -28,12 +28,15 @@ It remains outside CMS history, revision and fingerprint changes. Existing read 
 staff/profile/photo, schedule, service and booking boundaries remain intact.
 
 Production rollout is a separate owner decision. Preserve the shipped migration history. A merge
-applies the three new forward migrations and deploys the Edge Functions within about 90 seconds,
+applies the four new forward migrations and deploys the Edge Functions within about 90 seconds,
 in no enforced order:
 
 1. [20261028100000_email_send_log.sql](../supabase/migrations/20261028100000_email_send_log.sql).
 2. [20261028101000_email_send_log_deleted_booking.sql](../supabase/migrations/20261028101000_email_send_log_deleted_booking.sql).
 3. [20261028185110_cms_single_writer_authority.sql](../supabase/migrations/20261028185110_cms_single_writer_authority.sql).
+4. [20261104200000_public_cms_page.sql](../supabase/migrations/20261104200000_public_cms_page.sql):
+   the Worker's bounded Contact read. A Worker that deploys before it reads the whole publication,
+   as before, and serves the same page.
 
 The logged senders `send-confirmation`, `send-recovery-email`, `send-email-change`,
 `admin-create-barber` and `external-cleanup` write to the email send log those two migrations
