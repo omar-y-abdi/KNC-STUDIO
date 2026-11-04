@@ -762,10 +762,22 @@ test('cms-restore-adoption the source fills only the empty variant of a current 
   await openStudio(page)
   assert.equal(await needsSource(page, head), true, 'The empty variant asks for the source')
   await waitForMigration(page)
-  const migrated = contactOf((await liveDraft(page)).document)
+  const draft = (await liveDraft(page)).document
+  const migrated = contactOf(draft)
   assert.deepEqual(migrated?.content.sv, authored, 'The authored variant keeps its bytes')
   assert.match(migrated?.content.en.html ?? '', /data-business-contact-page="1"/)
+  // Publication stores markup as validateDocumentMarkupPlacements serializes it. The source's
+  // English template is raw file bytes, so its first publication stores that serialization, as
+  // for a Contact the source adds whole; the published authored variant is already serialized.
+  const stored = globalThis.structuredClone(draft)
+  validateDocumentMarkupPlacements(stored, publicationPolicy)
   await publishNow(page, 3)
   accepted(backend.document)
-  assert.deepEqual(contactOf(backend.document)?.content, migrated?.content)
+  const published = contactOf(backend.document)
+  assert.deepEqual(
+    published?.content.sv,
+    authored,
+    'The authored variant is published byte for byte',
+  )
+  assert.deepEqual(published?.content.en, contactOf(stored)?.content.en)
 })
