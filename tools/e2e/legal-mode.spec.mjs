@@ -7,6 +7,9 @@
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { gunzipSync } from 'node:zlib'
+import { emptyDocument, validateCompleteDocument, validateDocumentMedia } from '../../shared/cms.ts'
+import { CMS_BUILT_ASSETS } from '../../shared/cms-built-assets.ts'
+import { validateDocumentMarkupPlacements } from '../../shared/cms-markup.ts'
 import { createSitePage } from '../../shared/site-page.ts'
 import { loadWorker, renderPublicDocument, routeWorkerDocuments } from './cms-render.mjs'
 import { expect, test } from './fixtures.mjs'
@@ -607,5 +610,193 @@ test.describe('legal source preparation', () => {
         )
       },
     )
+  }
+})
+
+// G01 and G02 (PR #104 final gate): owner stylesheet bytes inside the shell the Worker assembles. A
+// dollar sign is CSS text, never a String.replace pattern, and an id named in a selector is never
+// the shell's #root. Contact (the shipped template, as Studio adopts it) and a created page are added
+// to the committed publication; both pass the publication validators unless marked stored-only.
+test.describe('owner stylesheet bytes in the served shell', () => {
+  test.use({ colorScheme: 'light', viewport: { width: 1280, height: 900 } })
+  const contactSource = readFileSync(new URL('../../public/contact.html', import.meta.url), 'utf8')
+  const contactBodies = {
+    sv: contactSource.slice(
+      contactSource.indexOf('<body>') + '<body>'.length,
+      contactSource.indexOf('</body>'),
+    ),
+    en: readFileSync(
+      new URL('../../src/admin/cms/contact.en.html', import.meta.url),
+      'utf8',
+    ).trim(),
+  }
+  const ownerPages = (css) => {
+    const created = createSitePage({
+      id: '20000000-0000-4000-8000-0000000000c1',
+      path: '/hemsida',
+      name: { sv: 'Ny sida', en: 'New page' },
+    })
+    for (const lang of ['sv', 'en'])
+      for (const mode of ['light', 'dark']) created.content[lang].css[mode] += css
+    const contact = {
+      id: '10000000-0000-4000-8000-000000000007',
+      kind: 'page',
+      path: '/contact',
+      name: { sv: 'Kontakt', en: 'Contact' },
+      title: { sv: '', en: '' },
+      description: { sv: '', en: '' },
+      inMenu: false,
+      content: Object.fromEntries(
+        ['sv', 'en'].map((lang) => [
+          lang,
+          { html: contactBodies[lang], css: { light: css, dark: css } },
+        ]),
+      ),
+    }
+    return { '/contact': contact, '/hemsida': created }
+  }
+  /** Edge's publication sequence over the owner pages (supabase/functions/cms-studio). */
+  const publish = (pages) => {
+    const document = emptyDocument()
+    document.presentation.pages = globalThis.structuredClone(Object.values(pages))
+    validateCompleteDocument(document, document)
+    const placements = validateDocumentMarkupPlacements(document, {
+      siteOrigin: 'https://bladeblendstudio.se',
+      storageOrigin: 'https://admin-harness.invalid',
+      builtAssets: CMS_BUILT_ASSETS,
+    })
+    validateDocumentMedia(document, [], placements)
+    return document.presentation.pages
+  }
+  /** The painted colour of the main that is a direct child of #root; null when there is none. */
+  const rootMainColor = (page) =>
+    page.evaluate(() => {
+      const main = globalThis.document.querySelector('#root > main')
+      return main ? globalThis.getComputedStyle(main).color : null
+    })
+  const REDIRECT_TEXT = '$`<meta http-equiv=refresh content=0;url=https://target.invalid/probe>'
+  const DOLLAR_TEXT = "$$ $& $' $1 $<n>"
+  // A.B01, fixed earlier: its generated form materialises "</style>". Publication now rejects it, so
+  // it is served as a page published before that fix.
+  const BOUNDARY = `\\3c /style\\3e \\3c meta http-equiv=refresh content=0;url=https://attacker.invalid/a10-navigation\\3e `
+  const CASES = [
+    {
+      label: 'the redirect payload',
+      css: `p::before{content:'${REDIRECT_TEXT}'}`,
+      semantics: (page) =>
+        page.evaluate(() =>
+          globalThis
+            .getComputedStyle(globalThis.document.querySelector('#root main p'), '::before')
+            .content.slice(1, -1),
+        ),
+      expected: REDIRECT_TEXT,
+    },
+    {
+      label: 'literal replacement patterns',
+      css: `.dollar::before{content:"${DOLLAR_TEXT}"}a[href$=".pdf"]{color:#123456}`,
+      semantics: (page) =>
+        page.evaluate(() =>
+          [...globalThis.document.getElementById('cms-page-light').sheet.cssRules]
+            .find((rule) => rule.selectorText === '.dollar::before')
+            ?.style.getPropertyValue('content')
+            .slice(1, -1),
+        ),
+      expected: DOLLAR_TEXT,
+    },
+    // Contact's main is a child of #root, so the rule paints it; a created page's main sits under
+    // the live header's content wrapper, which this child selector does not reach.
+    {
+      label: 'a selector naming [id="root"]',
+      css: '[id="root"]>main{color:#c80000}',
+      semantics: rootMainColor,
+      expected: (path) => (path === '/contact' ? 'rgb(200, 0, 0)' : null),
+    },
+    {
+      label: 'a selector naming #root (control)',
+      css: '#root>main{color:#c80000}',
+      semantics: rootMainColor,
+      expected: (path) => (path === '/contact' ? 'rgb(200, 0, 0)' : null),
+    },
+    {
+      label: 'ordinary CSS (control)',
+      css: '.owner-copy{margin:1rem}@media (max-width:768px){.owner-copy{margin:0}}',
+      semantics: () => Promise.resolve(null),
+      expected: null,
+    },
+    {
+      label: 'the escaped closing-tag payload stored before its fix (control)',
+      css: `p::before{content:"${BOUNDARY}"}@media(prefers-color-scheme:dark){p{color:white}}`,
+      storedOnly: true,
+      semantics: (page) =>
+        page.evaluate(() =>
+          globalThis
+            .getComputedStyle(globalThis.document.querySelector('#root main p'), '::before')
+            .content.includes('a10-navigation'),
+        ),
+      expected: true,
+    },
+  ]
+
+  for (const target of CASES) {
+    for (const path of ['/contact', '/hemsida']) {
+      test(`${path} serves ${target.label} as inert stylesheet text`, async ({ page, context }) => {
+        const pages = ownerPages(target.css)
+        const stored = target.storedOnly ? Object.values(pages) : publish(pages)
+        const presentation = globalThis.structuredClone(fixture)
+        presentation.pages.push(...stored)
+        const storedSheet = stored.find((item) => item.path === path).content.sv.css.light
+        await installPublicBackend(context)
+        // Registered after the guard, so these win: a navigation away is recorded, never sent.
+        const navigations = []
+        for (const host of ['https://target.invalid/**', 'https://attacker.invalid/**'])
+          await page.route(host, (route) => {
+            navigations.push(route.request().url())
+            return route.fulfill({ status: 200, contentType: 'text/html', body: '<p>away</p>' })
+          })
+        await routeWorkerDocuments(page, {
+          origin: publicOrigin,
+          paths: ['/contact', '/hemsida'],
+          worker: rendering.worker,
+          presentation,
+          shell,
+        })
+        const url = `${publicOrigin}${path}?mode=light`
+        const response = await page.goto(url, { waitUntil: 'load' })
+        expect(response?.status()).toBe(200)
+        await page.waitForLoadState('networkidle')
+        expect(navigations, 'the page navigates nowhere').toEqual([])
+        expect(page.url()).toBe(url)
+        const dom = await page.evaluate((path) => {
+          const { document } = globalThis
+          const roots = document.querySelectorAll('#root')
+          const sheet = document.getElementById('cms-page-light')
+          return {
+            refreshElements: document.querySelectorAll('meta[http-equiv]').length,
+            bodyStyles: document.body.querySelectorAll('style').length,
+            roots: roots.length,
+            authoredMain: Boolean(
+              path === '/contact'
+                ? roots[0]?.querySelector(':scope > main #contact-title')
+                : roots[0]?.querySelector(
+                    'main[id="cms-body-20000000-0000-4000-8000-0000000000c1-sv"]',
+                  ),
+            ),
+            sheetInHead: sheet?.parentElement === document.head,
+            sheet: sheet?.textContent ?? null,
+          }
+        }, path)
+        expect(dom).toEqual({
+          refreshElements: 0,
+          bodyStyles: 0,
+          roots: 1,
+          authoredMain: true,
+          sheetInHead: true,
+          sheet: target.storedOnly ? expect.stringContaining('<\\/style') : storedSheet,
+        })
+        expect(await target.semantics(page, path)).toBe(
+          typeof target.expected === 'function' ? target.expected(path) : target.expected,
+        )
+      })
+    }
   }
 })

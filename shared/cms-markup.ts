@@ -474,6 +474,8 @@ function validateLegalSlots(path: string, lang: 'sv' | 'en', html: string): void
     for (const id of ['contact-details', 'contact-hours']) if (!ids.has(id)) missing.push(`#${id}`)
     if (!hasBusinessName) missing.push('[data-business-name]')
     if (!hasBusinessCity) missing.push('[data-business-city]')
+    // Listed last: the title joined the required slots after the others.
+    if (!ids.has('contact-title')) missing.push('#contact-title')
   } else if (!ids.has(`legal-business-details-${lang}`))
     missing.push(`#legal-business-details-${lang}`)
   if (path === '/terms' && !ids.has(`cancellation-policy-${lang}`))
@@ -489,6 +491,73 @@ function validateLegalSlots(path: string, lang: 'sv' | 'en', html: string): void
       `presentation.${path}.${lang}`,
       `${path === '/contact' ? 'Contact' : 'Legal'} page is missing required server-owned slot(s): ${missing.join(', ')}`,
     )
+  if (path === '/contact') validateContactSlotStructure(lang, fragment)
+}
+
+// The managed Contact's server-owned slots as the Worker refills them (src/site/businessSlots.ts
+// CONTACT_SLOTS, src/site/contactPage.ts): the details and hours get block markup (a <dl>, or the
+// hours' <p>), the others escaped text.
+const CONTACT_SLOT_IDS = ['contact-title', 'contact-details', 'contact-hours'] as const
+const CONTACT_SLOT_ATTRIBUTES = ['data-business-name', 'data-business-city'] as const
+const CONTACT_BLOCK_SLOTS: readonly string[] = ['#contact-details', '#contact-hours']
+/** Elements whose content a browser drops, moves out or shows as source once refilled. */
+const UNFILLABLE_SLOT_TAGS = new Set([
+  'br',
+  'col',
+  'hr',
+  'img',
+  'input',
+  'wbr',
+  'table',
+  'thead',
+  'tbody',
+  'tfoot',
+  'tr',
+  'colgroup',
+  'select',
+  'textarea',
+])
+/** Elements a refilled block cannot stay inside: a <dl> or <p> closes a <p>, and <select> drops it. */
+const BLOCK_BREAKING_TAGS: readonly string[] = ['p', 'select']
+
+/** Every slot of a marked Contact must survive the Worker's refill: `fillSlots` fills the first slot
+ * an element names and skips its subtree, and the browser reparses the filled markup. */
+function validateContactSlotStructure(lang: 'sv' | 'en', fragment: HtmlNode): void {
+  const where = `presentation./contact.${lang}`
+  const visit = (node: HtmlNode, outerSlot: string | null, breaker: string | null): void => {
+    if (!('tagName' in node)) {
+      if ('childNodes' in node)
+        for (const child of node.childNodes) visit(child, outerSlot, breaker)
+      return
+    }
+    const slots = [
+      ...CONTACT_SLOT_IDS.filter((id) =>
+        node.attrs.some((attr) => attr.name === 'id' && attr.value === id),
+      ).map((id) => `#${id}`),
+      ...CONTACT_SLOT_ATTRIBUTES.filter((name) =>
+        node.attrs.some((attr) => attr.name === name),
+      ).map((name) => `[${name}]`),
+    ]
+    if (slots.length > 1)
+      reject(where, `Contact page element holds several server-owned slots: ${slots.join(', ')}`)
+    const tag = node.tagName
+    const inner = BLOCK_BREAKING_TAGS.includes(tag) ? tag : breaker
+    const [slot] = slots
+    if (slot !== undefined) {
+      if (outerSlot !== null)
+        reject(where, `Contact page server-owned slot ${slot} is inside slot ${outerSlot}`)
+      const container =
+        node.namespaceURI !== 'http://www.w3.org/1999/xhtml' || UNFILLABLE_SLOT_TAGS.has(tag)
+          ? tag
+          : CONTACT_BLOCK_SLOTS.includes(slot)
+            ? inner
+            : null
+      if (container !== null)
+        reject(where, `Contact page server-owned slot ${slot} cannot be filled in <${container}>`)
+    }
+    for (const child of node.childNodes) visit(child, slot ?? outerSlot, inner)
+  }
+  visit(fragment, null, null)
 }
 
 function appendPlacements(

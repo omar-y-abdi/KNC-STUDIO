@@ -55,20 +55,6 @@ const SlotContext = createContext<(NativeRenderContext & { identity: string }) |
 
 type PublishedState = 'idle' | 'loading' | 'ready' | 'error'
 
-function readInlinePresentation(): CmsPresentation | null {
-  if (typeof document === 'undefined') return null
-  try {
-    const value: unknown = JSON.parse(
-      document.getElementById('cms-native-state')?.textContent ?? 'null',
-    )
-    if (value === null) return null
-    validatePresentation(value)
-    return value
-  } catch {
-    return null
-  }
-}
-
 /** Pauses before the automatic re-reads of the published presentation. A slow database answers one
  * read with 503; the error state follows only the read after the last pause (PERF-5). */
 export const PRESENTATION_RETRY_DELAYS_MS: readonly number[] = [500, 1500]
@@ -221,12 +207,8 @@ export function NativeSiteProvider({
 }): JSX.Element {
   const [pathname] = useLocation()
   const publicNativeRoute = !source && presentation === undefined && isNativePublicPath(pathname)
-  const [published, setPublished] = useState<CmsPresentation | null>(() =>
-    source || presentation !== undefined ? null : readInlinePresentation(),
-  )
-  const [publishedState, setPublishedState] = useState<PublishedState>(() =>
-    published === null ? 'idle' : 'ready',
-  )
+  const [published, setPublished] = useState<CmsPresentation | null>(null)
+  const [publishedState, setPublishedState] = useState<PublishedState>('idle')
   const [retryCount, setRetryCount] = useState(0)
   useEffect(() => {
     if (source || presentation !== undefined || !publicNativeRoute || published !== null) return

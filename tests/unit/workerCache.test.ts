@@ -190,9 +190,20 @@ describe('CMS page reads that do not depend on each other', () => {
   it.each([terms, contact])('reads discovery while it looks up $path in the CMS', async (page) => {
     const flight = createFlight()
     const files = createAssets({ '/index.html': SHELL, ...LEGAL_SHEETS })
+    const published = presentationWith(page)
     stubRpcs(
       {
         public_cms_presentation: publishedWith(page),
+        // Contact's bounded reads, as the database answers them for this publication.
+        public_cms_page_metadata: () =>
+          Response.json({ revision: 7, title: page.title.sv, description: page.description.sv }),
+        public_cms_page: () =>
+          Response.json({
+            revision: 7,
+            page,
+            themes: published.themes,
+            fonts: published.fonts ?? null,
+          }),
         public_business_discovery: () => Response.json(DISCOVERY),
       },
       flight,
