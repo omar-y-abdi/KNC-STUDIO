@@ -1389,3 +1389,65 @@ test('cms-hierarchical-resize: the Studio nests a first guard ahead of a narrow-
       `Resize: ${JSON.stringify({ ...row, edited: edit(row.size) })}`,
     )
 })
+
+for (const [label, card, before, after] of [
+  ['an aspect-ratio card stays square', { 'aspect-ratio': '1' }, [100, 100], [80, 80]],
+  // Control: a stretched card fills its track, so its width follows the height change.
+  ['a stretched card keeps its share of the track', {}, [400, 100], [320, 80]],
+]) {
+  test(`cms-hierarchical-resize: ${label} after a Desktop height change`, async ({
+    page,
+    context,
+  }) => {
+    const { frame } = await openStudio(page, context, ['a', 'b'])
+    await page.evaluate(
+      async ({ selector, card }) => {
+        const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+        const group = cmsGrapes.editors.at(-1).getWrapper().find(selector)[0]
+        // Two 400px tracks; each card is a 100px border box with no automatic minimum width.
+        group.addStyle({ 'grid-template-columns': '400px 400px', gap: '0px' })
+        for (const item of group.components())
+          item.addStyle({
+            width: 'auto',
+            height: '100px',
+            'box-sizing': 'border-box',
+            'min-width': '0px',
+            ...card,
+          })
+      },
+      { selector: groupSelector, card },
+    )
+    const grid = await frame.locator(groupSelector).evaluate((group) => {
+      const style = group.ownerDocument.defaultView.getComputedStyle(group)
+      return { display: style.display, columns: style.gridTemplateColumns }
+    })
+    assert.deepEqual(grid, { display: 'grid', columns: '400px 400px' }, 'The strip has two tracks')
+    const sizes = async (stage, expected) => {
+      const { cards } = await measure(frame)
+      assert.equal(cards.length, 2, `${stage}: both barber cards render`)
+      for (const [index, item] of cards.entries())
+        assert.ok(
+          Math.abs(item.rect.width - expected[0]) < 1 &&
+            Math.abs(item.rect.height - expected[1]) < 1,
+          `${stage}: card ${index} is ${item.rect.width}x${item.rect.height}, not ${expected.join('x')}`,
+        )
+    }
+    await sizes('Before', before)
+    await select(page, `${groupSelector} > div:first-child`)
+    await height(page, 80)
+    await sizes('After the height change', after)
+    // Leaving Desktop exports the sheet, and returning imports it again.
+    for (const [name, width] of [
+      ['Mobil', 390],
+      ['Dator', 1440],
+    ]) {
+      await page.getByRole('button', { name, exact: true }).click()
+      await page.waitForFunction(
+        (width) =>
+          globalThis.document.querySelector('.gjs-frame')?.contentWindow.innerWidth === width,
+        width,
+      )
+    }
+    await sizes('After export and reimport', after)
+  })
+}

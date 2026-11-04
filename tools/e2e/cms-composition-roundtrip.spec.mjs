@@ -1138,13 +1138,18 @@ async function holdAboutIdle(page) {
   })
 }
 
-async function openAdoptedFixture(page, context) {
+/** The adopted fixture, with `aboutCss` appended to each of its stored About sheets. */
+async function openAdoptedFixture(page, context, aboutCss = '') {
   const raw = {
     ...emptyDocument(),
     presentation: JSON.parse(
       gunzipSync(await readFile(new URL('./fixtures/presentation.json.gz', import.meta.url))),
     ).presentation,
   }
+  for (const variant of Object.values(
+    raw.presentation.pages.find((item) => item.path === '/about').content,
+  ))
+    for (const mode of ['light', 'dark']) variant.css[mode] += aboutCss
   await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
   // This is the pre-E6 adoption baseline, including legal and marquee migrations.
   const adopted = await page.evaluate(async (doc) => {
@@ -1378,3 +1383,70 @@ test('cms-composition-roundtrip', async ({ page }) => {
   assert.match(result.aboutCss, /font-size:27px/)
   console.log('PASS Home/About composition: bounded roundtrips and mixed-selector ownership')
 })
+
+// The stored Desktop width has no !important, which native export adds. That is no owner edit.
+for (const [label, width] of [
+  ['a normal', '200px'],
+  // Control: export keeps a stored !important width as it is.
+  ['an !important', '200px!important'],
+]) {
+  test(`a text edit leaves ${label} conditional Desktop width out of the other About sheets`, async ({
+    page,
+    context,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    const rule = `@media (min-width:769px){@supports (display:grid){#om-oss-heading{width:${width}}}}`
+    const { backend, adopted } = await openAdoptedFixture(page, context, rule)
+    const aboutOf = (document) =>
+      document.presentation.pages.find((item) => item.path === '/about').content
+    const stored = aboutOf(adopted)
+    for (const lang of ['sv', 'en']) {
+      assert.match(stored[lang].html, /<h2 id="om-oss-heading"/, `${lang}: the heading has its id`)
+      for (const mode of ['light', 'dark'])
+        assert.ok(stored[lang].css[mode].includes(rule), `${lang}/${mode}: adoption keeps the rule`)
+    }
+    const text = 'Hantverk efter en textändring'
+    await page.evaluate(async (text) => {
+      const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+      const [heading, ...others] = cmsGrapes.editors.at(-1).getWrapper().find('#om-oss-heading')
+      if (!heading?.getEl()?.closest('[data-editor-about-slot]') || others.length)
+        throw new Error('The composed About must hold the one editable heading')
+      heading.components(text)
+    }, text)
+    await page.getByRole('button', { name: 'Publicera', exact: true }).click()
+    await expect(page.locator('.cms-status')).toHaveText(/^Publicerad/, { timeout: 45000 })
+    const saved = aboutOf(backend.document)
+    assert.ok(saved.sv.html.includes(text), 'The text edit reaches the About page')
+    // English Mobile: a 40px native base width meets the stored Desktop-only width.
+    const probe = await context.newPage()
+    await probe.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
+    const [before, after] = await probe.evaluate(
+      (sheets) =>
+        sheets.map((css) => {
+          const frame = globalThis.document.createElement('iframe')
+          frame.style.width = '390px'
+          frame.style.height = '200px'
+          frame.style.border = '0'
+          globalThis.document.body.append(frame)
+          const doc = frame.contentDocument
+          doc.open()
+          doc.write(
+            `<!doctype html><html><head><style>html,body{margin:0}${css}</style></head><body><h2 id="om-oss-heading" style="width:40px">Craft</h2></body></html>`,
+          )
+          doc.close()
+          const width = doc.getElementById('om-oss-heading').getBoundingClientRect().width
+          frame.remove()
+          return width
+        }),
+      [stored.en.css.light, saved.en.css.light],
+    )
+    assert.ok(before < 100, `The stored rule already sizes the EN Mobile heading: ${before}px`)
+    assert.ok(Math.abs(after - before) < 0.5, `EN Mobile heading: ${before}px, then ${after}px`)
+    for (const [lang, mode] of [
+      ['sv', 'dark'],
+      ['en', 'light'],
+      ['en', 'dark'],
+    ])
+      assert.equal(saved[lang].css[mode], stored[lang].css[mode], `${lang}/${mode} changed`)
+  })
+}

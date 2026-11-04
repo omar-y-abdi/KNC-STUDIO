@@ -1102,6 +1102,99 @@ describe('resize guards on a component rule', () => {
     })
 })
 
+describe('conditional component geometry', () => {
+  /** Each declaration of `property` in source order, with every rule and at-rule around it. */
+  const scoped = (css: string, property: string): string[] => {
+    const found: string[] = []
+    const visit = (nodes: List<CssNode> | undefined, scope: string[]): void =>
+      nodes?.forEach((node) => {
+        if (node.type === 'Declaration') {
+          if (node.property === property) found.push([...scope, generate(node)].join(' > '))
+        } else if (node.type === 'Rule')
+          visit(node.block.children, [...scope, generate(node.prelude)])
+        else if (node.type === 'Atrule')
+          visit(node.block?.children, [
+            ...scope,
+            `@${node.name}${node.prelude ? ` ${generate(node.prelude)}` : ''}`,
+          ])
+      })
+    const tree = parse(css)
+    if (tree.type !== 'StyleSheet') throw new Error('The stylesheet is missing')
+    visit(tree.children, [])
+    return found
+  }
+
+  // A plain component rule inside @supports, @layer or @container applies under its own
+  // conditions, so a change of the unconditional rule must neither remove nor absorb it.
+  for (const wrapper of [
+    '@supports (display:grid)',
+    '@layer',
+    '@layer owners',
+    '@container (min-width:300px)',
+  ]) {
+    it(`keeps a same-selector rule inside ${wrapper} when the top-level rule after it changes`, () => {
+      const before = `${wrapper}{#card{width:20px}}#card{width:10px}`
+      const after = before.replace('10px', '11px')
+      expect(scoped(syncLayout(before, after, before), 'width')).toEqual(scoped(after, 'width'))
+    })
+
+    it(`synchronizes a top-level change ahead of a same-selector rule inside ${wrapper}`, () => {
+      const before = `#card{width:10px}${wrapper}{#card{width:20px}}`
+      const after = before.replace('10px', '11px')
+      expect(scoped(syncLayout(before, after, before), 'width').sort()).toEqual(
+        scoped(after, 'width').sort(),
+      )
+    })
+  }
+
+  const cardPage = (css: string): ReturnType<typeof createSitePage> => {
+    const page = createSitePage({
+      id: '10000000-0000-4000-8000-000000000003',
+      path: '/offers',
+      name: { sv: 'Ny', en: 'New' },
+    })
+    for (const lang of ['sv', 'en'] as const)
+      page.content[lang] = {
+        html: '<div id="card"><div></div></div>',
+        css: { light: css, dark: css },
+      }
+    return page
+  }
+
+  // The other language and theme receive a changed plain-ID width under all of its conditions.
+  for (const [label, wrap] of [
+    [
+      '@supports inside Desktop media',
+      (rule: string) => `@media (min-width:769px){@supports (display:grid){${rule}}}`,
+    ],
+    [
+      'Desktop media inside @supports',
+      (rule: string) => `@supports (display:grid){@media (min-width:769px){${rule}}}`,
+    ],
+    [
+      'narrow-Desktop media inside Desktop media',
+      (rule: string) => `@media (min-width:769px){@media (max-width:1100px){${rule}}}`,
+    ],
+    [
+      'Desktop media inside a named layer',
+      (rule: string) => `@layer owners{@media (min-width:769px){${rule}}}`,
+    ],
+    ['a container query', (rule: string) => `@container (min-width:300px){${rule}}`],
+  ] as const)
+    it(`synchronizes a deliberate width change inside ${label} with its conditions`, () => {
+      const sheet = (width: string): string => wrap(`#card{width:${width}!important}`)
+      const page = cardPage(sheet('200px'))
+      const edited = structuredClone(page)
+      edited.content.sv.css.light = sheet('220px')
+      const next = syncPageLayout(page, edited, 'sv', 'light')
+      for (const lang of ['sv', 'en'] as const)
+        for (const mode of ['light', 'dark'] as const)
+          expect(scoped(next.content[lang].css[mode], 'width')).toEqual(
+            scoped(sheet('220px'), 'width'),
+          )
+    })
+})
+
 describe('site theme defaults and owner overrides', () => {
   it('binds only mode-matched stored muted colors with byte-exact fallbacks', () => {
     const fixture: CmsPresentation = JSON.parse(
