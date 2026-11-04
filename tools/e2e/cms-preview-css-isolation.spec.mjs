@@ -2734,7 +2734,8 @@ test('Studio Home saves keep rules that only mention the preview prefix', async 
 // Each case has its own property and layer names: a top-level layer, a dotted sublayer, a layer
 // nested in a layer, a sublayer Home names only inside @supports, and an anonymous layer after a
 // sublayer. Bare ID rules gain !important on the canvas, so the normal cases select h2#om-oss-heading.
-// The normal cases and the top-level and anonymous !important cases are controls.
+// The normal cases are controls. The canvas writes a custom property as `value !important`, so
+// every custom-property !important case also needs the canvas sheet parsed as the stored ones are.
 const sublayerHeading = 'om-oss-heading'
 const sublayerCases = [
   // The gate review's sheets.

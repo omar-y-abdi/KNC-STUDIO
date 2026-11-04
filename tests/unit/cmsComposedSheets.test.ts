@@ -373,6 +373,91 @@ describe("About's layer order", () => {
     const aboutCss = '@layer a.x{.label{color:red}}@layer a.y{.label{color:blue}}@layer b{}'
     expect(extract('@layer b{}@layer a.y{}@layer a.x{}', aboutCss)).toBe(aboutCss)
   })
+
+  // The Studio test's ten cases in one Home sheet and one About sheet, Home's first on the canvas.
+  // The canvas export writes each declaration as `value !important`, which a custom property keeps
+  // unless it is parsed as the stored sheets are.
+  it('orders all the cases of one canvas sheet, as the canvas exports it', () => {
+    const cases = [
+      [
+        `@layer brand.first{}@layer brand.second{#${heading}{outline-color:blue!important}}`,
+        `@layer brand.first{[id="${heading}"]{outline-color:red!important}}`,
+      ],
+      [
+        `@layer top1{}@layer top2{#${heading}{--top-important:blue!important}}`,
+        `@layer top1{[id="${heading}"]{--top-important:red!important}}`,
+      ],
+      [
+        `@layer nest1{@layer first{}}@layer nest1{@layer second{#${heading}{--nested-important:blue!important}}}`,
+        `@layer nest1{@layer first{[id="${heading}"]{--nested-important:red!important}}}`,
+      ],
+      [
+        `@supports (display:block){@layer cond1.first{}}@layer cond1.second{#${heading}{--conditional-important:blue!important}}`,
+        `@layer cond1.first{[id="${heading}"]{--conditional-important:red!important}}`,
+      ],
+      [
+        `@layer anon1.first{}@layer{#${heading}{--anonymous-important:blue!important}}`,
+        `@layer anon1.first{[id="${heading}"]{--anonymous-important:red!important}}`,
+      ],
+      [
+        `@layer top3{}@layer top4{h2#${heading}{--top-normal:blue}}`,
+        `@layer top3{[id="${heading}"]{--top-normal:red}}`,
+      ],
+      [
+        `@layer dot2.first{}@layer dot2.second{h2#${heading}{--dotted-normal:blue}}`,
+        `@layer dot2.first{[id="${heading}"]{--dotted-normal:red}}`,
+      ],
+      [
+        `@layer nest2{@layer first{}}@layer nest2{@layer second{h2#${heading}{--nested-normal:blue}}}`,
+        `@layer nest2{@layer first{[id="${heading}"]{--nested-normal:red}}}`,
+      ],
+      [
+        `@supports (display:block){@layer cond2.first{}}@layer cond2.second{h2#${heading}{--conditional-normal:blue}}`,
+        `@layer cond2.first{[id="${heading}"]{--conditional-normal:red}}`,
+      ],
+      [
+        `@layer anon2.first{}@layer{h2#${heading}{--anonymous-normal:blue}}`,
+        `@layer anon2.first{[id="${heading}"]{--anonymous-normal:red}}`,
+      ],
+    ]
+    const homeCss = cases.map(([home]) => home).join('')
+    const aboutCss = cases.map(([, about]) => about).join('')
+    const canvas = (homeCss + aboutCss).replaceAll('!important', ' !important')
+    const owners = { home: homeCss, about: aboutCss }
+    // Each of About's !important layers is named before the moved rule's layer, as About orders it.
+    const about = [
+      '@layer brand.first{}',
+      `@layer brand.second{#${heading}{outline-color:blue!important}}`,
+      '@layer top1{}',
+      `@layer top2{#${heading}{--top-important:blue!important}}`,
+      '@layer nest1{@layer first{}}',
+      `@layer nest1{@layer second{#${heading}{--nested-important:blue!important}}}`,
+      '@supports (display:block){@layer cond1.first{}}',
+      `@layer cond1.second{#${heading}{--conditional-important:blue!important}}`,
+      '@layer anon1{}',
+      `@layer{#${heading}{--anonymous-important:blue!important}}`,
+      `@layer top4{h2#${heading}{--top-normal:blue}}`,
+      '@layer top3{}',
+      `@layer dot2.second{h2#${heading}{--dotted-normal:blue}}`,
+      `@layer nest2{@layer second{h2#${heading}{--nested-normal:blue}}}`,
+      `@layer cond2.second{h2#${heading}{--conditional-normal:blue}}`,
+      `@layer{h2#${heading}{--anonymous-normal:blue}}`,
+      aboutCss,
+    ].join('')
+    expect(extractAboutSheet(canvas, ids, new Set(), owners)).toBe(about)
+    expect(extract(homeCss, aboutCss)).toBe(about)
+    // Home's export keeps its own layer names and none of About's copies.
+    expect(stripHomeSheet(canvas, ids, { ...owners, own: new Set() })).toBe(
+      [
+        '@layer brand.first{}@layer brand.second{}@layer top1{}@layer top2{}',
+        '@layer nest1{@layer first{}}@layer nest1{@layer second{}}',
+        '@supports (display:block){@layer cond1.first{}}@layer cond1.second{}@layer anon1.first{}',
+        '@layer top3{}@layer top4{}@layer dot2.first{}@layer dot2.second{}',
+        '@layer nest2{@layer first{}}@layer nest2{@layer second{}}',
+        '@supports (display:block){@layer cond2.first{}}@layer cond2.second{}@layer anon2.first{}',
+      ].join(''),
+    )
+  })
 })
 
 describe('the cost of extracting About', () => {
