@@ -227,7 +227,7 @@ export function formatBusinessAddress(business: BusinessSettings): string {
   return `${business.street}, ${business.postalCode} ${business.city}`
 }
 
-const SCHEMA_DAYS = [
+export const SCHEMA_DAYS = [
   'Sunday',
   'Monday',
   'Tuesday',
@@ -237,11 +237,21 @@ const SCHEMA_DAYS = [
   'Saturday',
 ] as const
 
+export type SchemaDay = (typeof SCHEMA_DAYS)[number]
+
 function minutesToTime(minutes: number): string {
   return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`
 }
 
-function openingHours(facts: BusinessDiscoveryFacts): readonly Record<string, unknown>[] {
+export interface BusinessOpeningHours {
+  readonly '@type': string
+  readonly dayOfWeek: readonly SchemaDay[]
+  readonly opens: string
+  readonly closes: string
+}
+
+/** Union of the active barbers' schedule intervals, shared by visible hours and structured data. */
+export function openingHours(facts: BusinessDiscoveryFacts): readonly BusinessOpeningHours[] {
   const activeIds = new Set(facts.barbers.map((barber) => barber.id))
   const byDay = new Map<number, { start: number; end: number }[]>()
   for (const row of facts.schedules) {
@@ -262,7 +272,7 @@ function openingHours(facts: BusinessDiscoveryFacts): readonly Record<string, un
     byDay.set(row.weekday, intervals)
   }
 
-  const grouped = new Map<string, string[]>()
+  const grouped = new Map<string, SchemaDay[]>()
   for (const [weekday, intervals] of byDay) {
     intervals.sort((left, right) => left.start - right.start || left.end - right.end)
     const merged: { start: number; end: number }[] = []

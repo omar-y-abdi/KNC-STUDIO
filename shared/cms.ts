@@ -23,6 +23,16 @@ export const CMS_HTML_LIMIT = 100_000
 // Native captures include bounded identities and light/dark source styles.
 // The complete document remains limited to 2 MiB.
 export const CMS_NATIVE_HTML_LIMIT = 500_000
+/** Core information bodies share the deployed tokens and document layout. */
+export const INFORMATION_PAGE_PATHS: readonly string[] = ['/privacy', '/terms', '/contact']
+/** Fixed site routes, distinct from owner-created pages. */
+export const CORE_PAGE_PATHS: readonly string[] = [
+  '/',
+  '/about',
+  '/booking',
+  '/my-bookings',
+  ...INFORMATION_PAGE_PATHS,
+]
 export type Localized = Record<CmsLang, string>
 export interface MediaPlacement {
   placement: string
@@ -430,6 +440,13 @@ export function isPagePath(path: string): boolean {
     !['/privacy', '/terms', '/404', '/index'].includes(path)
   )
 }
+/** The wire schema accepts core pages too; Studio may create only additional routes. */
+export function isCreatedPagePath(path: string): boolean {
+  return isPagePath(path) && !CORE_PAGE_PATHS.includes(path)
+}
+
+export const isSitePage = (page: Pick<CmsPage, 'kind' | 'path'>): boolean =>
+  page.kind === 'page' && isCreatedPagePath(page.path)
 function validCssValue(value: string): boolean {
   return (
     value.length <= 160 &&
@@ -574,7 +591,8 @@ export function validatePresentation(value: unknown): asserts value is CmsPresen
       page['layout'] !== undefined &&
       (page['layout'] !== 'independent' ||
         page['kind'] !== 'page' ||
-        ['/', '/about', '/booking', '/my-bookings', '/privacy', '/terms'].includes(path))
+        // Existing authored contact pages may already carry independent-layout metadata.
+        (CORE_PAGE_PATHS.includes(path) && path !== '/contact'))
     )
       fail('page.layout', 'Independent layouts are only allowed on authored pages')
     paths.push(path)
@@ -787,6 +805,14 @@ export function mediaUrl(ref: MediaRef, supabaseUrl: string): string {
   const media = { bucket: ref.bucket, path: ref.path }
   if (!validMediaRef(media)) throw new CmsValidationError('media', 'Invalid reference')
   return `${supabaseUrl.replace(/\/$/, '')}/storage/v1/object/public/${media.bucket}/${media.path.split('/').map(encodeURIComponent).join('/')}`
+}
+export function cmsFontFaceCss(fonts: CmsPresentation['fonts'], baseUrl: string): string {
+  return Object.entries(fonts ?? {})
+    .map(
+      ([id, font]) =>
+        `@font-face{font-family:"CMSFont-${id}";src:url("${mediaUrl(font.ref, baseUrl)}") format("woff2");font-display:swap}`,
+    )
+    .join('\n')
 }
 export function mediaKey(ref: MediaRef): string {
   return `${ref.bucket}/${ref.path}`

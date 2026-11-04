@@ -7,17 +7,20 @@ import {
   type InformationPage,
 } from './site/agentContent'
 import { repairDesktopCss } from '../shared/cms-device-css'
-import { siteThemeCss, themeDeclarations } from '../shared/site-theme'
+import { siteThemeCss } from '../shared/site-theme'
+import { themeDeclarations } from '../shared/site-theme-declarations'
 import { WorkerEntrypoint } from 'cloudflare:workers'
 import {
-  isIndependentPage,
-  isSitePage,
-  renderIndependentSitePage,
+  SITE_PAGE_CSS,
+  isLiveSitePage,
   renderSitePage,
+  type SiteContact,
 } from '../shared/site-page'
 import { parse as parseHtml, parseFragment, serialize, type DefaultTreeAdapterMap } from 'parse5'
 import {
-  isPagePath,
+  cmsFontFaceCss,
+  isCreatedPagePath,
+  INFORMATION_PAGE_PATHS,
   validatePresentation,
   type CmsLang,
   type CmsMode,
@@ -41,9 +44,11 @@ import {
   EMPTY_BUSINESS_FACTS,
   buildBusinessStructuredData,
   formatBusinessAddress,
+  openingHours,
   resolveBusinessSettings,
   type BusinessDiscoveryFacts,
   type BusinessSettings,
+  type SchemaDay,
 } from './site/business'
 
 interface StaticAssets {
@@ -100,12 +105,10 @@ export function isSpaPath(pathname: string): boolean {
   return path === '/' || isPrivatePath(path)
 }
 
-const LEGAL_PAGE_PATHS: readonly string[] = ['/privacy', '/terms']
-
-/** Paths the published presentation can hold a page for: created pages and the two legal pages.
+/** Paths the published presentation can hold a page for: created and core information pages.
  * Files, probes and unknown routes never read the presentation. */
 export function isCmsPagePath(pathname: string): boolean {
-  return isPagePath(pathname) || LEGAL_PAGE_PATHS.includes(pathname)
+  return isCreatedPagePath(pathname) || INFORMATION_PAGE_PATHS.includes(pathname)
 }
 
 function isNoIndexPath(pathname: string): boolean {
@@ -147,10 +150,10 @@ async function serveAsset(
   return env.ASSETS.fetch(assetRequest(request, pathname, dynamic))
 }
 
-/** Base sheets of the legal pages, in cascade order before their stored CSS (STY-7). */
+/** Base sheets of information pages, in cascade order before their stored CSS. */
 const LEGAL_BASE_SHEETS = ['/tokens.css', '/info.css'] as const
 
-/** The deployed tokens and document layout; stored legal CSS only adds page rules and overrides. */
+/** The deployed tokens and document layout; stored CSS only adds page rules and overrides. */
 async function legalBaseCss(request: Request, env: Env): Promise<string> {
   const sheets = await Promise.all(
     LEGAL_BASE_SHEETS.map(async (path) => {
@@ -160,6 +163,14 @@ async function legalBaseCss(request: Request, env: Env): Promise<string> {
     }),
   )
   return sheets.join('\n')
+}
+
+/** A created page's base: the deployed tokens, then the live header and root surface. */
+async function sitePageBaseCss(request: Request, env: Env): Promise<string> {
+  const response = await serveAsset(request, env, '/tokens.css', true)
+  if (!response.ok)
+    throw new Error(`Site page base stylesheet /tokens.css answered ${response.status}`)
+  return `${await response.text()}\n${SITE_PAGE_CSS}`
 }
 
 export interface BusinessDiscovery {
@@ -383,18 +394,6 @@ function withDescription(html: string, description: string): string {
   )
 }
 
-function cmsFontCss(presentation: CmsPresentation, storageOrigin: string): string {
-  return Object.entries(presentation.fonts ?? {})
-    .map(([id, font]) => {
-      const url = `${storageOrigin.replace(/\/$/, '')}/storage/v1/object/public/${font.ref.bucket}/${font.ref.path
-        .split('/')
-        .map(encodeURIComponent)
-        .join('/')}`
-      return `@font-face{font-family:"CMSFont-${id}";src:url("${url}") format("woff2");font-display:swap}`
-    })
-    .join('\n')
-}
-
 /** `?mode` pins a colour scheme; without a valid one the page follows the visitor's OS scheme. */
 function requestedCmsMode(value: string | null): CmsMode | null {
   return value === 'light' || value === 'dark' ? value : null
@@ -418,22 +417,19 @@ function planCmsRender(
   page: CmsPage,
   lang: CmsLang,
   requested: CmsMode | null,
+  contact: SiteContact,
   presentation?: CmsPresentation,
 ): CmsRender {
   const native = page.content[lang].html.includes('data-knc-native="1"')
-  if (!presentation || !isSitePage(page)) {
-    const variant = page.content[lang]
-    return native
-      ? { markup: 'native', mode: requested ?? 'light', variant }
-      : { markup: 'authored', mode: requested ?? 'auto', variant }
-  }
-  if (requested === null && !native && isIndependentPage(page))
-    return { markup: 'authored', mode: 'auto', variant: renderIndependentSitePage(page, lang) }
-  // A derived site layout inlines one mode's styles into its markup, so it cannot follow the OS.
-  const mode = requested ?? 'light'
-  const site = renderSitePage(presentation, page, lang, mode)
-  const variant = { html: site.html, css: { light: site.css, dark: site.css } }
-  return native ? { markup: 'native', mode, variant } : { markup: 'authored', mode, variant }
+  // A created page's live header has one markup for both schemes, so it can follow the OS. A page
+  // still holding a frozen header copy is served as stored, as before the live header.
+  const variant =
+    presentation && isLiveSitePage(page)
+      ? renderSitePage(presentation, page, lang, requested, contact)
+      : page.content[lang]
+  return native
+    ? { markup: 'native', mode: requested ?? 'light', variant }
+    : { markup: 'authored', mode: requested ?? 'auto', variant }
 }
 
 const sheetSchemes = (mode: RenderedMode): readonly CmsMode[] =>
@@ -478,6 +474,7 @@ interface ShellAssetRange {
   readonly start: number
   readonly end: number
   readonly playfairOnly: boolean
+  readonly iconHref: string | null
 }
 
 // Cache only offsets for the last trusted build shell, never expanded CMS markup or a parse tree.
@@ -486,7 +483,7 @@ let shellAssetPlan:
 
 /** Remove boot assets from the trusted shell, retaining every other source byte. This is not a
  * sanitizer: authored content still passes the independent CMS validation boundary. */
-function withoutShellBootAssets(html: string, keepPlayfair: boolean): string {
+function withoutShellBootAssets(html: string, styles: string, markup: string): string {
   if (shellAssetPlan?.html !== html) {
     const ranges: ShellAssetRange[] = []
     const visit = (node: DefaultTreeAdapterMap['node']): void => {
@@ -502,15 +499,20 @@ function withoutShellBootAssets(html: string, keepPlayfair: boolean): string {
           node.tagName === 'link' &&
           rel.includes('preload') &&
           attr('href').toLowerCase().startsWith('/fonts/playfairdisplay-')
+        const iconHref =
+          node.tagName === 'link' && rel.includes('preload') && attr('href').startsWith('/icons/')
+            ? attr('href')
+            : null
         const location = node.sourceCodeLocation
-        if ((moduleScript || modulePreload || playfairPreload) && location) {
+        if ((moduleScript || modulePreload || playfairPreload || iconHref) && location) {
           let end = location.endOffset
           // Match the existing Vite-shell behavior: removed tags own following whitespace.
           while (end < html.length && /\s/.test(html.charAt(end))) end++
           ranges.push({
             start: location.startOffset,
             end,
-            playfairOnly: !moduleScript && !modulePreload,
+            playfairOnly: playfairPreload && !moduleScript && !modulePreload,
+            iconHref,
           })
         }
       }
@@ -521,8 +523,9 @@ function withoutShellBootAssets(html: string, keepPlayfair: boolean): string {
     shellAssetPlan = { html, ranges }
   }
   let result = html
-  for (const { start, end, playfairOnly } of shellAssetPlan.ranges) {
-    if (playfairOnly && keepPlayfair) continue
+  for (const { start, end, playfairOnly, iconHref } of shellAssetPlan.ranges) {
+    if (playfairOnly && /Playfair/i.test(styles)) continue
+    if (iconHref && (markup.includes(iconHref) || styles.includes(iconHref))) continue
     result = result.slice(0, start) + result.slice(end)
   }
   return result
@@ -542,8 +545,9 @@ export function renderCmsPage(
   fontCss = '',
   presentation?: CmsPresentation,
   baseCss = '',
+  contact: SiteContact = DEFAULT_BUSINESS,
 ): string {
-  const plan = planCmsRender(page, lang, requested, presentation)
+  const plan = planCmsRender(page, lang, requested, contact, presentation)
   const variant = plan.variant
   const styles =
     `<style id="cms-fonts">${fontCss}</style>` +
@@ -554,7 +558,7 @@ export function renderCmsPage(
   // parser work is bounded by the build shell and reused across authored pages/modes.
   const shell =
     plan.markup === 'authored' && !RUNTIME_ISLAND.test(variant.html)
-      ? withoutShellBootAssets(html, /Playfair/i.test(styles))
+      ? withoutShellBootAssets(html, styles, variant.html)
       : html
   let rendered = shell.replace(/<html\b[^>]*lang=(['"])[^'"]*\1/i, `<html lang="${lang}"`)
   rendered = replaceElementText(rendered, 'business-title', page.title[lang])
@@ -683,23 +687,71 @@ export function renderHomepageMetadata(
   )
 }
 
-export function renderContactMetadata(html: string, business: BusinessSettings): string {
-  const title = 'Kontakta ' + business.name + ' – barbershop i ' + business.city
-  let rendered = replaceElementText(html, 'contact-meta-title', title)
-  rendered = replaceMetaContent(
-    rendered,
-    'contact-description',
-    'Officiell kontakt, adress och bokningsinformation för ' +
-      business.name +
-      ' i ' +
-      business.city +
-      '.',
+function contactHours(facts: BusinessDiscoveryFacts): string {
+  const days: Readonly<Record<SchemaDay, string>> = {
+    Monday: 'Måndag',
+    Tuesday: 'Tisdag',
+    Wednesday: 'Onsdag',
+    Thursday: 'Torsdag',
+    Friday: 'Fredag',
+    Saturday: 'Lördag',
+    Sunday: 'Söndag',
+  }
+  const hours = openingHours(facts)
+  if (hours.length === 0)
+    return '<p>Se aktuella tider i <a href="/booking">bokningen</a> eller kontakta salongen.</p>'
+  return (
+    '<dl>' +
+    hours
+      .map(
+        ({ dayOfWeek, opens, closes }) =>
+          `<dt>${dayOfWeek.map((day) => days[day]).join(', ')}</dt><dd>${opens}–${closes}</dd>`,
+      )
+      .join('') +
+    '</dl>'
   )
-  rendered = replaceElementText(rendered, 'contact-title', 'Kontakta ' + business.name)
-  rendered = rendered.replaceAll(
-    /<span data-business-name\s*>[^<]*<\/span\s*>/g,
-    () => '<span data-business-name>' + escapeElementText(business.name) + '</span>',
-  )
+}
+
+/** Studio may add attributes or nested markup to a slot. Match its identity in the parsed tree,
+ * retaining the owner's element and styling while replacing only the authoritative content. */
+function contactSlots(
+  html: string,
+  business: BusinessSettings,
+  details: string,
+  hours: string,
+): string {
+  const fragment = parseFragment(html)
+  const ids = new Map([
+    ['contact-title', escapeElementText('Kontakta ' + business.name)],
+    ['contact-details', details],
+    ['contact-hours', hours],
+  ])
+  const attributes = new Map([
+    ['data-business-name', escapeElementText(business.name)],
+    ['data-business-city', escapeElementText(business.city)],
+  ])
+  const visit = (node: DefaultTreeAdapterMap['node']): void => {
+    if ('attrs' in node) {
+      const content = node.attrs
+        .map((attr) => (attr.name === 'id' ? ids.get(attr.value) : attributes.get(attr.name)))
+        .find((value) => value !== undefined)
+      if (content !== undefined) {
+        node.childNodes = parseFragment(content).childNodes
+        for (const child of node.childNodes) child.parentNode = node
+        return
+      }
+    }
+    if ('childNodes' in node) node.childNodes.forEach(visit)
+  }
+  visit(fragment)
+  return serialize(fragment)
+}
+
+export function renderContactFragment(
+  html: string,
+  business: BusinessSettings,
+  facts: BusinessDiscoveryFacts = EMPTY_BUSINESS_FACTS,
+): string {
   const phone = business.phoneTel
     ? '<dt>Telefon</dt><dd><a href="tel:' +
       escapeAttribute(business.phoneTel) +
@@ -715,10 +767,40 @@ export function renderContactMetadata(html: string, business: BusinessSettings):
     '</a></dd>'
   const address =
     '<dt>Besöksadress</dt><dd>' + escapeElementText(formatBusinessAddress(business)) + '</dd>'
-  return replaceElementContent(
-    rendered,
-    'contact-details',
+  return contactSlots(
+    html,
+    business,
     '<dl>' + address + phone + email + '</dl>',
+    contactHours(facts),
+  )
+}
+
+/** The fallback owns its head metadata; only its body passes through the fragment parser. */
+export function renderContactMetadata(
+  html: string,
+  business: BusinessSettings,
+  facts: BusinessDiscoveryFacts = EMPTY_BUSINESS_FACTS,
+): string {
+  const title = 'Kontakta ' + business.name + ' – barbershop i ' + business.city
+  let rendered = replaceElementText(html, 'contact-meta-title', title)
+  rendered = replaceMetaContent(
+    rendered,
+    'contact-description',
+    'Officiell kontakt, adress och bokningsinformation för ' +
+      business.name +
+      ' i ' +
+      business.city +
+      '.',
+  )
+  const opening = /<body\b[^>]*>/i.exec(rendered)
+  const end = rendered.lastIndexOf('</body>')
+  if (!opening || end < opening.index + opening[0].length)
+    throw new Error('Contact fallback is missing its body')
+  const start = opening.index + opening[0].length
+  return (
+    rendered.slice(0, start) +
+    renderContactFragment(rendered.slice(start, end), business, facts) +
+    rendered.slice(end)
   )
 }
 
@@ -1129,23 +1211,32 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
   const dynamicLegal =
     (pathname === '/terms' || pathname === '/privacy') &&
     (request.method === 'GET' || request.method === 'HEAD')
-  // A legal page renders the business whether the CMS holds it or the static file answers, so
+  const dynamicContact =
+    pathname === '/contact' && (request.method === 'GET' || request.method === 'HEAD')
+  // Information pages render the business whether the CMS holds them or the static file answers, so
   // discovery is read while the CMS lookup runs, not after it. HEAD never reads it.
-  const legalDiscovery = dynamicLegal && request.method === 'GET' ? loadDiscovery(env) : null
+  const informationDiscovery =
+    (dynamicLegal || dynamicContact) && request.method === 'GET' ? loadDiscovery(env) : null
   if (
     (request.method === 'GET' || request.method === 'HEAD') &&
     isCmsPagePath(cleanPathname) &&
     !isPrivatePath(pathname) &&
-    !['/google-calendar', '/contact'].includes(pathname)
+    pathname !== '/google-calendar'
   ) {
     const cms = await loadPublicCms(env)
     const cmsPage = cms?.presentation.pages.find((page) => page.path === cleanPathname)
     if (cmsPage) {
-      const legalPage = cmsPage.path === '/privacy' || cmsPage.path === '/terms'
+      const informationPage = INFORMATION_PAGE_PATHS.includes(cmsPage.path)
       const [index, discovery, baseCss] = await Promise.all([
         serveAsset(request, env, '/index.html', true),
-        request.method === 'HEAD' ? null : (legalDiscovery ?? loadDiscovery(env)),
-        legalPage && request.method !== 'HEAD' ? legalBaseCss(request, env) : '',
+        request.method === 'HEAD' ? null : (informationDiscovery ?? loadDiscovery(env)),
+        request.method === 'HEAD'
+          ? ''
+          : informationPage
+            ? legalBaseCss(request, env)
+            : isLiveSitePage(cmsPage)
+              ? sitePageBaseCss(request, env)
+              : '',
       ])
       const lang: CmsLang = url.searchParams.get('lang') === 'en' ? 'en' : 'sv'
       const mode = requestedCmsMode(url.searchParams.get('mode'))
@@ -1155,15 +1246,34 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
       headers.delete('ETag')
       headers.delete('Last-Modified')
       headers.set('Cache-Control', 'no-store')
+      // Fill only the authored fragment. The SPA shell must never be parsed or reserialised here.
+      const page =
+        cmsPage.path === '/contact'
+          ? {
+              ...cmsPage,
+              content: {
+                ...cmsPage.content,
+                [lang]: {
+                  ...cmsPage.content[lang],
+                  html: renderContactFragment(
+                    cmsPage.content[lang].html,
+                    discovery?.business ?? DEFAULT_BUSINESS,
+                    discovery?.facts ?? EMPTY_BUSINESS_FACTS,
+                  ),
+                },
+              },
+            }
+          : cmsPage
       let body = renderCmsPage(
         await index.text(),
-        cmsPage,
+        page,
         lang,
         mode,
         canonicalUrl,
-        cms ? cmsFontCss(cms.presentation, env.SUPABASE_URL ?? '') : '',
+        cms ? cmsFontFaceCss(cms.presentation.fonts, env.SUPABASE_URL ?? '') : '',
         cms?.presentation,
         baseCss,
+        discovery?.business ?? DEFAULT_BUSINESS,
       )
       if (discovery) {
         const structured = buildBusinessStructuredData(
@@ -1192,12 +1302,10 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
   }
 
   const assetPath = pathname === '/' ? '/index.html' : (PUBLIC_FILE_ALIASES[pathname] ?? pathname)
-  const dynamicContact =
-    pathname === '/contact' && (request.method === 'GET' || request.method === 'HEAD')
   const asset = await serveAsset(request, env, assetPath, dynamicLegal || dynamicContact)
   if (asset.status !== 404) {
     if (dynamicContact) {
-      const discovery = request.method === 'HEAD' ? null : await loadDiscovery(env)
+      const discovery = await informationDiscovery
       const headers = new Headers(asset.headers)
       for (const key of ['Content-Length', 'ETag', 'Last-Modified']) headers.delete(key)
       headers.set('Content-Type', 'text/html; charset=utf-8')
@@ -1207,12 +1315,16 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
       return new Response(
         request.method === 'HEAD'
           ? null
-          : renderContactMetadata(await asset.text(), discovery?.business ?? DEFAULT_BUSINESS),
+          : renderContactMetadata(
+              await asset.text(),
+              discovery?.business ?? DEFAULT_BUSINESS,
+              discovery?.facts ?? EMPTY_BUSINESS_FACTS,
+            ),
         { status: asset.status, headers },
       )
     }
     if (dynamicLegal) {
-      const discovery = await legalDiscovery
+      const discovery = await informationDiscovery
       const headers = new Headers(asset.headers)
       headers.delete('Content-Length')
       headers.delete('ETag')

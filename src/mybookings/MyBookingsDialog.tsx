@@ -17,7 +17,8 @@ import type { JSX, Ref } from 'preact'
 import { useContext, useEffect, useRef, useState } from 'preact/hooks'
 import { PreviewPorts } from '../cms/PreviewPorts'
 import { CmsSceneContext } from '../cms/Scene'
-import { NativeRegion } from '../cms/NativeSurface'
+import { NativeRegion, type NativeInstanceOptions } from '../cms/NativeSurface'
+import { createInstanceScope } from '../cms/instanceScope'
 import { Dialog } from '../ui/Dialog'
 import { FOCUS_CLS } from '../ui/pseudo'
 import { buildBookingStyles, palette, systemRed } from '../booking/bookingStyles'
@@ -342,13 +343,16 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
   const bookingRow = (b: MyBooking, upcoming: boolean): JSX.Element => {
     const open = expandedId === b.id
     const confirming = cancelFor === b.id
+    const instanceOptions: NativeInstanceOptions = example
+      ? {}
+      : { instance: b.id, scopeFactory: createInstanceScope }
     return (
       <NativeRegion
         key={b.id}
         surface="my-booking-card"
         lang={lang}
         mode={props.mode}
-        {...(example ? {} : { instance: b.id })}
+        {...instanceOptions}
       >
         <div
           key={b.id}
