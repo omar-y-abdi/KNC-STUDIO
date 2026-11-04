@@ -59,7 +59,7 @@
       <p class="lang">Svenska</p>
       <h1>Integritetspolicy</h1>
       <p class="updated">
-        <span data-business-name>salongen</span> · Senast uppdaterad 13 september 2026
+        <span data-business-name>salongen</span> · Senast uppdaterad 4 november 2026
       </p>
 
       <p>
@@ -77,6 +77,16 @@
         bokad tid för att kunna skapa och administrera bokningen, skicka bekräftelse eller
         påminnelse och hantera avbokning. Bokningsuppgifter lagras i Supabase. Boknings- och
         transaktionsmejl skickas via Resend. Vi använder inte bokningsuppgifter för annonsering.
+      </p>
+      <p>
+        När webbplatsen skickar ett mejl, till exempel en bokningsbekräftelse, påminnelse, avbokning
+        eller åtkomstlänk, sparas en kopia i Supabase: mottagarens e-postadress, ämnesraden, mejlets
+        innehåll som HTML och text, tidpunkten och om Resend tog emot mejlet. Inloggnings- och
+        åtkomstlänkar ersätts med [dold länk] innan kopian sparas. Endast salongens ägare kan läsa
+        kopiorna i webbplatsens administration, för att kontrollera och felsöka utskick. Varje kopia
+        raderas automatiskt 30 dagar efter det första sändningsförsöket. Rensningen körs en gång per
+        dygn, så en kopia kan finnas kvar upp till ett dygn längre. Raderas bokningen tidigare finns
+        kopian kvar till dess, utan koppling till bokningen.
       </p>
       <p>
         Mina bokningar använder en säker, e-postkopplad åtkomstlänk som skickas till bokningens
@@ -203,7 +213,8 @@
       <p>
         Bokningshistorik ligger kvar tills salongen raderar den. Salongen behöver bedöma fortsatt
         behov för kundservice, reklamationer och eventuella rättsliga skyldigheter. Tekniska
-        åtkomstbevis rensas separat efter sin giltighetstid. Krypterade säkerhetskopior har en
+        åtkomstbevis rensas separat efter sin giltighetstid. Sparade kopior av skickade mejl raderas
+        automatiskt 30 dagar efter det första sändningsförsöket. Krypterade säkerhetskopior har en
         separat rullande lagringstid.
       </p>
       <p>
@@ -235,7 +246,7 @@
         <p class="lang">English</p>
         <h2>Privacy Policy</h2>
         <p class="updated">
-          <span data-business-name>salongen</span> · Last updated 13 September 2026
+          <span data-business-name>salongen</span> · Last updated 4 November 2026
         </p>
 
         <p>
@@ -253,6 +264,17 @@
           and appointment time to create and administer the booking, send confirmation or reminder
           email, and handle cancellation. Booking data is stored in Supabase. Booking and
           transactional email is sent through Resend. We do not use booking data for advertising.
+        </p>
+        <p>
+          When the website sends an email, for example a booking confirmation, reminder,
+          cancellation or access link, a copy is stored in Supabase: the recipient's email address,
+          the subject line, the message content as HTML and text, the time, and whether Resend
+          accepted the message. Sign-in and access links are replaced with [dold länk] (hidden link)
+          before the copy is stored. Only the salon owner can read these copies in the website's
+          administration, to check and troubleshoot delivery. Each copy is deleted automatically 30
+          days after the first send attempt. The cleanup runs once a day, so a copy can remain up to
+          one day longer. If the booking is deleted sooner, the copy remains until then without a
+          link to the booking.
         </p>
         <p>
           My appointments uses a secure, email-scoped access link sent to the email address on the
@@ -381,7 +403,8 @@
         <p>
           Booking history remains until the salon deletes it. The salon must assess continued need
           for customer service, complaints and legal obligations. Access credentials expire
-          separately; encrypted backups have their own rolling retention period.
+          separately. Stored copies of sent email are deleted automatically 30 days after the first
+          send attempt. Encrypted backups have their own rolling retention period.
         </p>
         <p>
           You may request access, correction, deletion, restriction or portability, and object to

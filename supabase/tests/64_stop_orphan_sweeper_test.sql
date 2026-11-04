@@ -44,7 +44,7 @@ select is((select count(*)::int from public.external_action_jobs
   where action_type = 'storage_object_delete'), 0,
   'the per-minute dispatcher queues no Storage deletion');
 
--- A gallery cleanup intent still runs through the dispatcher after legacy producers are retired.
+-- A gallery cleanup intent from the generic queue the upload gateway uses runs through the dispatcher.
 select vault.create_secret('http://127.0.0.1:9/external-cleanup', 'external_cleanup_url');
 select vault.create_secret('sweeper-test-secret', 'booking_webhook_secret');
 insert into storage.objects (bucket_id, name, created_at)

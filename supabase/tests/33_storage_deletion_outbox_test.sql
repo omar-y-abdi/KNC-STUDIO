@@ -37,10 +37,12 @@ select ok(not has_table_privilege('authenticated', 'public.barber_photos', 'UPDA
   'authenticated cannot bypass barber photo replacement gateway');
 select ok(not has_table_privilege('authenticated', 'public.barber_photos', 'DELETE'),
   'authenticated cannot bypass durable barber photo deletion');
-select hasnt_function('public', 'internal_insert_gallery_image', array['text','text','text','integer'],
-  'the legacy gallery insert RPC is retired');
-select hasnt_function('public', 'internal_delete_gallery_image', array['uuid','text'],
-  'the legacy gallery delete RPC is retired');
+select ok(has_function_privilege(
+  'service_role', 'public.internal_insert_gallery_image(text,text,text,integer)', 'EXECUTE'),
+  'service role can insert validated gallery metadata through the narrow RPC');
+select ok(not has_function_privilege(
+  'authenticated', 'public.internal_insert_gallery_image(text,text,text,integer)', 'EXECUTE'),
+  'authenticated cannot invoke the internal gallery insert RPC');
 select is((
   select pg_catalog.count(*)::int
   from pg_catalog.pg_policy p
@@ -48,42 +50,41 @@ select is((
     and p.polname in ('gallery_owner_delete', 'barber_photos_owner_delete', 'barber_photos_own_delete')
 ), 0, 'authenticated clients have no direct Storage delete policy for managed images');
 
--- The active barber-photo gateway retains exact-path mutation and durable cleanup semantics.
-insert into public.barbers (id, name) values ('storage-outbox', 'Storage Outbox');
 set local role service_role;
 select is(
-  public.internal_replace_barber_photo('storage-outbox', null, 'storage-outbox/validated.webp') ->> 'ok',
-  'true', 'service-role gateway can persist a validated barber photo'
+  public.internal_insert_gallery_image('salon', 'salon/validated.webp', 'Validated', 2) ->> 'kind',
+  'salon', 'service-role gateway can persist validated gallery metadata'
 );
-select is(
-  public.internal_replace_barber_photo('storage-outbox', 'storage-outbox/validated.webp', 'other/wrong.webp') ->> 'error',
-  'invalid', 'barber photo replacement rejects a path outside its barber scope'
+select throws_ok(
+  $$select public.internal_insert_gallery_image('salon', 'cuts/wrong.webp', 'Wrong', 0)$$,
+  '22023', 'invalid gallery image',
+  'gallery insert RPC rejects a path outside the declared gallery kind'
 );
 reset role;
-delete from public.barber_photos where barber_id = 'storage-outbox';
+delete from public.gallery_images where storage_path = 'salon/validated.webp';
 
-insert into public.barber_photos (barber_id, storage_path)
-values ('storage-outbox', 'storage-outbox/outbox.webp');
+insert into public.gallery_images (id, kind, storage_path, alt, sort_order)
+values ('33000000-0000-0000-0000-000000000001', 'salon', 'salon/outbox.webp', 'Outbox', 0);
 
 set local role service_role;
-select is(public.internal_delete_barber_photo(
-  'storage-outbox', 'storage-outbox/wrong.webp'
-) ->> 'error', 'not_found', 'optimistic path rejects stale barber photo delete');
+select is(public.internal_delete_gallery_image(
+  '33000000-0000-0000-0000-000000000001', 'salon/wrong.webp'
+) ->> 'error', 'not_found', 'optimistic path rejects stale gallery delete');
 reset role;
-select is((select count(*)::int from public.barber_photos where barber_id='storage-outbox'), 1,
-  'stale barber photo delete keeps metadata');
+select is((select count(*)::int from public.gallery_images where id='33000000-0000-0000-0000-000000000001'), 1,
+  'stale gallery delete keeps metadata');
 select is((select count(*)::int from public.external_action_jobs), 0,
-  'stale barber photo delete queues nothing');
+  'stale gallery delete queues nothing');
 
 set local role service_role;
-select set_config('test.photo_delete', public.internal_delete_barber_photo(
-  'storage-outbox', 'storage-outbox/outbox.webp'
+select set_config('test.gallery_delete', public.internal_delete_gallery_image(
+  '33000000-0000-0000-0000-000000000001', 'salon/outbox.webp'
 )::text, true);
-select is((current_setting('test.photo_delete')::jsonb) ->> 'ok', 'true',
+select is((current_setting('test.gallery_delete')::jsonb) ->> 'ok', 'true',
   'metadata delete and deletion intent commit together');
 reset role;
-select is((select count(*)::int from public.barber_photos where barber_id='storage-outbox'), 0,
-  'barber photo metadata is deleted');
+select is((select count(*)::int from public.gallery_images where id='33000000-0000-0000-0000-000000000001'), 0,
+  'gallery metadata is deleted');
 select is((select count(*)::int from public.external_action_jobs where action_type='storage_object_delete'), 1,
   'Storage deletion intent persists');
 
@@ -93,7 +94,7 @@ set local role service_role;
 select set_config('test.storage_claim', public.claim_external_action(
   current_setting('test.storage_job')::uuid
 )::text, true);
-select is((current_setting('test.storage_claim')::jsonb) ->> 'path', 'storage-outbox/outbox.webp',
+select is((current_setting('test.storage_claim')::jsonb) ->> 'path', 'salon/outbox.webp',
   'claimed Storage context contains expected object path');
 select is(public.fail_external_action(
   current_setting('test.storage_job')::uuid,
@@ -116,7 +117,7 @@ select is(public.block_external_action(
 reset role;
 select is((select status from public.external_action_jobs where id=current_setting('test.storage_job')::uuid),
   'blocked', 'blocked action is not eligible for automatic dispatch');
-select public.queue_storage_deletion('barber-photos', 'storage-outbox/outbox.webp');
+select public.queue_storage_deletion('gallery', 'salon/outbox.webp');
 select is((select status from public.external_action_jobs where id=current_setting('test.storage_job')::uuid),
   'pending', 'explicitly re-queuing blocked intent resumes dispatch');
 
@@ -125,7 +126,7 @@ select set_config('test.old_claim', public.claim_external_action(
   current_setting('test.storage_job')::uuid
 )::text, true);
 reset role;
-select public.queue_storage_deletion('barber-photos', 'storage-outbox/outbox.webp');
+select public.queue_storage_deletion('gallery', 'salon/outbox.webp');
 set local role service_role;
 select is(public.complete_external_action(
   current_setting('test.storage_job')::uuid,
