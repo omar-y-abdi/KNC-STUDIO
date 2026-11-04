@@ -7,6 +7,7 @@ import {
   List,
   parse,
   walk,
+  type AttributeSelector,
   type Block,
   type CssNode,
   type ListItem,
@@ -109,7 +110,7 @@ export function* composedCanvasPasses(
   walk(css, {
     visit: 'Rule',
     enter(rule, item, list) {
-      if (generate(rule.prelude).includes('preview-shared-') && item && list) list.remove(item)
+      if (namesId(rule.prelude, isPreviewId) && item && list) list.remove(item)
     },
   })
   let inactive = false
@@ -214,6 +215,56 @@ function previewIds(source: Element, canvas: Document): Map<string, string> {
   return ids
 }
 
+/** Whether an ID is one a test looks for: exactly, or ignoring ASCII case for an attribute selector
+ * with the `i` flag. */
+type IdTest = (id: string, caseless: boolean) => boolean
+
+function asciiLower(value: string): string {
+  return value.replace(/[A-Z]/g, (char) => char.toLowerCase())
+}
+
+function idsIn(ids: ReadonlySet<string>): IdTest {
+  let folded: ReadonlySet<string> | undefined
+  return (id, caseless) => {
+    if (!caseless) return ids.has(id)
+    folded ??= new Set([...ids].map(asciiLower))
+    return folded.has(asciiLower(id))
+  }
+}
+
+/** A derived preview ID as previewIds allocates it. Authored text that only mentions the prefix,
+ * in an attribute, a class, a comment or another ID, is no such ID. */
+function isPreviewId(id: string, caseless: boolean): boolean {
+  return /^preview-shared-\d+$/.test(caseless ? asciiLower(id) : id)
+}
+
+/** An ID one simple selector requires of its element, and how it compares. */
+interface RequiredId {
+  readonly id: string
+  readonly caseless: boolean
+}
+
+/** The ID of `#x` alone. Page ownership reads this form: a rule that names its element by
+ * attribute stays whole in the sheet that stores it. */
+function selectorId(node: CssNode): RequiredId | undefined {
+  return node.type === 'IdSelector' ? { id: ident.decode(node.name), caseless: false } : undefined
+}
+
+/** The ID one simple selector requires of its element: `#x`, or the id attribute with the `=`
+ * matcher, as in `[id="x"]`, `[id=x]` and `[*|id="x"]`, by decoded and lowercased name and decoded
+ * value. The `i` flag compares ignoring ASCII case. A substring matcher such as `[id^="x"]`, or an
+ * unknown flag, names no ID. */
+function requiredId(node: CssNode): RequiredId | undefined {
+  if (node.type === 'IdSelector') return selectorId(node)
+  if (node.type !== 'AttributeSelector' || node.matcher !== '=' || !node.value) return undefined
+  const name = ident.decode(node.name.name).toLowerCase()
+  if (name !== 'id' && name !== '|id' && name !== '*|id') return undefined
+  const flags = node.flags === null ? '' : ident.decode(node.flags).toLowerCase()
+  if (flags !== '' && flags !== 'i' && flags !== 's') return undefined
+  const id = node.value.type === 'String' ? node.value.value : ident.decode(node.value.name)
+  return { id, caseless: flags === 'i' }
+}
+
 function renameUrls(node: CssNode, ids: ReadonlyMap<string, string>): boolean {
   let changed = false
   walk(node, {
@@ -303,19 +354,47 @@ function projectedSelectors(
   )
     return selectors
   if (preview) {
-    walk(selectors, (node) => {
-      if (node.type === 'IdSelector') {
-        const next = ids.get(ident.decode(node.name))
-        if (next) node.name = ident.encode(next)
-      } else if (node.type === 'AttributeSelector') {
-        const name = ident.decode(node.name.name).toLowerCase()
-        const alias = previewAttributes.get(name)
-        if (alias) node.name.name = alias
-      }
-    })
-    // Functional arguments can test external ancestors. Only the outer subject is written.
     selectors.children.forEach((selector) => {
-      if (selector.type === 'Selector') guardSelector(selector, true)
+      if (selector.type !== 'Selector') return
+      // The guard below keeps the subject inside the derived copy, so its own attribute tests read
+      // the aliases. Another compound, or a functional argument, can test a Home element outside
+      // the copy, which keeps its attributes: it accepts either name, with the specificity of one.
+      const subject = new Set<CssNode>()
+      for (const node of selector.children.toArray().reverse()) {
+        if (node.type === 'Combinator') break
+        subject.add(node)
+      }
+      const either: { attribute: AttributeSelector; alias: string; item: ListItem<CssNode> }[] = []
+      walk(selector, {
+        enter(node: CssNode, item: ListItem<CssNode>) {
+          if (node.type === 'IdSelector') {
+            const next = ids.get(ident.decode(node.name))
+            if (next) node.name = ident.encode(next)
+          } else if (node.type === 'AttributeSelector') {
+            const alias = previewAttributes.get(ident.decode(node.name.name).toLowerCase())
+            if (!alias) return
+            if (subject.has(node)) node.name.name = alias
+            else either.push({ attribute: node, alias, item })
+          }
+        },
+      })
+      for (const { attribute, alias, item } of either) {
+        const aliased = clone(attribute) as AttributeSelector
+        aliased.name.name = alias
+        const alternatives = [attribute, aliased].map((node): Selector => ({
+          type: 'Selector',
+          children: new List<CssNode>().fromArray([node]),
+        }))
+        item.data = {
+          type: 'PseudoClassSelector',
+          name: 'is',
+          children: new List<CssNode>().fromArray([
+            { type: 'SelectorList', children: new List<CssNode>().fromArray(alternatives) },
+          ]),
+        }
+      }
+      // Functional arguments can test external ancestors. Only the outer subject is written.
+      guardSelector(selector, true)
     })
   } else {
     // A derived candidate must not activate an owner's :has(), including nested conditions.
@@ -565,13 +644,11 @@ function deduplicateRules(sheet: CssNode): void {
   })
 }
 
-function namesId(node: CssNode, matches: (id: string) => boolean): boolean {
+function namesId(node: CssNode, matches: IdTest): boolean {
   let found = false
-  walk(node, {
-    visit: 'IdSelector',
-    enter(id) {
-      if (matches(ident.decode(id.name))) found = true
-    },
+  walk(node, (child) => {
+    const required = requiredId(child)
+    if (required && matches(required.id, required.caseless)) found = true
   })
   return found
 }
@@ -580,8 +657,12 @@ function namesId(node: CssNode, matches: (id: string) => boolean): boolean {
  * An ID inside an odd number of :not() only excludes elements, and an ID inside :has() tests a
  * relative of the styled element, so neither qualifies nor disqualifies the selector for a page.
  * Every other ID counts, also inside :is(), :where() and :matches(), which style the elements
- * their arguments match. */
-function namesPageId(node: CssNode, matches: (id: string) => boolean): boolean {
+ * their arguments match. `read` gives the ID a simple selector names: `#x` alone by default. */
+function namesPageId(
+  node: CssNode,
+  matches: IdTest,
+  read: (node: CssNode) => RequiredId | undefined = selectorId,
+): boolean {
   let found = false
   let negations = 0
   let relatives = 0
@@ -594,13 +675,8 @@ function namesPageId(node: CssNode, matches: (id: string) => boolean): boolean {
   walk(node, {
     enter(child: CssNode) {
       scope(child, 1)
-      if (
-        child.type === 'IdSelector' &&
-        negations % 2 === 0 &&
-        relatives === 0 &&
-        matches(ident.decode(child.name))
-      )
-        found = true
+      const required = negations % 2 === 0 && relatives === 0 ? read(child) : undefined
+      if (required && matches(required.id, required.caseless)) found = true
     },
     leave(child: CssNode) {
       scope(child, -1)
@@ -609,10 +685,125 @@ function namesPageId(node: CssNode, matches: (id: string) => boolean): boolean {
   return found
 }
 
+/** Selector specificity as IDs, then classes, attributes and pseudo-classes, then types and
+ * pseudo-elements. */
+type Specificity = readonly [number, number, number]
+
+function compareSpecificity(a: Specificity, b: Specificity): number {
+  return a[0] - b[0] || a[1] - b[1] || a[2] - b[2]
+}
+
+/** The specificity of a selector, or of the most specific selector of a list. :is(), :not(),
+ * :has() and :matches() take their most specific argument's, :where() none. */
+function specificity(node: CssNode): Specificity {
+  switch (node.type) {
+    case 'SelectorList': {
+      let highest: Specificity = [0, 0, 0]
+      for (const selector of node.children) {
+        const own = specificity(selector)
+        if (compareSpecificity(own, highest) > 0) highest = own
+      }
+      return highest
+    }
+    case 'Selector': {
+      let [ids, classes, types] = [0, 0, 0]
+      for (const child of node.children) {
+        const [childIds, childClasses, childTypes] = specificity(child)
+        ids += childIds
+        classes += childClasses
+        types += childTypes
+      }
+      return [ids, classes, types]
+    }
+    case 'IdSelector':
+      return [1, 0, 0]
+    case 'ClassSelector':
+    case 'AttributeSelector':
+      return [0, 1, 0]
+    case 'TypeSelector':
+      return node.name === '*' || node.name.endsWith('|*') ? [0, 0, 0] : [0, 0, 1]
+    case 'PseudoElementSelector':
+      return [0, 0, 1]
+    case 'PseudoClassSelector': {
+      const name = ident.decode(node.name).toLowerCase()
+      const argument = node.children?.first
+      if (name === 'where') return [0, 0, 0]
+      if (['before', 'after', 'first-line', 'first-letter'].includes(name)) return [0, 0, 1]
+      if (argument?.type === 'SelectorList' && ['is', 'not', 'has', 'matches'].includes(name))
+        return specificity(argument)
+      if (argument?.type === 'Nth' && argument.selector) {
+        const [ids, classes, types] = specificity(argument.selector)
+        return [ids, classes + 1, types]
+      }
+      return [0, 1, 0]
+    }
+    default:
+      return [0, 0, 0]
+  }
+}
+
+/** A selector that matches no element, since every element matches `*`, with the given
+ * specificity from an ID, classes and types inside the same :not(). No page uses them, and an ID
+ * inside :not() never decides which page a selector styles. */
+function specificityFiller([ids, classes, types]: Specificity): Selector {
+  const text =
+    (types ? 'knc-never '.repeat(types - 1) + 'knc-never' : '') +
+    '#knc-never'.repeat(ids) +
+    '.knc-never'.repeat(classes)
+  const filler = parse(`:not(*,${text})`, { context: 'selector' })
+  if (filler.type !== 'Selector') throw new Error('Selektorns specificitet kunde inte bevaras.')
+  return filler
+}
+
+/** A specificity filler: a lone :not() whose first argument is `*`. */
+function isFiller(selector: CssNode): boolean {
+  if (selector.type !== 'Selector' || selector.children.size !== 1) return false
+  const only = selector.children.first
+  const list = only?.type === 'PseudoClassSelector' ? only.children?.first : null
+  const first = list?.type === 'SelectorList' ? list.children.first : null
+  return (
+    only?.type === 'PseudoClassSelector' &&
+    ident.decode(only.name).toLowerCase() === 'not' &&
+    first?.type === 'Selector' &&
+    first.children.size === 1 &&
+    first.children.first?.type === 'TypeSelector' &&
+    first.children.first.name === '*'
+  )
+}
+
+const alternativeLists = new Set(['is', 'where', 'matches', 'not'])
+
+/** Remove from each selector list whose alternatives each style elements the alternatives that
+ * name a dropped page ID where it decides: those style only that page's elements. A list at an even
+ * number of :not() is one, also a :not() list inside one :not(). The remaining alternatives keep
+ * their place, conditions and combinators, and a filler that matches nothing keeps the list's
+ * specificity. A list that would keep no alternative but fillers stays: its selector styles only
+ * dropped elements and leaves whole. */
+function pruneAlternatives(selector: Selector, dropped: IdTest, negations: number): void {
+  for (const node of selector.children) {
+    if (node.type !== 'PseudoClassSelector') continue
+    const name = ident.decode(node.name).toLowerCase()
+    const list = node.children?.first
+    if (!alternativeLists.has(name) || list?.type !== 'SelectorList') continue
+    const depth = name === 'not' ? negations + 1 : negations
+    for (const alternative of list.children)
+      if (alternative.type === 'Selector') pruneAlternatives(alternative, dropped, depth)
+    if (depth % 2) continue
+    const kept = list.children.filter((alternative) => !namesPageId(alternative, dropped))
+    if (kept.size === list.children.size || !kept.some((alternative) => !isFiller(alternative)))
+      continue
+    const whole = specificity(list)
+    if (name !== 'where' && compareSpecificity(specificity({ ...list, children: kept }), whole) < 0)
+      kept.appendData(specificityFiller(whole))
+    list.children = kept
+  }
+}
+
 /** Remove selector branches naming a dropped page ID, or a derived preview ID anywhere, then the
- * blocks that removal emptied. Authored empty blocks stay, as does an emptied named layer: it still
- * sets layer order. */
-function dropSelectors(sheet: CssNode, dropped: (id: string) => boolean): void {
+ * blocks that removal emptied. A branch whose selector lists name the dropped ID only in some
+ * alternatives keeps the others. Authored empty blocks stay, as does an emptied named layer: it
+ * still sets layer order. */
+function dropSelectors(sheet: CssNode, dropped: IdTest): void {
   const shrunk = new Set<List<CssNode>>()
   walk(sheet, {
     leave(node: CssNode, item: ListItem<CssNode>, list: List<CssNode>) {
@@ -620,10 +811,9 @@ function dropSelectors(sheet: CssNode, dropped: (id: string) => boolean): void {
       let unmatched = false
       if (node.type === 'Rule' && node.prelude.type === 'SelectorList') {
         node.prelude.children.forEach((selector, branch, branches) => {
-          if (
-            namesId(selector, (id) => id.startsWith('preview-shared-')) ||
-            namesPageId(selector, dropped)
-          )
+          if (selector.type === 'Selector' && namesPageId(selector, dropped))
+            pruneAlternatives(selector, dropped, 0)
+          if (namesId(selector, isPreviewId) || namesPageId(selector, dropped))
             branches.remove(branch)
         })
         unmatched = node.prelude.children.size === 0
@@ -639,9 +829,15 @@ function dropSelectors(sheet: CssNode, dropped: (id: string) => boolean): void {
 }
 
 /** The sheets of the two pages sharing a Home save, on the same root-selector basis. */
-interface ComposedOwners {
+export interface ComposedOwners {
   about: string
   home: string
+}
+
+/** Home's sheet owners, with the IDs Home's own markup holds. */
+export interface HomeSheetOwners extends ComposedOwners {
+  /** About's extraction drops what styles these, so Home keeps it. */
+  own: ReadonlySet<string>
 }
 
 /** Home's export also needs About's stored markup: it names the section Home keeps no rule for. */
@@ -691,29 +887,45 @@ function homeOwned(
   return owned
 }
 
-/** A top-level layer that an item names. */
+/** A layer that an item names. Layers are ordered among the layers of the same parent, by the
+ * place each is first named. */
 interface LayerMention {
-  /** A named layer by its name; an anonymous layer, a layer of its own, by its block. */
+  /** A named layer by its full name, such as `a.b` for `b` inside `a`; an anonymous layer, a layer
+   * of its own, by its block. */
   readonly layer: string | CssNode
-  /** The item's rules from the item itself down to the layer rule. The layer is named only while
-   * every rule above it applies, so a mention with no rule above it always applies. */
+  /** The full name of the layer that holds it, or '' at the top. */
+  readonly parent: string
+  /** The name as the item writes it at its layer rule, up to this layer: `a`, then `a.b`, in
+   * `@layer a.b{}`, and `b` in `@layer a{@layer b{}}`. */
+  readonly name: string
+  /** The item's rules from the item itself down to the layer rule. */
   readonly path: readonly CssNode[]
+  /** Every rule above the layer rule is a named layer, so the item always names the layer. Any
+   * other rule above it can keep it from naming the layer at all. */
+  readonly always: boolean
   /** The layer holds an !important declaration. */
   readonly important: boolean
 }
 
-/** The top-level layers an item names, in source order. A sublayer such as `a.b`, or a layer
- * inside a layer, takes its place within its top layer. */
+/** The layers an item names, in source order, each after the layers that hold it: `@layer a.b{}`
+ * names `a` and `a.b`, as `@layer a{@layer b{}}` does. A layer inside an anonymous layer is named
+ * nowhere else, so its order needs no mention. */
 function layerMentions(node: CssNode): LayerMention[] {
   const mentions: LayerMention[] = []
   const path: CssNode[] = []
-  let depth = 0
+  // The full name of each enclosing layer rule, null for an anonymous one.
+  const parents: (string | null)[] = []
   walk(node, {
     enter(child: CssNode) {
       if (child.type !== 'Atrule' && child.type !== 'Rule') return
       path.push(child)
       if (child.type !== 'Atrule' || ident.decode(child.name).toLowerCase() !== 'layer') return
-      if (depth++ > 0) return
+      const enclosing = parents.at(-1)
+      if (enclosing === null) {
+        parents.push(null)
+        return
+      }
+      const parent = enclosing ?? ''
       let important = false
       walk(child, {
         visit: 'Declaration',
@@ -721,22 +933,38 @@ function layerMentions(node: CssNode): LayerMention[] {
           if (declaration.important) important = true
         },
       })
-      const list = child.prelude?.type === 'AtrulePrelude' ? child.prelude.children.first : null
-      const layers: (string | CssNode)[] = []
-      if (!child.prelude) layers.push(child)
-      else if (list && String(list.type) === 'LayerList' && 'children' in list && list.children)
+      const always = path.slice(0, -1).every(isNamedLayer)
+      const mention = { parent, path: [...path], always, important }
+      if (!child.prelude) {
+        mentions.push({ ...mention, layer: child, name: '' })
+        parents.push(null)
+        return
+      }
+      const list = child.prelude.type === 'AtrulePrelude' ? child.prelude.children.first : null
+      const names: string[] = []
+      if (list && String(list.type) === 'LayerList' && 'children' in list && list.children)
         list.children.forEach((layer) => {
-          const name = generate(layer)
-          const dot = name.search(/[^\\]\./)
-          layers.push(dot < 0 ? name : name.slice(0, dot + 1))
+          names.push(generate(layer))
         })
-      else layers.push(generate(child.prelude))
-      for (const layer of layers) mentions.push({ layer, path: [...path], important })
+      else names.push(generate(child.prelude))
+      let full = parent
+      for (const name of names) {
+        full = parent
+        let written = ''
+        for (const segment of name.split(/(?<!\\)\./)) {
+          const layer = full ? `${full}.${segment}` : segment
+          written = written ? `${written}.${segment}` : segment
+          mentions.push({ ...mention, layer, parent: full, name: written })
+          full = layer
+        }
+      }
+      parents.push(full)
     },
     leave(child: CssNode) {
       if (child.type !== 'Atrule' && child.type !== 'Rule') return
       path.pop()
-      if (child.type === 'Atrule' && ident.decode(child.name).toLowerCase() === 'layer') depth--
+      if (child.type === 'Atrule' && ident.decode(child.name).toLowerCase() === 'layer')
+        parents.pop()
     },
   })
   return mentions
@@ -749,16 +977,90 @@ function skeleton(node: CssNode, mentions: readonly LayerMention[], depth = 0): 
   if (node.type !== 'Atrule' && node.type !== 'Rule') return []
   const here = mentions.filter(({ path }) => path[depth] === node)
   if (here.every(({ path }) => path.length === depth + 1))
-    return here.flatMap(({ layer }) =>
-      typeof layer === 'string'
-        ? (parse(`@layer ${layer}{}`) as StyleSheet).children.toArray()
-        : [],
+    return here.flatMap(({ layer, name }) =>
+      typeof layer === 'string' ? (parse(`@layer ${name}{}`) as StyleSheet).children.toArray() : [],
     )
   const children = (node.block?.children.toArray() ?? []).flatMap((child) =>
     skeleton(child, here, depth + 1),
   )
   const block: Block = { type: 'Block', children: new List<CssNode>().fromArray(children) }
   return [{ ...node, block }]
+}
+
+/** The empty layer copies each kept item needs before it, as dropHomeItems describes them, in one
+ * pass over the sheet's mentions. Items About stored are kept and name About's own layers in
+ * About's order, so only a kept item About did not store can need copies, and only of a layer a
+ * dropped Home item named. */
+function layerCopies(
+  sheet: StyleSheet,
+  held: ReadonlySet<CssNode>,
+  homeItems: ReadonlySet<CssNode>,
+): Map<CssNode, CssNode[]> {
+  type Layer = string | CssNode
+  const copies = new Map<CssNode, CssNode[]>()
+  const entries = sheet.children
+    .toArray()
+    .flatMap((node) => layerMentions(node).map((mention) => ({ node, mention })))
+  // About's order: each layer by the place an item About stored first names it.
+  const rank = new Map<Layer, number>()
+  const important = new Set<Layer>()
+  for (const { node, mention } of entries) {
+    if (held.has(node) && !rank.has(mention.layer)) rank.set(mention.layer, rank.size)
+    if (mention.important && !homeItems.has(node)) important.add(mention.layer)
+  }
+  const kept = (node: CssNode): boolean => !held.has(node) && !homeItems.has(node)
+  if (
+    !entries.some(({ node }) => kept(node)) ||
+    !entries.some(({ node, mention }) => homeItems.has(node) && rank.has(mention.layer))
+  )
+    return copies
+  // A kept mention fixes a layer's place for what follows it when it is About's own or always
+  // applies. Until then the dropped mentions of each of About's layers wait, up to the first that
+  // always applies, and each parent knows its layers with waiting mentions.
+  const settled = new Set<Layer>()
+  const closed = new Set<Layer>()
+  const queued = new Map<Layer, { node: CssNode; mention: LayerMention }[]>()
+  const waiting = new Map<string, Set<Layer>>()
+  for (const entry of entries) {
+    const { node, mention } = entry
+    const { layer, parent } = mention
+    if (homeItems.has(node)) {
+      if (!rank.has(layer) || settled.has(layer) || closed.has(layer)) continue
+      const queue = queued.get(layer) ?? []
+      queue.push(entry)
+      queued.set(layer, queue)
+      if (mention.always) closed.add(layer)
+      const siblings = waiting.get(parent) ?? new Set<Layer>()
+      siblings.add(layer)
+      waiting.set(parent, siblings)
+      continue
+    }
+    const siblings = waiting.get(parent)
+    if (kept(node) && siblings?.size) {
+      const place = rank.get(layer)
+      const due = [...siblings]
+        .filter((other) =>
+          place === undefined
+            ? important.has(layer) && important.has(other)
+            : (rank.get(other) ?? place) < place,
+        )
+        .sort((a, b) => (rank.get(a) ?? 0) - (rank.get(b) ?? 0))
+      const before = copies.get(node) ?? []
+      for (const other of due) {
+        for (const { node: dropped, mention: named } of queued.get(other) ?? [])
+          before.push(...skeleton(dropped, [named]))
+        queued.delete(other)
+        siblings.delete(other)
+      }
+      if (before.length) copies.set(node, before)
+    }
+    if (held.has(node) || mention.always) {
+      settled.add(layer)
+      queued.delete(layer)
+      siblings?.delete(layer)
+    }
+  }
+  return copies
 }
 
 /** A Home item stays out of About unless About stored it or names it: a remainder would follow
@@ -768,13 +1070,14 @@ function skeleton(node: CssNode, mentions: readonly LayerMention[], depth = 0): 
  * Dropping Home's items must also leave About's own cascade as it was. Only a kept item that About
  * did not store can name a layer before About's own blocks do, and it fixes that layer's place only
  * where it always applies: a condition can keep it from naming the layer at all. That matters when
- * it puts one of About's named layers behind a layer About orders after it, or behind a new layer
- * when both hold !important declarations: the new layer's would then win. The dropped Home items
- * that named About's layer earlier then leave an empty copy of it, inside the rules that held it,
- * up to the first that always applies. The copies go directly before the first kept item that needs
- * them, in About's order, so About opened on its own keeps that order, and a kept item before them
- * still loses to About's block with its normal declarations. Home keeps every mention the copies
- * repeat, so the public page, which renders Home's sheet first, does not change. Without
+ * it puts one of About's named layers behind a sibling layer About orders after it, or behind a new
+ * sibling when both hold !important declarations: the new layer's would then win. A sublayer such
+ * as `a.b`, or `b` inside `a`, is ordered among the other sublayers of `a` only. The dropped Home
+ * items that named About's layer earlier then leave an empty copy of it, inside the rules that held
+ * it, up to the first that always applies. The copies go directly before the first kept item that
+ * needs them, in About's order, so About opened on its own keeps that order, and a kept item before
+ * them still loses to About's block with its normal declarations. Home keeps every mention the
+ * copies repeat, so the public page, which renders Home's sheet first, does not change. Without
  * !important on both sides a new layer needs none: its normal declarations lose to About's later
  * block, and !important beats normal in any order. An anonymous layer of About's needs none
  * either. It is keyed by its own block, so no Home item names it. */
@@ -789,6 +1092,7 @@ function dropHomeItems(
   const owned = homeOwned(sheet, sources, owners.home)
   const held = new Set<CssNode>()
   const homeItems = new Set<CssNode>()
+  const aboutId = idsIn(aboutIds)
   sheet.children.forEach((node) => {
     const source = sources.get(node) ?? ''
     const remainder = generate(node)
@@ -798,53 +1102,10 @@ function dropHomeItems(
     }
     // The canvas has one body, so an unstored root rule belongs to the Home being edited.
     const root = bindCmsRootStyles(source, 'root') !== source
-    if (
-      (root || home.has(source) || home.has(remainder)) &&
-      !namesPageId(node, (id) => aboutIds.has(id))
-    )
+    if ((root || home.has(source) || home.has(remainder)) && !namesPageId(node, aboutId))
       homeItems.add(node)
   })
-  const entries = sheet.children
-    .toArray()
-    .flatMap((node) => layerMentions(node).map((mention) => ({ node, mention })))
-  // A kept mention fixes a layer's place for what follows it when it is About's own or always
-  // applies.
-  const settled = (layer: string | CssNode, at: number): boolean =>
-    entries
-      .slice(0, at)
-      .some(
-        ({ node, mention }) =>
-          mention.layer === layer &&
-          !homeItems.has(node) &&
-          (held.has(node) || mention.path.length === 1),
-      )
-  const important = (layer: string | CssNode): boolean =>
-    entries.some(
-      ({ node, mention }) => mention.layer === layer && mention.important && !homeItems.has(node),
-    )
-  const order = [
-    ...new Set(entries.filter(({ node }) => held.has(node)).map(({ mention }) => mention.layer)),
-  ]
-  const placed = new Set<LayerMention>()
-  const copies = new Map<CssNode, CssNode[]>()
-  entries.forEach(({ node, mention: opened }, at) => {
-    if (homeItems.has(node)) return
-    const rank = order.indexOf(opened.layer)
-    for (const layer of order) {
-      if (layer === opened.layer || settled(layer, at)) continue
-      if (rank < 0 ? !(important(opened.layer) && important(layer)) : order.indexOf(layer) > rank)
-        continue
-      const named = entries
-        .slice(0, at)
-        .filter(({ node, mention }) => homeItems.has(node) && mention.layer === layer)
-      const always = named.findIndex(({ mention }) => mention.path.length === 1)
-      for (const { node: dropped, mention } of always < 0 ? named : named.slice(0, always + 1)) {
-        if (placed.has(mention)) continue
-        placed.add(mention)
-        copies.set(node, [...(copies.get(node) ?? []), ...skeleton(dropped, [mention])])
-      }
-    }
-  })
+  const copies = layerCopies(sheet, held, homeItems)
   sheet.children.forEach((node, item, list) => {
     const before = copies.get(node)
     if (before) list.insertList(new List<CssNode>().fromArray(before), item)
@@ -857,16 +1118,23 @@ function dropHomeItems(
  * Only an item About holds verbatim and Home does not own may leave. Of equal layered items Home
  * owns as many as it stored, so About's copy of a layer Home also stored leaves and Home's stays.
  * A layer copy would outrank About's own, and a rule that lost an About ID would be a partial copy
- * of it; an intact unlayered item is shared site CSS and stays. A layer may leave only when no
- * layer About lacks stays behind it: that layer would then precede it. */
+ * of it; an intact unlayered item is shared site CSS and stays, unless it names a discarded About
+ * ID where it decides, also by attribute as in `[id="x"]`, and none of Home's own: it styles only
+ * About's section. A rule that still names one of Home's own IDs where it decides stays: About's
+ * extraction drops that part. An attribute form never splits, so such a rule stays whole and also
+ * styles About's element. A layer may leave only when no layer About lacks stays behind it: that
+ * layer would then precede it. */
 function dropAboutCopies(
   sheet: StyleSheet,
   sources: ReadonlyMap<CssNode, string>,
-  owners: ComposedOwners,
+  owners: HomeSheetOwners,
+  discarded: ReadonlySet<string>,
 ): void {
   const about = storedItems(owners.about)
   const home = storedItems(owners.home)
   const owned = homeOwned(sheet, sources, owners.home)
+  const own = idsIn(owners.own)
+  const aboutId = idsIn(discarded)
   let keptLayer = false
   sheet.children.forEachRight((node, item, list) => {
     const source = sources.get(node) ?? ''
@@ -875,7 +1143,9 @@ function dropAboutCopies(
     if (
       about.has(source) &&
       (layered ? !owned.has(node) : !home.has(source) && !home.has(remainder)) &&
-      (source !== remainder || layered) &&
+      (layered ||
+        ((source !== remainder || namesPageId(node, aboutId, requiredId)) &&
+          !namesPageId(node, own))) &&
       !(layered && keptLayer)
     ) {
       list.remove(item)
@@ -931,17 +1201,29 @@ export function stripComposedCanvas(
       if (attr.name !== 'aria-labelledby') section.removeAttribute(attr.name)
     section.setAttribute('data-knc-baseline', '{}')
   }
-  if (owners) {
-    // The slot sections are empty now, so each ID left in the document is Home's own.
-    const own = new Set([...doc.querySelectorAll('[id]')].map((node) => node.id))
-    for (const id of storedAboutIds(owners.aboutHtml)) if (!own.has(id)) discarded.add(id)
+  if (!owners) return { html: doc.body.innerHTML, css: stripHomeSheet(css, discarded) }
+  // The slot sections are empty now, so each ID left in the document is Home's own.
+  const own = new Set([...doc.querySelectorAll('[id]')].map((node) => node.id))
+  for (const id of storedAboutIds(owners.aboutHtml)) if (!own.has(id)) discarded.add(id)
+  return {
+    html: doc.body.innerHTML,
+    css: stripHomeSheet(css, discarded, { about: owners.about, home: owners.home, own }),
   }
+}
+
+/** Home's part of the canvas sheet: no selector branch or alternative for a discarded ID and, with
+ * owners, no copy of About's items. It reads no markup. */
+export function stripHomeSheet(
+  css: string,
+  discarded: ReadonlySet<string>,
+  owners?: HomeSheetOwners,
+): string {
   const sheet = parse(css) as StyleSheet
   const sources = new Map(sheet.children.toArray().map((node) => [node, generate(node)]))
-  dropSelectors(sheet, (id) => discarded.has(id))
-  if (owners) dropAboutCopies(sheet, sources, owners)
+  dropSelectors(sheet, idsIn(discarded))
+  if (owners) dropAboutCopies(sheet, sources, owners, discarded)
   deduplicateRules(sheet)
-  return { html: doc.body.innerHTML, css: generate(sheet) }
+  return generate(sheet)
 }
 
 /** Extract the canonical About owner before Home removes its derived slot contents.
@@ -965,11 +1247,22 @@ export function extractComposedAbout(
   const otherIds = new Set(
     [...canvas.querySelectorAll('[id]')].map((node) => node.id).filter((id) => !aboutIds.has(id)),
   )
+  previous.replaceWith(about.cloneNode(true))
+  return { html: saved.body.innerHTML, css: extractAboutSheet(css, aboutIds, otherIds, owners) }
+}
+
+/** About's part of the canvas sheet: no selector branch or alternative for another ID of the
+ * canvas and, with owners, none of Home's items, in About's layer order. It reads no markup. */
+export function extractAboutSheet(
+  css: string,
+  aboutIds: ReadonlySet<string>,
+  otherIds: ReadonlySet<string>,
+  owners?: ComposedOwners,
+): string {
   const tree = parse(css) as StyleSheet
   const sources = new Map(tree.children.toArray().map((node) => [node, generate(node)]))
-  dropSelectors(tree, (id) => otherIds.has(id))
+  dropSelectors(tree, idsIn(otherIds))
   if (owners) dropHomeItems(tree, sources, owners, aboutIds)
   deduplicateRules(tree)
-  previous.replaceWith(about.cloneNode(true))
-  return { html: saved.body.innerHTML, css: generate(tree) }
+  return generate(tree)
 }

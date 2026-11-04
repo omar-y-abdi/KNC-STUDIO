@@ -231,7 +231,8 @@ function editorContextKey(props: Props, chrome: string): string {
 
 /** The live header is edited on the homepage and the live footer is generated: a created page's
  * canvas shows both, never picks them. By model, because `find` reads rendered views, which a
- * remounted editor's first load can reach before its frame has any. */
+ * remounted editor's first load can reach before its frame has any. By place, the wrapper's first
+ * header and last footer, because an owner section inside the page may carry either chrome id. */
 function lockSiteChrome(editor: Editor): void {
   const lock = (component: Component): void => {
     component.set(
@@ -253,10 +254,10 @@ function lockSiteChrome(editor: Editor): void {
     )
     component.components().forEach(lock)
   }
-  for (const id of ['cms-site-header', 'cms-site-footer']) {
-    const chrome = editor.Components.getById(id)
-    if (chrome) lock(chrome)
-  }
+  const top = editor.getWrapper()?.components().models ?? []
+  const header = top.find((component) => component.get('tagName') === 'header')
+  const footer = top.findLast((component) => component.get('tagName') === 'footer')
+  for (const chrome of [header, footer]) if (chrome) lock(chrome)
 }
 
 /** The comparison frame's created page: the live header, the base sheet and the page's own CSS. */
