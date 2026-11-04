@@ -202,13 +202,14 @@ function openCatalogChannel(realtime: RealtimeClient): () => void {
 /**
  * Open the catalog channel once the Realtime client has loaded. Stopping first, before it has
  * loaded, means no channel is ever created. A client that fails to load is left to surface as an
- * unhandled rejection rather than being swallowed.
+ * unhandled rejection rather than being swallowed. No client (the page is leaving or offline)
+ * opens no channel either.
  */
 function startCatalogSubscription(): () => void {
   let stopped = false
   let closeChannel = (): void => undefined
   void getPublicRealtime().then((realtime) => {
-    if (stopped) return
+    if (stopped || realtime === null) return
     closeChannel = openCatalogChannel(realtime)
   })
   return () => {
