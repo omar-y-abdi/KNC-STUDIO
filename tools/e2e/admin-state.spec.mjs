@@ -6,6 +6,7 @@ import {
   verifyMutationReentry,
   verifyDeliveryStatus,
   verifyDeliveryReloadRace,
+  verifyDeliveryCopyRace,
   verifySettingsCancellation,
   verifyContactOwnership,
   verifyDelayedCatalog,
@@ -48,6 +49,12 @@ const cases = [
     'delivery reload race retry-window error',
     (page) => verifyDeliveryReloadRace(page, 'retry-window', 'error'),
   ],
+  ...['reopen', 'reopen-pending', 'other', 'closed'].flatMap((next) =>
+    ['error', 'copy'].map((late) => [
+      `delivery copy race ${next} ${late}`,
+      (page) => verifyDeliveryCopyRace(page, next, late),
+    ]),
+  ),
   ...['owner', 'barber', 'load-failure', 'revisit-during-save'].map((scenario) => [
     'settings cancellation ' + scenario,
     (page) => verifySettingsCancellation(page, scenario),
