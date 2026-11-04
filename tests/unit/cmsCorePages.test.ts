@@ -73,8 +73,10 @@ it('recognizes stored layouts without requiring newer optional scene markers', (
   document.presentation.pages.push(contact)
   expect(hasCorePageLayouts(document)).toBe(true)
   expect(canOpenStoredPages(document)).toBe(true)
+  // An empty Contact variant is optional source work (G08): the stored pages still open.
   contact.content.en.html = ''
-  expect(canOpenStoredPages(document)).toBe(false)
+  expect(hasCorePageLayouts(document)).toBe(false)
+  expect(canOpenStoredPages(document)).toBe(true)
   contact.content.en.html = contact.content.sv.html
   const first = document.presentation.pages[0]
   if (!first) throw new Error('Missing stored home page')
@@ -209,8 +211,7 @@ function withCreatedPages(count: number, reserved = false): CmsDocument {
   return document
 }
 /** Revision 56 plus created pages filling the document to `slack` bytes below its budget. */
-function withinBytes(slack: number): CmsDocument {
-  const document = revision56()
+function withinBytes(slack: number, document = revision56()): CmsDocument {
   const fill = (page: CmsPage, sv: number, en: number): void => {
     for (const [lang, size] of [
       ['sv', sv],
@@ -400,5 +401,55 @@ describe('historical Contact variants never block stored pages (G08)', () => {
     expect(upgraded[0]?.id).toBe(HISTORICAL_CONTACT_ID)
     for (const lang of ['sv', 'en'] as const)
       if (html[lang]) expect(upgraded[0]?.content[lang]).toEqual(contact.content[lang])
+  })
+
+  it.each([
+    ['an empty Swedish body', { sv: '', en: OWNER_CONTACT.en }],
+    ['an empty English body', { sv: OWNER_CONTACT.sv, en: '' }],
+    ['both bodies empty', { sv: '', en: '' }],
+  ])('fills only the empty variants of a historical Contact with %s', (_l, html) => {
+    const document = revision56()
+    const contact = contactPage(HISTORICAL_CONTACT_ID, html)
+    document.presentation.pages.push(contact)
+    accepted(document)
+    const adopted = ensureCorePages(document, sourcePages())
+    expect(() => accepted(adopted)).not.toThrow()
+    const upgraded = adopted.presentation.pages.filter(({ path }) => path === '/contact')
+    expect(upgraded).toHaveLength(1)
+    expect(upgraded[0]?.id).toBe(HISTORICAL_CONTACT_ID)
+    for (const lang of ['sv', 'en'] as const) {
+      const { css } = contact.content[lang]
+      const template = CONTACT_SOURCE.content[lang]
+      // The owner's sheet for the empty variant follows the template's sheet.
+      expect(upgraded[0]?.content[lang]).toEqual(
+        html[lang]
+          ? contact.content[lang]
+          : {
+              html: template.html,
+              css: {
+                light: `${template.css.light}\n${css.light}`,
+                dark: `${template.css.dark}\n${css.dark}`,
+              },
+            },
+      )
+    }
+    expect(hasCorePageLayouts(adopted)).toBe(true)
+    expect(ensureCorePages(adopted, sourcePages())).toEqual(adopted)
+  })
+
+  it('keeps an empty Contact variant empty when filling it would exceed the document budget', () => {
+    const base = revision56()
+    base.presentation.pages.push(contactPage(HISTORICAL_CONTACT_ID, { sv: '', en: '' }))
+    const document = withinBytes(20, base)
+    accepted(document)
+    expect(ensureCorePages(document, sourcePages())).toEqual(document)
+  })
+
+  it('upgrades a document publication already rejects as before', () => {
+    // 51 pages: publication rejects it with or without Contact, so the upgrade proceeds.
+    const document = withCreatedPages(51)
+    expect(() => validateDocument(document)).toThrow('pages: Expected at most 50 items')
+    const adopted = ensureCorePages(document, sourcePages())
+    expect(adopted.presentation.pages.at(-1)).toEqual(CONTACT_SOURCE)
   })
 })

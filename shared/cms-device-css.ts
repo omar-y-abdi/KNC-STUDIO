@@ -21,6 +21,7 @@ export function repairDesktopCss(css: StyleSheet): StyleSheet
 export function repairDesktopCss(css: string | StyleSheet): string | StyleSheet {
   if (typeof css === 'string' && !/max-width\s*:\s*1440px/.test(css)) return css
   const tree = typeof css === 'string' ? (parse(css) as StyleSheet) : css
+  let repaired = false
   walk(tree, {
     visit: 'Atrule',
     enter(node) {
@@ -28,7 +29,10 @@ export function repairDesktopCss(css: string | StyleSheet): string | StyleSheet 
       node.prelude = (
         (parse('@media(min-width:769px){}') as StyleSheet).children.first as Atrule
       ).prelude
+      repaired = true
     },
   })
-  return typeof css === 'string' ? generate(tree) : tree
+  // The text match is only a prefilter: a sheet without a legacy rule keeps its stored bytes.
+  if (typeof css !== 'string') return tree
+  return repaired ? generate(tree) : css
 }

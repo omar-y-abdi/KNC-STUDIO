@@ -547,14 +547,19 @@ for (const { label, count, reserved } of [
     const original = globalThis.structuredClone(head)
     const page = await context.newPage()
     await openStudio(page)
-    assert.equal(await needsSource(page, original), true, 'Only Contact needs the source')
-    await waitForMigration(page)
+    // Only Contact can need the source here, and only while the head has room for it.
+    const migrates = await needsSource(page, original)
+    if (migrates) await waitForMigration(page)
     const name = 'Startsida efter Kontakt-uppgraderingen'
     await nameField(page).fill(name)
     await publishNow(page, 3)
+    assert.equal(migrates, count < 50, 'Only a head with room for Contact asks for the source')
     const published = globalThis.structuredClone(backend.document)
     accepted(published)
-    assert.ok(published.presentation.pages.filter((item) => item.path === '/contact').length <= 1)
+    assert.equal(
+      published.presentation.pages.filter((item) => item.path === '/contact').length,
+      count < 50 ? 1 : 0,
+    )
     for (const before of original.presentation.pages) {
       const after = published.presentation.pages.find(({ id }) => id === before.id)
       assert.deepEqual(
@@ -567,10 +572,58 @@ for (const { label, count, reserved } of [
     // The next visit opens the published head as published.
     const reopened = await context.newPage()
     await openStudio(reopened)
-    if (await needsSource(reopened, published)) await waitForMigration(reopened)
+    assert.equal(await needsSource(reopened, published), false, 'No source capture is left')
     await expect(reopened.locator('.cms-status')).toHaveText('Publicerad · rev 3')
   })
 }
+
+// Delete and Duplicate follow the fixed route, not the identity. The head is what the Contact
+// upgrade leaves beside a created page on the reserved Contact identity: Contact on the first free
+// identity. The owner's page stays the owner's to delete; Contact stays protected.
+test('cms-restore-adoption page protection follows the fixed route, not a reserved identity', async ({
+  context,
+}) => {
+  const backend = await publishedHead(context)
+  const head = backend.document
+  const contactId = '10000000-0000-4000-8000-000000000008'
+  contactOf(head).id = contactId
+  head.presentation.pages.push(
+    createSitePage({
+      id: CONTACT_ID,
+      path: '/agarsida',
+      name: { sv: 'Ägarsida', en: 'Owner page' },
+    }),
+  )
+  accepted(head)
+  const page = await context.newPage()
+  await openStudio(page)
+  const pages = page.locator('.cms-page-list')
+  const settings = page.getByRole('button', { name: 'Sidinställningar', exact: true })
+  const meta = page.locator('.cms-page-meta')
+  await pages.getByRole('button', { name: 'Kontakt', exact: true }).click()
+  await settings.click()
+  await expect(meta.getByLabel('Adress', { exact: true })).toHaveValue('/contact')
+  await expect(meta.getByRole('button', { name: 'Ta bort', exact: true })).toHaveCount(0)
+  await expect(meta.getByRole('button', { name: 'Duplicera', exact: true })).toHaveCount(0)
+  await pages.getByRole('button', { name: 'Ägarsida', exact: true }).click()
+  await settings.click()
+  await expect(meta.getByLabel('Adress', { exact: true })).toHaveValue('/agarsida')
+  await expect(meta.getByRole('button', { name: 'Duplicera', exact: true })).toBeVisible()
+  await meta.getByRole('button', { name: 'Ta bort', exact: true }).click()
+  const confirm = page.getByRole('dialog', { name: 'Ta bort Ägarsida?', exact: true })
+  await confirm.getByRole('button', { name: 'Ta bort sidan', exact: true }).click()
+  await confirm.waitFor({ state: 'detached' })
+  await expect(pages.getByRole('button', { name: 'Ägarsida', exact: true })).toHaveCount(0)
+  await publishNow(page, 3)
+  const published = backend.document
+  accepted(published)
+  assert.equal(
+    published.presentation.pages.some(({ id }) => id === CONTACT_ID),
+    false,
+    'The owner page is deleted',
+  )
+  assert.equal(contactOf(published)?.id, contactId, 'Contact keeps its identity')
+})
 
 // G07: a revision from before Contact must not drop the current Contact, whatever its identity.
 for (const path of ['history restore', 'JSON import']) {
@@ -694,3 +747,25 @@ for (const [label, html] of [
       assert.deepEqual(contactOf(backend.document)?.content[lang], contact.content[lang])
   })
 }
+
+// G08: in a current head, an empty Contact variant is the only source work left, and the source
+// fills that variant alone.
+test('cms-restore-adoption the source fills only the empty variant of a current Contact', async ({
+  context,
+}) => {
+  const backend = await publishedHead(context)
+  const head = backend.document
+  const authored = globalThis.structuredClone(contactOf(head).content.sv)
+  contactOf(head).content.en.html = ''
+  accepted(head)
+  const page = await context.newPage()
+  await openStudio(page)
+  assert.equal(await needsSource(page, head), true, 'The empty variant asks for the source')
+  await waitForMigration(page)
+  const migrated = contactOf((await liveDraft(page)).document)
+  assert.deepEqual(migrated?.content.sv, authored, 'The authored variant keeps its bytes')
+  assert.match(migrated?.content.en.html ?? '', /data-business-contact-page="1"/)
+  await publishNow(page, 3)
+  accepted(backend.document)
+  assert.deepEqual(contactOf(backend.document)?.content, migrated?.content)
+})
