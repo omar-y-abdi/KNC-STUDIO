@@ -412,7 +412,7 @@ export function CmsEditor(props: Props): JSX.Element {
       canvas: {
         scripts: [],
         styles: [],
-        frameContent: '<!doctype html><html lang="sv"><head></head><body></body></html>',
+        frameContent: '',
         // Default WebKit scrollbar styling reserves 10px that the actual mobile site does not.
         frameStyle: 'body{background-color:inherit;color:inherit}',
       },
@@ -475,6 +475,10 @@ export function CmsEditor(props: Props): JSX.Element {
         devices: editorDevices,
       },
       assetManager: { assets: [], upload: false, custom: true },
+    })
+    // Seed srcdoc before insertion: document.write inherits the app URL and runs it on reload.
+    editor.once('frame:render', ({ el }: { el: HTMLIFrameElement }) => {
+      el.srcdoc = '<!doctype html><html lang="sv"><head></head><body></body></html>'
     })
     // storageManager:false disables its target, not its autosave serialization in 0.23.6.
     // The CMS draft/backup owns persistence; never build a second project on every update.

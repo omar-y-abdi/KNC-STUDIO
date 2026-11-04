@@ -1859,6 +1859,7 @@ test.describe('with an uploaded font', () => {
           links: links.map((link) => link.getAttribute('href')),
           loaded: links.every((link) => link.sheet !== null),
           scheme: doc?.documentElement.style.colorScheme ?? null,
+          compatMode: doc?.compatMode ?? null,
           layoutWidth: layout ? getComputedStyle(layout).maxWidth : null,
           fontFace: fonts?.textContent.includes(fontFace) ?? false,
           fontSheet: fonts?.sheet?.cssRules.length > 0,
@@ -1868,6 +1869,7 @@ test.describe('with an uploaded font', () => {
       links: ['/tokens.css', '/info.css'],
       loaded: true,
       scheme,
+      compatMode: 'CSS1Compat',
       layoutWidth: '736px',
       fontFace: true,
       fontSheet: true,
@@ -1876,6 +1878,12 @@ test.describe('with an uploaded font', () => {
     await page.getByRole('button', { name: 'Mörk', exact: true }).click()
     await frame.getByRole('heading', { name: 'Bokningsvillkor', exact: true }).waitFor()
     await expect.poll(head, { message: 'legal canvas in Mörk' }).toEqual(legal('dark'))
+    const canvas = await (await page.locator('.gjs-frame').first().elementHandle()).contentFrame()
+    const reloadRequests = []
+    page.on('request', (request) => {
+      if (request.frame() === canvas && ['document', 'script'].includes(request.resourceType()))
+        reloadRequests.push(request.url())
+    })
     // GrapesJS rebuilds a reloaded frame from scratch without any prop change. Mörk under an OS light
     // page shows the pin: without it the tokens fall back to the light surface.
     const reloadMarker = () =>
@@ -1891,7 +1899,7 @@ test.describe('with an uploaded font', () => {
     await expect.poll(reloadMarker, { message: 'the canvas frame reloaded' }).toBe(null)
     await frame.getByRole('heading', { name: 'Bokningsvillkor', exact: true }).waitFor()
     await expect.poll(head, { message: 'legal canvas after a frame reload' }).toEqual(legal('dark'))
-    const canvas = await (await page.locator('.gjs-frame').first().elementHandle()).contentFrame()
+    assert.deepEqual(reloadRequests, [], 'reloading the canvas never loads the application')
     await expect
       .poll(() => canvas.evaluate(documentColours), {
         message: 'legal colours after a frame reload',
@@ -1905,6 +1913,7 @@ test.describe('with an uploaded font', () => {
       links: [],
       loaded: true,
       scheme: '',
+      compatMode: 'CSS1Compat',
       layoutWidth: null,
       fontFace: true,
       fontSheet: true,

@@ -22,7 +22,7 @@ commands use plain Bash. The format job produces a patch that consumers replay, 
 not block pushes.
 
 The `public-browsers`, `cms` and `startup` jobs use
-`mcr.microsoft.com/playwright:v1.61.1-noble` with UID 1001 and `--ipc=host`. The image supplies browsers
+`mcr.microsoft.com/playwright:v1.64.1-noble` with UID 1001 and `--ipc=host`. The image supplies browsers
 and their system libraries; these jobs still run `npm ci` but do not install browsers. Bump the
 image tag with `playwright` and `@playwright/test` in the same Dependabot PR. The `database-current`
 job stays on the host runner for Docker and uses `.github/actions/ci-browsers` to cache browser

@@ -134,6 +134,18 @@ export async function customerCmsFixture({ db, stack, origin, workerOrigin, work
         await page.goto(`${origin}/admin/cms/`, { waitUntil: 'domcontentloaded' })
         await page.locator('.cms-canvas-shell').waitFor({ timeout: 90000 })
         const frame = page.frameLocator('.gjs-frame').first()
+        const editCanvasText = async (target, text) => {
+          await target.click()
+          const field = page.locator('#cms-inspector').getByLabel('Text', { exact: true })
+          // Transfer focus out of the canvas before Firefox dispatches the fill input.
+          await field.click()
+          await field.fill(text)
+          assert.equal(
+            await target.textContent(),
+            text,
+            'The canvas must reflect the inspector text edit before changing views',
+          )
+        }
         for (const [device, width] of [
           ['desktop', '1440'],
           ['mobile', '390'],
@@ -181,11 +193,7 @@ export async function customerCmsFixture({ db, stack, origin, workerOrigin, work
             !['SV', 'EN'].includes(target.text),
             'Language labels are not editable site copy',
           )
-          await frame.locator(`[id="${target.id}"]`).click()
-          await page
-            .locator('#cms-inspector')
-            .getByLabel('Text', { exact: true })
-            .fill(copy[device])
+          await editCanvasText(frame.locator(`[id="${target.id}"]`), copy[device])
         }
 
         const openStyleSector = async (name) => {
@@ -267,11 +275,7 @@ export async function customerCmsFixture({ db, stack, origin, workerOrigin, work
           'The created page body should reflect owner color and spacing edits before publish',
         )
 
-        await frame.locator('#cms-site-content h1').click()
-        await page
-          .locator('#cms-inspector')
-          .getByLabel('Text', { exact: true })
-          .fill(pageCopy.svHeading)
+        await editCanvasText(frame.locator('#cms-site-content h1'), pageCopy.svHeading)
         await frame.locator('#cms-site-content main').click({ position: { x: 8, y: 8 } })
         await page.getByRole('tab', { name: 'Lägg till', exact: true }).click()
         await page.getByRole('button', { name: 'Lägg till text', exact: true }).click()
@@ -304,11 +308,7 @@ export async function customerCmsFixture({ db, stack, origin, workerOrigin, work
         await page.getByRole('button', { name: 'Ljus', exact: true }).click()
         await frame.getByRole('heading', { name: pageName, exact: true }).waitFor()
         await setBodyStyle('#234567')
-        await frame.locator('#cms-site-content h1').click()
-        await page
-          .locator('#cms-inspector')
-          .getByLabel('Text', { exact: true })
-          .fill(pageCopy.enHeading)
+        await editCanvasText(frame.locator('#cms-site-content h1'), pageCopy.enHeading)
         await frame.locator('#cms-site-content main').click({ position: { x: 8, y: 8 } })
         await page.getByRole('tab', { name: 'Lägg till', exact: true }).click()
         await page.getByRole('button', { name: 'Lägg till text', exact: true }).click()
