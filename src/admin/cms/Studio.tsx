@@ -16,7 +16,6 @@ import {
   type CmsLang,
   type CmsMode,
   type CmsPage,
-  type CmsPresentation,
   type CmsRevision,
   type CmsState,
 } from '../../../shared/cms'
@@ -30,7 +29,7 @@ import {
   needsCorePageSource,
   CORE_PAGE_IDS,
 } from './corePages'
-import { CmsDraft, mergeCmsDocuments, restoreRevision } from './draft'
+import { CmsDraft, mergeCmsDocuments, restoreRevision, serialize } from './draft'
 import { normalizeDocument, unresolvedMarqueeZoom } from './normalizeDocument'
 import { cmsApi } from './api'
 import { CmsEditor, type EditorHandle } from './Editor'
@@ -92,7 +91,10 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   const [locked, setLocked] = useState(false)
   const [scene, setScene] = useState<CmsScene>('default')
   useLayoutEffect(() => setScene('default'), [selectedPage])
-  const [preview, setPreview] = useState<CmsPresentation | null>(null)
+  // The locked preview's validated document, and the draft document it was validated from.
+  const [preview, setPreview] = useState<{ source: CmsDocument; document: CmsDocument } | null>(
+    null,
+  )
   const [tab, setTab] = useState<'design' | 'layers' | 'blocks'>('design')
   const [mobilePanel, setMobilePanel] = useState<CmsPanel>(null)
   const [error, setError] = useState<string | null>(null)
@@ -266,6 +268,29 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       stopped = true
     }
   }, [draft, sourceAttempt, restoring])
+
+  // A locked preview follows every change of the draft's document (Undo, Redo, Återställ, an
+  // import, a merge, a restored tab), validated as locking validates it. Until that validation
+  // answers, the preview keeps the previous validated document whole. If it fails, Studio unlocks.
+  const lockedDocument = locked ? (draft?.document ?? null) : null
+  useEffect(() => {
+    if (!lockedDocument || !preview || serialize(preview.source) === serialize(lockedDocument))
+      return
+    let stopped = false
+    void cmsApi
+      .validate(lockedDocument)
+      .then((checked) => {
+        if (!stopped) setPreview({ source: lockedDocument, document: checked.document })
+      })
+      .catch((reason: unknown) => {
+        if (stopped) return
+        setLocked(false)
+        setError(reason instanceof Error ? reason.message : 'Förhandsvisningen kunde inte öppnas.')
+      })
+    return () => {
+      stopped = true
+    }
+  }, [lockedDocument, preview])
 
   const reportBackup = (reason: unknown): void =>
     setError(reason instanceof JournalFull ? JOURNAL_FULL : BACKUP_FAILED)
@@ -1280,7 +1305,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                 compare={compare}
                 zoom={zoom}
                 locked={locked}
-                preview={preview}
+                preview={preview?.document ?? null}
                 presentation={document.presentation}
                 draft={document}
                 onOpenResources={(destination) => {
@@ -1480,7 +1505,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                 setError('Utkastet ändrades medan förhandsvisningen laddades. Öppna den igen.')
                 return
               }
-              setPreview(checked.document.presentation)
+              setPreview({ source: candidate, document: checked.document })
               setLocked(true)
             } catch (reason) {
               setError(
