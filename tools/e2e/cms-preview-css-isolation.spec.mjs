@@ -2351,3 +2351,838 @@ for (const { name, owner, rule, subject } of negatedIds) {
     )
   })
 }
+
+// The adopted fixture with each of `sheets` appended to the light Swedish sheet of its path, held
+// by the publication harness behind an offline source frame. The publication validators accept
+// the document; they canonicalize a copy.
+async function adoptedHomeFixture(page, context, sheets) {
+  const raw = {
+    ...emptyDocument(),
+    presentation: JSON.parse(
+      gunzipSync(await readFile(new URL('./fixtures/presentation.json.gz', import.meta.url))),
+    ).presentation,
+  }
+  for (const [path, css] of Object.entries(sheets)) lightSv(raw, path).css.light += css
+  await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
+  const { stored, adopted } = await page.evaluate(async (document) => {
+    const { validateDocument } = await import('/shared/cms.ts')
+    const { validateDocumentMarkupPlacements } = await import('/shared/cms-markup.ts')
+    const { CMS_BUILT_ASSETS } = await import('/shared/cms-built-assets.ts')
+    const { normalizeDocument } = await import('/src/admin/cms/normalizeDocument.ts')
+    const copy = globalThis.structuredClone(document)
+    validateDocument(copy)
+    validateDocumentMarkupPlacements(copy, {
+      siteOrigin: globalThis.location.origin,
+      storageOrigin: 'https://admin-harness.invalid',
+      builtAssets: CMS_BUILT_ASSETS,
+    })
+    const stored = normalizeDocument(document)
+    return { stored, adopted: normalizeDocument(stored) === stored }
+  }, raw)
+  assert.equal(adopted, true, 'The stored document is already adopted')
+  assert.deepEqual(stored.presentation.themes.light, {}, 'The fixture sets no theme tokens')
+  const backend = await nativeBackend(context, stored)
+  await context.route('**/cms-public/source', (route) =>
+    route.fulfill({
+      contentType: 'text/html',
+      body: '<!doctype html><html data-knc-source-listening="1"><script>addEventListener("message",e=>{document.documentElement.dataset.kncSourceError=e.data.id;document.documentElement.dataset.kncSourceFailure="Offline source"})</script></html>',
+    }),
+  )
+  return { stored, backend }
+}
+
+// Opens the Studio on the backend's stored document, as an owner's next visit does, once the
+// deferred About preview exists.
+async function openStudioHome(page) {
+  await page.evaluate(async () =>
+    (await import('/tools/e2e/admin-harness.tsx')).mountCmsStudioHarness(),
+  )
+  const frame = page.frameLocator('.gjs-frame').first()
+  await frame.locator('[data-knc-surface="desktop-home"]').waitFor({ timeout: 90000 })
+  await page
+    .locator('.cms-editor-canvas[data-cms-about-preview-ready="true"]')
+    .waitFor({ timeout: 90000 })
+  return frame
+}
+
+// One unrelated Home text edit through the Text inspector, published as revision round + 1.
+async function publishHomeText(page, frame, backend, round) {
+  const copy = `Studio Home save ${round}`
+  await frame.locator(`[data-knc-surface="desktop-home"] [id="${homeCopy}"]`).click()
+  await page.locator('#cms-inspector').getByLabel('Text', { exact: true }).fill(copy)
+  await page.getByRole('button', { name: 'Publicera', exact: true }).click()
+  await page.waitForFunction(
+    (revision) =>
+      globalThis.document.querySelector('.cms-status')?.textContent ===
+      `Publicerad · rev ${revision}`,
+    round + 1,
+    { timeout: 45000 },
+  )
+  const saved = globalThis.structuredClone(backend.document)
+  assert.ok(lightSv(saved, '/').html.includes(`>${copy}<`), `The Home text edit is saved: ${copy}`)
+  return saved
+}
+
+// The listed properties of the first canvas element each selector matches; null when none does.
+function canvasValues(frame, selectors, properties) {
+  return frame.locator('[data-knc-surface="desktop-home"]').evaluate(
+    (surface, { selectors, properties }) => {
+      const doc = surface.ownerDocument
+      return Object.fromEntries(
+        Object.entries(selectors).map(([name, selector]) => {
+          const element = doc.querySelector(selector)
+          if (!element) return [name, null]
+          const style = doc.defaultView.getComputedStyle(element)
+          return [
+            name,
+            Object.fromEntries(
+              properties.map((property) => [property, style.getPropertyValue(property).trim()]),
+            ),
+          ]
+        }),
+      )
+    },
+    { selectors, properties },
+  )
+}
+
+// The listed properties of the first element each selector matches, rendered as studioPaint renders
+// public Home, under four sets of the light Swedish sheets: both pages', Home's alone, About's
+// alone and none.
+function sheetValues(page, document, selectors, properties) {
+  return page.evaluate(
+    ({ home, about, selectors, properties }) => {
+      const sets = {
+        combined: [home.css.light, about.css.light],
+        home: [home.css.light],
+        about: [about.css.light],
+        none: [],
+      }
+      return Object.fromEntries(
+        Object.entries(sets).map(([set, sheets]) => {
+          const frame = globalThis.document.createElement('iframe')
+          frame.style.width = '1000px'
+          frame.style.border = '0'
+          globalThis.document.body.append(frame)
+          const doc = frame.contentDocument
+          const styles = sheets.map((sheet) => `<style>${sheet}</style>`).join('')
+          doc.open()
+          doc.write(
+            `<!doctype html><html><head>${styles}</head><body>${home.html}${about.html}</body></html>`,
+          )
+          doc.close()
+          for (const element of doc.querySelectorAll('[data-knc-baseline][data-knc-light]'))
+            element.setAttribute('style', element.getAttribute('data-knc-light'))
+          const view = doc.defaultView
+          const values = Object.fromEntries(
+            Object.entries(selectors).map(([name, selector]) => {
+              const style = view.getComputedStyle(doc.querySelector(selector))
+              return [
+                name,
+                Object.fromEntries(
+                  properties.map((property) => [property, style.getPropertyValue(property).trim()]),
+                ),
+              ]
+            }),
+          )
+          frame.remove()
+          return [set, values]
+        }),
+      )
+    },
+    { home: lightSv(document, '/'), about: lightSv(document, '/about'), selectors, properties },
+  )
+}
+
+// A Home save splits a selector that styles a Home element and an About element between the two
+// pages' sheets: Home's keeps what styles Home's element and About's what styles About's, each with
+// the specificity and the condition the whole selector gave it. So public Home, which renders
+// Home's sheet and then About's, paints both elements as before, each sheet alone styles only its
+// own page's element, and the canvas paints the same after a reload. Home's first element is
+// knc-desktop-home-0-i0 and About's first element knc-about-0-i0. A [id] rule on each page competes
+// with the selector whose :is() gives About's element the specificity of Home's ID. The plain
+// selector lists, the separate ID rules and the About ID inside :not(), which only excludes an
+// element, are controls the ownership split already keeps.
+const crossHome = 'knc-desktop-home-0-i0'
+const crossAbout = 'knc-about-0-i0'
+const crossSelectors = {
+  '/': [
+    // The gate review's rule.
+    `:is(#${crossHome},#${crossAbout}){--cross-mixed:17px;outline:17px solid red!important}`,
+    `#${crossHome},#${crossAbout}{--cross-plain:19px}`,
+    `:where(#${crossHome},#${crossAbout}){--cross-where:1}`,
+    `:where(:is(#${crossHome},#${crossAbout})){--cross-nested:1}`,
+    `:not(:not(:is(#${crossHome},#${crossAbout}))){--cross-double-negation:1}`,
+    `:is(#${crossHome},:where(#${crossAbout})){--cross-specificity:1}`,
+    `[id="${crossHome}"]{--cross-specificity:0}`,
+    `:is(#${crossHome},#${crossAbout}):not(:is(#${crossAbout})){--cross-except:1}`,
+    `#${crossHome}:not(:is(#${crossAbout},.cross-none)){--cross-negated:1}`,
+    `@media (min-width:1px){:is(#${crossHome},#${crossAbout}){--cross-media:1}}`,
+    `@media (min-width:1px){#${crossHome},#${crossAbout}{--cross-media-plain:1}}`,
+    `#${crossHome}{--home-control:23px}`,
+  ].join(''),
+  '/about': [
+    `[id="${crossAbout}"]{--cross-specificity:0}`,
+    `:is(#${crossHome},#${crossAbout}){--cross-about-is:1}`,
+    `#${crossHome},#${crossAbout}{--cross-about-plain:1}`,
+    `#${crossAbout}{--about-control:25px}`,
+  ].join(''),
+}
+const crossPaint = {
+  [crossHome]: {
+    '--cross-mixed': '17px',
+    'outline-style': 'solid',
+    '--cross-plain': '19px',
+    '--cross-where': '1',
+    '--cross-nested': '1',
+    '--cross-double-negation': '1',
+    '--cross-specificity': '1',
+    '--cross-except': '1',
+    '--cross-negated': '1',
+    '--cross-media': '1',
+    '--cross-media-plain': '1',
+    '--home-control': '23px',
+    '--cross-about-is': '1',
+    '--cross-about-plain': '1',
+    '--about-control': '',
+  },
+  [crossAbout]: {
+    '--cross-mixed': '17px',
+    'outline-style': 'solid',
+    '--cross-plain': '19px',
+    '--cross-where': '1',
+    '--cross-nested': '1',
+    '--cross-double-negation': '1',
+    '--cross-specificity': '1',
+    '--cross-except': '',
+    '--cross-negated': '',
+    '--cross-media': '1',
+    '--cross-media-plain': '1',
+    '--home-control': '',
+    '--cross-about-is': '1',
+    '--cross-about-plain': '1',
+    '--about-control': '25px',
+  },
+}
+
+test('Studio Home saves keep each selector alternative on the page of its element', async ({
+  page,
+  context,
+}) => {
+  const errors = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const { stored, backend } = await adoptedHomeFixture(page, context, crossSelectors)
+  const properties = Object.keys(crossPaint[crossHome])
+  const elements = { [crossHome]: `[id="${crossHome}"]`, [crossAbout]: `[id="${crossAbout}"]` }
+  const onCanvas = {
+    [crossHome]: `[data-knc-surface="desktop-home"] [id="${crossHome}"]`,
+    [crossAbout]: `[data-editor-about-slot] [id="${crossAbout}"]`,
+  }
+  const before = await sheetValues(page, stored, elements, properties)
+  // Before the Studio opens: a selector the browser rejects would stop its import instead.
+  assert.deepEqual(before.combined, crossPaint, 'Public Home paints the fixture as designed')
+  const rounds = []
+  for (const round of [1, 2]) {
+    if (round > 1) await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
+    const frame = await openStudioHome(page)
+    const canvas = await canvasValues(frame, onCanvas, properties)
+    const saved = await publishHomeText(page, frame, backend, round)
+    const { combined, home, about } = await sheetValues(page, saved, elements, properties)
+    rounds.push({
+      canvas,
+      combined,
+      home,
+      about,
+      sheets: { home: lightSv(saved, '/').css.light, about: lightSv(saved, '/about').css.light },
+    })
+  }
+  await test.info().attach('studio-home-cross-page-selectors', {
+    body: JSON.stringify({ before, rounds }, null, 2),
+    contentType: 'application/json',
+  })
+  assert.deepEqual(errors, [])
+  const kept = {
+    canvas: before.combined,
+    combined: before.combined,
+    home: { [crossHome]: before.combined[crossHome], [crossAbout]: before.none[crossAbout] },
+    about: { [crossHome]: before.none[crossHome], [crossAbout]: before.combined[crossAbout] },
+  }
+  assert.deepEqual(
+    rounds.map(({ canvas, combined, home, about }) => ({ canvas, combined, home, about })),
+    [kept, kept],
+    "Each Home save keeps public Home's paint, styles each element from its own page's sheet only, and the reopened canvas paints as before",
+  )
+})
+
+// The canvas drops stale rules for derived preview IDs, which older Home saves could persist. A
+// mention of the preview prefix anywhere else in a selector is no such rule: in an attribute
+// value, a class, an unrelated ID, an attribute name or a comment. Home's first element matches
+// each of these rules on the canvas, through each Home save and on public Home. The rule for a
+// derived ID is the stale rule that must still go. The comment, which no selector holds once
+// parsed, and About's rule, which the canvas never drops on import, are controls.
+const previewMentions = {
+  '/': [
+    // The gate review's rule.
+    `#${crossHome}:not([title='preview-shared-hint']){--authored-class:29px}`,
+    `#${crossHome}:not(.preview-shared-hint){--mention-class:1}`,
+    `#${crossHome}:not(#preview-shared-hint){--mention-id:1}`,
+    `#${crossHome}:not([data-preview-shared-hint]){--mention-attribute:1}`,
+    `#${crossHome}/* preview-shared-hint */{--mention-comment:1}`,
+    '#preview-shared-0{--stale-preview:1}',
+  ].join(''),
+  '/about': `#${crossAbout}:not([title='preview-shared-hint']){--mention-about:1}`,
+}
+const mentionPaint = {
+  [crossHome]: {
+    '--authored-class': '29px',
+    '--mention-class': '1',
+    '--mention-id': '1',
+    '--mention-attribute': '1',
+    '--mention-comment': '1',
+    '--stale-preview': '',
+    '--mention-about': '',
+  },
+  [crossAbout]: {
+    '--authored-class': '',
+    '--mention-class': '',
+    '--mention-id': '',
+    '--mention-attribute': '',
+    '--mention-comment': '',
+    '--stale-preview': '',
+    '--mention-about': '1',
+  },
+}
+
+test('Studio Home saves keep rules that only mention the preview prefix', async ({
+  page,
+  context,
+}) => {
+  const errors = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const { stored, backend } = await adoptedHomeFixture(page, context, previewMentions)
+  const properties = Object.keys(mentionPaint[crossHome])
+  const elements = { [crossHome]: `[id="${crossHome}"]`, [crossAbout]: `[id="${crossAbout}"]` }
+  const onCanvas = {
+    [crossHome]: `[data-knc-surface="desktop-home"] [id="${crossHome}"]`,
+    [crossAbout]: `[data-editor-about-slot] [id="${crossAbout}"]`,
+  }
+  const before = await sheetValues(page, stored, elements, properties)
+  assert.deepEqual(before.combined, mentionPaint, 'Public Home paints the fixture as designed')
+  const rounds = []
+  for (const round of [1, 2]) {
+    if (round > 1) await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
+    const frame = await openStudioHome(page)
+    const canvas = await canvasValues(frame, onCanvas, properties)
+    // Derived preview elements, and those the stale rule styles.
+    const previews = await frame
+      .locator('[data-knc-surface="desktop-home"]')
+      .evaluate((surface) => {
+        const doc = surface.ownerDocument
+        const elements = [...doc.querySelectorAll('[id^="preview-shared-"]')]
+        return {
+          present: elements.length > 0,
+          stale: elements.filter((element) =>
+            doc.defaultView.getComputedStyle(element).getPropertyValue('--stale-preview').trim(),
+          ).length,
+        }
+      })
+    const saved = await publishHomeText(page, frame, backend, round)
+    const { combined, home, about } = await sheetValues(page, saved, elements, properties)
+    rounds.push({
+      canvas,
+      previews,
+      combined,
+      home,
+      about,
+      staleStored: lightSv(saved, '/').css.light.includes('preview-shared-0'),
+      sheets: { home: lightSv(saved, '/').css.light, about: lightSv(saved, '/about').css.light },
+    })
+  }
+  await test.info().attach('studio-home-preview-mentions', {
+    body: JSON.stringify({ before, rounds }, null, 2),
+    contentType: 'application/json',
+  })
+  assert.deepEqual(errors, [])
+  const kept = {
+    canvas: before.combined,
+    previews: { present: true, stale: 0 },
+    combined: before.combined,
+    home: { [crossHome]: before.combined[crossHome], [crossAbout]: before.none[crossAbout] },
+    about: { [crossHome]: before.none[crossHome], [crossAbout]: before.combined[crossAbout] },
+    staleStored: false,
+  }
+  assert.deepEqual(
+    rounds.map(({ canvas, previews, combined, home, about, staleStored }) => ({
+      canvas,
+      previews,
+      combined,
+      home,
+      about,
+      staleStored,
+    })),
+    [kept, kept],
+    'Each Home save keeps every rule that only mentions the preview prefix on the canvas and on public Home, and drops the stale preview rule',
+  )
+})
+
+// About's sheet orders its own layers, and Home's sheet names the same layers before a rule that
+// styles About's heading. A Home save moves that rule into About's sheet. About's sheet alone must
+// then paint the heading as before, and so must public Home, which renders Home's sheet and then
+// About's: of !important declarations the earlier layer's wins, of normal ones the later layer's.
+// Each case has its own property and layer names: a top-level layer, a dotted sublayer, a layer
+// nested in a layer, a sublayer Home names only inside @supports, and an anonymous layer after a
+// sublayer. Bare ID rules gain !important on the canvas, so the normal cases select h2#om-oss-heading.
+// The normal cases and the top-level and anonymous !important cases are controls.
+const sublayerHeading = 'om-oss-heading'
+const sublayerCases = [
+  // The gate review's sheets.
+  [
+    'outline-color',
+    `@layer brand.first{}@layer brand.second{#${sublayerHeading}{outline-color:blue!important}}`,
+    `@layer brand.first{[id="${sublayerHeading}"]{outline-color:red!important}}`,
+  ],
+  [
+    '--top-important',
+    `@layer top1{}@layer top2{#${sublayerHeading}{--top-important:blue!important}}`,
+    `@layer top1{[id="${sublayerHeading}"]{--top-important:red!important}}`,
+  ],
+  [
+    '--nested-important',
+    `@layer nest1{@layer first{}}@layer nest1{@layer second{#${sublayerHeading}{--nested-important:blue!important}}}`,
+    `@layer nest1{@layer first{[id="${sublayerHeading}"]{--nested-important:red!important}}}`,
+  ],
+  [
+    '--conditional-important',
+    `@supports (display:block){@layer cond1.first{}}@layer cond1.second{#${sublayerHeading}{--conditional-important:blue!important}}`,
+    `@layer cond1.first{[id="${sublayerHeading}"]{--conditional-important:red!important}}`,
+  ],
+  [
+    '--anonymous-important',
+    `@layer anon1.first{}@layer{#${sublayerHeading}{--anonymous-important:blue!important}}`,
+    `@layer anon1.first{[id="${sublayerHeading}"]{--anonymous-important:red!important}}`,
+  ],
+  [
+    '--top-normal',
+    `@layer top3{}@layer top4{h2#${sublayerHeading}{--top-normal:blue}}`,
+    `@layer top3{[id="${sublayerHeading}"]{--top-normal:red}}`,
+  ],
+  [
+    '--dotted-normal',
+    `@layer dot2.first{}@layer dot2.second{h2#${sublayerHeading}{--dotted-normal:blue}}`,
+    `@layer dot2.first{[id="${sublayerHeading}"]{--dotted-normal:red}}`,
+  ],
+  [
+    '--nested-normal',
+    `@layer nest2{@layer first{}}@layer nest2{@layer second{h2#${sublayerHeading}{--nested-normal:blue}}}`,
+    `@layer nest2{@layer first{[id="${sublayerHeading}"]{--nested-normal:red}}}`,
+  ],
+  [
+    '--conditional-normal',
+    `@supports (display:block){@layer cond2.first{}}@layer cond2.second{h2#${sublayerHeading}{--conditional-normal:blue}}`,
+    `@layer cond2.first{[id="${sublayerHeading}"]{--conditional-normal:red}}`,
+  ],
+  [
+    '--anonymous-normal',
+    `@layer anon2.first{}@layer{h2#${sublayerHeading}{--anonymous-normal:blue}}`,
+    `@layer anon2.first{[id="${sublayerHeading}"]{--anonymous-normal:red}}`,
+  ],
+]
+const sublayerPaint = {
+  combined: {
+    'outline-color': 'rgb(255, 0, 0)',
+    '--top-important': 'red',
+    '--nested-important': 'red',
+    '--conditional-important': 'red',
+    '--anonymous-important': 'red',
+    '--top-normal': 'blue',
+    '--dotted-normal': 'blue',
+    '--nested-normal': 'blue',
+    '--conditional-normal': 'blue',
+    '--anonymous-normal': 'blue',
+  },
+  about: {
+    'outline-color': 'rgb(255, 0, 0)',
+    '--top-important': 'red',
+    '--nested-important': 'red',
+    '--conditional-important': 'red',
+    '--anonymous-important': 'red',
+    '--top-normal': 'red',
+    '--dotted-normal': 'red',
+    '--nested-normal': 'red',
+    '--conditional-normal': 'red',
+    '--anonymous-normal': 'red',
+  },
+}
+
+test("Studio Home saves keep About's sublayer order in About's sheet and on public Home", async ({
+  page,
+  context,
+}) => {
+  const errors = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const { stored, backend } = await adoptedHomeFixture(page, context, {
+    '/': sublayerCases.map(([, home]) => home).join(''),
+    '/about': sublayerCases.map(([, , about]) => about).join(''),
+  })
+  const properties = sublayerCases.map(([property]) => property)
+  const elements = { heading: `[id="${sublayerHeading}"]` }
+  const paint = (values) => ({
+    combined: values.combined.heading,
+    about: values.about.heading,
+  })
+  const before = paint(await sheetValues(page, stored, elements, properties))
+  assert.deepEqual(before, sublayerPaint, "Public Home and About's sheet paint as designed")
+  const rounds = []
+  for (const round of [1, 2]) {
+    if (round > 1) await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
+    const frame = await openStudioHome(page)
+    const { heading: canvas } = await canvasValues(
+      frame,
+      { heading: `[data-editor-about-slot] [id="${sublayerHeading}"]` },
+      properties,
+    )
+    const saved = await publishHomeText(page, frame, backend, round)
+    rounds.push({
+      canvas,
+      ...paint(await sheetValues(page, saved, elements, properties)),
+      sheets: { home: lightSv(saved, '/').css.light, about: lightSv(saved, '/about').css.light },
+    })
+  }
+  await test.info().attach('studio-home-sublayers', {
+    body: JSON.stringify({ before, rounds }, null, 2),
+    contentType: 'application/json',
+  })
+  assert.deepEqual(errors, [])
+  const kept = { canvas: before.combined, combined: before.combined, about: before.about }
+  assert.deepEqual(
+    rounds.map(({ canvas, combined, about }) => ({ canvas, combined, about })),
+    [kept, kept],
+    "Each Home save keeps the heading's paint in About's sheet alone, on public Home and on the reopened canvas",
+  )
+})
+
+// About's rules with a condition on a Home ancestor, as the derived About copy on the canvas must
+// paint them in both devices: like the public page, which renders About's section in both Home
+// surfaces. In each device one surface holds About's owner and the other a derived copy, whose own
+// attributes are aliased; Home's surfaces keep theirs. The ancestor is Home's mobile surface, Home's
+// desktop surface, About's own section (a control), or both Home's surface and About's section.
+// Each condition sets its own property over a [id] rule, which sets them all.
+const ancestorHeading = 'om-oss-heading'
+const ancestorRules = [
+  `[id="${ancestorHeading}"]{width:101px;min-width:11px;max-width:777px;max-height:999px}`,
+  `[data-knc-surface="mobile-home"] #${ancestorHeading}{width:37px}`,
+  `[data-knc-surface="desktop-home"] #${ancestorHeading}{min-width:53px}`,
+  `[data-knc-surface="about"] #${ancestorHeading}{max-width:333px}`,
+  `[data-knc-surface="mobile-home"] [data-knc-surface="about"] #${ancestorHeading}{max-height:41px}`,
+].join('')
+const ancestorPaint = {
+  desktop: { width: '101px', 'min-width': '53px', 'max-width': '333px', 'max-height': '999px' },
+  mobile: { width: '37px', 'min-width': '11px', 'max-width': '333px', 'max-height': '41px' },
+}
+
+test('Studio About copies keep their Home ancestor conditions in both devices', async ({
+  page,
+  context,
+}) => {
+  const errors = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const { stored } = await adoptedHomeFixture(page, context, { '/about': ancestorRules })
+  const properties = Object.keys(ancestorPaint.desktop)
+  // Public Home: About's section in each Home slot, both pages' sheets, inline baseline styles.
+  const published = await page.evaluate(
+    ({ home, about, heading, properties }) => {
+      const frame = globalThis.document.createElement('iframe')
+      frame.style.width = '1000px'
+      frame.style.border = '0'
+      globalThis.document.body.append(frame)
+      const doc = frame.contentDocument
+      doc.open()
+      doc.write(
+        `<!doctype html><html><head><style>${home.css.light}</style><style>${about.css.light}</style></head><body>${home.html}</body></html>`,
+      )
+      doc.close()
+      const section = new globalThis.DOMParser()
+        .parseFromString(about.html, 'text/html')
+        .querySelector('[data-knc-surface="about"]')
+      for (const slot of doc.querySelectorAll('[data-knc-slot]'))
+        if (slot.querySelector(':scope > section[aria-labelledby]'))
+          slot.replaceChildren(doc.importNode(section, true))
+      for (const element of doc.querySelectorAll('[data-knc-baseline][data-knc-light]'))
+        element.setAttribute('style', element.getAttribute('data-knc-light'))
+      const values = Object.fromEntries(
+        ['desktop', 'mobile'].map((surface) => {
+          const element = doc.querySelector(
+            `[data-knc-surface="${surface}-home"] [id="${heading}"]`,
+          )
+          const style = doc.defaultView.getComputedStyle(element)
+          return [
+            surface,
+            Object.fromEntries(
+              properties.map((property) => [property, style.getPropertyValue(property).trim()]),
+            ),
+          ]
+        }),
+      )
+      frame.remove()
+      return values
+    },
+    {
+      home: lightSv(stored, '/'),
+      about: lightSv(stored, '/about'),
+      heading: ancestorHeading,
+      properties,
+    },
+  )
+  assert.deepEqual(published, ancestorPaint, 'Public Home paints the fixture as designed')
+  const frame = await openStudioHome(page)
+  const owner = (surface) => `[data-knc-surface="${surface}-home"] [id="${ancestorHeading}"]`
+  const copy = (surface) =>
+    `[data-knc-surface="${surface}-home"] [data-editor-preview-id="${ancestorHeading}"]`
+  const canvas = {
+    Dator: await canvasValues(
+      frame,
+      { desktop: owner('desktop'), mobile: copy('mobile') },
+      properties,
+    ),
+  }
+  await page.getByRole('button', { name: 'Mobil', exact: true }).click()
+  await frame.locator('[data-knc-surface="mobile-home"] [data-knc-surface="about"]').waitFor()
+  canvas.Mobil = await canvasValues(
+    frame,
+    { desktop: copy('desktop'), mobile: owner('mobile') },
+    properties,
+  )
+  await test.info().attach('studio-about-ancestor-conditions', {
+    body: JSON.stringify({ published, canvas }, null, 2),
+    contentType: 'application/json',
+  })
+  assert.deepEqual(errors, [])
+  assert.deepEqual(
+    canvas,
+    { Dator: published, Mobil: published },
+    "About's owner and its derived copy paint as public Home in each device",
+  )
+})
+
+// The gate review's composition of a derived About copy, without the Studio: the composed canvas
+// for each device, its projected styles, against the canonical page with About's section in both
+// Home slots.
+test('composed About copies keep their Home ancestor conditions in both devices', async ({
+  page,
+}) => {
+  await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
+  const result = await page.evaluate(async () => {
+    const { emptyDocument } = await import('/shared/cms.ts')
+    const { validateMarkup } = await import('/shared/cms-markup.ts')
+    const { composedCanvas } = await import('/src/admin/cms/composedCanvas.ts')
+    const homeHtml =
+      '<div data-knc-native="1"><div data-knc-surface="desktop-home"><h1 id="home">Home</h1><div data-knc-slot="desktop-about"><section aria-labelledby="intro"></section></div></div><div data-knc-surface="mobile-home"><div data-knc-slot="mobile-about"><section aria-labelledby="intro"></section></div></div></div>'
+    const section =
+      '<section data-knc-surface="about" aria-labelledby="intro"><h2 id="intro" class="intro">About</h2></section>'
+    const aboutHtml = `<div data-knc-native="1">${section}</div>`
+    // The gate review's rule and control, then one more condition per property.
+    const aboutCss =
+      '.intro{width:101px;min-width:11px;max-width:777px;max-height:999px}' +
+      '[data-knc-surface="mobile-home"] #intro { width:37px }' +
+      '[data-knc-surface="desktop-home"] #intro{min-width:53px}' +
+      '[data-knc-surface="about"] #intro{max-width:333px}' +
+      '[data-knc-surface="mobile-home"] [data-knc-surface="about"] #intro{max-height:41px}'
+    const policy = {
+      siteOrigin: globalThis.location.origin,
+      storageOrigin: 'https://admin-harness.invalid',
+    }
+    validateMarkup(homeHtml, '', policy, { native: true })
+    validateMarkup(aboutHtml, aboutCss, policy, { native: true })
+    const make = (path, html, css) => ({
+      id: path,
+      path,
+      kind: 'page',
+      name: { sv: path, en: path },
+      title: { sv: '', en: '' },
+      description: { sv: '', en: '' },
+      inMenu: true,
+      content: {
+        sv: { html, css: { light: css, dark: css } },
+        en: { html, css: { light: css, dark: css } },
+      },
+    })
+    const home = make('/', homeHtml, '')
+    const about = make('/about', aboutHtml, aboutCss)
+    const pages = { ...emptyDocument().presentation, pages: [home, about] }
+    const frame = globalThis.document.createElement('iframe')
+    frame.style.width = '1000px'
+    frame.style.border = '0'
+    globalThis.document.body.append(frame)
+    const measure = (html, css) => {
+      const doc = frame.contentDocument
+      doc.open()
+      doc.write(
+        `<!doctype html><html><head><style>${css}</style></head><body>${html}</body></html>`,
+      )
+      doc.close()
+      const values = {}
+      const copies = {}
+      for (const surface of ['desktop', 'mobile']) {
+        const element = doc.querySelector(`[data-knc-surface="${surface}-home"] .intro`)
+        const style = doc.defaultView.getComputedStyle(element)
+        values[surface] = Object.fromEntries(
+          ['width', 'min-width', 'max-width', 'max-height'].map((property) => [
+            property,
+            style.getPropertyValue(property).trim(),
+          ]),
+        )
+        copies[surface] = element.hasAttribute('data-editor-preview-id') ? 'derived' : 'owner'
+      }
+      return { values, copies }
+    }
+    const canonical = measure(
+      homeHtml.replaceAll('<section aria-labelledby="intro"></section>', section),
+      aboutCss,
+    )
+    const canvas = Object.fromEntries(
+      ['Desktop', 'Mobile'].map((device) => {
+        const composed = composedCanvas(home, pages, 'sv', 'light', 'default', device, true)
+        return [device, measure(composed.html, composed.css)]
+      }),
+    )
+    frame.remove()
+    return { canonical, canvas }
+  })
+  await test.info().attach('composed-about-ancestor-conditions', {
+    body: JSON.stringify(result, null, 2),
+    contentType: 'application/json',
+  })
+  assert.deepEqual(result.canonical.values, ancestorPaint, 'The canonical page paints as designed')
+  assert.deepEqual(
+    {
+      Desktop: result.canvas.Desktop.copies,
+      Mobile: result.canvas.Mobile.copies,
+    },
+    {
+      Desktop: { desktop: 'owner', mobile: 'derived' },
+      Mobile: { desktop: 'derived', mobile: 'owner' },
+    },
+    'Each device composes About in its own surface and a derived copy in the other',
+  )
+  assert.deepEqual(
+    { Desktop: result.canvas.Desktop.values, Mobile: result.canvas.Mobile.values },
+    { Desktop: result.canonical.values, Mobile: result.canonical.values },
+    'Both copies paint as the canonical page in each device',
+  )
+})
+
+// A Home save extracts About's sheet from the canvas sheet, and it may restore About's layer order
+// only with the layers that Home's items it drops name. About's 1,600 named layers, 79,380 bytes
+// and below the 100,000-byte sheet limit, held one synchronous extraction for seconds. Its array
+// work must grow with the layer count, not with its square or cube. The count adds the length of
+// each array one of the listed Array methods runs over during one extraction; hand-written loops
+// escape it. Home stores either no layer, so the save drops none, or an empty block of each About
+// layer, which the save drops from About's sheet.
+test('Home saves extract About layers with array work linear in the layer count', async ({
+  page,
+}) => {
+  await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
+  const extract = (sizes) =>
+    page.evaluate(async (sizes) => {
+      const { extractComposedAbout } = await import('/src/admin/cms/composedCanvas.ts')
+      const { validateMarkup } = await import('/shared/cms-markup.ts')
+      const policy = {
+        siteOrigin: globalThis.location.origin,
+        storageOrigin: 'https://admin-harness.invalid',
+      }
+      const html =
+        '<section data-knc-surface="about" aria-labelledby="intro"><h2 id="intro" class="label">About</h2></section>'
+      const canvas = `<main data-knc-surface="desktop-home"><h1 id="home-heading">Home</h1><div data-editor-about-slot="s">${html}</div></main>`
+      const methods = [
+        'every',
+        'filter',
+        'find',
+        'findIndex',
+        'findLast',
+        'findLastIndex',
+        'flatMap',
+        'forEach',
+        'includes',
+        'indexOf',
+        'lastIndexOf',
+        'map',
+        'reduce',
+        'slice',
+        'some',
+      ]
+      return sizes.flatMap((n) =>
+        [false, true].map((homeLayers) => {
+          const about = Array.from(
+            { length: n },
+            (_, i) => `@layer local${i}{.label{color:var(--tone${i},red)}}`,
+          ).join('')
+          const home = homeLayers
+            ? Array.from({ length: n }, (_, i) => `@layer local${i}{}`).join('')
+            : ''
+          validateMarkup(html, about, policy, { native: true })
+          validateMarkup('', home, policy)
+          const originals = methods.map((name) => [name, Array.prototype[name]])
+          let work = 0
+          let extracted
+          for (const [name, original] of originals)
+            Array.prototype[name] = function (...args) {
+              work += this.length
+              return Reflect.apply(original, this, args)
+            }
+          try {
+            extracted = extractComposedAbout(canvas, home + about, html, { about, home })
+          } finally {
+            for (const [name, original] of originals) Array.prototype[name] = original
+          }
+          return { n, homeLayers, bytes: about.length, work, kept: extracted.css === about }
+        }),
+      )
+    }, sizes)
+  // Linear array work grows fourfold from 100 to 400 layers and from 400 to 1,600.
+  const growth = (results, from, to) =>
+    [false, true].map((homeLayers) => {
+      const at = (n) => results.find((result) => result.n === n && result.homeLayers === homeLayers)
+      return {
+        homeLayers,
+        kept: at(to).kept,
+        factor: Math.round((at(to).work / at(from).work) * 10) / 10,
+      }
+    })
+  const linear = (growths) =>
+    growths.map(({ homeLayers, kept, factor }) => ({ homeLayers, kept, linear: factor <= 8 }))
+  const expected = [
+    { homeLayers: false, kept: true, linear: true },
+    { homeLayers: true, kept: true, linear: true },
+  ]
+  const small = await extract([100, 400])
+  const smallGrowth = growth(small, 100, 400)
+  await test.info().attach('about-layer-extraction-work', {
+    body: JSON.stringify({ small, smallGrowth }, null, 2),
+    contentType: 'application/json',
+  })
+  assert.deepEqual(
+    linear(smallGrowth),
+    expected,
+    `About's extraction keeps every layer, and its array work grows at most eightfold from 100 to 400 layers: ${JSON.stringify(smallGrowth)}`,
+  )
+  const large = await extract([1600])
+  const largeGrowth = growth([...small, ...large], 400, 1600)
+  await test.info().attach('about-layer-extraction-work-1600', {
+    body: JSON.stringify({ large, largeGrowth }, null, 2),
+    contentType: 'application/json',
+  })
+  assert.deepEqual(
+    large.map(({ bytes }) => bytes),
+    [79380, 79380],
+    'The gate review sheet has 79,380 bytes',
+  )
+  assert.deepEqual(
+    linear(largeGrowth),
+    expected,
+    `About's extraction keeps every layer, and its array work grows at most eightfold from 400 to 1,600 layers: ${JSON.stringify(largeGrowth)}`,
+  )
+})
