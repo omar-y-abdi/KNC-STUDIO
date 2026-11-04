@@ -3,6 +3,7 @@
 // the i18n baseline. The Supabase adapter is reached through a LAZY proxy so supabase-js stays out of
 // the public critical path.
 
+import { backgroundLoad } from '../../backend/backgroundLoad'
 import { isBackendConfigured } from '../../backend/config'
 import type { Lang } from '../../i18n/index'
 import type { SiteChromePort } from '../port'
@@ -15,8 +16,9 @@ const lazySupabaseSiteChromePort: SiteChromePort = {
   subscribe: (lang, onChange) => {
     let unsubscribe = (): void => undefined
     let closed = false
-    void import('./supabaseSiteChrome').then((m) => {
-      const subscribe = m.supabaseSiteChromeAdapter.subscribe
+    // No adapter (the page is leaving or offline) means no live updates.
+    void backgroundLoad(() => import('./supabaseSiteChrome')).then((m) => {
+      const subscribe = m?.supabaseSiteChromeAdapter.subscribe
       if (!closed && subscribe !== undefined) unsubscribe = subscribe(lang, onChange)
     })
     return () => {
