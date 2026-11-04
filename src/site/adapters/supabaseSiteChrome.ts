@@ -114,9 +114,10 @@ export const supabaseSiteChromeAdapter: SiteChromePort = {
     let stop = (): void => undefined
 
     // A Realtime client that fails to load is left to surface as an unhandled rejection; swallowing
-    // it would turn live updates off with no trace. The page works without them.
+    // it would turn live updates off with no trace. The page works without them. No client (the
+    // page is leaving or offline) means no live updates and no channel.
     void getPublicRealtime().then((realtime) => {
-      if (closed) return
+      if (closed || realtime === null) return
       let reloadRequested = false
       let reloadPromise: Promise<void> | null = null
       const reload = (): void => {

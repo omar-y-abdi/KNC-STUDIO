@@ -1,6 +1,7 @@
 // Public roster swap point. Production uses one cached catalog RPC; unconfigured/offline builds
 // return no invented business data.
 
+import { backgroundLoad } from '../../backend/backgroundLoad'
 import { isBackendConfigured } from '../../backend/config'
 import type { BarbersPort, RosterBarber } from '../barbersPort'
 import { mockBarbersAdapter } from './mockBarbers'
@@ -16,18 +17,24 @@ export const defaultBarbersPort: BarbersPort = isBackendConfigured()
   ? lazySupabaseBarbersPort
   : mockBarbersAdapter
 
-/** Begin one background catalog read when live configuration exists. */
+/**
+ * Begin one background catalog read when live configuration exists. A page that is leaving or
+ * offline skips it (`backgroundLoad`); any other failure to load the adapter surfaces.
+ */
 export function preloadBookingCatalog(): void {
   if (!isBackendConfigured()) return
-  void import('./supabaseBookingCatalog').then((module) => module.preloadBookingCatalog())
+  void backgroundLoad(() => import('./supabaseBookingCatalog')).then((module) =>
+    module?.preloadBookingCatalog(),
+  )
 }
 
 export function subscribeBookingCatalog(onChange: () => void): () => void {
   if (!isBackendConfigured()) return () => undefined
   let disposed = false
   let unsubscribe: (() => void) | null = null
-  void import('./supabaseBookingCatalog').then((module) => {
-    if (disposed) return
+  // No adapter (the page is leaving or offline) means no live updates.
+  void backgroundLoad(() => import('./supabaseBookingCatalog')).then((module) => {
+    if (disposed || module === null) return
     unsubscribe = module.subscribeBookingCatalog(onChange)
   })
   return () => {

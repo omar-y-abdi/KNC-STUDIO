@@ -4,29 +4,43 @@
 // client: the socket authenticates with it and no session is ever persisted.
 
 import type { RealtimeClient } from '@supabase/realtime-js'
+import { backgroundLoad } from './backgroundLoad'
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from './config'
 import { BACKEND_NOT_CONFIGURED, realtimeUrl } from './publicApi'
 
-async function createRealtime(): Promise<RealtimeClient> {
+async function createRealtime(): Promise<RealtimeClient | null> {
   if (SUPABASE_URL === undefined || SUPABASE_ANON_KEY === undefined) {
     throw new Error(BACKEND_NOT_CONFIGURED)
   }
   const key = SUPABASE_ANON_KEY
-  const { RealtimeClient: Client } = await import('@supabase/realtime-js')
-  return new Client(realtimeUrl(SUPABASE_URL), {
+  const library = await backgroundLoad(() => import('@supabase/realtime-js'))
+  if (library === null) return null
+  return new library.RealtimeClient(realtimeUrl(SUPABASE_URL), {
     params: { apikey: key },
     accessToken: () => Promise.resolve(key),
   })
 }
 
-/** Memoized — created on first `getPublicRealtime()` call, and again after a failed attempt. */
-let client: Promise<RealtimeClient> | undefined
+/**
+ * Memoized — created on first `getPublicRealtime()` call, and again after a failed attempt or one
+ * that gave no client.
+ */
+let client: Promise<RealtimeClient | null> | undefined
 
-/** The shared public Realtime client; its library loads on the first call. */
-export function getPublicRealtime(): Promise<RealtimeClient> {
-  client ??= createRealtime().catch((error: unknown) => {
-    client = undefined
-    throw error
-  })
+/**
+ * The shared public Realtime client; its library loads on the first call. Null when that load
+ * failed because the page is leaving or offline (`backgroundLoad`): the page then has no live
+ * updates, and the next call loads again.
+ */
+export function getPublicRealtime(): Promise<RealtimeClient | null> {
+  client ??= createRealtime()
+    .then((realtime) => {
+      if (realtime === null) client = undefined
+      return realtime
+    })
+    .catch((error: unknown) => {
+      client = undefined
+      throw error
+    })
   return client
 }
