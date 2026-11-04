@@ -571,8 +571,42 @@ function namesId(node: CssNode, matches: (id: string) => boolean): boolean {
   return found
 }
 
-/** Remove selector branches naming a dropped ID, then the blocks that removal emptied. Authored
- * empty blocks stay, as does an emptied named layer: it still sets layer order. */
+/** Whether a node names a matching page ID where the ID decides which elements its selector styles.
+ * An ID inside an odd number of :not() only excludes elements, and an ID inside :has() tests a
+ * relative of the styled element, so neither qualifies nor disqualifies the selector for a page.
+ * Every other ID counts, also inside :is(), :where() and :matches(), which style the elements
+ * their arguments match. */
+function namesPageId(node: CssNode, matches: (id: string) => boolean): boolean {
+  let found = false
+  let negations = 0
+  let relatives = 0
+  const scope = (child: CssNode, step: number): void => {
+    if (child.type !== 'PseudoClassSelector') return
+    const name = ident.decode(child.name).toLowerCase()
+    if (name === 'not') negations += step
+    if (name === 'has') relatives += step
+  }
+  walk(node, {
+    enter(child: CssNode) {
+      scope(child, 1)
+      if (
+        child.type === 'IdSelector' &&
+        negations % 2 === 0 &&
+        relatives === 0 &&
+        matches(ident.decode(child.name))
+      )
+        found = true
+    },
+    leave(child: CssNode) {
+      scope(child, -1)
+    },
+  })
+  return found
+}
+
+/** Remove selector branches naming a dropped page ID, or a derived preview ID anywhere, then the
+ * blocks that removal emptied. Authored empty blocks stay, as does an emptied named layer: it still
+ * sets layer order. */
 function dropSelectors(sheet: CssNode, dropped: (id: string) => boolean): void {
   const shrunk = new Set<List<CssNode>>()
   walk(sheet, {
@@ -581,7 +615,11 @@ function dropSelectors(sheet: CssNode, dropped: (id: string) => boolean): void {
       let unmatched = false
       if (node.type === 'Rule' && node.prelude.type === 'SelectorList') {
         node.prelude.children.forEach((selector, branch, branches) => {
-          if (namesId(selector, dropped)) branches.remove(branch)
+          if (
+            namesId(selector, (id) => id.startsWith('preview-shared-')) ||
+            namesPageId(selector, dropped)
+          )
+            branches.remove(branch)
         })
         unmatched = node.prelude.children.size === 0
       }
@@ -756,7 +794,7 @@ function dropHomeItems(
     const root = bindCmsRootStyles(source, 'root') !== source
     if (
       (root || home.has(source) || home.has(remainder)) &&
-      !namesId(node, (id) => aboutIds.has(id))
+      !namesPageId(node, (id) => aboutIds.has(id))
     )
       homeItems.add(node)
   })
@@ -894,7 +932,7 @@ export function stripComposedCanvas(
   }
   const sheet = parse(css) as StyleSheet
   const sources = new Map(sheet.children.toArray().map((node) => [node, generate(node)]))
-  dropSelectors(sheet, (id) => discarded.has(id) || id.startsWith('preview-shared-'))
+  dropSelectors(sheet, (id) => discarded.has(id))
   if (owners) dropAboutCopies(sheet, sources, owners)
   deduplicateRules(sheet)
   return { html: doc.body.innerHTML, css: generate(sheet) }
@@ -923,7 +961,7 @@ export function extractComposedAbout(
   )
   const tree = parse(css) as StyleSheet
   const sources = new Map(tree.children.toArray().map((node) => [node, generate(node)]))
-  dropSelectors(tree, (id) => otherIds.has(id) || id.startsWith('preview-shared-'))
+  dropSelectors(tree, (id) => otherIds.has(id))
   if (owners) dropHomeItems(tree, sources, owners, aboutIds)
   deduplicateRules(tree)
   previous.replaceWith(about.cloneNode(true))
