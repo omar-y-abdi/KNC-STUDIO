@@ -91,6 +91,70 @@ async function wireOf(realtime: Subscribable) {
   }
 }
 
+/** One import of the library, held until the test settles it. */
+interface HeldLoad {
+  /** Resolves once the import has asked for the library. */
+  readonly reached: Promise<void>
+  readonly succeed: () => void
+  readonly fail: (reason: unknown) => void
+}
+
+/**
+ * Mocks the library so that every import waits for the next load the test queued. Vitest wraps a
+ * failing factory in its own Error and keeps the reason as `cause`.
+ */
+function holdLibrary() {
+  const queued: { readonly arrive: () => void; readonly outcome: Promise<void> }[] = []
+  const constructed: unknown[][] = []
+  vi.doMock('@supabase/realtime-js', async () => {
+    const load = queued.shift()
+    if (load === undefined) throw new Error('the library was imported more often than queued')
+    load.arrive()
+    await load.outcome
+    return {
+      RealtimeClient: class {
+        readonly args: unknown[]
+        constructor(...args: unknown[]) {
+          this.args = args
+          constructed.push(args)
+        }
+      },
+    }
+  })
+  const queue = (): HeldLoad => {
+    let arrive = (): void => undefined
+    let succeed = (): void => undefined
+    let fail: (reason: unknown) => void = () => undefined
+    const reached = new Promise<void>((resolve) => {
+      arrive = resolve
+    })
+    const outcome = new Promise<void>((resolve, reject) => {
+      succeed = resolve
+      fail = reject
+    })
+    queued.push({ arrive, outcome })
+    return { reached, succeed, fail }
+  }
+  return { queue, constructed }
+}
+
+/** The settled outcome of a client request, so a rejection can be compared like a value. */
+function settled(client: Promise<unknown>): Promise<{ client: unknown } | { error: unknown }> {
+  return client.then(
+    (value) => ({ client: value }),
+    (error: unknown) => ({ error }),
+  )
+}
+
+/** A browser page for the module: its window events and the network state it reports. */
+function stubPage() {
+  const page = new EventTarget()
+  const network = { onLine: true }
+  vi.stubGlobal('window', page)
+  vi.stubGlobal('navigator', network)
+  return { page, network }
+}
+
 afterEach(() => {
   vi.unstubAllGlobals()
   vi.doUnmock('../../src/backend/config')
@@ -100,6 +164,7 @@ afterEach(() => {
 
 describe('public Realtime client', () => {
   it.each(BASES)('puts the same bytes on the wire as supabase-js for %s', async (base) => {
+    stubPage()
     vi.stubGlobal('WebSocket', FakeSocket)
     const previous = createClient(base, KEY, {
       auth: { persistSession: false, autoRefreshToken: false },
@@ -116,6 +181,7 @@ describe('public Realtime client', () => {
   })
 
   it('loads the library on the first call only, and builds a single shared client', async () => {
+    stubPage()
     let evaluated = 0
     const constructed: unknown[][] = []
     vi.resetModules()
@@ -151,5 +217,98 @@ describe('public Realtime client', () => {
     }))
     const { getPublicRealtime } = await import('../../src/backend/publicRealtime')
     await expect(getPublicRealtime()).rejects.toThrow(/not configured/)
+  })
+
+  // WebKit stops a document's pending loads once a navigation away from it starts, and rejects the
+  // import while the document still runs. Live updates are an enhancement: that page is leaving.
+  it('gives no client when the page starts leaving while the library loads', async () => {
+    const { page } = stubPage()
+    const library = holdLibrary()
+    const { getPublicRealtime } = await loadRealtime('https://example.supabase.co')
+    const load = library.queue()
+
+    const client = getPublicRealtime()
+    await load.reached
+    page.dispatchEvent(new Event('beforeunload'))
+    load.fail(new TypeError('Importing a module script failed.'))
+
+    expect(await settled(client)).toEqual({ client: null })
+  })
+
+  it('gives no client while offline, then loads again on the next call', async () => {
+    const { network } = stubPage()
+    const library = holdLibrary()
+    const { getPublicRealtime } = await loadRealtime('https://example.supabase.co')
+    const load = library.queue()
+
+    const client = getPublicRealtime()
+    await load.reached
+    network.onLine = false
+    load.fail(new TypeError('Load failed'))
+    expect(await settled(client)).toEqual({ client: null })
+
+    network.onLine = true
+    library.queue().succeed()
+    expect(await settled(getPublicRealtime())).toMatchObject({ client: expect.any(Object) })
+    expect(library.constructed.map(([endpoint]) => endpoint)).toEqual([
+      'wss://example.supabase.co/realtime/v1',
+    ])
+  })
+
+  it('rejects a failure while the page stays, then loads again on the next call', async () => {
+    stubPage()
+    const library = holdLibrary()
+    const { getPublicRealtime } = await loadRealtime('https://example.supabase.co')
+    const failure = new TypeError('Importing a module script failed.')
+    const first = library.queue()
+
+    const failed = getPublicRealtime()
+    await first.reached
+    first.fail(failure)
+    expect(await settled(failed)).toMatchObject({ error: { cause: failure } })
+
+    const second = library.queue()
+    const loaded = getPublicRealtime()
+    await second.reached
+    second.succeed()
+    expect(await settled(loaded)).toMatchObject({ client: expect.any(Object) })
+    expect(library.constructed.map(([endpoint]) => endpoint)).toEqual([
+      'wss://example.supabase.co/realtime/v1',
+    ])
+  })
+
+  it('rejects a failure when the page only started leaving before the library was requested', async () => {
+    const { page } = stubPage()
+    const library = holdLibrary()
+    const { getPublicRealtime } = await loadRealtime('https://example.supabase.co')
+    const failure = new TypeError('Importing a module script failed.')
+    // A navigation that turned into a download fires beforeunload and leaves the page in place.
+    page.dispatchEvent(new Event('beforeunload'))
+    const load = library.queue()
+
+    const client = getPublicRealtime()
+    await load.reached
+    load.fail(failure)
+
+    expect(await settled(client)).toMatchObject({ error: { cause: failure } })
+  })
+
+  it('keeps no beforeunload listener once the library has loaded', async () => {
+    const { page } = stubPage()
+    const added = vi.spyOn(page, 'addEventListener')
+    const removed = vi.spyOn(page, 'removeEventListener')
+    const library = holdLibrary()
+    const { getPublicRealtime } = await loadRealtime('https://example.supabase.co')
+    const load = library.queue()
+
+    const client = getPublicRealtime()
+    await load.reached
+    load.succeed()
+    await client
+
+    const leaving = (calls: unknown[][]) =>
+      calls.filter(([type]) => type === 'beforeunload').map(([, listener]) => listener)
+    expect(leaving(added.mock.calls)).toHaveLength(1)
+    expect(leaving(removed.mock.calls)).toEqual(leaving(added.mock.calls))
   })
 })

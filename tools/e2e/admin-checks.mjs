@@ -593,6 +593,92 @@ async function verifyDeliveryReloadRace(page, trigger, stale) {
   )
 }
 
+async function settleDeliveryCopy(page, index, outcome) {
+  await page.evaluate(
+    async ([index, outcome]) =>
+      (await import('/tools/e2e/admin-harness.tsx')).settleDeliveryCopy(index, outcome),
+    [index, outcome],
+  )
+}
+
+// What each open copy dialog shows: its title, loading status, stored copy and alerts.
+function copyDialogs(page) {
+  return page.locator('dialog.cms-dialog').evaluateAll((dialogs) =>
+    dialogs.map((dialog) => {
+      const srcdoc = dialog.querySelector('iframe')?.getAttribute('srcdoc') ?? ''
+      return {
+        title: dialog.getAttribute('aria-label'),
+        status: dialog.querySelector('[role="status"]')?.textContent ?? null,
+        copy: srcdoc.match(/Kopia \d/)?.[0] ?? null,
+        text: dialog.querySelector('pre')?.textContent ?? null,
+        alerts: [...dialog.querySelectorAll('[role="alert"]')].map((alert) => alert.textContent),
+      }
+    }),
+  )
+}
+
+// A copy request belongs to the opening that asked for it. Closing the copy ends that opening, so the
+// late answer to its request (an error or a stored copy) must change nothing: not the same entry
+// opened again, before (`reopen-pending`) or after (`reopen`) the new request answers, not another
+// entry's copy (`other`) and not a closed view (`closed`).
+async function verifyDeliveryCopyRace(page, next, late) {
+  await page.goto(`${baseUrl}/tools/e2e/admin-harness.html`, { waitUntil: 'domcontentloaded' })
+  await page.evaluate(async () =>
+    (await import('/tools/e2e/admin-harness.tsx')).mountDeliveryCopyRaceHarness(),
+  )
+  const show = (subject) =>
+    page.getByRole('button', { name: `Visa ${subject} till ada@example.com`, exact: true })
+  await show('Mejl ett').click()
+  const first = page.getByRole('dialog', { name: 'Mejl ett', exact: true })
+  await first.getByText('Hämtar mejlet …', { exact: true }).waitFor()
+  await first.getByRole('button', { name: 'Stäng panel', exact: true }).click()
+  await first.waitFor({ state: 'detached' })
+  const subject = next === 'other' ? 'Mejl två' : 'Mejl ett'
+  const loaded = [{ title: subject, status: null, copy: 'Kopia 2', text: 'Kopia 2', alerts: [] }]
+  if (next !== 'closed') {
+    await show(subject).click()
+    const view = page.getByRole('dialog', { name: subject, exact: true })
+    await view.getByText('Hämtar mejlet …', { exact: true }).waitFor()
+    if (next === 'reopen-pending') {
+      await settleDeliveryCopy(page, 0, late)
+      // Observe a painted turn after the closed opening's answer settled.
+      await afterPaint(page)
+      const pending = await copyDialogs(page)
+      assert.deepEqual(
+        pending,
+        [{ title: subject, status: 'Hämtar mejlet …', copy: null, text: null, alerts: [] }],
+        `the closed opening's late ${late} replaced the loading reopened copy: ${JSON.stringify(pending)}`,
+      )
+    }
+    await settleDeliveryCopy(page, 1, 'copy')
+    await view
+      .frameLocator('iframe.cms-delivery-frame')
+      .getByText('Kopia 2', { exact: true })
+      .waitFor()
+  }
+  if (next !== 'reopen-pending') {
+    await settleDeliveryCopy(page, 0, late)
+    // Observe a painted turn after the closed opening's answer settled.
+    await afterPaint(page)
+  }
+  const shown = await copyDialogs(page)
+  assert.deepEqual(
+    shown,
+    next === 'closed' ? [] : loaded,
+    `the closed opening's late ${late} changed the copy view: ${JSON.stringify(shown)}`,
+  )
+  const requests = await page.evaluate(async () =>
+    (await import('/tools/e2e/admin-harness.tsx')).deliveryCopyRequests(),
+  )
+  const one = '55555555-5555-4555-8555-555555555551'
+  const two = '55555555-5555-4555-8555-555555555552'
+  assert.deepEqual(
+    requests,
+    next === 'closed' ? [one] : [one, next === 'other' ? two : one],
+    `each opening asks for its own copy: ${JSON.stringify(requests)}`,
+  )
+}
+
 async function settingsControl(page, action) {
   return page.evaluate(
     async (action) => (await import('/tools/e2e/admin-harness.tsx')).settingsControl(action),
@@ -2798,6 +2884,7 @@ export {
   verifyMutationReentry,
   verifyDeliveryStatus,
   verifyDeliveryReloadRace,
+  verifyDeliveryCopyRace,
   verifySettingsCancellation,
   verifyContactOwnership,
   verifyDelayedCatalog,

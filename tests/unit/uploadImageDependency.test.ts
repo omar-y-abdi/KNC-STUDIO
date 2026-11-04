@@ -284,4 +284,44 @@ describe('upload-image HTTP paths', () => {
     expect(media.rpc).not.toHaveBeenCalled()
     expect((await upload('hassan')).status).toBe(200)
   })
+
+  // internal_delete_barber_photo only ever queues a barber-photos object. A deletion naming any other
+  // bucket is not one the gateway asked for, so no Storage object outside barber-photos is touched.
+  it.each([
+    ['barber-photos', 202, ['internal_delete_barber_photo', 'claim_external_action']],
+    ['gallery', 404, ['internal_delete_barber_photo']],
+  ])(
+    'removes a deleted barber photo only from barber-photos (the RPC names %s)',
+    async (bucket, status, calls) => {
+      media.rpc.mockImplementation(async (name: string) => {
+        if (name === 'internal_delete_barber_photo')
+          return {
+            data: {
+              ok: true,
+              bucket,
+              path: 'hassan/photo.webp',
+              deletion_id: '54000000-0000-4000-8000-000000000002',
+            },
+            error: null,
+          }
+        // An unclaimed action leaves the deletion queued: the response says it is still pending.
+        if (name === 'claim_external_action') return { data: null, error: null }
+        throw new Error(`Unexpected RPC: ${name}`)
+      })
+      const deleted = await handler(
+        new Request('https://edge.example.test/upload-image', {
+          method: 'POST',
+          headers: { authorization: 'Bearer unit-token', 'content-type': 'application/json' },
+          body: JSON.stringify({
+            action: 'delete',
+            kind: 'barber_photo',
+            barberId: 'hassan',
+            storagePath: 'hassan/photo.webp',
+          }),
+        }),
+      )
+      expect(deleted.status).toBe(status)
+      expect(media.rpc.mock.calls.map(([name]) => name)).toEqual(calls)
+    },
+  )
 })

@@ -49,13 +49,16 @@ const {
 })
 
 // The Realtime client arrives asynchronously (its library is loaded on first use); `ready` lets a
-// test hold it back.
-const realtime = vi.hoisted(() => ({ ready: Promise.resolve() }))
+// test hold it back, and `available: false` gives null, the client of a page with no live updates.
+const realtime = vi.hoisted(() => ({ ready: Promise.resolve(), available: true }))
 
 vi.mock('../../src/backend/publicRest', () => ({ getPublicRest: () => ({ rpc }) }))
 
 vi.mock('../../src/backend/publicRealtime', () => ({
-  getPublicRealtime: () => realtime.ready.then(() => ({ channel: () => channel, removeChannel })),
+  getPublicRealtime: () =>
+    realtime.ready.then(() =>
+      realtime.available ? { channel: () => channel, removeChannel } : null,
+    ),
 }))
 
 vi.mock('../../src/backend/config', () => ({
@@ -82,6 +85,7 @@ describe('shared public booking catalog', () => {
   beforeEach(() => {
     resetChannel()
     realtime.ready = Promise.resolve()
+    realtime.available = true
   })
 
   it('hydrates roster/photos/services through one cached RPC', async () => {
@@ -374,6 +378,21 @@ describe('shared public booking catalog', () => {
     })
 
     expect(surfaced).toEqual([failure])
+    expect(channel.on).not.toHaveBeenCalled()
+    expect(channel.subscribe).not.toHaveBeenCalled()
+    expect(removeChannel).not.toHaveBeenCalled()
+  })
+
+  it('opens no channel and raises nothing when live updates are unavailable', async () => {
+    realtime.available = false
+
+    const surfaced = await unhandledRejectionsDuring(async () => {
+      const unsubscribe = subscribeBookingCatalog(vi.fn())
+      await flush()
+      expect(() => unsubscribe()).not.toThrow()
+    })
+
+    expect(surfaced).toEqual([])
     expect(channel.on).not.toHaveBeenCalled()
     expect(channel.subscribe).not.toHaveBeenCalled()
     expect(removeChannel).not.toHaveBeenCalled()

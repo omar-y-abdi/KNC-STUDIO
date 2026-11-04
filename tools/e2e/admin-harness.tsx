@@ -662,6 +662,64 @@ export function mountDeliveryRaceHarness(stale: 'page' | 'error'): void {
   render(h(DeliveryStatus, { port }), target)
 }
 
+let deliveryCopies: {
+  readonly id: string
+  readonly settle: (outcome: 'copy' | 'error') => void
+}[] = []
+
+/** The log entry of every held copy request, in the order the view asked for them. */
+export function deliveryCopyRequests(): readonly string[] {
+  return deliveryCopies.map((request) => request.id)
+}
+
+/** Answers held copy request `index` (0 is the first) with its stored copy, whose body and text
+ * name the request ("Kopia 1"), or with the adapter's read error. */
+export function settleDeliveryCopy(index: number, outcome: 'copy' | 'error'): void {
+  const request = deliveryCopies[index]
+  if (request === undefined) throw new Error(`copy request ${index} was never made`)
+  request.settle(outcome)
+}
+
+/** A log of Mejl ett and Mejl två whose stored copies are held until the check answers them. */
+export function mountDeliveryCopyRaceHarness(): void {
+  deliveryCopies = []
+  const entry = (id: string, subject: string, createdAt: string) => ({
+    id,
+    createdAt,
+    kind: 'auth_recovery' as const,
+    recipient: 'ada@example.com',
+    subject,
+    outcome: { status: 'sent' as const },
+    attemptCount: 1,
+  })
+  const entries = [
+    entry('55555555-5555-4555-8555-555555555551', 'Mejl ett', '2096-01-03T10:00:00.000003+00:00'),
+    entry('55555555-5555-4555-8555-555555555552', 'Mejl två', '2096-01-03T09:00:00.000002+00:00'),
+  ]
+  const port: DeliveryStatusPort = {
+    listFailed: () => Promise.resolve(ok([])),
+    retry: () => Promise.resolve(ok(true)),
+    discard: () => Promise.resolve(ok(true)),
+    listLog: () => Promise.resolve(ok({ entries, next: null })),
+    readCopy: (id) =>
+      new Promise((resolve) => {
+        const copy = `Kopia ${deliveryCopies.length + 1}`
+        const settle = (outcome: 'copy' | 'error'): void =>
+          resolve(
+            outcome === 'error'
+              ? err('network', 'Kunde inte öppna mejlet.')
+              : ok({
+                  subject: entries.find((candidate) => candidate.id === id)?.subject ?? '',
+                  html: `<!doctype html><html><head><title>Kopia</title></head><body><p id="stored-copy">${copy}</p></body></html>`,
+                  text: copy,
+                }),
+          )
+        deliveryCopies = [...deliveryCopies, { id, settle }]
+      }),
+  }
+  render(h(DeliveryStatus, { port }), root())
+}
+
 type SettingsAction = 'load' | 'release-save' | 'unmount' | 'remount' | 'snapshot'
 let settingsHarness:
   | {
