@@ -1329,6 +1329,117 @@ test.describe('stored marquee', () => {
     // After the redo the Style Manager targets both tiles again.
     await assertColorEdit({ 'first tile': first, 'second tile': second }, { track })
   })
+
+  // editor.select([first]) shrinks the selection through setSelected, which removes the second
+  // tile through removeSelected, as a ctrl click on it would, and the UndoManager records that
+  // removal as a step of its own. Undoing it adds the second tile back to the selected
+  // collection directly, so component:selected, and with it the color commit, follows neither
+  // component:select:before nor component:deselected (grapesjs 0.23.6): only the core:undo
+  // command that the undo keymap runs emits an event first. As in the redo test, the undo runs
+  // in the task that shows the defaults over the first tile's empty rule.
+  test('undoing a deselection never writes what the color controls show into the published draft', async ({
+    newContext,
+  }) => {
+    test.setTimeout(600_000)
+    const { page, assertCss, assertUnchanged, assertColorEdit } = await publishedStudio(
+      newContext,
+      'Avmarkeringstestets källa',
+    )
+    // The canvas CSS is read after each selection change, once the Style Manager follows it.
+    const history = await page.evaluate(async () => {
+      const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+      const { readCanvasCss } = await import('/src/admin/cms/nativeCanvas.ts')
+      const editor = cmsGrapes.editors.at(-1)
+      const tick = (ms) => new Promise((resolve) => globalThis.setTimeout(resolve, ms))
+      const [track] = editor.getWrapper().find('[data-knc-fold="gallery-track"]')
+      const [first, second] = (track?.components() ?? []).filter(
+        (child) => child.getAttributes()['data-knc-fold'] === 'gallery-tile',
+      )
+      if (!first || !second) throw new Error('The gallery track lacks two tiles')
+      const styles = editor.StyleManager
+      const color = styles.getProperty('typography', 'color')
+      const borderColor = styles
+        .getProperty('surface', 'border')
+        ?.getProperties()
+        .find((property) => property.getName() === 'border-color')
+      if (!color?.view || !borderColor?.view) throw new Error('The color controls are missing')
+      const shown = (property) =>
+        globalThis.document.querySelector(`#cms-styles .gjs-sm-property__${property} input`)?.value
+      // As PropertyView.render does: each control shows its value, or the default without one.
+      const showDefaults = () => {
+        for (const property of [color, borderColor]) property.view.setValue(property.getValue())
+        return {
+          selected: editor.getSelected()?.getId(),
+          target: styles.getSelected()?.selectorsToString(),
+          stored: [color, borderColor].some((property) => property.hasValue()),
+          color: shown('color'),
+          borderColor: shown('border-color'),
+        }
+      }
+      const selection = () => ({
+        selected: editor.getSelectedAll().map((component) => component.getId()),
+        targets: styles.getSelectedAll().map((target) => target.selectorsToString()),
+        shown: styles.getSelected()?.selectorsToString(),
+      })
+      editor.select(first)
+      await tick(50)
+      editor.select([first, second])
+      await tick(50)
+      const added = selection()
+      const addedCss = readCanvasCss(editor)
+      editor.select([first])
+      await tick(50)
+      const deselected = selection()
+      const deselectedCss = readCanvasCss(editor)
+      const overFirst = showDefaults()
+      editor.runCommand('core:undo')
+      await tick(50)
+      const restored = selection()
+      const restoredCss = readCanvasCss(editor)
+      // Past Studio's change debounce, so a change the history made has reached the status.
+      await tick(400)
+      return {
+        track: track.getId(),
+        first: first.getId(),
+        second: second.getId(),
+        states: { added, deselected, overFirst, restored },
+        css: { added: addedCss, deselected: deselectedCss, restored: restoredCss },
+      }
+    })
+    const { track, first, second, states } = history
+    await test.info().attach('deselection-history', {
+      body: JSON.stringify({ track, first, second, ...states }, null, 2),
+      contentType: 'application/json',
+    })
+    const evidence = JSON.stringify(states)
+    // Each leg first proves that the selection moved, so a CSS change belongs to its commit.
+    assert.deepEqual(
+      states.added,
+      selectionOf([first, second]),
+      `Adding the second tile did not select and target both tiles: ${evidence}`,
+    )
+    assertCss('Adding the second tile to the selection', history.css.added)
+    assert.deepEqual(
+      states.deselected,
+      selectionOf([first]),
+      `Deselecting the second tile did not leave the first tile selected alone: ${evidence}`,
+    )
+    assertCss('Deselecting the second tile', history.css.deselected)
+    assert.deepEqual(
+      states.overFirst,
+      shownDefaults(first),
+      `The color controls do not show their defaults over the first tile's rule: ${evidence}`,
+    )
+    assert.deepEqual(
+      states.restored,
+      selectionOf([first, second]),
+      `Undo did not return the second tile to the selection: ${evidence}`,
+    )
+    assertCss('Undoing the deselection', history.css.restored)
+    await assertUnchanged('The deselection and its undo')
+    // After the undo the Style Manager targets both tiles again.
+    await assertColorEdit({ 'first tile': first, 'second tile': second }, { track })
+  })
 })
 test.describe('source adoption', () => {
   // Paths that cms-marquee-zoom.spec.mjs does not reach: the asynchronous source upgrade of a stored
