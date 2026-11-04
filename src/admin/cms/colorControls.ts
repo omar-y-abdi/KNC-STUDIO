@@ -41,7 +41,13 @@ export function colorControls(
  * former selection. A render shows the default of a property without a value, so a passive
  * selection could write that default into the former rule. Before each selection, every color
  * control takes its property's value again: the commit then repeats what the targets hold, and
- * a picker change in progress still completes. */
+ * a picker change in progress still completes.
+ *
+ * Two events precede the commit, and each covers a path the other misses. setSelected (a click,
+ * the layers, editor.select) emits `component:select:before` first, also for a click that only
+ * adds to the selection. An undo or redo of a selection change bypasses setSelected: the
+ * UndoManager tracks the selected collection and edits it directly, removing the selection it
+ * replaces (`component:deselected`) before it adds the one it restores (`component:selected`). */
 export function connectColorControls(editor: Editor): () => void {
   const sync = (): void => {
     const properties = editor.StyleManager.getSectors({ array: true }).flatMap((sector) =>
@@ -50,7 +56,9 @@ export function connectColorControls(editor: Editor): () => void {
     for (const { view, value } of colorControls(properties)) view.setValue(value)
   }
   editor.on('component:select:before', sync)
+  editor.on('component:deselected', sync)
   return () => {
     editor.off('component:select:before', sync)
+    editor.off('component:deselected', sync)
   }
 }
