@@ -1,5 +1,5 @@
 import { repairDesktopCss } from './cms-device-css.ts'
-import { generate, parse, walk, type Atrule, type CssNode, type Rule } from 'css-tree'
+import { generate, ident, parse, walk, type Atrule, type CssNode, type Rule } from 'css-tree'
 import { parseFragment, serialize, serializeOuter, type DefaultTreeAdapterMap } from 'parse5'
 import {
   isMenuPage,
@@ -321,28 +321,32 @@ function normalizedSitePageBody(
   prefix: string,
 ): { readonly variant: CmsPage['content']['sv']; readonly ids: ReadonlySet<string> } {
   const tree = parseFragment(variant.html)
-  const rules: string[] = []
   const ids = new Set<string>()
-  let index = 0
+  const styled: Element[] = []
   const collect = (node: Node): void => {
     if ('tagName' in node) {
       const present = attr(node, 'id')
       if (present) ids.add(present)
-      const style = attr(node, 'style')
-      if (style) {
-        let id = attr(node, 'id')
-        if (!id) {
-          id = `cms-page-${prefix}-${index++}`
-          node.attrs.push({ name: 'id', value: id })
-          ids.add(id)
-        }
-        rules.push(`[id=${JSON.stringify(id)}]{${style}}`)
-        node.attrs = node.attrs.filter((item) => item.name !== 'style')
-      }
+      if (attr(node, 'style')) styled.push(node)
     }
     for (const child of elements(node)) collect(child)
   }
   collect(tree)
+  // Every body id is reserved before one is allocated, so a generated id never takes the id of an
+  // element that comes before or after the styled one.
+  let index = 0
+  const rules = styled.map((node) => {
+    let id = attr(node, 'id')
+    if (!id) {
+      id = `cms-page-${prefix}-${index++}`
+      while (ids.has(id)) id = `cms-page-${prefix}-${index++}`
+      node.attrs.push({ name: 'id', value: id })
+      ids.add(id)
+    }
+    const rule = `[id=${JSON.stringify(id)}]{${attr(node, 'style')}}`
+    node.attrs = node.attrs.filter((item) => item.name !== 'style')
+    return rule
+  })
   if (!rules.length) return { variant, ids }
   const baseline = rules.join('\n')
   return {
@@ -357,8 +361,9 @@ function normalizedSitePageBody(
   }
 }
 
-/** Frozen chrome that pages created before the live header stored around their body. The live
- * footer shares the id cms-site-footer, so capture never stores it. */
+/** Frozen chrome that pages created before the live header stored around their body. The
+ * migration finds it by these ids; capture of a current page finds the live chrome by its place in
+ * the render instead (sitePageBody), since an owner element may carry the same ids. */
 const FROZEN_CHROME = new Set(['cms-site-header', 'cms-site-menu', 'cms-site-footer'])
 const FROZEN_WRAPPERS = new Set(['cms-site-shell', 'cms-site-content'])
 const FROZEN_STYLED = new Set(['cms-site-shell', ...FROZEN_CHROME])
@@ -371,9 +376,31 @@ function cut(text: string, ranges: readonly Range[]): string {
     .reduce((rest, [start, end]) => rest.slice(0, start) + rest.slice(end), text)
 }
 
-/** The owner's body in stored html: the frozen header, menu and footer removed, the shell and
- * content wrappers unwrapped. Every other byte stays exactly as stored. */
+/** The owner's body in a rendered current page, as the editor exports it: what lies between the
+ * generated header (the first top-level element) and the generated footer (the last), with the
+ * content wrapper (the element right after the header) unwrapped. They are found by their place
+ * in the render, never by id: an owner element may carry any chrome id, and GrapesJS then renames
+ * the generated copy that comes after it (cms-site-footer-2). Every byte of the body stays as
+ * exported; html that does not start with the generated header is not a render and comes back
+ * unchanged. */
 export function sitePageBody(html: string): string {
+  const [header, ...rest] = elements(parseFragment(html, { sourceCodeLocationInfo: true }))
+  const start = header?.tagName === 'header' ? header.sourceCodeLocation : undefined
+  if (!start) return html
+  const last = rest.at(-1)
+  const footer = last?.tagName === 'footer' ? last.sourceCodeLocation : undefined
+  const first = footer ? rest.slice(0, -1)[0] : rest[0]
+  const wrapper = first?.tagName === 'div' ? first.sourceCodeLocation : undefined
+  const ranges: Range[] = [[0, start.endOffset]]
+  if (footer) ranges.push([footer.startOffset, html.length])
+  if (wrapper?.startTag) ranges.push([wrapper.startTag.startOffset, wrapper.startTag.endOffset])
+  if (wrapper?.endTag) ranges.push([wrapper.endTag.startOffset, wrapper.endTag.endOffset])
+  return cut(html, ranges)
+}
+
+/** The owner's body in stored html of a frozen page: the frozen header, menu and footer removed,
+ * the shell and content wrappers unwrapped. Every other byte stays exactly as stored. */
+function frozenSitePageBody(html: string): string {
   if (!html.includes('cms-site-')) return html
   const ranges: Range[] = []
   const visit = (node: Node): void => {
@@ -402,16 +429,27 @@ const MATCHING_PSEUDOS = new Set(['is', 'where', 'matches', '-webkit-any', '-moz
  * pseudo-class (`:is`, `:where`, `:matches`, `:-webkit-any`) counts only when every selector in its
  * argument does: `:is(#cms-site-header)` is chrome, `:is(#cms-site-header, #owner-title)` also
  * selects body elements. Other pseudo-class arguments (`:not`, `:has`, …) never count:
- * `:not(#cms-site-header)` selects the body. */
+ * `:not(#cms-site-header)` selects the body. Names are compared as the browser reads them:
+ * css-tree keeps identifiers escaped (`#cms\2d site-header` names cms-site-header) and decodes only
+ * quoted strings, and an HTML attribute name has no case. An attribute value is compared exactly,
+ * except under the `i` flag, which ignores its case (`[id="CMS-SITE-HEADER" i]` is chrome); the `s`
+ * flag and no flag keep it exact. Only the `=` matcher names chrome: a substring matcher (`^=`,
+ * `*=`, `$=`, `~=`, `|=`) can also match owner ids (`[id*="header"]` matches an owner
+ * `page-header`), so dropping its rule could remove owner paint, and no earlier Studio wrote one. */
 function namesFrozenChrome(node: CssNode): boolean {
-  if (node.type === 'IdSelector') return FROZEN_STYLED.has(node.name)
-  if (node.type === 'AttributeSelector')
-    return (
-      node.name.name === 'id' &&
-      node.matcher === '=' &&
-      node.value !== null &&
-      FROZEN_STYLED.has(node.value.type === 'String' ? node.value.value : node.value.name)
+  if (node.type === 'IdSelector') return FROZEN_STYLED.has(ident.decode(node.name))
+  if (node.type === 'AttributeSelector') {
+    if (
+      ident.decode(node.name.name).toLowerCase() !== 'id' ||
+      node.matcher !== '=' ||
+      node.value === null
     )
+      return false
+    const value = node.value.type === 'String' ? node.value.value : ident.decode(node.value.name)
+    // css-tree keeps the flag as written: `I` and an escaped `\69` are the same flag as `i`.
+    const anyCase = node.flags !== null && ident.decode(node.flags).toLowerCase() === 'i'
+    return FROZEN_STYLED.has(anyCase ? value.toLowerCase() : value)
+  }
   if (node.type !== 'PseudoClassSelector' || !MATCHING_PSEUDOS.has(node.name.toLowerCase()))
     return false
   const selectors = (node.children?.toArray() ?? []).flatMap((child) =>
@@ -449,21 +487,29 @@ const targetsFrozenChrome = (rule: Rule): boolean =>
   !rule.prelude.children.isEmpty &&
   rule.prelude.children.toArray().every(referencesFrozenChrome)
 
+/** A named `@layer` block declares its layer where it first appears, even with nothing left in
+ * it: dropping it would move that layer after the ones declared later. */
+const namedLayer = (node: Atrule): boolean =>
+  node.name.toLowerCase() === 'layer' && node.prelude !== null
+
 /** Stored CSS without the rules whose every selector targets the frozen shell, header, menu or
- * footer, and without the media blocks that leaves empty. Every other byte stays as stored. */
+ * footer, at any depth (inside at-rules and nested in other rules), and without the rules and
+ * at-rule blocks that leaves empty, except a named layer block, which stays as an empty block.
+ * Every other byte stays as stored. */
 export function withoutFrozenChromeCss(css: string): string {
-  if (!css.includes('cms-site-')) return css
+  // An escape can spell any character of a chrome id, and under the i flag any case.
+  if (!css.toLowerCase().includes('cms-site-') && !css.includes('\\')) return css
   const tree = parse(css, { positions: true })
   const dropped = new Set<CssNode>()
-  const emptied = (node: Atrule): boolean =>
+  const emptied = (node: Rule | Atrule): boolean =>
     node.block !== null &&
     !node.block.children.isEmpty &&
     node.block.children.toArray().every((child) => dropped.has(child))
   walk(tree, {
     leave(node: CssNode) {
       if (
-        (node.type === 'Rule' && targetsFrozenChrome(node)) ||
-        (node.type === 'Atrule' && emptied(node))
+        (node.type === 'Rule' && (targetsFrozenChrome(node) || emptied(node))) ||
+        (node.type === 'Atrule' && !namedLayer(node) && emptied(node))
       )
         dropped.add(node)
     },
@@ -472,7 +518,7 @@ export function withoutFrozenChromeCss(css: string): string {
   const outermost = (node: CssNode): void => {
     if (dropped.has(node) && node.loc) ranges.push([node.loc.start.offset, node.loc.end.offset])
     else if (node.type === 'StyleSheet') node.children.forEach(outermost)
-    else if (node.type === 'Atrule') node.block?.children.forEach(outermost)
+    else if (node.type === 'Atrule' || node.type === 'Rule') node.block?.children.forEach(outermost)
   }
   outermost(tree)
   return cut(css, ranges)
@@ -484,7 +530,7 @@ export function dropFrozenChrome(page: CmsPage): CmsPage {
   // A current page's own CSS may name the live header's ids on purpose; only frozen pages migrate.
   if (!isSitePage(page) || !isFrozenSitePage(page)) return page
   const variant = (stored: PageVariant): PageVariant => {
-    const html = sitePageBody(stored.html)
+    const html = frozenSitePageBody(stored.html)
     const light = withoutFrozenChromeCss(stored.css.light)
     const dark = withoutFrozenChromeCss(stored.css.dark)
     return html === stored.html && light === stored.css.light && dark === stored.css.dark

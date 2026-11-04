@@ -89,8 +89,14 @@ grant execute on function public.internal_record_email_send(
   text, text, text, text, text, text, text, text, uuid
 ) to service_role;
 
--- Newest first without bodies. The cursor is the last entry's (created_at, id); pass created_at
--- back verbatim, since a JavaScript Date drops its microseconds.
+-- Every delivery read and action below admits only the owner the Studio accepts: role owner, account
+-- enabled and no forced password change pending, the same predicate as internal_cms_assert_owner.
+-- is_owner() alone also admits an owner who has not yet replaced a temporary password.
+
+-- Newest first without bodies. The cursor is the last entry's (created_at, id), both or neither;
+-- pass created_at back verbatim, since a JavaScript Date drops its microseconds. The first page and
+-- a cursor page are separate statements so each seeks in email_send_log_listing_idx under a generic
+-- plan as well as a custom one.
 create or replace function public.admin_list_email_send_log(
   p_before timestamptz default null,
   p_limit integer default 50,
@@ -104,8 +110,51 @@ as $$
 declare
   v_limit integer := least(greatest(coalesce(p_limit, 50), 1), 100);
 begin
-  if not public.is_owner() then
+  if not exists (
+    select 1
+    from public.profiles p
+    where p.id = (select auth.uid())
+      and p.role = 'owner'
+      and p.account_enabled
+      and not p.must_change_password
+  ) then
     raise exception using errcode = '42501', message = 'owner required';
+  end if;
+
+  if p_before is null and p_before_id is null then
+    return (
+      select pg_catalog.jsonb_build_object(
+        'entries', coalesce(
+          pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object(
+            'id', page.id,
+            'created_at', page.created_at,
+            'last_attempt_at', page.last_attempt_at,
+            'kind', page.kind,
+            'recipient', page.recipient,
+            'subject', page.subject,
+            'status', page.status,
+            'error_code', page.error_code,
+            'booking_id', page.booking_id,
+            'attempt_count', page.attempt_count
+          ) order by page.position) filter (where page.position <= v_limit),
+          '[]'::jsonb
+        ),
+        'has_more', pg_catalog.count(*) > v_limit
+      )
+      from (
+        select l.id, l.created_at, l.last_attempt_at, l.kind, l.recipient, l.subject, l.status,
+               l.error_code, l.booking_id, l.attempt_count,
+               pg_catalog.row_number() over (order by l.created_at desc, l.id desc) as position
+        from public.email_send_log l
+        order by l.created_at desc, l.id desc
+        limit v_limit + 1
+      ) page
+    );
+  end if;
+
+  if p_before is null or p_before_id is null then
+    raise exception using errcode = '22023',
+      message = 'a log cursor needs both p_before and p_before_id';
   end if;
 
   return (
@@ -132,9 +181,7 @@ begin
              l.error_code, l.booking_id, l.attempt_count,
              pg_catalog.row_number() over (order by l.created_at desc, l.id desc) as position
       from public.email_send_log l
-      where p_before is null
-         or l.created_at < p_before
-         or (p_before_id is not null and l.created_at = p_before and l.id < p_before_id)
+      where (l.created_at, l.id) < (p_before, p_before_id)
       order by l.created_at desc, l.id desc
       limit v_limit + 1
     ) page
@@ -142,7 +189,8 @@ begin
 end;
 $$;
 
--- One stored copy; null once it has been purged.
+-- One stored copy with the whole row it belongs to, read in one statement so the envelope (recipient,
+-- subject, status, times) always matches the body; null once it has been purged.
 create or replace function public.admin_get_email_send_log_entry(p_id uuid)
 returns jsonb
 language plpgsql
@@ -151,14 +199,29 @@ security definer
 set search_path = ''
 as $$
 begin
-  if not public.is_owner() then
+  if not exists (
+    select 1
+    from public.profiles p
+    where p.id = (select auth.uid())
+      and p.role = 'owner'
+      and p.account_enabled
+      and not p.must_change_password
+  ) then
     raise exception using errcode = '42501', message = 'owner required';
   end if;
 
   return (
     select pg_catalog.jsonb_build_object(
       'id', l.id,
+      'created_at', l.created_at,
+      'last_attempt_at', l.last_attempt_at,
+      'kind', l.kind,
+      'recipient', l.recipient,
       'subject', l.subject,
+      'status', l.status,
+      'error_code', l.error_code,
+      'booking_id', l.booking_id,
+      'attempt_count', l.attempt_count,
       'html', l.html,
       'text_body', l.text_body
     )
@@ -185,7 +248,14 @@ security definer
 set search_path = ''
 as $$
 begin
-  if not public.is_owner() then
+  if not exists (
+    select 1
+    from public.profiles p
+    where p.id = (select auth.uid())
+      and p.role = 'owner'
+      and p.account_enabled
+      and not p.must_change_password
+  ) then
     raise exception using errcode = '42501', message = 'owner required';
   end if;
 
@@ -224,6 +294,77 @@ $$;
 revoke execute on function public.admin_list_failed_booking_email_deliveries()
   from public, anon;
 grant execute on function public.admin_list_failed_booking_email_deliveries() to authenticated;
+
+-- The retry and the handled mark keep their earlier effect and answer; only the owner check changes
+-- to the one above.
+create or replace function public.admin_retry_failed_booking_email_delivery(p_id uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if not exists (
+    select 1
+    from public.profiles p
+    where p.id = (select auth.uid())
+      and p.role = 'owner'
+      and p.account_enabled
+      and not p.must_change_password
+  ) then
+    raise exception using errcode = '42501', message = 'owner required';
+  end if;
+
+  update public.booking_email_delivery_jobs j
+  set status = 'pending',
+      attempt_count = 0,
+      next_attempt_at = pg_catalog.now(),
+      last_attempt_at = null,
+      last_error_code = null,
+      failed_at = null
+  where j.id = p_id
+    and j.status = 'failed';
+
+  return pg_catalog.jsonb_build_object('ok', found);
+end;
+$$;
+
+revoke execute on function public.admin_retry_failed_booking_email_delivery(uuid)
+  from public, anon;
+grant execute on function public.admin_retry_failed_booking_email_delivery(uuid) to authenticated;
+
+create or replace function public.admin_discard_failed_booking_email_delivery(p_id uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if not exists (
+    select 1
+    from public.profiles p
+    where p.id = (select auth.uid())
+      and p.role = 'owner'
+      and p.account_enabled
+      and not p.must_change_password
+  ) then
+    raise exception using errcode = '42501', message = 'owner required';
+  end if;
+
+  update public.booking_email_delivery_jobs j
+  set status = 'skipped',
+      completed_at = pg_catalog.now()
+  where j.id = p_id
+    and j.status = 'failed';
+
+  return pg_catalog.jsonb_build_object('ok', found);
+end;
+$$;
+
+revoke execute on function public.admin_discard_failed_booking_email_delivery(uuid)
+  from public, anon;
+grant execute on function public.admin_discard_failed_booking_email_delivery(uuid)
+  to authenticated;
 
 create or replace function public.internal_purge_email_send_log()
 returns integer

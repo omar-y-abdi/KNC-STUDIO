@@ -44,14 +44,17 @@ Auth user lifecycle actions. Booking email delivery has its separate
 `booking_email_delivery_jobs` ledger; Auth email sends directly through Resend; and `upload-image`
 is synchronous while its managed Storage cleanup is durable. Cron retries failed outbox actions,
 preserves Calendar event identifiers until Google deletion succeeds, and reconciles managed Storage
-bytes left unreferenced for 30 minutes after a failed upload compensation path. Homepage-logo
-replacement uses the same authenticated `upload-image` gateway, `site_settings` path swap, and
-durable gallery cleanup; raw image bytes and service credentials never enter browser config.
+bytes left unreferenced for 30 minutes after a failed upload compensation path. `upload-image`
+registers CMS library media and barber photos; Studio publication assigns gallery images and the
+homepage logo. Raw image bytes and service credentials never enter browser config.
 
 The durable dispatchers use a 30-second pg_net request budget. Edge handlers retain their promise
 through the native `EdgeRuntime.waitUntil` hook when available; the database ledgers still own
 retry and completion. Resend HTTP success requires a valid message UUID before delivery is marked.
-Only that provider ID is logged, never message bodies or customer-access links.
+Function logs record only that provider ID, never message bodies or customer-access links. The
+owner-only email send log stores a copy of each app email (recipient, subject, HTML and text) with
+sign-in and access links replaced by `[dold länk]`; a daily purge deletes it once 30 days have
+passed since the first send attempt. See `docs/operations/EMAIL_DELIVERY.md`.
 
 ## Public frontend configuration
 
@@ -73,7 +76,13 @@ development may use the existing mock adapters; it must not silently become a pr
 
 ## Apply backend changes
 
-Apply reviewed forward migrations before the matching Edge Functions and Worker/frontend.
+A merge to `main` applies migrations, deploys Edge Functions and builds the Worker within about
+90 seconds, in no enforced order, so every change must work with the previous and the next
+version on the other side. A change that needs a strict order ships as two releases: the first
+stops using the old interface, and the second removes it once the first is verified live. The
+legacy gallery/logo writer RPCs follow this pattern: they stay in this release, and the
+`supabase/functions/upload-image/README.md` describes their later removal. The frontend deploy
+also waits for the matching `cms-studio`; see `docs/operations/CMS_RELEASE.md`.
 Use the current migration tree and `supabase/config.toml` as the deployment inventory; completed
 September rollout checklists are retired. The public gateway contract is already authoritative:
 never restore anonymous execution of booking/customer RPCs during recovery. After an irreversible

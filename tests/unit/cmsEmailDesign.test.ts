@@ -120,7 +120,11 @@ describe('CMS email design', () => {
     const unknownEmail = unknown.emails[0]
     if (!unknownEmail) throw new Error('email fixture missing')
     unknownEmail.intro = 'Hej {totally_unknown}'
-    expect(() => validateDocument(unknown)).toThrow('Okänd platshållare {totally_unknown}.')
+    // Placeholders are judged against the stored copy, which the shape check does not have.
+    expect(() => validateDocument(unknown)).not.toThrow()
+    expect(() => validateCompleteDocument(unknown, authoritative)).toThrow(
+      'emails.customer_confirmation.sv.intro: Okänd platshållare {totally_unknown}.',
+    )
 
     const missing = structuredClone(authoritative)
     const missingEmail = missing.emails[0]

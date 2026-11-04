@@ -195,6 +195,36 @@ describe('independent device geometry', () => {
     expect(fixed).toContain('@media (max-width:1440px){.source')
     expect(repairDesktopCss(fixed)).toBe(fixed)
   })
+  // A textual match of the old breakpoint is not a legacy rule: without a repair the owner's
+  // comments, formatting and quoting stay byte for byte (G16).
+  it.each([
+    [
+      'a commented class query',
+      '/* Owner comment */\n@media (max-width: 1440px) {\n  .price {\n    color: red;\n  }\n}\n',
+    ],
+    [
+      'a string literal naming the breakpoint',
+      ".note::after {\n  content: 'max-width: 1440px';\n}\n",
+    ],
+    [
+      'a query mixing an ID rule with a class rule',
+      '@media (max-width: 1440px) {\n  #owner { width: 10px; }\n  .price { color: red; }\n}\n',
+    ],
+    [
+      'a commented-out legacy rule',
+      '/* @media(max-width:1440px){#owner{width:10px}} */\np { color: red; }\n',
+    ],
+  ])('returns the stored bytes when no legacy rule is repaired: %s', (_label, css) => {
+    expect(repairDesktopCss(css)).toBe(css)
+  })
+  it('still repairs an actual legacy ID query next to owner comments and class queries', () => {
+    const fixed = repairDesktopCss(
+      '/* Owner note */\n@media(max-width:1440px){#owner{width:10px}}\n@media (max-width: 1440px) {\n  .price { color: red; }\n}\n',
+    )
+    expect(fixed).toContain('@media (min-width:769px){#owner{width:10px}}')
+    expect(fixed).toContain('.price')
+    expect(fixed).not.toMatch(/max-width:\s*1440px\)\s*\{\s*#owner/)
+  })
   it('shares geometry across themes without copying colors or affecting mobile', () => {
     const next = syncLayout(
       '',

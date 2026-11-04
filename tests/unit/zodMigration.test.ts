@@ -42,7 +42,8 @@ const loggedEmail = {
   booking_id: ID,
   attempt_count: 1,
 }
-const loggedCopy = { id: ID, subject: 'Bokningsbekräftelse', html: '<p>Hej</p>', text_body: 'Hej' }
+// The stored copy comes with the whole row it was read with.
+const loggedCopy = { ...loggedEmail, html: '<p>Hej</p>', text_body: 'Hej' }
 const customer = (start_at: unknown) => ({
   ok: true,
   session_proof: 'a'.repeat(64),

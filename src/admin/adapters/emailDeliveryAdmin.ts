@@ -7,6 +7,7 @@ import {
   discardFailedBookingEmailDeliveryResponse,
   parseWith,
   retryFailedBookingEmailDeliveryResponse,
+  type EmailSendLogEntryRow,
 } from '../adminSchemas'
 import type { AdminResult } from '../types'
 import { err, ok } from '../types'
@@ -56,9 +57,11 @@ export interface EmailSendLogPage {
   readonly next: EmailSendLogCursor | null
 }
 
-/** The stored copy of one sent email, credential links already replaced. */
-export interface EmailSendLogCopy {
-  readonly subject: string
+/**
+ * The stored copy of one sent email, credential links already replaced, with the log entry it was
+ * read together with: a retry can rewrite recipient, subject and outcome after the list was read.
+ */
+export interface EmailSendLogCopy extends EmailSendLogEntry {
   readonly html: string
   readonly text: string
 }
@@ -68,6 +71,21 @@ const WRITE_ERROR = 'Kunde inte uppdatera mejlleveransen. Försök igen.'
 const LOG_ERROR = 'Kunde inte läsa leveransstatus för mejl.'
 const COPY_ERROR = 'Kunde inte öppna mejlet.'
 const PAGE_SIZE = 50
+
+function logEntry(row: EmailSendLogEntryRow): EmailSendLogEntry {
+  return {
+    id: row.id,
+    createdAt: row.created_at,
+    kind: row.kind,
+    recipient: row.recipient,
+    subject: row.subject,
+    outcome:
+      row.error_code === null
+        ? { status: 'sent' }
+        : { status: 'failed', errorCode: row.error_code },
+    attemptCount: row.attempt_count,
+  }
+}
 
 export async function listFailedBookingEmailDeliveries(): Promise<
   AdminResult<readonly FailedBookingEmailDelivery[]>
@@ -147,18 +165,7 @@ export async function listEmailSendLog(
     if (error !== null || data === null) return err('network', LOG_ERROR)
     const parsed = parseWith(emailSendLogPage, data)
     if (!parsed.ok) return err('malformed', LOG_ERROR)
-    const entries = parsed.value.entries.map((row): EmailSendLogEntry => ({
-      id: row.id,
-      createdAt: row.created_at,
-      kind: row.kind,
-      recipient: row.recipient,
-      subject: row.subject,
-      outcome:
-        row.error_code === null
-          ? { status: 'sent' }
-          : { status: 'failed', errorCode: row.error_code },
-      attemptCount: row.attempt_count,
-    }))
+    const entries = parsed.value.entries.map(logEntry)
     const last = entries.at(-1)
     return ok({
       entries,
@@ -182,7 +189,7 @@ export async function getEmailSendLogCopy(id: string): Promise<AdminResult<Email
     if (!parsed.ok) return err('malformed', COPY_ERROR)
     if (parsed.value === null) return err('not_found', 'Kopian har rensats (äldre än 30 dagar).')
     return ok({
-      subject: parsed.value.subject,
+      ...logEntry(parsed.value),
       html: parsed.value.html,
       text: parsed.value.text_body,
     })

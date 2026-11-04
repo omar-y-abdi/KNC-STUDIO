@@ -49,7 +49,6 @@ import { ConfirmDialog } from '../ConfirmDialog'
 import './studio.css'
 import { pageScenes, type CmsScene } from '../../cms/Scene'
 
-const protectedIds = new Set<string>(CORE_PAGE_IDS)
 const BACKUP_FAILED =
   'Lokal backup kunde inte sparas. Utkastet finns i studion; exportera innan du lämnar.'
 const JOURNAL_FULL =
@@ -806,7 +805,8 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
           </span>
         </label>
       )}
-      {!protectedIds.has(page.id) && isSitePage(page) && (
+      {/* Fixed routes are protected by path, whatever identity an earlier Studio gave them. */}
+      {isSitePage(page) && (
         <div class="cms-actions-row">
           <button
             type="button"
@@ -850,7 +850,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
           busy={false}
           onClose={() => setDeleting(null)}
           onConfirm={() => {
-            if (protectedIds.has(page.id) || !isSitePage(page)) return
+            if (!isSitePage(page)) return
             const next = structuredClone(draft.document)
             next.presentation.pages = next.presentation.pages.filter((item) => item.id !== page.id)
             setDeleting(null)

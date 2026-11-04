@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { emptyDocument, type CmsDocument, type CmsPage } from '../../shared/cms'
+import { emptyDocument, validateDocument, type CmsDocument, type CmsPage } from '../../shared/cms'
+import { CMS_BUILT_ASSETS } from '../../shared/cms-built-assets'
+import { validateDocumentMarkupPlacements } from '../../shared/cms-markup'
 import { nativeCanvas } from '../../src/admin/cms/nativeCanvas'
-import { restoreRevision } from '../../src/admin/cms/draft'
+import {
+  ensureCorePages,
+  needsCorePageSource,
+  retainCorePageLayouts,
+} from '../../src/admin/cms/corePages'
+import { CmsDraft, restoreRevision } from '../../src/admin/cms/draft'
 import type { CmsBackup } from '../../src/admin/cms/backup'
 import { normalizeDocument } from '../../src/admin/cms/normalizeDocument'
 
@@ -41,23 +48,23 @@ function storedDocument(): CmsDocument {
   return document
 }
 
-describe('Studio document adoption', () => {
-  const paths: [string, (document: CmsDocument) => CmsDocument][] = [
-    ['load', (document) => structuredClone(document)],
-    [
-      'backup restore',
-      (document) => {
-        const backup: CmsBackup = {
-          document: structuredClone(document),
-          savedAt: '2026-10-25T00:00:00.000Z',
-        }
-        return backup.document
-      },
-    ],
-    ['history restore', (document) => restoreRevision(document, emptyDocument()).document],
-    ['import', (document) => JSON.parse(JSON.stringify(document)) as CmsDocument],
-  ]
+const paths: [string, (document: CmsDocument) => CmsDocument][] = [
+  ['load', (document) => structuredClone(document)],
+  [
+    'backup restore',
+    (document) => {
+      const backup: CmsBackup = {
+        document: structuredClone(document),
+        savedAt: '2026-10-25T00:00:00.000Z',
+      }
+      return backup.document
+    },
+  ],
+  ['history restore', (document) => restoreRevision(document, emptyDocument()).document],
+  ['import', (document) => JSON.parse(JSON.stringify(document)) as CmsDocument],
+]
 
+describe('Studio document adoption', () => {
   it.each(paths)(
     'repairs Desktop CSS on %s before the next publish without mutating the input',
     (_path, incoming) => {
@@ -100,4 +107,107 @@ describe('Studio document adoption', () => {
       expect(raw.css[mode]).toBe(legacyCss)
     }
   })
+})
+
+// Accepted owner sheets that only mention the old Desktop width. None holds a legacy ID-rule
+// breakpoint, so adoption must keep them byte for byte (G16).
+const ordinarySheets: [string, string][] = [
+  [
+    'a commented class query',
+    '/* Owner comment */\n@media (max-width: 1440px) {\n  .price {\n    color: red;\n  }\n}\n',
+  ],
+  ['a string literal', ".note::after {\n  content: 'max-width: 1440px';\n}\n"],
+  [
+    'a commented-out legacy rule',
+    '/* @media(max-width:1440px){#owner{width:10px}} */\np { color: red; }\n',
+  ],
+]
+
+function contactDocument(css: string): CmsDocument {
+  const document = emptyDocument()
+  const variant = (heading: string) => ({
+    html: `<main class="bb-page bb-doc"><h1 class="price note">${heading}</h1><p>Text</p></main>`,
+    css: { light: css, dark: css },
+  })
+  document.presentation.pages = [
+    {
+      id: '10000000-0000-4000-8000-000000000007',
+      path: '/contact',
+      kind: 'page',
+      name: { sv: 'Kontakt', en: 'Contact' },
+      title: { sv: '', en: '' },
+      description: { sv: '', en: '' },
+      inMenu: false,
+      content: { sv: variant('Kontakt'), en: variant('Contact') },
+    },
+  ]
+  validateDocument(document)
+  validateDocumentMarkupPlacements(document, {
+    siteOrigin: 'https://bladeblendstudio.se',
+    storageOrigin: 'https://admin-harness.invalid',
+    builtAssets: CMS_BUILT_ASSETS,
+  })
+  return document
+}
+
+describe('Studio adoption of ordinary Desktop-width CSS (G16)', () => {
+  const cases = paths.flatMap(([path, incoming]) =>
+    ordinarySheets.map(([sheet, css]) => [path, sheet, incoming, css] as const),
+  )
+
+  it.each(cases)('keeps the stored document on %s with %s', (_path, _sheet, incoming, css) => {
+    const input = incoming(contactDocument(css))
+    expect(normalizeDocument(input)).toBe(input)
+  })
+
+  it.each(ordinarySheets)('keeps %s through the source adoption migration', (_sheet, css) => {
+    const stored = contactDocument(css)
+    // The source upgrade Studio runs once the capture arrives, with the stored Contact retained.
+    retainCorePageLayouts(stored)
+    try {
+      expect(needsCorePageSource(stored)).toBe(true)
+      const draft = new CmsDraft(stored, 1, 'revision-1', stored)
+      draft.migrate(
+        (document) =>
+          normalizeDocument(needsCorePageSource(document) ? ensureCorePages(document) : document),
+        () => undefined,
+      )
+      expect(draft.dirty).toBe(false)
+      expect(draft.hasEdits).toBe(false)
+      for (const lang of ['sv', 'en'] as const)
+        expect(draft.document.presentation.pages[0]?.content[lang].css).toEqual({
+          light: css,
+          dark: css,
+        })
+    } finally {
+      retainCorePageLayouts(emptyDocument())
+    }
+  })
+
+  it.each(ordinarySheets)(
+    'opens, publishes and acknowledges %s without a phantom migration',
+    (_sheet, css) => {
+      const published = contactDocument(css)
+      // Refresh: the Studio adopts the server snapshot and keeps the raw one as its base.
+      const draft = new CmsDraft(normalizeDocument(published), 1, 'revision-1', published)
+      expect(draft.dirty).toBe(false)
+      expect(draft.hasEdits).toBe(false)
+      const edited = structuredClone(draft.document)
+      const contact = edited.presentation.pages[0]
+      if (!contact) throw new Error('Missing Contact page')
+      contact.name.sv = 'Kontakta oss'
+      draft.change(edited)
+      const request = draft.beginSave()
+      expect(request.document.presentation.pages[0]?.content.sv.css.light).toBe(css)
+      // The server stores and returns what was sent; Studio adopts the acknowledgement.
+      draft.acknowledge(request.document, 2, 'revision-2', normalizeDocument(request.document))
+      expect(draft.dirty).toBe(false)
+      expect(draft.hasEdits).toBe(false)
+      for (const lang of ['sv', 'en'] as const)
+        expect(draft.document.presentation.pages[0]?.content[lang].css).toEqual({
+          light: css,
+          dark: css,
+        })
+    },
+  )
 })

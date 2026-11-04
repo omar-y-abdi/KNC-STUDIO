@@ -169,8 +169,7 @@ describe('email send log admin reads', () => {
   it('reads one stored copy and reports a purged one as not found', async () => {
     rpc.mockResolvedValue({
       data: {
-        id: '44444444-4444-4444-8444-444444444441',
-        subject: 'Återställ lösenord',
+        ...row('44444444-4444-4444-8444-444444444441', '2026-10-24T20:00:00.654321+00:00'),
         html: '<a href="[dold länk]">Välj nytt lösenord</a>',
         text_body: 'Välj nytt lösenord: [dold länk]',
       },
@@ -179,7 +178,13 @@ describe('email send log admin reads', () => {
     await expect(getEmailSendLogCopy('44444444-4444-4444-8444-444444444441')).resolves.toEqual({
       ok: true,
       value: {
+        id: '44444444-4444-4444-8444-444444444441',
+        createdAt: '2026-10-24T20:00:00.654321+00:00',
+        kind: 'auth_recovery',
+        recipient: 'ada@example.com',
         subject: 'Återställ lösenord',
+        outcome: { status: 'failed', errorCode: 'send_failed_transient' },
+        attemptCount: 2,
         html: '<a href="[dold länk]">Välj nytt lösenord</a>',
         text: 'Välj nytt lösenord: [dold länk]',
       },
@@ -192,6 +197,40 @@ describe('email send log admin reads', () => {
     await expect(getEmailSendLogCopy('44444444-4444-4444-8444-444444444441')).resolves.toEqual({
       ok: false,
       error: { kind: 'not_found', message: 'Kopian har rensats (äldre än 30 dagar).' },
+    })
+  })
+
+  // A frontend that ships before the migration still meets the earlier answer, which has only the
+  // bodies: the dialog then shows the read error instead of mixing the list's row with the body.
+  it('reports a stored copy without its row as unreadable', async () => {
+    rpc.mockResolvedValue({
+      data: {
+        id: '44444444-4444-4444-8444-444444444441',
+        subject: 'Återställ lösenord',
+        html: '<a href="[dold länk]">Välj nytt lösenord</a>',
+        text_body: 'Välj nytt lösenord: [dold länk]',
+      },
+      error: null,
+    })
+    await expect(getEmailSendLogCopy('44444444-4444-4444-8444-444444444441')).resolves.toEqual({
+      ok: false,
+      error: { kind: 'malformed', message: 'Kunde inte öppna mejlet.' },
+    })
+  })
+
+  it('reports a stored copy whose status and reason disagree as unreadable', async () => {
+    rpc.mockResolvedValue({
+      data: {
+        ...row('44444444-4444-4444-8444-444444444441', '2026-10-24T20:00:00.654321+00:00'),
+        status: 'sent',
+        html: '<p>Hej</p>',
+        text_body: 'Hej',
+      },
+      error: null,
+    })
+    await expect(getEmailSendLogCopy('44444444-4444-4444-8444-444444444441')).resolves.toEqual({
+      ok: false,
+      error: { kind: 'malformed', message: 'Kunde inte öppna mejlet.' },
     })
   })
 })

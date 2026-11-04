@@ -40,10 +40,27 @@ publication, history and resources still require a verified owner.
 
 ## Content write authority
 
-Apply `20261028185110_cms_single_writer_authority.sql` after
-`20261028182853_retire_legacy_owner_media_writers.sql`. The earlier retirement requires the updated
-`upload-image` gateway first; its README records that deployment order and the old media requests
-that now return HTTP 400. These migrations require their own reviewed rollout.
+`20261028185110_cms_single_writer_authority.sql` and the matching `cms-studio` reach production
+within about 90 seconds of a merge, in no enforced order. Either order is safe. Each has at most
+one window, ending when the other side deploys, in which publication of one kind of stored legacy
+value is rejected with HTTP 422 and nothing is written:
+
+- `cms-studio` first: the new validator keeps a placeholder the retired mail editor stored in the
+  field that holds it, and counts length limits in characters, as the database does. Until the
+  migration runs, the database still returns every stored site key, so a key outside the site
+  copy publication owns is still rejected; the old direct table writes also still work.
+- Migration first: `internal_cms_document()` returns only the site keys publication owns, so a key
+  a retired table writer stored no longer reaches the old validator, and the next publication
+  deletes its rows. Until the new `cms-studio` is live, the old validator still rejects an
+  unsupported placeholder already stored in an email template.
+
+The frontend deploy waits for the matching `cms-studio` (step 4 above).
+
+This release keeps the legacy gallery and homepage-logo writer RPCs. The updated `upload-image`
+gateway no longer calls them, and the previous gateway still works against this schema, so the
+gateway and the migrations may also deploy in either order. Dropping those RPCs is a later release,
+made only after the updated gateway is verified live; the
+[upload gateway README](../../supabase/functions/upload-image/README.md) describes both steps.
 
 Authenticated browser sessions, including the owner, cannot insert, update, delete or upsert
 `site_content`, `about_content` or `email_templates` directly. Their content is published through

@@ -6,7 +6,12 @@ import { readFileSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import { gunzipSync } from 'node:zlib'
 import { EMAIL_NAMES } from '../../shared/cms.ts'
-import { createSitePage, renderSitePage } from '../../shared/site-page.ts'
+import {
+  SITE_PAGE_CSS,
+  createSitePage,
+  dropFrozenChrome,
+  renderSitePage,
+} from '../../shared/site-page.ts'
 import { defaultEmailTemplate } from '../../supabase/functions/_shared/email.ts'
 import { nativeBackend } from './cms-backend.mjs'
 import { loadWorker, renderPublicDocument, routeWorkerDocuments } from './cms-render.mjs'
@@ -3028,3 +3033,265 @@ test('5-comparison-font-parity', async ({ page, studio, browserName, evidenceDir
     contentType: 'application/json',
   })
 })
+
+// The production presentation with a created page whose accepted Swedish body is `body`, adopted
+// as the Studio adopts it, on its own backend with an offline source, and the Studio opened on it.
+const COLLISION_PAGE_ID = '12222222-2222-4222-8222-222222222222'
+const OFFLINE_SOURCE =
+  '<!doctype html><html data-knc-source-listening="1"><script>addEventListener("message",e=>{document.documentElement.dataset.kncSourceError=e.data.id;document.documentElement.dataset.kncSourceFailure="Offline source"})</script></html>'
+const collisionStudio = async (page, context, body) => {
+  const created = createSitePage({
+    id: COLLISION_PAGE_ID,
+    path: '/collision',
+    name: { sv: 'Kollision', en: 'Collision' },
+  })
+  created.content.sv.html = body
+  const raw = {
+    ...documentFixture(),
+    presentation: JSON.parse(
+      gunzipSync(readFileSync(new URL('./fixtures/presentation.json.gz', import.meta.url))),
+    ).presentation,
+  }
+  raw.presentation.pages.push(created)
+  await page.goto(`${base}/tools/e2e/admin-harness.html`)
+  const { stored, adopted } = await page.evaluate(async (document) => {
+    const { normalizeDocument } = await import('/src/admin/cms/normalizeDocument.ts')
+    const stored = normalizeDocument(document)
+    return { stored, adopted: normalizeDocument(stored) === stored }
+  }, raw)
+  assert.equal(adopted, true, 'The stored document is already adopted')
+  const backend = await nativeBackend(context, stored)
+  await context.route('**/cms-public/source', (route) =>
+    route.fulfill({ contentType: 'text/html', body: OFFLINE_SOURCE }),
+  )
+  const collision = (document) =>
+    document.presentation.pages.find((item) => item.path === '/collision')
+  // The shared validation pipeline of the cms-studio validate and publish handlers accepts it.
+  const validated = await page.evaluate(async (document) => {
+    const { cmsApi } = await import('/src/admin/cms/api.ts')
+    return cmsApi.validate(document)
+  }, stored)
+  expect(collision(validated.document).content.sv.html).toBe(body)
+  const frame = page.frameLocator('.gjs-frame').first()
+  // Each opening is an owner's visit to the stored document.
+  const open = async (visit) => {
+    if (visit) await page.goto(`${base}/tools/e2e/admin-harness.html`)
+    await page.evaluate(async () =>
+      (await import('/tools/e2e/admin-harness.tsx')).mountCmsStudioHarness(),
+    )
+    await frame.locator('[data-knc-surface="desktop-home"]').waitFor({ timeout: 90000 })
+    await page
+      .locator('.cms-page-list')
+      .getByRole('button', { name: 'Kollision', exact: true })
+      .click()
+    await frame.locator('#editme').waitFor()
+    // The body renders before the load's last step configures the components and locks the
+    // generated header, which comes first; the page is ready for an edit only after that.
+    await expect
+      .poll(() =>
+        page.evaluate(async () => {
+          const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+          const wrapper = cmsGrapes.editors.at(-1)?.getWrapper()
+          const first = wrapper?.components().at(0)
+          return (
+            wrapper?.find('#editme').length === 1 &&
+            first?.get('tagName') === 'header' &&
+            first.get('selectable') === false
+          )
+        }),
+      )
+      .toBe(true)
+  }
+  // Edits only the heading, publishes, and returns the stored Swedish variant.
+  const publishHeading = async (heading, revision) => {
+    await select(page, '#editme')
+    await page.locator('#cms-inspector').getByLabel('Text', { exact: true }).fill(heading)
+    await page.getByRole('button', { name: 'Publicera', exact: true }).click()
+    await page.waitForFunction(
+      (revision) =>
+        globalThis.document.querySelector('.cms-status')?.textContent ===
+        `Publicerad · rev ${revision}`,
+      revision,
+      { timeout: 45000 },
+    )
+    return collision(backend.document).content.sv
+  }
+  await open(false)
+  return { frame, publishHeading, reopen: () => open(true) }
+}
+
+// The ids of the generated chrome. An accepted owner body can carry any of them, so capture must
+// know the generated header, content wrapper and footer from the render, not by these ids.
+const CHROME_IDS = ['cms-site-header', 'cms-site-menu', 'cms-site-content', 'cms-site-footer']
+for (const chromeId of CHROME_IDS)
+  test(`an owner section with id ${chromeId} survives two heading publications and a reopen, and generated chrome is never stored`, async ({
+    page,
+    context,
+  }) => {
+    const errors = []
+    page.on('pageerror', (error) => errors.push(error.message))
+    const ownerText = `Ägarens innehåll i ${chromeId}`
+    const studio = await collisionStudio(
+      page,
+      context,
+      `<main><h1 id="editme">Redigera mig</h1><section id="${chromeId}"><p>${ownerText}</p></section></main>`,
+    )
+    const expectOwnerBody = (html, heading) => {
+      expect(html.split(ownerText), `${chromeId}: the owner text is stored once`).toHaveLength(2)
+      expect(html, 'the stored body is the owner main element alone').toMatch(/^<main>.*<\/main>$/s)
+      expect(html).toContain(`<h1 id="editme">${heading}</h1>`)
+      // GrapesJS renames an owner id that a generated element before it already uses (-2).
+      expect(
+        [chromeId, `${chromeId}-2`].some((id) =>
+          html.includes(`<section id="${id}"><p>${ownerText}</p></section>`),
+        ),
+        `${chromeId}: the owner section is stored whole`,
+      ).toBe(true)
+      for (const generated of [
+        '<header',
+        '<nav',
+        '<footer',
+        'cms-site-bar',
+        '?lang=',
+        'Integritetspolicy',
+        'Bokningsvillkor',
+      ])
+        expect(html, `${chromeId}: generated ${generated} is never stored`).not.toContain(generated)
+    }
+    const first = await studio.publishHeading('Första rubriken', 2)
+    expectOwnerBody(first.html, 'Första rubriken')
+    await studio.reopen()
+    await expect(studio.frame.locator('footer')).toHaveCount(1)
+    await expect(studio.frame.getByText(ownerText, { exact: true })).toHaveCount(1)
+    const second = await studio.publishHeading('Andra rubriken', 3)
+    expectOwnerBody(second.html, 'Andra rubriken')
+    expect(second.html, 'a second publication stores the same body').toBe(
+      first.html.replace('Första rubriken', 'Andra rubriken'),
+    )
+    assert.deepEqual(errors, [], 'no unhandled browser errors')
+  })
+
+test('the canvas locks only the generated header and footer when owner sections carry their ids', async ({
+  page,
+  context,
+}) => {
+  const sections = CHROME_IDS.map(
+    (id) => `<section id="${id}"><p>Ägarens innehåll i ${id}</p></section>`,
+  ).join('')
+  await collisionStudio(page, context, `<main><h1 id="editme">Redigera mig</h1>${sections}</main>`)
+  const flags = await page.evaluate(async () => {
+    const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+    const editor = cmsGrapes.editors.at(-1)
+    const flag = (component) =>
+      ['selectable', 'removable', 'copyable'].map((name) => component.get(name))
+    const top = editor.getWrapper().components().models
+    return {
+      top: top.map((component) => component.get('tagName')),
+      header: flag(top[0]),
+      footer: flag(top[top.length - 1]),
+      owners: editor
+        .getWrapper()
+        .find('main section')
+        .map((component) => [component.getEl()?.textContent, ...flag(component)]),
+    }
+  })
+  expect(flags.top).toEqual(['header', 'div', 'footer'])
+  expect(flags.header, 'the generated header is locked').toEqual([false, false, false])
+  expect(flags.footer, 'the generated footer is locked').toEqual([false, false, false])
+  expect(flags.owners, 'every owner section stays selectable, removable and copyable').toEqual(
+    CHROME_IDS.map((id) => [`Ägarens innehåll i ${id}`, true, true, true]),
+  )
+})
+
+// The normalisation gives an inline style an id of its own; an owner id met before or after it
+// in the body must never be that id.
+for (const order of ['before', 'after'])
+  test(`an inline style never takes the owner id that comes ${order} it, through publication and reopen`, async ({
+    page,
+    context,
+  }) => {
+    const taken = `cms-page-${COLLISION_PAGE_ID}-sv-0`
+    const original = `<p id="${taken}">Ägarens id</p>`
+    const styled = '<p style="color:red">Ägarens röda text</p>'
+    const studio = await collisionStudio(
+      page,
+      context,
+      `<main><h1 id="editme">Redigera mig</h1>${order === 'before' ? original + styled : styled + original}</main>`,
+    )
+    const expectPaint = async (stage) => {
+      const painted = await studio.frame
+        .locator('main p')
+        .evaluateAll((nodes) =>
+          nodes.map((node) => [node.textContent, node.id, getComputedStyle(node).color]),
+        )
+      const byText = new Map(painted.map(([text, id, color]) => [text, { id, color }]))
+      expect(byText.get('Ägarens id')?.id, `${stage}: the owner paragraph keeps its id`).toBe(taken)
+      expect(byText.get('Ägarens id')?.color, `${stage}: the owner paragraph is not red`).not.toBe(
+        'rgb(255, 0, 0)',
+      )
+      expect(byText.get('Ägarens röda text')?.color, `${stage}: the styled paragraph is red`).toBe(
+        'rgb(255, 0, 0)',
+      )
+      expect(new Set(painted.map(([, id]) => id)).size, `${stage}: unique ids`).toBe(2)
+    }
+    await expectPaint('canvas')
+    const stored = await studio.publishHeading('Ny rubrik', 2)
+    const ids = [...stored.html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1])
+    expect(new Set(ids).size, `stored ids: ${ids.join(' ')}`).toBe(ids.length)
+    expect(stored.html).toContain(original)
+    await studio.reopen()
+    await expectPaint('reopened')
+  })
+
+// Rules an earlier Studio stored to hide its frozen header copy. The migrated page must show the
+// live header and keep the owner's own paint, however the rule is nested or spelled.
+const FROZEN_OWNED_BODY =
+  '<div id="cms-site-shell"><header id="cms-site-header">Old</header><div id="cms-site-content"><main class="owned">Body</main></div></div>'
+const FROZEN_HIDING_SHEETS = [
+  ['flat', '#cms-site-header{display:none}'],
+  ['nested', ':root{& #cms-site-header{display:none}}'],
+  ['escaped', String.raw`#cms\2d site-header{display:none}`],
+  [
+    'layered',
+    '@layer first{#cms-site-header{display:none}}@layer second{.owned{color:blue}}@layer first{.owned{color:red}}',
+  ],
+]
+for (const [shape, css] of FROZEN_HIDING_SHEETS)
+  test(`a migrated frozen page shows the live header and keeps owner paint after a ${shape} hiding rule`, async ({
+    page,
+  }) => {
+    const paint = async (html, sheet) => {
+      await page.setContent(`<!doctype html><style>${sheet}</style>${html}`)
+      return page.evaluate(() => {
+        const header = globalThis.document.querySelector('#cms-site-header')
+        return {
+          display: getComputedStyle(header).display,
+          height: header.getBoundingClientRect().height,
+          owned: getComputedStyle(globalThis.document.querySelector('.owned')).color,
+        }
+      })
+    }
+    const frozen = createSitePage({
+      id: '14444444-4444-4444-8444-444444444444',
+      path: '/offer',
+      name: { sv: 'Erbjudande', en: 'Offer' },
+    })
+    frozen.layout = 'independent'
+    for (const lang of ['sv', 'en'])
+      frozen.content[lang] = { html: FROZEN_OWNED_BODY, css: { light: css, dark: css } }
+    const stored = await paint(FROZEN_OWNED_BODY, css)
+    expect(stored.display, `${shape}: the stored rule hides the frozen header`).toBe('none')
+    const migrated = dropFrozenChrome(frozen)
+    const live = renderSitePage(
+      { ...seed.presentation, pages: [migrated] },
+      migrated,
+      'sv',
+      'light',
+      { phoneTel: '', phoneDisplay: '', mapsHref: '' },
+    )
+    const served = await paint(live.html, `${SITE_PAGE_CSS}\n${live.css.light}`)
+    expect(served.display, `${shape}: the live header is displayed`).not.toBe('none')
+    expect(served.height, `${shape}: the live header has a height`).toBeGreaterThan(0)
+    const own = await paint(live.html, live.css.light)
+    expect(own.owned, `${shape}: the owner body keeps its paint`).toBe(stored.owned)
+  })

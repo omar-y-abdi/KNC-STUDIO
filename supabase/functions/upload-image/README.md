@@ -9,16 +9,23 @@ as WebP before Storage receives them. Browser clients cannot insert or update bu
 images and the homepage logo to the canonical public read models. `barber_photo` remains available
 to the owner and to the barber for their own profile, including exact-path deletion.
 
-The legacy `gallery` and `site_logo` upload and JSON-delete kinds are retired. Even an authenticated
-owner receives HTTP 400 `invalid_payload` for these old-client requests, before image decoding or
-Storage/metadata writes. Use the current Studio media library and publish the assignment instead.
+This gateway no longer accepts the legacy `gallery` and `site_logo` upload and JSON-delete kinds.
+Even an authenticated owner receives HTTP 400 `invalid_payload` for these old-client requests,
+before image decoding or Storage/metadata writes. Use the current Studio media library and publish
+the assignment instead.
 
-Deploy this gateway before applying `20261028182853_retire_legacy_owner_media_writers.sql`, which
-removes only the four exclusive legacy gallery/logo writer RPCs with `DROP FUNCTION ... RESTRICT`.
-The canonical `gallery_images` and `site_settings` tables, CMS asset registration, barber-photo
-helpers, generic Storage deletion queue, retention checks, orphan reconciliation and fenced worker
-dispatch remain available. Already-queued gallery and logo deletion jobs keep their payloads and
-can still be dispatched; retirement does not discard cleanup work or enqueue new deletions.
+The database keeps the four legacy gallery/logo writer RPCs (`internal_insert_gallery_image`,
+`internal_delete_gallery_image`, `internal_replace_homepage_logo`, `internal_remove_homepage_logo`)
+in this release. This gateway calls none of them and the previous gateway still needs them, so a
+merge may deploy this gateway and the migrations in either order. Removing them is a later release:
+
+1. Deploy this gateway and verify it live: a Studio upload succeeds and an old `gallery` or
+   `site_logo` request returns HTTP 400.
+2. Then add a new forward migration that drops only those four RPCs with
+   `DROP FUNCTION ... RESTRICT`. The canonical `gallery_images` and `site_settings` tables, CMS
+   asset registration, barber-photo helpers, generic Storage deletion queue, retention checks,
+   orphan reconciliation and fenced worker dispatch stay. Already-queued gallery and logo deletion
+   jobs keep their payloads and can still be dispatched.
 
 `magick.wasm` is pinned from `@imagemagick/magick-wasm@0.0.42` and bundled through the function's
 `static_files` configuration. SHA-256:

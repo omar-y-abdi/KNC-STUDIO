@@ -134,17 +134,29 @@ export function DeliveryStatus({ port = defaultPort }: { port?: DeliveryStatusPo
     loadGeneration.current += 1
     setReload((count) => count + 1)
   }
+  // Orders failed-list reads against finished actions. A read that started before an action on a
+  // job finished may still carry that job as failed, so its answer leaves the job out; a read that
+  // started later is current and lists the job if it has failed again.
+  const sequence = useRef(0)
+  const settledAt = useRef(new Map<string, number>())
 
   useEffect(() => {
     let active = true
     loadGeneration.current += 1
+    sequence.current += 1
+    const startedAt = sequence.current
     setFailed({ state: 'loading' })
     setLog({ state: 'loading' })
     void port.listFailed().then((result) => {
       if (!active) return
       setFailed(
         result.ok
-          ? { state: 'ready', value: result.value }
+          ? {
+              state: 'ready',
+              value: result.value.filter(
+                (delivery) => (settledAt.current.get(delivery.id) ?? 0) < startedAt,
+              ),
+            }
           : { state: 'error', message: result.error.message },
       )
     })
@@ -171,10 +183,12 @@ export function DeliveryStatus({ port = defaultPort }: { port?: DeliveryStatusPo
       action === 'retry' ? await port.retry(delivery.id) : await port.discard(delivery.id)
     setBusy(null)
     setDiscardTarget(null)
-    if (!result.ok) {
-      setNotice(result.error.message)
-      return
-    }
+    if (!result.ok) setNotice(result.error.message)
+    // Not found means the job is no longer failed (another session retried or handled it), so it
+    // leaves the list like a successful action; any other error keeps it there to try again.
+    if (!result.ok && result.error.kind !== 'not_found') return
+    sequence.current += 1
+    settledAt.current.set(delivery.id, sequence.current)
     setFailed((previous) =>
       previous.state === 'ready'
         ? { state: 'ready', value: previous.value.filter((entry) => entry.id !== delivery.id) }
@@ -221,6 +235,11 @@ export function DeliveryStatus({ port = defaultPort }: { port?: DeliveryStatusPo
           },
     )
   }
+
+  // The copy dialog shows the row its copy was read with, so recipient, subject and outcome always
+  // belong to the body; until the copy arrives, the list entry that was opened.
+  const shown =
+    viewing === null ? null : viewing.copy.state === 'ready' ? viewing.copy.value : viewing.entry
 
   return (
     <div class="cms-delivery-status">
@@ -384,11 +403,11 @@ export function DeliveryStatus({ port = defaultPort }: { port?: DeliveryStatusPo
           </p>
         </CmsModal>
       )}
-      {viewing !== null && (
-        <CmsModal wide title={viewing.entry.subject} onClose={() => setViewing(null)}>
+      {viewing !== null && shown !== null && (
+        <CmsModal wide title={shown.subject} onClose={() => setViewing(null)}>
           <p class="cms-delivery-envelope">
-            Till {viewing.entry.recipient} · {stockholmTime(viewing.entry.createdAt)} ·{' '}
-            {outcomeLabel(viewing.entry.outcome)}
+            Till {shown.recipient} · {stockholmTime(shown.createdAt)} ·{' '}
+            {outcomeLabel(shown.outcome)}
           </p>
           {viewing.copy.state === 'loading' && <p role="status">Hämtar mejlet …</p>}
           {viewing.copy.state === 'error' && (
@@ -400,7 +419,7 @@ export function DeliveryStatus({ port = defaultPort }: { port?: DeliveryStatusPo
             <>
               <iframe
                 class="cms-delivery-frame"
-                title={`Kopia av ${viewing.entry.subject}`}
+                title={`Kopia av ${viewing.copy.value.subject}`}
                 sandbox=""
                 srcDoc={inertCopy(viewing.copy.value.html)}
               />

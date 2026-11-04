@@ -2,8 +2,13 @@ import { readFileSync } from 'node:fs'
 import { gunzipSync } from 'node:zlib'
 import { parse, parseFragment, serializeOuter, type DefaultTreeAdapterMap } from 'parse5'
 import { describe, expect, it } from 'vitest'
-import { emptyDocument, type CmsPage, type CmsPresentation } from '../../shared/cms'
-import { validateMarkup } from '../../shared/cms-markup'
+import {
+  emptyDocument,
+  validateCompleteDocument,
+  type CmsPage,
+  type CmsPresentation,
+} from '../../shared/cms'
+import { validateDocumentMarkupPlacements, validateMarkup } from '../../shared/cms-markup'
 import {
   SITE_PAGE_CSS,
   createSitePage,
@@ -14,6 +19,7 @@ import {
   isFrozenSitePage,
   isLiveSitePage,
   menuLinks,
+  normalizeSitePageContent,
   renderSitePage,
   sitePageBody,
   withoutFrozenChromeCss,
@@ -643,5 +649,195 @@ describe('a current-format page through the Studio normalisation', () => {
     expect(dropFrozenChrome(page)).toBe(page)
     const normalised = normalizeDocument(document)
     expect(normalised.presentation.pages.find((item) => item.id === page.id)).toEqual(page)
+  })
+})
+
+const policy = {
+  siteOrigin: 'https://bladeblendstudio.se',
+  storageOrigin: 'https://fixture.supabase.co',
+}
+/** The page passes the validators publication runs, so it is accepted owner content. */
+function expectAccepted(page: CmsPage): void {
+  const document = emptyDocument()
+  document.presentation.pages.push(page)
+  expect(() => validateCompleteDocument(document, emptyDocument())).not.toThrow()
+  expect(() => validateDocumentMarkupPlacements(document, policy)).not.toThrow()
+}
+const withSvBody = (html: string): CmsPage => {
+  const page = created('/hemsida', 'Ny sida')
+  page.content.sv = { ...page.content.sv, html }
+  return page
+}
+
+/** The ids the live render gives its generated header, menu, content wrapper and footer. */
+const CHROME_IDS = ['cms-site-header', 'cms-site-menu', 'cms-site-content', 'cms-site-footer']
+/** An owner body whose own section carries one of those ids. */
+const chromeIdBody = (id: string): string =>
+  `<main><h1 id="editme">Edit me</h1><section id="${id}"><p>Owner text in ${id}</p></section></main>`
+
+describe('an owner element that carries a live chrome id', () => {
+  it.each(CHROME_IDS)('stays in the body that capture keeps from the render: %s', (id) => {
+    const page = withSvBody(chromeIdBody(id))
+    expectAccepted(page)
+    const html = renderSitePage(presentationWith(page), page, 'sv', 'light', contact).html
+    expect(sitePageBody(html)).toBe(page.content.sv.html)
+  })
+
+  // GrapesJS gives each component its id in document order and renames a later duplicate with -2.
+  // The generated header, menu and content wrapper come before the body, so the owner's element is
+  // renamed; an owner cms-site-footer comes before the generated footer, so that one is renamed.
+  it.each(CHROME_IDS)(
+    'stays, and the generated chrome goes, in the export GrapesJS makes: %s',
+    (id) => {
+      const page = withSvBody(chromeIdBody(id))
+      const html = renderSitePage(presentationWith(page), page, 'sv', 'light', contact).html
+      const owner = `<section id="${id}">`
+      const renamed = `<section id="${id}-2">`
+      const exported =
+        id === 'cms-site-footer'
+          ? html.replace('<footer id="cms-site-footer">', '<footer id="cms-site-footer-2">')
+          : html.replace(owner, renamed)
+      expect(exported).not.toBe(html)
+      expect(sitePageBody(exported)).toBe(
+        id === 'cms-site-footer'
+          ? page.content.sv.html
+          : page.content.sv.html.replace(owner, renamed),
+      )
+    },
+  )
+})
+
+describe('the body capture keeps from an edited render', () => {
+  it('finds the generated chrome by its place when the owner removed or duplicated the wrapper', () => {
+    const page = withSvBody(chromeIdBody('cms-site-footer'))
+    const html = renderSitePage(presentationWith(page), page, 'sv', 'light', contact).html
+    const wrapped = `<div id="cms-site-content">${page.content.sv.html}</div>`
+    expect(html).toContain(wrapped)
+    expect(sitePageBody(html.replace(wrapped, ''))).toBe('')
+    const copy = `<div id="cms-site-content-2">${page.content.sv.html}</div>`
+    expect(sitePageBody(html.replace(wrapped, `${wrapped}${copy}`))).toBe(
+      `${page.content.sv.html}${copy}`,
+    )
+    // Without the generated footer the last element is the wrapper, which holds the body.
+    const footerless = html.slice(0, html.indexOf(wrapped) + wrapped.length)
+    expect(footerless.endsWith('</footer>')).toBe(false)
+    expect(sitePageBody(footerless)).toBe(page.content.sv.html)
+    // A body is not a render: nothing in it is chrome.
+    expect(sitePageBody(wrapped)).toBe(wrapped)
+  })
+})
+
+describe('the ids a created page allocates for its inline styles', () => {
+  const id = '12222222-2222-4222-8222-222222222222'
+  const taken = `cms-page-${id}-sv-0`
+  const original = `<p id="${taken}">ORIGINAL ID</p>`
+  const styled = '<p style="color:red">STYLED</p>'
+  const textOf = (node: Element): string =>
+    node.childNodes.map((child) => ('value' in child ? child.value : '')).join('')
+
+  it.each([
+    ['before', `<main><h1 id="editme">Edit me</h1>${original}${styled}</main>`],
+    ['after', `<main><h1 id="editme">Edit me</h1>${styled}${original}</main>`],
+  ])('never take a body id that comes %s the styled element', (_order, html) => {
+    const page = createSitePage({
+      id,
+      path: '/collision',
+      name: { sv: 'Kollision', en: 'Collision' },
+    })
+    page.content.sv = { ...page.content.sv, html }
+    expectAccepted(page)
+    const render = renderSitePage(presentationWith(page), page, 'sv', 'light', contact)
+    for (const result of [normalizeSitePageContent(page.content.sv, `${id}-sv`), render]) {
+      const nodes = parsedElements(result.html)
+      const ids = nodes.flatMap((node) => value(node, 'id') ?? [])
+      expect(new Set(ids).size, `ids: ${ids.join(' ')}`).toBe(ids.length)
+      const paragraph = (text: string): Element => {
+        const found = nodes.find((node) => node.tagName === 'p' && textOf(node) === text)
+        if (!found) throw new Error(`No paragraph ${text}`)
+        return found
+      }
+      expect(value(paragraph('ORIGINAL ID'), 'id')).toBe(taken)
+      expect(value(paragraph('STYLED'), 'style')).toBeUndefined()
+      const allocated = JSON.stringify(value(paragraph('STYLED'), 'id'))
+      for (const css of [result.css.light, result.css.dark]) {
+        expect(css).toContain(`[id=${allocated}]{color:red}`)
+        expect(css).not.toContain(`[id=${JSON.stringify(taken)}]`)
+      }
+    }
+  })
+})
+
+describe('the frozen chrome rules the migration drops', () => {
+  const frozenHtml =
+    '<div id="cms-site-shell"><header id="cms-site-header">Old</header><div id="cms-site-content"><main class="owned">Body</main></div></div>'
+  const frozenWith = (css: string): CmsPage => {
+    const variant = { html: frozenHtml, css: { light: css, dark: css } }
+    return {
+      ...created('/offer', 'Offer'),
+      layout: 'independent',
+      content: { sv: variant, en: structuredClone(variant) },
+    }
+  }
+  /** Named layers in the order the sheet first names them. */
+  const layerOrder = (css: string): string[] => [
+    ...new Set([...css.matchAll(/@layer\s+([\w-]+)/g)].map((match) => match[1] ?? '')),
+  ]
+
+  it.each([
+    ['flat', '#cms-site-header{display:none}'],
+    ['nested', ':root{& #cms-site-header{display:none}}'],
+    ['escaped', String.raw`#cms\2d site-header{display:none}`],
+    ['escaped attribute value', String.raw`[id=cms\2d site-header]{display:none}`],
+    ['escaped attribute name', String.raw`[i\64="cms-site-header"]{display:none}`],
+    ['uppercase attribute name', '[ID="cms-site-header"]{display:none}'],
+    ['case-insensitive quoted value', '[id="CMS-SITE-HEADER" i]{display:none}'],
+    ['case-insensitive unquoted value', '[id=CMS-SITE-HEADER I]{display:none}'],
+  ])('drops the %s rule that hides the frozen header', (_shape, css) => {
+    const page = frozenWith(css)
+    expectAccepted(page)
+    const migrated = dropFrozenChrome(page)
+    expect(migrated.content.sv.html).toBe('<main class="owned">Body</main>')
+    for (const lang of ['sv', 'en'] as const)
+      for (const mode of ['light', 'dark'] as const)
+        expect(migrated.content[lang].css[mode]).not.toContain('display:none')
+  })
+
+  // Without the i flag an attribute value keeps its case, so these name no frozen id.
+  it.each([
+    ['s flag', '[id="CMS-SITE-HEADER" s]{display:none}'],
+    ['no flag', '[id="CMS-SITE-HEADER"]{display:none}'],
+  ])('keeps a rule whose case-sensitive value names no frozen id: %s', (_shape, css) => {
+    expect(() => validateMarkup('', css, policy)).not.toThrow()
+    expect(withoutFrozenChromeCss(css)).toBe(css)
+  })
+
+  it.each([
+    [':root{color:blue;& #cms-site-header{display:none}}', ':root{color:blue;}'],
+    [
+      '.owned{color:blue;@media (min-width:1px){& #cms-site-header{display:none}}}',
+      '.owned{color:blue;}',
+    ],
+  ])(
+    'keeps every other byte of a rule whose nested rule hid the frozen header: %s',
+    (css, kept) => {
+      expect(() => validateMarkup('', css, policy)).not.toThrow()
+      expect(withoutFrozenChromeCss(css)).toBe(kept)
+    },
+  )
+
+  it('keeps the order named layers are first declared in when a layer block held only chrome', () => {
+    const css =
+      '@layer first{#cms-site-header{display:none}}@layer second{.owned{color:blue}}@layer first{.owned{color:red}}'
+    const page = frozenWith(css)
+    expectAccepted(page)
+    expect(layerOrder(css)).toEqual(['first', 'second'])
+    for (const lang of ['sv', 'en'] as const)
+      for (const mode of ['light', 'dark'] as const) {
+        const migrated = dropFrozenChrome(page).content[lang].css[mode]
+        expect(migrated).not.toContain('display:none')
+        expect(migrated).toContain('@layer second{.owned{color:blue}}')
+        expect(migrated).toContain('@layer first{.owned{color:red}}')
+        expect(layerOrder(migrated)).toEqual(['first', 'second'])
+      }
   })
 })

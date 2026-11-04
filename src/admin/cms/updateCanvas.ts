@@ -19,9 +19,13 @@ export function updateNativeCanvas(editor: Editor, html: string, rules: CssRuleJ
 }
 
 /** Patch only the generated live header when its structure still matches. The authored body,
- * selection and CSS stay intact; structural header changes use the normal canvas import. */
+ * selection and CSS stay intact; structural header changes use the normal canvas import. The
+ * generated header is the wrapper's first header, since an owner section may carry its id. */
 export function updateSiteHeader(editor: Editor, html: string): boolean {
-  const header = editor.Components.getById('cms-site-header')
+  const header = editor
+    .getWrapper()
+    ?.components()
+    .models.find((component) => component.get('tagName') === 'header')
   if (!header) return false
   const parsed = editor.Parser.parseHtml(html, { asDocument: false })
   const definitions = children(parsed.html)

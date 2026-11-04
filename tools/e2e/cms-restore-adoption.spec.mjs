@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { gunzipSync } from 'node:zlib'
-import { emptyDocument } from '../../shared/cms.ts'
+import { emptyDocument, validateDocument } from '../../shared/cms.ts'
+import { CMS_BUILT_ASSETS } from '../../shared/cms-built-assets.ts'
+import { validateDocumentMarkupPlacements } from '../../shared/cms-markup.ts'
+import { createSitePage } from '../../shared/site-page.ts'
 import { nativeBackend } from './cms-backend.mjs'
 import { expect, test } from './fixtures.mjs'
 import { harnessOrigin } from './origins.mjs'
+import { routeApi } from './route-api.mjs'
 
 test.use({ viewport: { width: 1440, height: 900 } })
 
@@ -16,6 +20,15 @@ const legacyDocument = async () => ({
 })
 
 async function mountStudio(page) {
+  await renderStudio(page)
+  await page
+    .frameLocator('.gjs-frame')
+    .first()
+    .locator('[data-knc-surface="desktop-home"]')
+    .waitFor({ timeout: 90000 })
+}
+
+async function renderStudio(page) {
   await page.evaluate(async () => {
     const { CmsDraft } = await import('/src/admin/cms/draft.ts')
     const { h, render } = await import('/tools/e2e/admin-harness.tsx')
@@ -33,11 +46,6 @@ async function mountStudio(page) {
     const root = globalThis.document.querySelector('#root')
     render(h(CmsStudio, { onExit: () => render(null, root) }), root)
   })
-  await page
-    .frameLocator('.gjs-frame')
-    .first()
-    .locator('[data-knc-surface="desktop-home"]')
-    .waitFor({ timeout: 90000 })
 }
 
 async function openStudio(page) {
@@ -439,4 +447,337 @@ test('cms-restore-adoption reloading Studio starts a new lifetime', async ({ con
     before,
     'A reload must start a new document and module lifetime',
   )
+})
+
+// The publication validators the fake cms-studio applies, for the heads these tests build.
+const publicationPolicy = {
+  siteOrigin: new URL(harnessOrigin).origin,
+  storageOrigin: 'https://admin-harness.invalid',
+  builtAssets: CMS_BUILT_ASSETS,
+}
+function accepted(document) {
+  validateDocument(document)
+  validateDocumentMarkupPlacements(document, publicationPolicy)
+}
+
+// Studio's own adoption of an empty site, published once: a complete current head, revision 2.
+async function publishedHead(context) {
+  const backend = await nativeBackend(context)
+  const setup = await context.newPage()
+  await openStudio(setup)
+  await setup.getByRole('button', { name: 'Publicera', exact: true }).click()
+  await expect(setup.locator('.cms-status')).toHaveText('Publicerad · rev 2', { timeout: 45000 })
+  await setup.close()
+  return backend
+}
+
+const needsSource = (page, document) =>
+  page.evaluate(
+    async (value) => (await import('/src/admin/cms/corePages.ts')).needsCorePageSource(value),
+    document,
+  )
+
+// The background source upgrade has migrated the live draft once (see mountStudio).
+const waitForMigration = (page) =>
+  expect
+    .poll(() => page.evaluate(() => Boolean(globalThis.cmsMigratedDraft)), { timeout: 90000 })
+    .toBe(true)
+
+// Publicera as the owner clicks it; the endpoint's answer names any rejection.
+async function publishNow(page, revision) {
+  const [response] = await Promise.all([
+    page.waitForResponse(
+      (response) =>
+        response.url().endsWith('/functions/v1/cms-studio') &&
+        response.request().method() === 'POST' &&
+        response.request().postDataJSON()?.operation === 'publish',
+      { timeout: 90000 },
+    ),
+    page.getByRole('button', { name: 'Publicera', exact: true }).click(),
+  ])
+  assert.equal(response.status(), 200, `Publication rejected: ${await response.text()}`)
+  await expect(page.locator('.cms-status')).toHaveText(`Publicerad · rev ${revision}`, {
+    timeout: 45000,
+  })
+}
+
+// The Studio JSON import, from the backup dialog that holds it.
+async function importDocument(page, document, name) {
+  await page.getByRole('button', { name: /Utkast & backup/ }).click()
+  await page.locator('input[type="file"][accept="application/json,.json"]').setInputFiles({
+    name,
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(document)),
+  })
+  await page
+    .getByText('JSON-utkastet importerades och är ännu inte publicerat.', { exact: true })
+    .waitFor()
+  await closeBackup(page)
+}
+
+const contactOf = (document) => document.presentation.pages.find(({ path }) => path === '/contact')
+const CONTACT_ID = '10000000-0000-4000-8000-000000000007'
+// A Contact page an earlier Studio created at /contact under a random identity.
+const HISTORICAL_CONTACT_ID = '20000000-0000-4000-8000-000000000099'
+const createdPage = (index, id = `20000000-0000-4000-8000-${String(index).padStart(12, '0')}`) =>
+  createSitePage({ id, path: `/sida-${index}`, name: { sv: `Sida ${index}`, en: `Page ${index}` } })
+
+// G06: adding the mandatory Contact page must respect the page budget and page identities.
+for (const { label, count, reserved } of [
+  { label: 'at the 50-page maximum', count: 50, reserved: false },
+  {
+    label: 'at the 50-page maximum beside a page on the reserved Contact identity',
+    count: 50,
+    reserved: true,
+  },
+  { label: 'beside a created page on the reserved Contact identity', count: 7, reserved: true },
+]) {
+  test(`cms-restore-adoption the Contact upgrade keeps a pre-Contact head publishable ${label}`, async ({
+    context,
+  }) => {
+    const backend = await publishedHead(context)
+    // The published head as it stood before Contact became a core page, with created pages.
+    const head = backend.document
+    head.presentation.pages = head.presentation.pages.filter(({ path }) => path !== '/contact')
+    for (let index = 1; head.presentation.pages.length < count; index++)
+      head.presentation.pages.push(
+        createdPage(index, reserved && index === 1 ? CONTACT_ID : undefined),
+      )
+    accepted(head)
+    const original = globalThis.structuredClone(head)
+    const page = await context.newPage()
+    await openStudio(page)
+    // Only Contact can need the source here, and only while the head has room for it.
+    const migrates = await needsSource(page, original)
+    if (migrates) await waitForMigration(page)
+    const name = 'Startsida efter Kontakt-uppgraderingen'
+    await nameField(page).fill(name)
+    await publishNow(page, 3)
+    assert.equal(migrates, count < 50, 'Only a head with room for Contact asks for the source')
+    const published = globalThis.structuredClone(backend.document)
+    accepted(published)
+    assert.equal(
+      published.presentation.pages.filter((item) => item.path === '/contact').length,
+      count < 50 ? 1 : 0,
+    )
+    for (const before of original.presentation.pages) {
+      const after = published.presentation.pages.find(({ id }) => id === before.id)
+      assert.deepEqual(
+        { path: after?.path, content: after?.content },
+        { path: before.path, content: before.content },
+        `${before.path} keeps its identity and content`,
+      )
+    }
+    assert.equal(published.presentation.pages.find(({ path }) => path === '/')?.name.sv, name)
+    // The next visit opens the published head as published.
+    const reopened = await context.newPage()
+    await openStudio(reopened)
+    assert.equal(await needsSource(reopened, published), false, 'No source capture is left')
+    await expect(reopened.locator('.cms-status')).toHaveText('Publicerad · rev 3')
+  })
+}
+
+// Delete and Duplicate follow the fixed route, not the identity. The head is what the Contact
+// upgrade leaves beside a created page on the reserved Contact identity: Contact on the first free
+// identity. The owner's page stays the owner's to delete; Contact stays protected.
+test('cms-restore-adoption page protection follows the fixed route, not a reserved identity', async ({
+  context,
+}) => {
+  const backend = await publishedHead(context)
+  const head = backend.document
+  const contactId = '10000000-0000-4000-8000-000000000008'
+  contactOf(head).id = contactId
+  head.presentation.pages.push(
+    createSitePage({
+      id: CONTACT_ID,
+      path: '/agarsida',
+      name: { sv: 'Ägarsida', en: 'Owner page' },
+    }),
+  )
+  accepted(head)
+  const page = await context.newPage()
+  await openStudio(page)
+  const pages = page.locator('.cms-page-list')
+  const settings = page.getByRole('button', { name: 'Sidinställningar', exact: true })
+  const meta = page.locator('.cms-page-meta')
+  await pages.getByRole('button', { name: 'Kontakt', exact: true }).click()
+  await settings.click()
+  await expect(meta.getByLabel('Adress', { exact: true })).toHaveValue('/contact')
+  await expect(meta.getByRole('button', { name: 'Ta bort', exact: true })).toHaveCount(0)
+  await expect(meta.getByRole('button', { name: 'Duplicera', exact: true })).toHaveCount(0)
+  await pages.getByRole('button', { name: 'Ägarsida', exact: true }).click()
+  await settings.click()
+  await expect(meta.getByLabel('Adress', { exact: true })).toHaveValue('/agarsida')
+  await expect(meta.getByRole('button', { name: 'Duplicera', exact: true })).toBeVisible()
+  await meta.getByRole('button', { name: 'Ta bort', exact: true }).click()
+  const confirm = page.getByRole('dialog', { name: 'Ta bort Ägarsida?', exact: true })
+  await confirm.getByRole('button', { name: 'Ta bort sidan', exact: true }).click()
+  await confirm.waitFor({ state: 'detached' })
+  await expect(pages.getByRole('button', { name: 'Ägarsida', exact: true })).toHaveCount(0)
+  await publishNow(page, 3)
+  const published = backend.document
+  accepted(published)
+  assert.equal(
+    published.presentation.pages.some(({ id }) => id === CONTACT_ID),
+    false,
+    'The owner page is deleted',
+  )
+  assert.equal(contactOf(published)?.id, contactId, 'Contact keeps its identity')
+})
+
+// G07: a revision from before Contact must not drop the current Contact, whatever its identity.
+for (const path of ['history restore', 'JSON import']) {
+  test(`cms-restore-adoption ${path} of a pre-Contact revision keeps a current Contact with a historical identity`, async ({
+    context,
+  }) => {
+    const backend = await publishedHead(context)
+    const head = backend.document
+    contactOf(head).id = HISTORICAL_CONTACT_ID
+    accepted(head)
+    const current = globalThis.structuredClone(contactOf(head))
+    const preContact = globalThis.structuredClone(head)
+    preContact.presentation.pages = preContact.presentation.pages.filter(
+      (page) => page.path !== '/contact',
+    )
+    preContact.presentation.pages[0].name.sv = 'Startsida före Kontakt'
+    accepted(preContact)
+    // History revision 1 holds the same site from before Contact existed.
+    await routeApi(context, [
+      [
+        '**/functions/v1/cms-studio',
+        (route, headers) => {
+          const body = route.request().postDataJSON()
+          return body?.operation === 'revision' && body.revision === 1
+            ? route.fulfill({ headers, json: { document: preContact } })
+            : route.fallback()
+        },
+      ],
+    ])
+    const page = await context.newPage()
+    await openStudio(page)
+    assert.equal(await needsSource(page, head), false, 'The complete head needs no source')
+    await expect(page.locator('.cms-status')).toHaveText('Publicerad · rev 2')
+    if (path === 'history restore') {
+      await page.getByRole('button', { name: 'Historik', exact: true }).click()
+      await page
+        .locator('.cms-history-row')
+        .filter({ has: page.getByText('v1', { exact: true }) })
+        .getByRole('button', { name: 'Återställ till utkast', exact: true })
+        .click()
+    } else await importDocument(page, preContact, 'fore-kontakt.json')
+    await expect(nameField(page)).toHaveValue('Startsida före Kontakt')
+    await publishNow(page, 3)
+    assert.deepEqual(
+      contactOf(backend.document),
+      current,
+      `${path} of a revision from before Contact must keep the current Contact`,
+    )
+  })
+}
+
+// G08: an empty historical Contact variant is optional upgrade work, never a source dependency.
+const OFFLINE_SOURCE =
+  '<!doctype html><html data-knc-source-listening="1"><script>addEventListener("message",e=>{document.documentElement.dataset.kncSourceError=e.data.id;document.documentElement.dataset.kncSourceFailure="Offline source"})</script></html>'
+const CONTACT_BODIES = {
+  sv: '<main id="kontakt"><h1>Kontakta oss</h1><p>Ring salongen.</p></main>',
+  en: '<main id="contact"><h1>Contact us</h1><p>Call the salon.</p></main>',
+}
+const historicalContact = (html) => ({
+  id: HISTORICAL_CONTACT_ID,
+  path: '/contact',
+  kind: 'page',
+  inMenu: false,
+  name: { sv: 'Kontakt', en: 'Contact' },
+  title: { sv: 'Kontakt', en: 'Contact' },
+  description: { sv: '', en: '' },
+  content: {
+    sv: { html: html.sv, css: { light: '#kontakt{padding:8px}', dark: '#kontakt{padding:8px}' } },
+    en: { html: html.en, css: { light: '#contact{padding:8px}', dark: '#contact{padding:8px}' } },
+  },
+})
+
+for (const [label, html] of [
+  ['an empty Swedish body', { sv: '', en: CONTACT_BODIES.en }],
+  ['an empty English body', { sv: CONTACT_BODIES.sv, en: '' }],
+  ['both bodies empty', { sv: '', en: '' }],
+  ['a complete body', CONTACT_BODIES],
+]) {
+  test(`cms-restore-adoption stored pages open without the source beside a historical Contact with ${label}`, async ({
+    context,
+    page,
+  }) => {
+    const initial = await legacyWithoutBookingMarkers()
+    const contact = historicalContact(html)
+    initial.presentation.pages.push(contact)
+    accepted(initial)
+    const backend = await nativeBackend(context, initial)
+    const source = '**/cms-public/source'
+    const offline = (route) => route.fulfill({ contentType: 'text/html', body: OFFLINE_SOURCE })
+    await context.route(source, offline)
+    await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html?view=cms-studio`)
+    assert.equal(await needsSource(page, initial), true, 'Optional source upgrades remain')
+    await renderStudio(page)
+    const blocked = page.locator('.cms-loading [role="alert"]')
+    await page.locator('.gjs-frame').or(blocked).first().waitFor({ timeout: 90000 })
+    assert.equal(
+      await blocked.count(),
+      0,
+      `Studio did not open: ${(await page.locator('.cms-loading').allTextContents()).join(' ')}`,
+    )
+    await page
+      .frameLocator('.gjs-frame')
+      .first()
+      .locator('[data-knc-surface="desktop-home"]')
+      .waitFor({ timeout: 90000 })
+    await expect(page.getByRole('button', { name: 'Publicera', exact: true })).toBeEnabled()
+    const failure = page
+      .getByRole('alert')
+      .filter({ hasText: 'Fler redigeringsvyer kunde inte förberedas.' })
+    await expect(failure).toContainText('Offline source', { timeout: 90000 })
+    // Recovery: the source answers again and the optional upgrade completes.
+    await context.unroute(source, offline)
+    await failure.getByRole('button', { name: 'Försök igen', exact: true }).click()
+    await waitForSourceUpgrade(page)
+    const authored = ['sv', 'en'].filter((lang) => html[lang])
+    const migrated = contactOf((await liveDraft(page)).document)
+    for (const lang of authored)
+      assert.deepEqual(migrated?.content[lang], contact.content[lang], `${lang} Contact bytes`)
+    await publishNow(page, 2)
+    for (const lang of authored)
+      assert.deepEqual(contactOf(backend.document)?.content[lang], contact.content[lang])
+  })
+}
+
+// G08: in a current head, an empty Contact variant is the only source work left, and the source
+// fills that variant alone.
+test('cms-restore-adoption the source fills only the empty variant of a current Contact', async ({
+  context,
+}) => {
+  const backend = await publishedHead(context)
+  const head = backend.document
+  const authored = globalThis.structuredClone(contactOf(head).content.sv)
+  contactOf(head).content.en.html = ''
+  accepted(head)
+  const page = await context.newPage()
+  await openStudio(page)
+  assert.equal(await needsSource(page, head), true, 'The empty variant asks for the source')
+  await waitForMigration(page)
+  const draft = (await liveDraft(page)).document
+  const migrated = contactOf(draft)
+  assert.deepEqual(migrated?.content.sv, authored, 'The authored variant keeps its bytes')
+  assert.match(migrated?.content.en.html ?? '', /data-business-contact-page="1"/)
+  // Publication stores markup as validateDocumentMarkupPlacements serializes it. The source's
+  // English template is raw file bytes, so its first publication stores that serialization, as
+  // for a Contact the source adds whole; the published authored variant is already serialized.
+  const stored = globalThis.structuredClone(draft)
+  validateDocumentMarkupPlacements(stored, publicationPolicy)
+  await publishNow(page, 3)
+  accepted(backend.document)
+  const published = contactOf(backend.document)
+  assert.deepEqual(
+    published?.content.sv,
+    authored,
+    'The authored variant is published byte for byte',
+  )
+  assert.deepEqual(published?.content.en, contactOf(stored)?.content.en)
 })
