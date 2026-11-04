@@ -1138,8 +1138,9 @@ async function holdAboutIdle(page) {
   })
 }
 
-/** The adopted fixture, with `aboutCss` appended to each of its stored About sheets. */
-async function openAdoptedFixture(page, context, aboutCss = '') {
+/** The adopted fixture, with `aboutCss` appended to each of its stored About sheets and `homeCss`
+ * to each of its stored Home sheets. `prepare` may change the stored presentation further. */
+async function openAdoptedFixture(page, context, { aboutCss = '', homeCss = '', prepare } = {}) {
   const raw = {
     ...emptyDocument(),
     presentation: JSON.parse(
@@ -1150,6 +1151,11 @@ async function openAdoptedFixture(page, context, aboutCss = '') {
     raw.presentation.pages.find((item) => item.path === '/about').content,
   ))
     for (const mode of ['light', 'dark']) variant.css[mode] += aboutCss
+  for (const variant of Object.values(
+    raw.presentation.pages.find((item) => item.path === '/').content,
+  ))
+    for (const mode of ['light', 'dark']) variant.css[mode] += homeCss
+  prepare?.(raw.presentation)
   await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
   // This is the pre-E6 adoption baseline, including legal and marquee migrations.
   const adopted = await page.evaluate(async (doc) => {
@@ -1396,7 +1402,7 @@ for (const [label, width] of [
   }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     const rule = `@media (min-width:769px){@supports (display:grid){#om-oss-heading{width:${width}}}}`
-    const { backend, adopted } = await openAdoptedFixture(page, context, rule)
+    const { backend, adopted } = await openAdoptedFixture(page, context, { aboutCss: rule })
     const aboutOf = (document) =>
       document.presentation.pages.find((item) => item.path === '/about').content
     const stored = aboutOf(adopted)
@@ -1450,3 +1456,405 @@ for (const [label, width] of [
       assert.equal(saved[lang].css[mode], stored[lang].css[mode], `${lang}/${mode} changed`)
   })
 }
+
+// Home stores the same Desktop width for its own element. A text edit there is no owner edit.
+for (const [label, width] of [
+  ['a normal', '200px'],
+  // Control: export keeps a stored !important width as it is.
+  ['an !important', '200px!important'],
+]) {
+  test(`a Home text edit leaves ${label} conditional Desktop width out of the other Home sheets`, async ({
+    page,
+    context,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    // The native Home label "BARBERSHOP · GÖTEBORG"; its stored rule is empty in every sheet.
+    const id = 'knc-desktop-home-0-i1-i0-i1'
+    const rule = `@media (min-width:769px){@supports (display:grid){#${id}{width:${width}}}}`
+    const { backend, adopted } = await openAdoptedFixture(page, context, { homeCss: rule })
+    const homeOf = (document) =>
+      document.presentation.pages.find((item) => item.path === '/').content
+    const stored = homeOf(adopted)
+    for (const lang of ['sv', 'en']) {
+      assert.ok(stored[lang].html.includes(`id="${id}"`), `${lang}: the label has its id`)
+      for (const mode of ['light', 'dark'])
+        assert.ok(stored[lang].css[mode].includes(rule), `${lang}/${mode}: adoption keeps the rule`)
+    }
+    const text = 'Barbershop efter en textändring'
+    await page.evaluate(
+      async ({ id, text }) => {
+        const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+        const [label, ...others] = cmsGrapes.editors.at(-1).getWrapper().find(`#${id}`)
+        if (!label?.getEl()?.closest('[data-knc-surface="desktop-home"]') || others.length)
+          throw new Error('Desktop Home must hold the one editable label')
+        label.components(text)
+      },
+      { id, text },
+    )
+    await page.getByRole('button', { name: 'Publicera', exact: true }).click()
+    await expect(page.locator('.cms-status')).toHaveText(/^Publicerad/, { timeout: 45000 })
+    const saved = homeOf(backend.document)
+    assert.ok(saved.sv.html.includes(text), 'The text edit reaches Home')
+    for (const [lang, mode] of [
+      ['sv', 'dark'],
+      ['en', 'light'],
+      ['en', 'dark'],
+    ])
+      assert.equal(saved[lang].css[mode], stored[lang].css[mode], `${lang}/${mode} changed`)
+  })
+}
+
+// About may store a rule that also names a Home element by attribute. Only About's extract keeps
+// that rule whole, and Home's export drops what is left of it. Home's part of the canvas before the
+// edit drops it too, so the copy is no Home layout edit, also when the edit changes the copy.
+for (const [label, edited] of [
+  ['a Home text edit', ''],
+  ['a Home text edit that also edits the copy', '310px'],
+]) {
+  test(`About's copy of a Home width stays out of the other Home sheets after ${label}`, async ({
+    page,
+    context,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    const id = 'knc-desktop-home-0-i1-i0-i1'
+    const homeRule = `[id="${id}"]{width:250px}`
+    const aboutRule = `#om-oss-heading,[id="${id}"]{width:300px}`
+    const { backend, adopted } = await openAdoptedFixture(page, context, {
+      aboutCss: aboutRule,
+      homeCss: homeRule,
+    })
+    const contentOf = (document, path) =>
+      document.presentation.pages.find((item) => item.path === path).content
+    const stored = contentOf(adopted, '/')
+    for (const lang of ['sv', 'en'])
+      for (const mode of ['light', 'dark']) {
+        assert.ok(
+          stored[lang].css[mode].includes(homeRule),
+          `${lang}/${mode}: adoption keeps Home's rule`,
+        )
+        assert.ok(
+          contentOf(adopted, '/about')[lang].css[mode].includes(aboutRule),
+          `${lang}/${mode}: adoption keeps About's rule`,
+        )
+      }
+    const text = 'Barbershop efter en textändring'
+    await page.evaluate(
+      async ({ id, text, edited }) => {
+        const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+        const editor = cmsGrapes.editors.at(-1)
+        const [label, ...others] = editor.getWrapper().find(`#${id}`)
+        if (!label?.getEl()?.closest('[data-knc-surface="desktop-home"]') || others.length)
+          throw new Error('Desktop Home must hold the one editable label')
+        if (edited) {
+          // No style control reaches this rule: GrapesJS gives a component only a rule without an
+          // added selector. The edit goes to the canvas rule itself.
+          const [rule, ...copies] = editor.Css.getAll().models.filter(
+            (rule) =>
+              !rule.getAtRule() &&
+              rule.selectorsToString().replace(/\s/g, '') === `#om-oss-heading,[id="${id}"]`,
+          )
+          if (!rule || copies.length) throw new Error("The canvas must hold About's one copy")
+          rule.addStyle({ width: edited })
+        }
+        label.components(text)
+      },
+      { id, text, edited },
+    )
+    await page.getByRole('button', { name: 'Publicera', exact: true }).click()
+    await expect(page.locator('.cms-status')).toHaveText(/^Publicerad/, { timeout: 45000 })
+    const saved = contentOf(backend.document, '/')
+    assert.ok(saved.sv.html.includes(text), 'The text edit reaches Home')
+    if (edited)
+      assert.ok(
+        contentOf(backend.document, '/about').sv.css.light.includes(
+          `#om-oss-heading,[id="${id}"]{width:${edited}}`,
+        ),
+        'The edit of the copy reaches About',
+      )
+    for (const [lang, mode] of [
+      ['sv', 'dark'],
+      ['en', 'light'],
+      ['en', 'dark'],
+    ])
+      assert.equal(saved[lang].css[mode], stored[lang].css[mode], `${lang}/${mode} changed`)
+  })
+}
+
+// Home's sheets may store a body rule with geometry. The canvas binds it to its wrapper and the
+// export names the body again, so a text edit is no layout edit. A sync would move the rule behind
+// the rule that follows it.
+test('a Home text edit leaves a body geometry rule followed by another rule out of the other Home sheets', async ({
+  page,
+  context,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const id = 'knc-desktop-home-0-i1-i0-i1'
+  const homeCss = 'html body{padding-top:0px}.cms-after-body{color:inherit}'
+  const { backend, adopted } = await openAdoptedFixture(page, context, { homeCss })
+  const homeOf = (document) => document.presentation.pages.find((item) => item.path === '/').content
+  const stored = homeOf(adopted)
+  for (const lang of ['sv', 'en'])
+    for (const mode of ['light', 'dark'])
+      assert.ok(
+        stored[lang].css[mode].includes(homeCss),
+        `${lang}/${mode}: adoption keeps the body rule and the rule after it`,
+      )
+  const text = 'Barbershop efter en textändring'
+  await page.evaluate(
+    async ({ id, text }) => {
+      const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+      const [label, ...others] = cmsGrapes.editors.at(-1).getWrapper().find(`#${id}`)
+      if (!label?.getEl()?.closest('[data-knc-surface="desktop-home"]') || others.length)
+        throw new Error('Desktop Home must hold the one editable label')
+      label.components(text)
+    },
+    { id, text },
+  )
+  await page.getByRole('button', { name: 'Publicera', exact: true }).click()
+  await expect(page.locator('.cms-status')).toHaveText(/^Publicerad/, { timeout: 45000 })
+  const saved = homeOf(backend.document)
+  assert.ok(saved.sv.html.includes(text), 'The text edit reaches Home')
+  for (const [lang, mode] of [
+    ['sv', 'dark'],
+    ['en', 'light'],
+    ['en', 'dark'],
+  ])
+    assert.equal(saved[lang].css[mode], stored[lang].css[mode], `${lang}/${mode} changed`)
+})
+
+/** Each sheet's element `id` at Mobile and at Desktop width, painted as the Worker paints a native
+ * page: the native style of the sheet's mode, from data-knc-dark or else data-knc-light, is the
+ * element's inline style under the sheet. Also each width a rule for the element sets, with its
+ * priority and the conditions around that rule. */
+async function liveLayouts(context, id, sheets) {
+  const probe = await context.newPage()
+  try {
+    await probe.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
+    return await probe.evaluate(
+      ({ id, sheets }) =>
+        sheets.map(({ html, css, mode }) => {
+          const source = new globalThis.DOMParser()
+            .parseFromString(html, 'text/html')
+            .getElementById(id)
+          const native =
+            source?.getAttribute(`data-knc-${mode}`) ?? source?.getAttribute('data-knc-light')
+          if (!source || typeof native !== 'string')
+            throw new Error(`The markup must hold #${id} with its native style`)
+          const render = (width) => {
+            const frame = globalThis.document.createElement('iframe')
+            frame.style.cssText = `width:${width}px;height:200px;border:0`
+            globalThis.document.body.append(frame)
+            const doc = frame.contentDocument
+            doc.open()
+            doc.write(
+              `<!doctype html><html><head><style>html,body{margin:0}</style><style>${css}</style></head><body></body></html>`,
+            )
+            doc.close()
+            const element = doc.createElement(source.localName)
+            element.id = id
+            element.setAttribute('style', native)
+            element.textContent = 'Card'
+            doc.body.append(element)
+            const size = Math.round(element.getBoundingClientRect().width)
+            const widths = []
+            const visit = (rules, conditions) => {
+              for (const rule of rules) {
+                const kind = rule.constructor.name
+                if (kind === 'CSSMediaRule')
+                  visit(rule.cssRules, [...conditions, `@media${rule.media.mediaText}`])
+                else if (kind === 'CSSSupportsRule')
+                  visit(rule.cssRules, [...conditions, `@supports${rule.conditionText}`])
+                else if (
+                  kind === 'CSSStyleRule' &&
+                  rule.selectorText === `#${id}` &&
+                  rule.style.width
+                )
+                  widths.push({
+                    width: rule.style.width,
+                    priority: rule.style.getPropertyPriority('width'),
+                    conditions: conditions.map((condition) => condition.replace(/\s/g, '')),
+                  })
+                else if (rule.cssRules)
+                  visit(rule.cssRules, [
+                    ...conditions,
+                    rule.cssText.slice(0, rule.cssText.indexOf('{')),
+                  ])
+              }
+            }
+            visit(doc.styleSheets[1].cssRules, [])
+            frame.remove()
+            return { size, widths }
+          }
+          const mobile = render(390)
+          return { mobile: mobile.size, desktop: render(1440).size, widths: mobile.widths }
+        }),
+      { id, sheets },
+    )
+  } finally {
+    await probe.close()
+  }
+}
+
+// Booking opens from the page list, in its default scene. Its banner line is one element with the
+// same ID in both languages, 40px wide by its native style, and each Booking sheet stores a Desktop
+// width for it under two conditions. Native export marks that width !important, which is no edit.
+// Live, the Worker makes the native style the element's inline style, so a stored width paints only
+// when it is !important: English stays 40px on both devices until a width edit reaches it. Export
+// reads the draft before and after each edit. It flushes the canvas into the draft first, as
+// Publicera does.
+test('Booking from the page list leaves its other sheets after a text edit and syncs a width edit with its conditions', async ({
+  page,
+  context,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const id = 'knc-desktop-booking-0-i1-i0-i1'
+  const opening = `<div id="${id}" `
+  const rule = `@media (min-width:769px){@supports (display:grid){#${id}{width:200px}}}`
+  await openAdoptedFixture(page, context, {
+    prepare: (presentation) => {
+      const booking = presentation.pages.find((item) => item.path === '/booking')
+      for (const variant of Object.values(booking.content)) {
+        const start = variant.html.indexOf(opening)
+        assert.ok(
+          start >= 0 && !variant.html.includes(opening, start + 1),
+          'Booking holds the banner line once',
+        )
+        const end = variant.html.indexOf('>', start)
+        const tag = variant.html
+          .slice(start, end)
+          .replace(
+            /data-knc-light="([^"]*)"/,
+            (_, style) => `data-knc-light="${style} width: 40px;"`,
+          )
+        assert.match(tag, /^<div id="[^"]+" .* data-knc-light="[^"]* width: 40px;"$/)
+        variant.html = variant.html.slice(0, start) + tag + variant.html.slice(end)
+        for (const mode of ['light', 'dark']) variant.css[mode] += rule
+      }
+    },
+  })
+  await page
+    .locator('.cms-editor-canvas[data-cms-canvas-ready="true"][aria-busy="false"]:not([inert])')
+    .waitFor({ timeout: 90000 })
+  const listed = page
+    .locator('.cms-page-list')
+    .getByRole('button', { name: 'Bokning', exact: true })
+  await listed.click()
+  await expect(listed).toHaveAttribute('aria-current', 'page')
+  await page
+    .frameLocator('.gjs-frame')
+    .first()
+    .locator(`[data-knc-surface="desktop-booking"] #${id}`)
+    .waitFor()
+  const panel = page.getByRole('dialog', { name: 'Utkast & backup', exact: true })
+  const exported = async () => {
+    await page.getByRole('button', { name: 'Utkast & backup', exact: true }).click()
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      panel.getByRole('button', { name: 'Export', exact: true }).click(),
+    ])
+    const path = await download.path()
+    if (!path) throw new Error('The exported draft has no local file')
+    const document = JSON.parse(await readFile(path, 'utf8'))
+    await panel.getByRole('button', { name: 'Stäng panel', exact: true }).click()
+    return document.presentation.pages.find((item) => item.path === '/booking').content
+  }
+  const conditions = ['@media(min-width:769px)', '@supports(display:grid)']
+  // English holds the stored Desktop width, but not !important, so live it does not paint.
+  const unpainted = {
+    mobile: 40,
+    desktop: 40,
+    widths: [{ width: '200px', priority: '', conditions }],
+  }
+  const english = (content) =>
+    liveLayouts(
+      context,
+      id,
+      ['light', 'dark'].map((mode) => ({ html: content.en.html, css: content.en.css[mode], mode })),
+    )
+  // The draft before any edit: Booking's stored sheets.
+  const stored = await exported()
+  for (const lang of ['sv', 'en']) {
+    assert.match(
+      stored[lang].html,
+      new RegExp(`${opening}[^>]* data-knc-light="[^"]* width: 40px;"`),
+      `${lang}: Booking holds the banner line with its native width`,
+    )
+    for (const mode of ['light', 'dark'])
+      assert.ok(stored[lang].css[mode].includes(rule), `${lang}/${mode}: Booking keeps the rule`)
+  }
+  assert.deepEqual(
+    await english(stored),
+    [unpainted, unpainted],
+    'English paints 40px on Mobile and on Desktop before the edit, in light and in dark',
+  )
+  const text = 'Bokningsrad efter en textändring'
+  await page.evaluate(
+    async ({ id, text }) => {
+      const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+      const [line, ...others] = cmsGrapes.editors.at(-1).getWrapper().find(`#${id}`)
+      if (!line?.getEl()?.closest('[data-knc-surface="desktop-booking"]') || others.length)
+        throw new Error('Desktop Booking must hold the one editable banner line')
+      line.components(text)
+    },
+    { id, text },
+  )
+  const saved = await exported()
+  assert.ok(saved.sv.html.includes(text), 'The text edit reaches Booking')
+  for (const [lang, mode] of [
+    ['sv', 'dark'],
+    ['en', 'light'],
+    ['en', 'dark'],
+  ])
+    assert.equal(saved[lang].css[mode], stored[lang].css[mode], `${lang}/${mode} changed`)
+  assert.deepEqual(
+    await english(saved),
+    [unpainted, unpainted],
+    'English paints 40px on Mobile and on Desktop after the text edit, as before it',
+  )
+  await page.evaluate(async (id) => {
+    const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+    const scope = (rule) => {
+      const keys = []
+      for (let at = rule; at.isNested(); at = at.parentRule)
+        keys.unshift(at.nestedStyleKey.replace(/\s/g, ''))
+      return keys.join(' ')
+    }
+    // No style control reaches a rule nested in two conditions. The edit goes to that rule itself.
+    const [rule, ...others] = cmsGrapes.editors
+      .at(-1)
+      .Css.getAll()
+      .models.filter(
+        (rule) =>
+          rule.isNested() &&
+          scope(rule) === `@media(min-width:769px) @supports(display:grid) &#${id}`,
+      )
+    if (!rule || others.length)
+      throw new Error('The canvas must hold the one conditional rule for the banner line')
+    rule.addStyle({ width: '300px' })
+  }, id)
+  const resized = await exported()
+  const sheets = [
+    ['sv', 'dark'],
+    ['en', 'light'],
+    ['en', 'dark'],
+  ]
+  const layouts = await liveLayouts(
+    context,
+    id,
+    sheets.map(([lang, mode]) => ({
+      html: resized[lang].html,
+      css: resized[lang].css[mode],
+      mode,
+    })),
+  )
+  for (const [index, [lang, mode]] of sheets.entries())
+    assert.deepEqual(
+      layouts[index],
+      {
+        mobile: 40,
+        desktop: 300,
+        widths: [{ width: '300px', priority: 'important', conditions }],
+      },
+      `${lang}/${mode}: the width edit paints on Desktop only, from one !important rule under both conditions`,
+    )
+})
