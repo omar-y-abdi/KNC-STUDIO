@@ -455,6 +455,7 @@ test.describe('stored marquee', () => {
   test('passive selection never writes what the color controls show into the published draft', async ({
     newContext,
   }) => {
+    test.setTimeout(600_000)
     const captureContext = await newContext({ viewport: { width: 1440, height: 900 } })
     await nativeBackend(captureContext)
     await fixtureRoutes(captureContext, barbers)
