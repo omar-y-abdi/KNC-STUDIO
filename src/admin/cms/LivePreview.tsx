@@ -166,8 +166,8 @@ export function LivePreview({
   }, [connected, native, page.path, presentation, draft, lang, mode, device, scene, attempt])
   const sitePage = isSitePage(page)
   const site = sitePage ? previewSitePage(presentation, page, lang, mode, business) : null
-  // lazy dev: the draft holds no schedule, so #contact-hours shows its fallback; fetch public
-  // discovery if owners need the hours here.
+  // The draft holds no booking schedule, so #contact-hours shows the no-hours text that points to
+  // the booking; every other Contact slot fills from the draft's business.
   const variant =
     page.path === '/contact'
       ? {
