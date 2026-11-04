@@ -38,6 +38,18 @@ describe('styleLeaves', () => {
       '@keyframes k{from{opacity:0}}#x{color:red}',
       '#x{color:red}@keyframes k{from{opacity:0}}',
     ],
+    // CSS nesting keeps a declaration that follows a nested group rule after that rule in the
+    // cascade, so the first sheet of each pair paints green and the second blue.
+    [
+      'declaration order around a nested at-rule',
+      '.x{color:red;@media(min-width:1px){color:blue}color:green}',
+      '.x{color:red;color:green;@media(min-width:1px){color:blue}}',
+    ],
+    [
+      'declaration order around an at-rule nested in an at-rule',
+      '.x{@media(min-width:1px){color:red;@supports(display:block){color:blue}color:green}}',
+      '.x{@media(min-width:1px){color:red;color:green;@supports(display:block){color:blue}}}',
+    ],
   ])('tells sheets apart that differ in %s', (_, first, second) => {
     expect(styleLeaves(first)).not.toEqual(styleLeaves(second))
   })
@@ -69,6 +81,11 @@ describe('styleLeaves', () => {
       '#x{color:red}#y{}@media (min-width:769px){#y{}}',
     ],
     ['css-tree normalization', '#x{color:red!important}', '#x { color : red !important ; }'],
+    [
+      'the "& " and spacing getCss writes around an interleaved nested at-rule',
+      '@layer{.x{color:red;@media (min-width:1px){color:blue}color:green}}',
+      '@layer{& .x{color:red;@media (min-width:1px){color:blue;}color :green;}}',
+    ],
     ['an empty anonymous layer', '#x{color:red}', '#x{color:red}@layer{}'],
   ])('equates sheets that differ only in %s', (_, canvas, exported) => {
     expect(styleLeaves(canvas)).toEqual(styleLeaves(exported))
