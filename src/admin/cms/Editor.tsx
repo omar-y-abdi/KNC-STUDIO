@@ -6,6 +6,7 @@ import {
 } from './resourceTargets'
 import type { ResourceDestination } from '../../../shared/cms-resource-assignment'
 import { connectHierarchicalResize } from './hierarchicalResize'
+import { connectColorControls } from './colorControls'
 import { CmsTextarea } from './Textarea'
 import type { ComponentChildren, JSX } from 'preact'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
@@ -484,6 +485,7 @@ export function CmsEditor(props: Props): JSX.Element {
       () => applying.current || latest.current.locked,
       () => latest.current.mode,
     )
+    const releaseColorControls = connectColorControls(editor)
     const releaseTextHeight = connectTextAutoHeight(
       editor,
       () => applying.current || latest.current.locked,
@@ -757,6 +759,7 @@ export function CmsEditor(props: Props): JSX.Element {
       releaseAccessibility?.()
       releaseResourcePicker()
       releaseResize()
+      releaseColorControls()
       releaseTextHeight()
       releaseCanvasStyles()
       projectCanvasStyles.current = undefined
