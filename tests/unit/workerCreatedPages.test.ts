@@ -375,9 +375,11 @@ describe('a created page stored with a frozen header by main', () => {
     expect(html).toContain(stored.slice(stored.indexOf('<nav id="cms-site-menu"')))
   })
 
-  it('finds untagged actions by their labels and rewrites only their href values, in their own quotes', async () => {
+  it('finds untagged actions by their labels, rewrites their hrefs in their own quotes, and restores the theme class', async () => {
     // Main's Studio edited the whole stored page, header included; main matched an action without
-    // its class by the label it gave the action.
+    // its class by the label it gave the action. The theme action also regains its class, because
+    // CMS_THEME_SCRIPT retargets only `a.cms-site-action-theme`; the language action stays classless,
+    // its rewritten href already pointing at the other language.
     const edited = LEGACY_HTML.sv
       .replace(' class="cms-site-action-language"', '')
       .replace(' class="cms-site-action-theme"', '')
@@ -389,7 +391,11 @@ describe('a created page stored with a frozen header by main', () => {
     expect(html).toContain(
       edited
         .replace("href='/hemsida?lang=en&mode=light'", "href='/hemsida?lang=en&amp;mode=dark'")
-        .replace('href="/hemsida?lang=sv&amp;mode=dark"', 'href="/hemsida?lang=sv&amp;mode=light"'),
+        .replace('href="/hemsida?lang=sv&amp;mode=dark"', 'href="/hemsida?lang=sv&amp;mode=light"')
+        .replace(
+          "<a title='Växla ljust/mörkt'",
+          `<a class="cms-site-action-theme" title='Växla ljust/mörkt'`,
+        ),
     )
   })
 
