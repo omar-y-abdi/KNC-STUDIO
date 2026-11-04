@@ -170,6 +170,8 @@ test('cms-barber-marquee', async ({ browserName, evidenceDir, newContext }) => {
       (await import('/tools/e2e/admin-harness.tsx')).mountCmsStudioHarness(),
     )
     await editor.locator('.cms-canvas-shell').waitFor({ timeout: 90000 })
+    // Only owner edits create backups; the captured source alone is pristine.
+    await editor.getByRole('textbox', { name: 'Namn', exact: true }).fill('Barberartestets källa')
     const owned = await editor.evaluate(async () => {
       const session = await (await import('/src/admin/cms/backup.ts')).cmsBackups()
       await session.flush()
@@ -436,7 +438,7 @@ test('cms-barber-marquee', async ({ browserName, evidenceDir, newContext }) => {
       assert.equal(styles.profileOpacity, '0', 'CMS Mobile preview shows the collapsed bio')
     }
     await mountUpgrade()
-    await upgradePage.getByRole('button', { name: 'Startsida', exact: true }).click()
+    await upgradePage.getByRole('button', { name: 'Barberartestets källa', exact: true }).click()
     await upgradePage.getByRole('button', { name: 'Mobil', exact: true }).click()
     await editorCard.waitFor({ state: 'visible' })
     assert.equal(await editorGrid.count(), 1, 'Owner grid identity changed during import')
@@ -451,9 +453,15 @@ test('cms-barber-marquee', async ({ browserName, evidenceDir, newContext }) => {
     await assertMobileEditor(upgradeFrame.locator('[data-knc-surface="about"]'))
     await editorGrid.scrollIntoViewIfNeeded()
     await upgradePage.screenshot({ path: `${out}/cms-native-${name}-barber-editor.png` })
-    await upgradePage.locator('#cms-library').getByRole('button', { name: 'Startsida' }).click()
+    await upgradePage
+      .locator('#cms-library')
+      .getByRole('button', { name: 'Barberartestets källa', exact: true })
+      .click()
     await assertMobileEditor(upgradeFrame.locator('[data-knc-surface="mobile-home"]'))
-    await upgradePage.locator('#cms-library').getByRole('button', { name: 'Startsida' }).click()
+    await upgradePage
+      .locator('#cms-library')
+      .getByRole('button', { name: 'Barberartestets källa', exact: true })
+      .click()
     await editableAbout.getByText('Owner-styled A', { exact: true }).click()
     await upgradePage
       .locator('#cms-inspector')
@@ -465,7 +473,10 @@ test('cms-barber-marquee', async ({ browserName, evidenceDir, newContext }) => {
     )
     assert.ok(upgradedBackend.writes.includes('publish'), 'Legacy mobile edit was not published')
     await mountUpgrade()
-    await upgradePage.getByRole('button', { name: 'Startsida', exact: true }).click()
+    await upgradePage
+      .locator('#cms-library')
+      .getByRole('button', { name: 'Barberartestets källa', exact: true })
+      .click()
     await upgradePage.getByRole('button', { name: 'Mobil', exact: true }).click()
     await assertMobileEditor(upgradeFrame.locator('[data-knc-surface="about"]'))
     await editableAbout.getByText('Owner published A', { exact: true }).waitFor()

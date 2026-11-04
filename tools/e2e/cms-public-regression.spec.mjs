@@ -244,6 +244,8 @@ test('cms-public-regression', async ({ page, context, newContext, browserName })
     (await import('/tools/e2e/admin-harness.tsx')).mountCmsStudioHarness(),
   )
   await page.locator('.cms-canvas-shell').waitFor({ timeout: 90000 })
+  // E6 defers the inactive About copy. Exercise stripping after that copy exists.
+  await page.locator('.cms-editor-canvas[data-cms-about-preview-ready="true"]').waitFor()
   const result = await page.evaluate(async () => {
     const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
     const { stripComposedCanvas } = await import('/src/admin/cms/composedCanvas.ts')

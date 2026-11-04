@@ -5,7 +5,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { CMS_OWNER_SCENARIOS } from './cms-owner-scenarios.mjs'
 import { nativeBackend } from './cms-backend.mjs'
 import { EMAIL_NAMES, defaultEmailDesign } from '../../shared/cms.ts'
-import { renderSitePage } from '../../shared/site-page.ts'
+import { SITE_PAGE_CSS, renderSitePage } from '../../shared/site-page.ts'
 import { defaultEmailTemplate } from '../../supabase/functions/_shared/email.ts'
 import { test } from './fixtures.mjs'
 import { harnessOrigin } from './origins.mjs'
@@ -54,6 +54,10 @@ for (const scenario of CMS_OWNER_SCENARIOS) {
           sourceCaptures++
       })
       const seed = documentFixture()
+      // The backend serves this kicker from site_content. A real CMS state always carries
+      // site_content as document.site, and the preset recapture renders the draft's site copy.
+      if (scenario === 'appearance')
+        seed.site = { kicker: { sv: 'KNC source sv', en: 'KNC source en' } }
       if (scenario === 'email-preview') {
         seed.emails = EMAIL_NAMES.flatMap((template) =>
           ['sv', 'en'].map((lang) => {
@@ -286,6 +290,59 @@ for (const scenario of CMS_OWNER_SCENARIOS) {
             ['publish'],
             'Viewing email previews must never send mail',
           )
+        } else if (scenario === 'appearance') {
+          const fields = [
+            ['Logotypstorlek', 'homepage_logo_scale', 'md', 'xl'],
+            ['Text under logotyp', 'homepage_scale', 'md', 'sm'],
+            ['Logotypens bildstil', 'homepage_logo_style', 'classic', 'monochrome'],
+            ['Text i Om oss', 'about_scale', 'md', 'lg'],
+          ]
+          const openBusiness = async () => {
+            await page.getByRole('button', { name: 'Företag & SEO', exact: true }).click()
+            const surface = page.getByRole('region', {
+              name: 'Företag & sökresultat',
+              exact: true,
+            })
+            await surface.waitFor()
+            return surface
+          }
+          let surface = await openBusiness()
+          for (const [label, key, fallback] of fields)
+            assert.equal(
+              await surface.getByRole('combobox', { name: label, exact: true }).inputValue(),
+              backend.document.settings[key] || fallback,
+              `${label} shows the stored value, or the fallback when unset`,
+            )
+          const pagesBefore = JSON.stringify(backend.document.presentation.pages)
+          for (const [label, , , next] of fields)
+            await surface.getByRole('combobox', { name: label, exact: true }).selectOption(next)
+          await page.waitForFunction(() =>
+            globalThis.document
+              .querySelector('.cms-status')
+              ?.textContent?.includes('Opublicerade ändringar'),
+          )
+          assert.deepEqual(backend.writes, [], 'Choosing a preset must not publish')
+          await page.keyboard.press('Escape')
+          await publish()
+          for (const [label, key, , next] of fields)
+            assert.equal(
+              backend.document.settings[key],
+              next,
+              `The publish carries ${label} in document.settings.${key}`,
+            )
+          assert.notEqual(
+            JSON.stringify(backend.document.presentation.pages),
+            pagesBefore,
+            'A preset change must publish recaptured Home/About layouts',
+          )
+          await mount()
+          surface = await openBusiness()
+          for (const [label, , , next] of fields)
+            assert.equal(
+              await surface.getByRole('combobox', { name: label, exact: true }).inputValue(),
+              next,
+              `${label} shows the published value after reload`,
+            )
         } else if (scenario === 'line-breaks') {
           const id = await selectCopy()
           const text = inspector.getByLabel('Text', { exact: true })
@@ -578,16 +635,9 @@ for (const scenario of CMS_OWNER_SCENARIOS) {
           await live.getByRole('button', { name: 'Spara val', exact: true }).waitFor()
         } else if (scenario === 'dialogs') {
           assert.equal(
-            await page
-              .getByRole('link', { name: 'Leveransstatus ↗', exact: true })
-              .getAttribute('href'),
-            '/admin?tab=mail',
-          )
-          assert.equal(
-            await page
-              .getByRole('link', { name: 'Leveransstatus ↗', exact: true })
-              .getAttribute('target'),
-            '_blank',
+            await page.getByRole('link', { name: 'Leveransstatus ↗', exact: true }).count(),
+            0,
+            'The Studio no longer links to the removed Mejl tab',
           )
           await selectCopy()
           const originalTranslate = await frame
@@ -725,10 +775,6 @@ for (const scenario of CMS_OWNER_SCENARIOS) {
             .locator('#cms-site-menu')
             .getByRole('link', { name: 'Boka tid', exact: true })
             .waitFor()
-          await frame
-            .locator('#cms-site-footer')
-            .getByRole('link', { name: 'Integritetspolicy', exact: true })
-            .waitFor()
           const padding = () => main.evaluate((node) => globalThis.getComputedStyle(node).padding)
           assert.equal(
             await padding(),
@@ -749,8 +795,8 @@ for (const scenario of CMS_OWNER_SCENARIOS) {
             'Added blocks belong to authored content, not shared chrome',
           )
           assert.ok(
-            created.content.sv.html.includes('cms-site-header'),
-            'An independent page owns its editable header instead of a locked homepage projection',
+            !created.content.sv.html.includes('cms-site-header') && created.layout === undefined,
+            'A created page stores only its body; its header is rendered live from the homepage',
           )
           await context.route(`${base}/hemsida*`, (route) => {
             const mode =
@@ -758,10 +804,14 @@ for (const scenario of CMS_OWNER_SCENARIOS) {
             const page = backend.document.presentation.pages.find(
               (item) => item.path === '/hemsida',
             )
-            const rendered = renderSitePage(backend.document.presentation, page, 'sv', mode)
+            const rendered = renderSitePage(backend.document.presentation, page, 'sv', mode, {
+              phoneTel: '0793043671',
+              phoneDisplay: '079‑304 36 71',
+              mapsHref: '',
+            })
             return route.fulfill({
               contentType: 'text/html; charset=utf-8',
-              body: `<!doctype html><html><head><meta charset="utf-8"><style>${rendered.css}</style></head><body>${rendered.html}</body></html>`,
+              body: `<!doctype html><html style="color-scheme:${mode}"><head><meta charset="utf-8"><link rel="stylesheet" href="/tokens.css"><style>${SITE_PAGE_CSS}\n${rendered.css[mode]}</style></head><body>${rendered.html}</body></html>`,
             })
           })
           const publicPage = await context.newPage()
@@ -808,6 +858,7 @@ for (const scenario of CMS_OWNER_SCENARIOS) {
           )
           await publicPage.getByText('New page extension content', { exact: true }).waitFor()
           await publicPage.goto(`${base}/hemsida?mode=dark`)
+          await publicPage.locator('#cms-site-menu a[href="/booking?lang=sv&mode=dark"]').waitFor()
           assert.equal(
             await languageLabelColor(await publicLanguageLink()),
             darkLanguageColor,

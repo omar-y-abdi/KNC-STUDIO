@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { nativeBackend } from './cms-backend.mjs'
-import { test } from './fixtures.mjs'
+import { expect, test } from './fixtures.mjs'
+import { generate, parse, walk } from 'css-tree'
 import { harnessOrigin } from './origins.mjs'
 test.describe('new page', () => {
   test.use({ viewport: { width: 1440, height: 1000 } })
@@ -76,7 +77,8 @@ test.describe('new page', () => {
     await page.getByRole('button', { name: 'Publicera', exact: true }).click()
     await page.getByText('Publicerad · rev 2', { exact: true }).waitFor()
     const saved = backend.document.presentation.pages.find((item) => item.path === '/hemsida')
-    assert.equal(saved.layout, 'independent')
+    assert.equal(saved.layout, undefined, 'A created page is no longer a frozen independent copy')
+    assert.ok(!saved.content.sv.html.includes('cms-site-header'), 'Only the body is saved')
     await page.reload()
     await page.evaluate(async () =>
       (await import('/tools/e2e/admin-harness.tsx')).mountCmsStudioHarness(),
@@ -91,6 +93,110 @@ test.describe('new page', () => {
     )
     assert.equal((await measure()).phoneWhiteSpace, 'nowrap')
     console.log('PASS new-page mobile chrome: bounded logo, contact, viewport fit and saved layout')
+  })
+  test('cms-new-page-mobile: geometry mirrors both languages and themes while text stays independent', async ({
+    page,
+    context,
+  }) => {
+    const backend = await nativeBackend(context)
+    await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
+    await page.evaluate(async () =>
+      (await import('/tools/e2e/admin-harness.tsx')).mountCmsStudioHarness(),
+    )
+    await page.locator('.cms-canvas-shell').waitFor({ timeout: 90000 })
+    await page.getByRole('button', { name: 'Skapa ny sida', exact: true }).click()
+    await page
+      .getByRole('dialog', { name: 'Ny sida' })
+      .getByRole('button', { name: 'Skapa sida', exact: true })
+      .click()
+    const frame = page.frameLocator('.gjs-frame').first()
+    const heading = () => frame.locator('main[id^="cms-body-"] h1')
+    const language = (lang) =>
+      page
+        .getByRole('group', { name: 'Språk', exact: true })
+        .getByRole('button', { name: lang.toUpperCase(), exact: true })
+        .click()
+    const theme = (mode) =>
+      page
+        .getByRole('group', { name: 'Tema', exact: true })
+        .getByRole('button', { name: mode === 'light' ? 'Ljus' : 'Mörk', exact: true })
+        .click()
+    const dimension = async (property, value) => {
+      const input = page.locator(`#cms-inspector .gjs-sm-property__${property} input`).first()
+      await input.fill(String(value))
+      await input.press('Enter')
+      await input.press('Tab')
+    }
+    const texts = { sv: 'Ny sida', en: 'Ny sida' }
+    const moves = { Desktop: 0, Mobile: 0 }
+    for (const device of ['Desktop', 'Mobile']) {
+      await page
+        .getByRole('button', { name: device === 'Desktop' ? 'Dator' : 'Mobil', exact: true })
+        .click()
+      await page.waitForFunction(
+        (width) =>
+          globalThis.document.querySelector('.gjs-frame')?.contentWindow.innerWidth === width,
+        device === 'Desktop' ? 1440 : 390,
+      )
+      for (const mode of ['light', 'dark'])
+        for (const lang of ['sv', 'en']) {
+          await theme(mode)
+          await language(lang)
+          await heading().click()
+          texts[lang] =
+            `${lang} ${device} ${mode}: En lång rubrik med flera ord som behöver få växa på höjden.`
+          await page.locator('#cms-inspector').getByLabel('Text', { exact: true }).fill(texts[lang])
+          await dimension('width', device === 'Desktop' ? 220 : 170)
+          await dimension('height', 12)
+          // Height stays auto in the editing frame too, before any context reload can hide clipping.
+          await expect
+            .poll(() => heading().evaluate((node) => node.scrollHeight <= node.clientHeight + 1))
+            .toBe(true)
+          await page.getByRole('button', { name: 'Flytta åt höger', exact: true }).click()
+          moves[device]++
+          for (const targetLang of ['sv', 'en']) {
+            await language(targetLang)
+            for (const targetMode of ['light', 'dark']) {
+              await theme(targetMode)
+              await expect(heading()).toHaveText(texts[targetLang])
+              await expect
+                .poll(() =>
+                  heading().evaluate((node) => {
+                    const style = globalThis.getComputedStyle(node)
+                    return {
+                      x: parseFloat(style.translate) || 0,
+                      width: Math.round(node.getBoundingClientRect().width),
+                      fits: node.scrollHeight <= node.clientHeight + 1,
+                    }
+                  }),
+                )
+                .toEqual({ x: moves[device], width: device === 'Desktop' ? 220 : 170, fits: true })
+            }
+          }
+        }
+    }
+    await page.getByRole('button', { name: 'Publicera', exact: true }).click()
+    await page.getByText('Publicerad · rev 2', { exact: true }).waitFor({ timeout: 15000 })
+    const saved = backend.document.presentation.pages.find((item) => item.path === '/hemsida')
+    assert.ok(saved)
+    for (const lang of ['sv', 'en']) {
+      assert.ok(saved.content[lang].html.includes(texts[lang]))
+      assert.ok(!saved.content[lang].html.includes(texts[lang === 'sv' ? 'en' : 'sv']))
+      for (const mode of ['light', 'dark']) {
+        const scoped = new Map()
+        walk(parse(saved.content[lang].css[mode]), {
+          visit: 'Rule',
+          enter(rule) {
+            if (!generate(rule.prelude).endsWith(`-${lang}-title`)) return
+            for (const declaration of rule.block.children)
+              if (declaration.type === 'Declaration' && declaration.property === 'translate')
+                scoped.set(generate(this.atrule.prelude), generate(declaration.value))
+          },
+        })
+        assert.equal(scoped.get('(min-width:769px)'), `${moves.Desktop}px 0px`)
+        assert.equal(scoped.get('(max-width:768px)'), `${moves.Mobile}px 0px`)
+      }
+    }
   })
 })
 test.describe('canonical Home', () => {

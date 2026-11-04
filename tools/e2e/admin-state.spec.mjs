@@ -2,10 +2,10 @@ import { test } from './fixtures.mjs'
 import {
   verifyNavigation,
   verifyDelayedRestore,
-  verifyPresentationDraft,
   verifyAdminSession,
   verifyMutationReentry,
-  verifyInitialHydration,
+  verifyDeliveryStatus,
+  verifySettingsCancellation,
   verifyContactOwnership,
   verifyDelayedCatalog,
   verifyBookingTerms,
@@ -16,7 +16,6 @@ test.use({ viewport: { width: 1280, height: 900 }, actionTimeout: 10000 })
 const cases = [
   ['navigation', verifyNavigation],
   ['delayed restore', verifyDelayedRestore],
-  ['presentation draft', verifyPresentationDraft],
   ...[
     'focus',
     'poll',
@@ -36,9 +35,10 @@ const cases = [
     ['remount ' + kind, (page) => verifyMutationReentry(page, kind, 'remount')],
     ['target ' + kind, (page) => verifyMutationReentry(page, kind, 'target', true)],
   ]),
-  ...['site', 'gallery'].flatMap((kind) => [
-    ['hydrate ' + kind, (page) => verifyInitialHydration(page, kind)],
-    ['dirty hydrate ' + kind, (page) => verifyInitialHydration(page, kind, true)],
+  ['delivery status', verifyDeliveryStatus],
+  ...['owner', 'barber', 'load-failure', 'revisit-during-save'].map((scenario) => [
+    'settings cancellation ' + scenario,
+    (page) => verifySettingsCancellation(page, scenario),
   ]),
   ...['booking', 'review'].map((kind) => [
     'contact ownership ' + kind,

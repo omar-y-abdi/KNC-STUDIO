@@ -1,11 +1,12 @@
 // Style contract (STY-12): every user-facing page outside the homepage takes its look from
 // public/tokens.css and passes axe wcag2aa in both colour schemes. Static documents and the app's
-// status and staff screens are served by the preview build; /terms and /privacy are the real Worker
+// status and staff screens are served by the preview build; /terms, /privacy and /contact are real Worker
 // render of the committed production fixture (tools/e2e/cms-render.mjs), both as stored and after
 // the Studio's legacy legal upgrade (src/admin/cms/legacyLegal.ts) that the owner publishes.
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { gunzipSync } from 'node:zlib'
+import { INFORMATION_PAGE_PATHS } from '../../shared/cms.ts'
 import { loadWorker, routeWorkerDocuments } from './cms-render.mjs'
 import { expect, test } from './fixtures.mjs'
 import { publicOrigin } from './origins.mjs'
@@ -20,7 +21,7 @@ const fixture = JSON.parse(
 ).presentation
 // The homepage surface (src/app/shared.ts) that every tokenised page paints.
 const SURFACE = { light: 'rgb(255, 255, 255)', dark: 'rgb(28, 28, 30)' }
-const WORKER_PATHS = ['/terms', '/privacy']
+const WORKER_PATHS = INFORMATION_PAGE_PATHS
 // Where the token surface is painted: the app's status and staff screens on their own element, the
 // documents on the root (public/info.css) so a CMS legal page's own body styles stay visible. `null`:
 // the stored legal CSS still carries its own palette until the upgrade is published.
@@ -39,6 +40,7 @@ const PAGES = [
   { url: '/privacy', ready: 'h1', surface: null, presentation: 'stored' },
   { url: '/terms', ready: 'h1', surface: DOC, presentation: 'upgraded' },
   { url: '/privacy', ready: 'h1', surface: DOC, presentation: 'upgraded' },
+  { url: '/contact', ready: 'h1', surface: DOC, presentation: 'upgraded' },
 ]
 
 let rendering
@@ -50,6 +52,23 @@ test.beforeAll(async () => {
   const { upgradeLegacyLegalPages } = await rendering.load('/src/admin/cms/legacyLegal.ts')
   presentations.upgraded = upgradeLegacyLegalPages({ presentation: fixture }).presentation
   if (presentations.upgraded === fixture) throw new Error('The fixture has no legacy legal CSS')
+  // Contact's new Studio import stores the fallback body and its own rules, without copying the
+  // base sheets. The CMS upgrade itself is exercised with the real importer in cms-reported.
+  const html = readFileSync(new URL('../../public/contact.html', import.meta.url), 'utf8')
+  const variant = {
+    html: html.split('<body>')[1].split('</body>')[0],
+    css: { light: '', dark: '' },
+  }
+  presentations.upgraded.pages.push({
+    id: '10000000-0000-4000-8000-000000000007',
+    path: '/contact',
+    kind: 'page',
+    name: { sv: 'Kontakt', en: 'Contact' },
+    title: { sv: 'Kontakt', en: 'Contact' },
+    description: { sv: '', en: '' },
+    inMenu: false,
+    content: { sv: globalThis.structuredClone(variant), en: globalThis.structuredClone(variant) },
+  })
 })
 test.afterAll(async () => rendering?.close())
 
