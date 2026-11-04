@@ -1482,6 +1482,62 @@ for (const [label, card, before, after, image] of [
   })
 }
 
+// Control: a block-level card fills its block container as a stretched grid item fills its track,
+// so its width follows the height change. Sizing only grid items from the track would leave it
+// at the full width of the strip.
+test('cms-hierarchical-resize: a card in a block strip keeps its share of the strip after a Desktop height change', async ({
+  page,
+  context,
+}) => {
+  const { frame } = await openStudio(page, context, ['a', 'b'])
+  await page.evaluate(async (selector) => {
+    const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+    const group = cmsGrapes.editors.at(-1).getWrapper().find(selector)[0]
+    // A 400px block container; each card is a 100px border box with no automatic minimum width.
+    group.addStyle({ display: 'block', width: '400px' })
+    for (const card of [...group.components()])
+      card.addStyle({
+        width: 'auto',
+        height: '100px',
+        'box-sizing': 'border-box',
+        'min-width': '0px',
+      })
+  }, groupSelector)
+  const sizes = async (stage, expected) => {
+    const layout = await frame.locator(groupSelector).evaluate((group) => ({
+      display: group.ownerDocument.defaultView.getComputedStyle(group).display,
+      cards: [...group.children].map((card) => {
+        const rect = card.getBoundingClientRect()
+        return { width: rect.width, height: rect.height }
+      }),
+    }))
+    assert.equal(layout.display, 'block', `${stage}: the strip is a block container`)
+    assert.equal(layout.cards.length, 2, `${stage}: both barber cards render`)
+    for (const [index, item] of layout.cards.entries())
+      assert.ok(
+        Math.abs(item.width - expected[0]) < 1 && Math.abs(item.height - expected[1]) < 1,
+        `${stage}: card ${index} is ${item.width}x${item.height}, not ${expected.join('x')}`,
+      )
+  }
+  await sizes('Before', [400, 100])
+  await select(page, `${groupSelector} > :first-child`)
+  await height(page, 80)
+  await sizes('After the height change', [320, 80])
+  // Leaving Desktop exports the sheet, and returning imports it again.
+  for (const [name, width] of [
+    ['Mobil', 390],
+    ['Dator', 1440],
+  ]) {
+    await page.getByRole('button', { name, exact: true }).click()
+    await page.waitForFunction(
+      (width) =>
+        globalThis.document.querySelector('.gjs-frame')?.contentWindow.innerWidth === width,
+      width,
+    )
+  }
+  await sizes('After export and reimport', [320, 80])
+})
+
 // A stored About page whose four sheets lay the two barber cards out in an 800px flex row with
 // automatic widths. A `flex:0 0 auto` item takes its content width, so a height change scales it
 // by zoom alone; a track-relative width would widen it instead.
