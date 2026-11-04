@@ -1481,3 +1481,208 @@ for (const [label, card, before, after, image] of [
     await sizes('After export and reimport', after)
   })
 }
+
+// A stored About page whose four sheets lay the two barber cards out in an 800px flex row with
+// automatic widths. A `flex:0 0 auto` item takes its content width, so a height change scales it
+// by zoom alone; a track-relative width would widen it instead.
+test('cms-hierarchical-resize: intrinsically sized flex cards shrink after a Desktop height change', async ({
+  page,
+  context,
+  newContext,
+}) => {
+  const exportDraft = async (target) => {
+    await target.getByRole('button', { name: 'Utkast & backup', exact: true }).click()
+    const downloaded = target.waitForEvent('download')
+    await target
+      .getByRole('dialog', { name: 'Utkast & backup' })
+      .getByRole('button', { name: 'Export', exact: true })
+      .click()
+    const stream = await (await downloaded).createReadStream()
+    assert.ok(stream, 'The backup must be readable')
+    const chunks = []
+    for await (const chunk of stream) chunks.push(chunk)
+    await target
+      .getByRole('dialog', { name: 'Utkast & backup' })
+      .getByRole('button', { name: 'Stäng panel', exact: true })
+      .click()
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'))
+  }
+  const aboutOf = (document) => document.presentation.pages.find((item) => item.path === '/about')
+  // A first Studio builds the About page from the live source. Its IDs differ per language.
+  const captureContext = await newContext({
+    viewport: { width: 1440, height: 1000 },
+    reducedMotion: 'reduce',
+  })
+  const capturePage = await captureContext.newPage()
+  await openStudio(capturePage, captureContext, ['a', 'b'])
+  const captured = await exportDraft(capturePage)
+  const ids = await capturePage.evaluate(
+    ({ about, selector }) =>
+      Object.fromEntries(
+        ['sv', 'en'].map((lang) => {
+          const strip = new globalThis.DOMParser()
+            .parseFromString(about.content[lang].html, 'text/html')
+            .querySelector(selector)
+          const cards = [...(strip?.children ?? [])]
+            .filter((node) => node.id && node.hasAttribute('data-knc-source'))
+            .map((node) => node.id)
+          if (!strip?.id || cards.length !== 2)
+            throw new Error(`The ${lang} barber strip is missing`)
+          return [lang, { strip: strip.id, cards }]
+        }),
+      ),
+    { about: aboutOf(captured), selector: groupSelector },
+  )
+  const flexRow = ({ strip, cards }) =>
+    `@media (min-width:769px){#${strip}{display:flex!important;width:800px!important}${cards
+      .map(
+        (id) =>
+          `#${id}{width:auto!important;flex:0 0 auto!important;height:100px!important;min-width:0!important}`,
+      )
+      .join('')}}`
+  const seeded = globalThis.structuredClone(captured)
+  for (const lang of ['sv', 'en'])
+    for (const mode of ['light', 'dark'])
+      aboutOf(seeded).content[lang].css[mode] += flexRow(ids[lang])
+  // The stored document passes the validators that the Studio and the publication run.
+  await capturePage.evaluate(async (document) => {
+    const { validateDocument } = await import('/shared/cms.ts')
+    const { validateDocumentMarkupPlacements } = await import('/shared/cms-markup.ts')
+    const { CMS_BUILT_ASSETS } = await import('/shared/cms-built-assets.ts')
+    validateDocument(document)
+    validateDocumentMarkupPlacements(document, {
+      siteOrigin: globalThis.location.origin,
+      storageOrigin: 'https://admin-harness.invalid',
+      builtAssets: CMS_BUILT_ASSETS,
+    })
+  }, seeded)
+  await captureContext.close()
+  const { backend, frame } = await openStudio(page, context, ['a', 'b'], seeded)
+  // The stored rules decide the Desktop layout, ahead of any inline style from the source.
+  const layout = await frame.locator(groupSelector).evaluate((group) => {
+    const view = group.ownerDocument.defaultView
+    const strip = view.getComputedStyle(group)
+    return {
+      display: strip.display,
+      width: strip.width,
+      cards: [...group.children].map((card) => {
+        const style = view.getComputedStyle(card)
+        return {
+          id: card.id,
+          flex: [style.flexGrow, style.flexShrink, style.flexBasis].join(' '),
+          width: card.getBoundingClientRect().width,
+        }
+      }),
+    }
+  })
+  assert.deepEqual(
+    { display: layout.display, width: layout.width, ids: layout.cards.map((card) => card.id) },
+    { display: 'flex', width: '800px', ids: ids.sv.cards },
+    `The canvas strip is not the stored 800px flex row: ${JSON.stringify({ layout, ids })}`,
+  )
+  for (const [index, card] of layout.cards.entries()) {
+    assert.equal(card.flex, '0 0 auto', `Card ${index} lost its stored flex sizing`)
+    assert.ok(card.width < 400, `Card ${index} is ${card.width}px wide, not sized by its content`)
+  }
+  const stored = await exportDraft(page)
+  const before = await measure(frame)
+  // The control asks for 80px of the measured height, so the whole card scales by this factor.
+  const factor = 80 / before.cards[0].rect.height
+  const intrinsicBefore = await intrinsicGeometry(frame)
+  // The browser's own layout of the unchanged cards at that zoom, in this engine (see the
+  // intrinsic width case above for WebKit's minimum font size).
+  const nativeExpected = await intrinsicGeometry(frame, factor)
+  await select(page, `${groupSelector} > div:first-child`)
+  await height(page, 80)
+  const after = await measure(frame)
+  const nativeActual = await intrinsicGeometry(frame)
+  await test.info().attach('flex-row-geometry', {
+    body: JSON.stringify(
+      {
+        layout,
+        before,
+        after,
+        factor,
+        nativeExpected,
+        nativeActual,
+        details: await inspectGeometry(page),
+      },
+      null,
+      2,
+    ),
+    contentType: 'application/json',
+  })
+  for (const [index, card] of after.cards.entries()) {
+    assert.ok(
+      Math.abs(card.rect.width - nativeExpected[index].width) < 1,
+      `Flex card ${index} is ${card.rect.width}px wide after the height change, not ${nativeExpected[index].width}px as its zoom lays it out (${before.cards[index].rect.width}px before)`,
+    )
+    assert.ok(
+      Math.abs(card.photo.height - nativeExpected[index].photoHeight) < 1,
+      `Flex card ${index}: the portrait is ${card.photo.height}px high, not ${nativeExpected[index].photoHeight}px`,
+    )
+    assert.ok(
+      Math.abs(nativeActual[index].zoom / intrinsicBefore[index].zoom - factor) < 0.005,
+      `Flex card ${index} zooms by ${nativeActual[index].zoom / intrinsicBefore[index].zoom}, not ${factor}`,
+    )
+  }
+  // Desktop declarations of a property on the card's own rule or its resize guard, in order.
+  const desktopValues = (css, id, property) => {
+    const values = []
+    walk(parse(css), {
+      visit: 'Declaration',
+      enter(declaration) {
+        if (declaration.property !== property || !this.rule || !this.atrule) return
+        if (generate(this.atrule.prelude) !== '(min-width:769px)') return
+        if ([`#${id}`, `&:where(#${id})`].includes(generate(this.rule.prelude)))
+          values.push(generate(declaration.value))
+      },
+    })
+    return values
+  }
+  // Every sheet keeps the stored automatic width and carries the new zoom.
+  const assertStored = (document, stage) => {
+    for (const lang of ['sv', 'en'])
+      for (const mode of ['light', 'dark'])
+        for (const id of ids[lang].cards) {
+          const where = `${stage}, ${lang}/${mode} #${id}`
+          const css = aboutOf(document).content[lang].css[mode]
+          const widths = desktopValues(css, id, 'width')
+          assert.deepEqual(
+            widths,
+            desktopValues(aboutOf(stored).content[lang].css[mode], id, 'width'),
+            `${where}: the Desktop width no longer follows the card's content: ${JSON.stringify(widths)}`,
+          )
+          const zoom = Number(desktopValues(css, id, 'zoom').at(-1))
+          assert.ok(
+            Math.abs(zoom - factor) < 0.001,
+            `${where}: Desktop zoom ${zoom}, not ${factor}`,
+          )
+        }
+  }
+  assertStored(await exportDraft(page), 'Resize')
+  // Leaving Desktop exports the sheet, and returning imports it again.
+  for (const [name, width] of [
+    ['Mobil', 390],
+    ['Dator', 1440],
+  ]) {
+    await page.getByRole('button', { name, exact: true }).click()
+    await page.waitForFunction(
+      (width) =>
+        globalThis.document.querySelector('.gjs-frame')?.contentWindow.innerWidth === width,
+      width,
+    )
+  }
+  await page.locator('.cms-editor-canvas[aria-busy="false"]').waitFor()
+  await frame.locator(groupSelector).waitFor()
+  const reimported = await measure(frame)
+  for (const [index, card] of reimported.cards.entries())
+    assert.ok(
+      Math.abs(card.rect.width - after.cards[index].rect.width) < 1 &&
+        Math.abs(card.photo.height - after.cards[index].photo.height) < 1,
+      `After export and reimport, card ${index} is ${card.rect.width}px wide, not ${after.cards[index].rect.width}px`,
+    )
+  await page.getByRole('button', { name: 'Publicera', exact: true }).click()
+  await page.getByText('Publicerad · rev 2', { exact: true }).waitFor({ timeout: 15000 })
+  assertStored(backend.document, 'Publish')
+})
