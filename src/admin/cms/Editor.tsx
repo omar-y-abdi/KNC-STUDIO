@@ -446,6 +446,9 @@ export function CmsEditor(props: Props): JSX.Element {
       blockManager: {
         appendTo: '#cms-blocks',
         appendOnClick: (block, editor) => {
+          // While a load applies a page, the draft hears no canvas update and the load replaces
+          // the components, so a block added now would appear and then vanish.
+          if (applying.current) return
           const wrapper = editor.getWrapper()
           const surfaces = wrapper?.find('[data-knc-surface]') ?? []
           let target = editor.getSelected()
@@ -1307,10 +1310,14 @@ export function CmsEditor(props: Props): JSX.Element {
             <CmsIcon name="close" />
           </button>
         </div>
+        {/* Until the first load is done, the controls that change the canvas are unavailable: the
+            load replaces what they would change. Page settings stay usable; they change the draft,
+            which the load follows. */}
         <div
           class="cms-panel-tabs"
           role="tablist"
           aria-label="Egenskapspanel"
+          inert={loading}
           onKeyDown={(event) => {
             const tabs = ['design', 'layers', 'blocks'] as const
             const index = tabs.indexOf(props.tab)
@@ -1369,7 +1376,7 @@ export function CmsEditor(props: Props): JSX.Element {
               </button>
             </p>
           ) : selected ? (
-            <section class="cms-inspector-section">
+            <section class="cms-inspector-section" inert={loading}>
               <div class="cms-actions-row">
                 <button
                   type="button"
@@ -1561,12 +1568,12 @@ export function CmsEditor(props: Props): JSX.Element {
               {props.pageSettings}
             </>
           )}
-          <div hidden={!selected || readOnly}>
+          <div hidden={!selected || readOnly} inert={loading}>
             <div id="cms-traits" />
             <div id="cms-styles" />
           </div>
           {selected && !readOnly && stylable && (
-            <details class="cms-advanced">
+            <details class="cms-advanced" inert={loading}>
               <summary>Avancerad CSS</summary>
               <label>
                 Egenskap
@@ -1625,6 +1632,7 @@ export function CmsEditor(props: Props): JSX.Element {
           role="tabpanel"
           aria-labelledby="cms-tab-layers"
           hidden={props.tab !== 'layers'}
+          inert={loading}
           class="cms-manager-panel"
         />
         <div
@@ -1633,6 +1641,7 @@ export function CmsEditor(props: Props): JSX.Element {
           role="tabpanel"
           aria-labelledby="cms-tab-blocks"
           hidden={props.tab !== 'blocks'}
+          inert={loading}
           class="cms-manager-panel"
         />
       </aside>
