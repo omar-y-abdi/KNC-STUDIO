@@ -444,6 +444,255 @@ test.describe('stored marquee', () => {
       `The public strip stopped moving (${probe.offsets.join(', ')})`,
     )
   })
+
+  // When the selection changes, a GrapesJS color control commits the value it shows to the
+  // Style Manager's current target, which still belongs to the former selection (InputColor,
+  // grapesjs 0.23.6). CI run 41775521957 recorded `color:black;border:0 solid black` on the
+  // gallery track when the selection moved to a tile: both color controls held their default
+  // while the track's rule was empty. Step 1 repeats the policy probe's passive steps, whose
+  // outcome depends on the browser's timer order. Step 2 sets both controls to the default they
+  // show after rendering, over that rule, on every run.
+  test('passive selection never writes what the color controls show into the published draft', async ({
+    newContext,
+  }) => {
+    const captureContext = await newContext({ viewport: { width: 1440, height: 900 } })
+    await nativeBackend(captureContext)
+    await fixtureRoutes(captureContext, barbers)
+    const capturePage = await captureContext.newPage()
+    await mountStudio(capturePage)
+    // Only owner edits create backups; the captured source alone is pristine.
+    await capturePage
+      .getByRole('textbox', { name: 'Namn', exact: true })
+      .fill('Markeringstestets källa')
+    const { captured, ids } = await capturePage.evaluate(async () => {
+      const session = await (await import('/src/admin/cms/backup.ts')).cmsBackups()
+      await session.flush()
+      const backup = await session.own()
+      if (!backup) throw new Error('The CMS source was not captured')
+      const about = backup.document.presentation.pages.find((page) => page.path === '/about')
+      const ids = {}
+      for (const lang of ['sv', 'en']) {
+        const tree = new globalThis.DOMParser().parseFromString(
+          about.content[lang].html,
+          'text/html',
+        )
+        const group = tree.querySelector('[data-knc-fold="barber-marquee"][data-knc-source]')
+        const cards = [...(group?.children ?? [])].filter((card) => card.id)
+        if (!group?.id || cards.length !== 4) throw new Error(`The ${lang} barber strip is missing`)
+        ids[lang] = { strip: group.id, cards: cards.map((card) => card.id) }
+      }
+      return { captured: backup.document, ids }
+    })
+    await captureContext.close()
+
+    const context = await newContext({ viewport: { width: 1440, height: 900 } })
+    context.setDefaultTimeout(15000)
+    const backend = await nativeBackend(context, withLegacyZoom(captured, ids, 'Om oss (rev 1)'))
+    await fixtureRoutes(context, barbers)
+    const page = await context.newPage()
+    await mountStudio(page)
+    // The Studio status and the canvas HTML and CSS that it exports.
+    const canvas = () =>
+      page.evaluate(async () => {
+        const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+        const { readCanvasCss } = await import('/src/admin/cms/nativeCanvas.ts')
+        const editor = cmsGrapes.editors.at(-1)
+        return {
+          status: globalThis.document.querySelector('.cms-status')?.textContent,
+          html: editor.getHtml({ cleanId: false }),
+          css: readCanvasCss(editor),
+        }
+      })
+    // The draft as the owner exports it.
+    const exportDraft = async () => {
+      await page.getByRole('button', { name: 'Utkast & backup', exact: true }).click()
+      const downloaded = page.waitForEvent('download')
+      await page
+        .getByRole('dialog', { name: 'Utkast & backup' })
+        .getByRole('button', { name: 'Export', exact: true })
+        .click()
+      const stream = await (await downloaded).createReadStream()
+      assert.ok(stream, 'The backup must be readable')
+      const chunks = []
+      for await (const chunk of stream) chunks.push(chunk)
+      await page
+        .getByRole('dialog', { name: 'Utkast & backup' })
+        .getByRole('button', { name: 'Stäng panel', exact: true })
+        .click()
+      return JSON.parse(Buffer.concat(chunks).toString('utf8'))
+    }
+    const difference = (previous, next) => {
+      if (previous === next) return null
+      let offset = 0
+      while (offset < previous.length && previous[offset] === next[offset]) offset++
+      return {
+        offset,
+        beforeLength: previous.length,
+        afterLength: next.length,
+        before: previous.slice(Math.max(0, offset - 160), offset + 320),
+        after: next.slice(Math.max(0, offset - 160), offset + 320),
+      }
+    }
+    const stages = []
+    const record = async (stage) => {
+      const current = { stage, ...(await canvas()), draft: await exportDraft() }
+      stages.push({ stage: current.stage, status: current.status })
+      return current
+    }
+
+    // Load: the stored legacy zoom opens as an unpublished width-form draft.
+    await page
+      .locator('.cms-status')
+      .filter({ hasText: /^(Opublicerade ändringar|Publicerad · rev 1)$/ })
+      .waitFor()
+    const loaded = await record('load')
+    assert.equal(loaded.status, 'Opublicerade ändringar', 'Load kept the stored legacy zoom')
+    await publish(page, 2)
+    const published = await record('publish')
+    assert.equal(published.status, 'Publicerad · rev 2')
+    const assertUnchanged = async (stage) => {
+      const current = await record(stage)
+      await test.info().attach(`${stage}-stages`, {
+        body: JSON.stringify(stages, null, 2),
+        contentType: 'application/json',
+      })
+      const differences = {
+        html: difference(published.html, current.html),
+        css: difference(published.css, current.css),
+      }
+      assert.deepEqual(
+        differences,
+        { html: null, css: null },
+        `${stage} changed the exported canvas: ${JSON.stringify(differences)}`,
+      )
+      assert.equal(current.status, 'Publicerad · rev 2', `${stage} changed the draft status`)
+      assert.deepEqual(current.draft, published.draft, `${stage} changed the exported draft`)
+    }
+
+    // 1. The selections and Style Manager reads of the policy probe above, at its pace.
+    const natural = await page.evaluate(async () => {
+      const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+      const editor = cmsGrapes.editors.at(-1)
+      const tick = (ms) => new Promise((resolve) => globalThis.setTimeout(resolve, ms))
+      const steps = []
+      for (const [selector, sector, property] of [
+        ['[data-knc-fold="gallery-track"]', 'position', 'transform'],
+        ['[data-knc-fold="gallery-tile"]', 'layout', 'width'],
+        ['[data-knc-fold="barber-marquee"]', 'layout', 'overflow'],
+        ['[data-knc-fold="barber-marquee"]', 'layout', 'width'],
+        ['[data-knc-fold="barber-marquee"]', 'layout', 'height'],
+        ['[data-knc-fold="gallery-tile"]', 'typography', 'color'],
+      ]) {
+        const target = editor.getWrapper().find(selector)[0]
+        if (!target) throw new Error(`Missing ${selector}`)
+        editor.select(target)
+        // The Style Manager applies a new selection on its next tick.
+        await tick(50)
+        steps.push({
+          selector,
+          property,
+          visible: editor.StyleManager.getProperty(sector, property)?.isVisible() ?? false,
+          dirty: editor.getDirtyCount(),
+        })
+      }
+      // Past Studio's change debounce, so a change any step made has reached the status.
+      await tick(400)
+      return steps
+    })
+    await test.info().attach('passive-steps', {
+      body: JSON.stringify(natural, null, 2),
+      contentType: 'application/json',
+    })
+    await assertUnchanged('Passive selection')
+
+    // 2. Both color controls show their default over the gallery track's empty rule, then the
+    // selection moves to a gallery tile. The controls the Studio mounted keep their place among
+    // the selection listeners.
+    const controlled = await page.evaluate(async () => {
+      const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+      const editor = cmsGrapes.editors.at(-1)
+      const tick = (ms) => new Promise((resolve) => globalThis.setTimeout(resolve, ms))
+      const [track] = editor.getWrapper().find('[data-knc-fold="gallery-track"]')
+      const [tile] = editor.getWrapper().find('[data-knc-fold="gallery-tile"]')
+      if (!track || !tile) throw new Error('The gallery is missing')
+      const styles = editor.StyleManager
+      const color = styles.getProperty('typography', 'color')
+      const borderColor = styles
+        .getProperty('surface', 'border')
+        ?.getProperties()
+        .find((property) => property.getName() === 'border-color')
+      if (!color?.view || !borderColor?.view) throw new Error('The color controls are missing')
+      const shown = (property) =>
+        globalThis.document.querySelector(`#cms-styles .gjs-sm-property__${property} input`)?.value
+      const state = () => ({
+        target: styles.getSelected()?.selectorsToString(),
+        stored: color.hasValue(),
+        color: shown('color'),
+        borderColor: shown('border-color'),
+      })
+      editor.select(track)
+      await tick(50)
+      const settled = state()
+      // As PropertyView.render does: the control shows the value, or the default without one.
+      for (const property of [color, borderColor]) property.view.setValue(property.getValue())
+      const stale = state()
+      editor.select(tile)
+      await tick(400)
+      return { track: track.getId(), tile: tile.getId(), settled, stale }
+    })
+    await test.info().attach('controlled-state', {
+      body: JSON.stringify(controlled, null, 2),
+      contentType: 'application/json',
+    })
+    const target = `#${controlled.track}`
+    assert.deepEqual(
+      { target: controlled.settled.target, stored: controlled.settled.stored },
+      { target, stored: false },
+      `The Style Manager does not target the empty track rule: ${JSON.stringify(controlled)}`,
+    )
+    assert.deepEqual(
+      controlled.stale,
+      { target, stored: false, color: 'black', borderColor: 'black' },
+      `The color controls do not show their defaults over the track rule: ${JSON.stringify(controlled)}`,
+    )
+    await assertUnchanged('Selecting a tile after the color controls showed their defaults')
+
+    // 3. Control: a real color edit in the inspector changes the selected tile's own rule.
+    const colorsOf = () =>
+      page.evaluate(async (ids) => {
+        const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+        const editor = cmsGrapes.editors.at(-1)
+        const of = (id) =>
+          editor.Css.getAll()
+            .filter((rule) => rule.selectorsToString() === `#${id}`)
+            .map((rule) => String(rule.getStyle().color ?? '').replace(/\s*!important$/i, ''))
+            .filter(Boolean)
+        return { track: of(ids.track), tile: of(ids.tile) }
+      }, controlled)
+    const uncolored = await colorsOf()
+    const colorField = page.locator('#cms-inspector .gjs-sm-property__color input').first()
+    await colorField.fill('#123456')
+    await colorField.press('Enter')
+    await colorField.press('Tab')
+    await page.getByText('Opublicerade ändringar', { exact: true }).waitFor()
+    const colored = await colorsOf()
+    const evidence = JSON.stringify({ uncolored, colored })
+    assert.deepEqual(
+      colored.track,
+      uncolored.track,
+      `The color edit reached the former selection: ${evidence}`,
+    )
+    assert.deepEqual(
+      colored.tile.filter((value) => !uncolored.tile.includes(value)),
+      ['#123456'],
+      `The color edit did not reach the selected tile: ${evidence}`,
+    )
+    await publish(page, 3)
+    assert.ok(
+      JSON.stringify(backend.document.presentation.pages).includes('#123456'),
+      'The published draft lost the inspector color',
+    )
+  })
 })
 test.describe('source adoption', () => {
   // Paths that cms-marquee-zoom.spec.mjs does not reach: the asynchronous source upgrade of a stored
