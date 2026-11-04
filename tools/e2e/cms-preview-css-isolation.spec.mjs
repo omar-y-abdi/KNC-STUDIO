@@ -651,6 +651,16 @@ const layerOrders = [
     alone: { card: 'rgb(255, 0, 0)', background: 'rgb(255, 0, 0)' },
   },
   {
+    // The canvas imports the statement as the empty blocks of the case before, so About's sheet
+    // takes in neither form.
+    name: 'Home names About layers in the other order with a layer statement',
+    homeCss: '@layer b, a;',
+    aboutCss: aboutLayers,
+    aboutSaved: savedAboutLayers,
+    wins: { card: 'rgb(0, 0, 255)', background: 'rgb(0, 0, 255)' },
+    alone: { card: 'rgb(255, 0, 0)', background: 'rgb(255, 0, 0)' },
+  },
+  {
     name: 'a Home block with declarations names the layer first',
     homeCss:
       '@layer first { .home-note { color: green } #home-heading { color: green } } ' +
@@ -2206,10 +2216,11 @@ for (const { name, layers } of studioConditionalLayers) {
   })
 }
 
-// A Home save keeps a rule on the page of its subject. Each rule names the other page's first
-// element only inside :not(), which excludes that element and adds no element to those the rule
-// styles; the control names no other element. Home's first element is knc-desktop-home-0-i0, and
-// About's knc-about-0-i0.
+// A Home save keeps a rule on the page of its subject. Each rule names an element of the other page
+// only inside :not(), which excludes that element and adds no element to those the rule styles, or
+// inside :has(), which tests a relative of the subject; the control names no other element. Home's
+// first element is knc-desktop-home-0-i0 and its main knc-desktop-home-0-i1, which holds the Desktop
+// About slot; About's first element is knc-about-0-i0.
 const negatedIds = [
   {
     name: 'a bare About ID',
@@ -2228,6 +2239,25 @@ const negatedIds = [
     owner: '/',
     rule: '#knc-desktop-home-0-i0:not(#knc-about-0-i0){padding-left:17px!important}',
     subject: 'knc-desktop-home-0-i0',
+  },
+  {
+    // No ID names this subject, so only the ID inside :not() could claim the rule for About.
+    name: "a Home attribute selector with About's ID inside :not()",
+    owner: '/',
+    rule: '[id="knc-desktop-home-0-i0"]:not(#knc-about-0-i0){padding-left:17px!important}',
+    subject: 'knc-desktop-home-0-i0',
+  },
+  {
+    name: "an About ID with Home's ID inside :has(:not())",
+    owner: '/about',
+    rule: '#knc-about-0-i0:has(:not(#knc-desktop-home-0-i0)){padding-left:17px!important}',
+    subject: 'knc-about-0-i0',
+  },
+  {
+    name: "Home's main with About's ID inside :has()",
+    owner: '/',
+    rule: '#knc-desktop-home-0-i1:has(#knc-about-0-i0){padding-left:17px!important}',
+    subject: 'knc-desktop-home-0-i1',
   },
 ]
 
