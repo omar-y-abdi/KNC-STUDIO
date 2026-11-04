@@ -1,4 +1,5 @@
 import { modeCss } from '../shared/cms-mode-css'
+import { inertStyleText } from '../shared/cms-style-text'
 import { preferredRepresentation, varyAccept } from './site/accept'
 import {
   escapeMarkdown,
@@ -559,7 +560,7 @@ function pageSheets(variant: PageVariant, mode: RenderedMode): string {
   return sheetSchemes(mode)
     .map(
       (scheme) =>
-        `<style id="cms-page-${scheme}"${schemeMedia(mode, scheme)}>${modeCss(repairDesktopCss(variant.css[scheme]), scheme)}</style>`,
+        `<style id="cms-page-${scheme}"${schemeMedia(mode, scheme)}>${inertStyleText(modeCss(repairDesktopCss(variant.css[scheme]), scheme))}</style>`,
     )
     .join('')
 }

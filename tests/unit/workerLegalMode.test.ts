@@ -771,12 +771,12 @@ describe('Worker CMS stylesheet boundary (A.B01)', () => {
   afterEach(() => vi.restoreAllMocks())
 
   it.each([
-    ['prefers-color-scheme (modeCss)', MODE_PAYLOAD, '</style><meta'],
-    ['max-width:1440px (repairDesktopCss)', REPAIR_PAYLOAD, '</style><meta'],
-    ['uppercase end tag', UPPER_PAYLOAD, '</STYLE><meta'],
+    ['prefers-color-scheme (modeCss)', MODE_PAYLOAD, '</style><meta', '<\\/style'],
+    ['max-width:1440px (repairDesktopCss)', REPAIR_PAYLOAD, '</style><meta', '<\\/style'],
+    ['uppercase end tag', UPPER_PAYLOAD, '</STYLE><meta', '<\\/STYLE'],
   ])(
     'keeps a stored boundary payload inert in the served sheet: %s',
-    async (_label, css, boundary) => {
+    async (_label, css, boundary, inert) => {
       const presentation = {
         ...emptyDocument().presentation,
         pages: [
@@ -788,6 +788,9 @@ describe('Worker CMS stylesheet boundary (A.B01)', () => {
       // real element; a correct embedding neutralizes "</" so no stray closer or active element.
       expect(httpEquivElements(html)).toBe(0)
       expect(html).not.toContain(boundary)
+      // Pin the neutralization form: the served sheet carries the escaped boundary "<\/style", so
+      // an HTML-entity 'fix' (&lt;/style) would fail here.
+      expect(html).toContain(inert)
       // The owner's CSS still reaches the page as inert text; the fix must not drop it.
       expect(html).toContain('a10-navigation')
     },
@@ -799,6 +802,7 @@ describe('Worker CMS stylesheet boundary (A.B01)', () => {
     const html = await serveBoundary({ ...emptyDocument().presentation, pages: [page] }, '/hemsida')
     expect(httpEquivElements(html)).toBe(0)
     expect(html).not.toContain('</style><meta')
+    expect(html).toContain('<\\/style')
     expect(html).toContain('a10-navigation')
   })
 

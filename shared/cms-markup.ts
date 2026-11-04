@@ -157,6 +157,12 @@ function checkCss(css: string, policy: MarkupPolicy, inline: boolean): MediaRef[
     if (error instanceof CmsValidationError) throw error
     return reject('css', 'Malformed CSS')
   }
+  // CSS escapes such as `\3c` survive validation but css-tree `generate` materializes them, the
+  // same transformation the Worker applies before embedding. Reject a boundary the generated form
+  // reveals, so an escaped `</style>` cannot reach the served `<style>` element.
+  const canonical = generate(tree)
+  if (canonical.includes('</') || canonical.includes('\0'))
+    reject('css', 'Unsafe stylesheet boundary')
   const refs: MediaRef[] = []
   walk(tree, (node) => {
     if (node.type === 'Raw') reject('css', 'Unparsed CSS is not permitted')
