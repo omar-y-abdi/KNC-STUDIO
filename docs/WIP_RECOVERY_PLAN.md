@@ -3,16 +3,9 @@
 ## Baseline and authorization
 
 The owner merged PR #91 as main `93ff32985052a42b9215db210ad5e6951aad5a65`.
-PR #90 is closed. `/Users/k/dev/barber/project` is now on local main at that commit.
-Old branches/worktrees and unrelated untracked files remain preserved.
+PR #90 is closed.
 
-The owner resumes all remaining implementation with four GPT-6.1 Sol agents at max
-reasoning. The coordinator owns review, integration and ALL test execution. Authors
-run no tests/builds/typechecks/servers/database stacks. Tests run serially with one
-worker where supported. This supersedes the earlier pause, medium routing and ban
-on coordinator local tests. Production deployment, migration and CMS publication
-remain outside this PR task. Deliver one open PR against main, then shut down only
-this session's Colima profile and go idle for owner review.
+Production deployment, migration and CMS publication remain outside this PR task.
 
 ## Recovery source
 
@@ -40,7 +33,6 @@ squashing remain owner-dependent. Native Auth emails remain outside delivery log
 3. C / wip_editor: Editor and canvas/page controls, geometry, zoom and startup.
    Branch `wip/editor-layout`. Initial audit only; synchronize before edits.
 4. D: independent adversarial review of source changes and named invariants, read-only.
-   Four agents total; tool capacity permits three running subagents simultaneously.
 
 Coordinator records exact file ownership before parallel editing. Shared files are
 sequenced. Every completed author branch absorbs the latest accepted aggregate before
@@ -57,91 +49,36 @@ publication authorization/retention repairs, Zod4/CSP, shell parser, all-engine 
 Calendar contract and operational documentation. No lowered budgets, relaxed assertions,
 retries or replacement screenshot baselines to obtain green.
 
-The coordinator runs local checks serially: static/unit/build gates and focused browser
-regressions for demonstrated failures, plus local pgTAP, adapter integration and actual
-Edge/Storage/customer journeys. Full configured CMS Chromium/WebKit, public/admin/visual,
-startup, Edge and historical database coverage runs in GitHub on the final pushed head;
-these suites need not be duplicated locally without a new risk or failure. Keep every
-configured case, threshold and engine. Use discovery/report verification; missing, skipped
-or retried expected cases are not passes. Final CI and CodeQL must pass before handoff.
-One background watcher per push; inspect failed logs, avoid manual status polling.
+The gates run in CI on the stack PRs (#119 to #138) and on #104: static, unit and build
+gates, public/admin/visual, CMS Chromium/WebKit and startup browsers, Edge Functions,
+current-schema, integration and customer browsers, and historical database compatibility.
+Keep every configured case, threshold and engine. Use discovery/report verification; missing,
+skipped or retried expected cases are not passes. Final CI and CodeQL must pass before handoff.
 
-## Environment ownership
+## Test secrets and receipts
 
-Other session's `default` Colima profile was running at discovery; never stop or mutate it.
-Our profile is `knc-wip-20261028`, started with --activate=false, 2 CPUs/4 GiB.
-Pin DOCKER_HOST per command to its socket; do not change global Docker context.
-Use isolated Supabase host ports and E2E_PORT_OFFSET after checking availability.
-Dependencies are private under `/Users/k/dev/barber/wt/.wip-deps-20261028`.
 No production credentials are needed for test fixtures. Keep temporary test secrets and
-port overrides outside commits. Stop our services/profile at final handoff, including
-failure/blocked handoff. Final receipts go in the PR description to avoid a new source
+port overrides outside commits. Final receipts go in the PR description to avoid a new source
 commit solely to record the preceding successful CI run.
 
-## Current checkpoint — 2026-10-30
+## Editor invariants — 2026-10-30
 
-The coordinator aggregate is `wip/complete-2026-10` at source checkpoint `cd8b9f7`.
-Fetched main remains `93ff329`; no recovery PR has been pushed yet. A and B's
-implementation is integrated. A's geometry synchronization branch has joined the
-aggregate without changing its accepted tree. C's browser-sampled cascade resolver,
-selector-preserving imports and mobile nested-style preservation are integrated.
-C's completed branch absorbed the latest aggregate without conflicts and with an
-identical tree; its native-priority, current-viewport and mobile/intrinsic gates pass.
-The coordinator alone executes tests.
+Canonical CssRule models and exported CSS must remain unchanged by preview rendering.
+Both engines enforce 3,000 ms startup readiness. The synchronous editor spans that the
+startup check reports are browser instrumentation, not OS or Edge CPU measurements.
 
-Current ownership: A owns shared-preview CSS isolation in `composedCanvas.ts`, its
-focused regression, and the narrow render-projector wiring in `nativeCanvas.ts`,
-`Editor.tsx` and the temporary style paints in `resizeStyles.ts`. Canonical CssRule
-models and exported CSS must remain unchanged by preview rendering. C's resize
-algorithm and normalization adapter are frozen. D reviews independently.
-A's `responsiveStyles.ts` fixes are accepted and frozen.
-
-Verified local receipts, not final pushed-head acceptance:
-
-- `08e9d58`: 160 unit files / 1,865 tests passed (`/tmp/knc-wip-canvas-unit.log`).
-- `c81d63d`: full typecheck and all 18 composition cases passed across Chromium and
-  WebKit, split into the four focused import/cascade cases and the 14 remaining
-  composition/lifecycle cases (`/tmp/knc-wip-canvas-import-c81d63d.log` and
-  `/tmp/knc-wip-composition-c81d63d.log`). The independent import review is closed.
-- `08e9d58`: production harness build and all 14 startup cases passed
-  (`/tmp/knc-wip-startup-20261030.log`). Both engines enforce 3,000 ms readiness.
-  Real-fixture median readiness was 1,426.5 ms Chromium and 2,509 ms WebKit;
-  synchronous editor spans were 604.7 ms and 1,012 ms respectively. These spans
-  are browser instrumentation, not OS or Edge CPU measurements.
-- `4724666`: actual Edge/Storage acceptance passed, and all three customer browser
-  engines passed against the isolated stack. Discovery/report verification found
-  no missing, skipped or retried customer cases. Logs: `/tmp/knc-wip-asset-copy.log`
-  and `/tmp/knc-wip-customer-4724666.log`.
-- Earlier SQL/integration receipts remain separately bounded in
-  [the implementation ledger](WIP_IMPLEMENTATION.md).
-
-Subsequent bounded receipts: `c9c1029` passed full typecheck, ESLint and 49 focused
-resize/synchronization unit cases. At `d4bfb90`, the five focused import, selector,
-resolver and animation cases passed in each browser. Actual authored control tests
-then exposed remaining history/import defects; an incomplete red run is not acceptance.
-
-The subsequent resize gates are green: full typecheck, both current-viewport regressions
-(`/tmp/knc-wip-native-policy-gate.log`), both native-priority/logical-width/all-reset
-roundtrips (`/tmp/knc-wip-native-policy-gate3.log`), and four full mobile/intrinsic cases
-(`/tmp/knc-wip-mobile-intrinsic-gate.log`). Native priority uses the existing complete
-normalization policy only for targeted native IDs, including inactive contexts.
-Current-frame measurements replace stale Desktop snapshot dimensions.
+Native priority uses the existing complete normalization policy only for targeted native
+IDs, including inactive contexts. Current-frame measurements replace stale Desktop
+snapshot dimensions.
 
 A standalone native WebKit probe reproduced its physical text-size floor exactly.
 The intrinsic regression therefore checks native-browser parity below that floor,
 retaining owner font/width/alignment and the initial proportional assertion. The
 mobile preservation counter checks actual editable IDs and excludes preview copies.
 
-Remaining gates: isolate shared-preview rendering, then finish real control
-geometry/theme/language/Undo/publication/reload coverage, full integrated checks and
-GitHub CI/CodeQL. The preview regression fails correctly in both engines on old source
-(`/tmp/knc-wip-preview-red2.log`): duplicate global CSS changes owner width and derived
-copies lose layer geometry and local references. Render-only projection must preserve
-canonical ID model identity, direct declaration specificity, anonymous layer identity
-and the same CSS during resize probes. Keep the existing CSS validator: unsupported Raw
-syntax and reserved internal properties are not reasons to broaden the admitted language.
-
-The coordinator stopped its Supabase stack with backup and stopped Colima profile
-`knc-wip-20261028` on 2026-10-30 after the backend gates. `default` was independently
-verified still running. Frontend checks need no Colima. If a new backend failure
-requires restart, use only the coordinator's existing isolated profile and ports.
+The preview regression covers the old-source failure in which duplicate global CSS changes
+owner width and derived copies lose layer geometry and local references. Render-only
+projection must preserve canonical ID model identity, direct declaration specificity,
+anonymous layer identity and the same CSS during resize probes. Keep the existing CSS
+validator: unsupported Raw syntax and reserved internal properties are not reasons to
+broaden the admitted language.
