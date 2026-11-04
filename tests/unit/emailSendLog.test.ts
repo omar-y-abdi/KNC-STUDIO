@@ -19,10 +19,13 @@ import {
 } from '../../supabase/functions/_shared/email'
 import {
   EMAIL_LINK_EXPOSURE,
+  emailSendRecordParams,
   prepareEmail,
   type EmailSendLogClient,
   type PreparedEmail,
 } from '../../supabase/functions/_shared/emailSendLog'
+import { requestSchema as emailChangeRequest } from '../../supabase/functions/send-email-change/request'
+import { emptyDocument, validateCompleteDocument, type CmsEmail } from '../../shared/cms'
 import { encryptCustomerAccessToken } from '../../supabase/functions/_shared/customerAccess'
 import { buildCustomerEmailLinkMessage } from '../../supabase/functions/_shared/customerEmailLink'
 import {
@@ -207,6 +210,159 @@ describe('delivery log schema parity', () => {
   it('accepts exactly the failure codes the senders write', () => {
     expect(checkList('error_code')).toEqual([...EMAIL_SEND_FAILURE_CODES])
   })
+})
+
+describe('delivery log subject bound', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
+  /** The stored subject bound, in characters as PostgreSQL's char_length counts them. */
+  const SUBJECT_BOUND = Number(
+    /char_length\(subject\) between 1 and (\d+)/.exec(readFileSync(MIGRATION, 'utf8'))?.[1],
+  )
+  const codePoints = (value: string): number => Array.from(value).length
+
+  /** An address of `length` characters with every DNS label within 63 characters. */
+  function address(length: number): string {
+    const local = 'a'.repeat(60)
+    const domain = ['b', 'c', 'd', 'e']
+      .map((letter) => letter.repeat(63))
+      .join('.')
+      .slice(0, length - local.length - 1 - '.test'.length)
+      .replace(/\.$/, 'f')
+    return `${local}@${domain}.test`
+  }
+
+  /** The address check send-email-change/index.ts applies after its request schema. */
+  function emailChangeAccepts(value: string): boolean {
+    const parsed = emailChangeRequest.safeParse({ new_email: value, lang: 'sv' })
+    return (
+      parsed.success &&
+      parsed.data.new_email === value &&
+      /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) &&
+      value.length <= 254
+    )
+  }
+
+  /** Studio publishes this subject: the complete-document validator accepts it. */
+  function publishableSubject(subject: string): void {
+    const copy = defaultEmailTemplate('auth_email_change', 'sv')
+    const email: CmsEmail = {
+      template: 'auth_email_change',
+      lang: 'sv',
+      subject: copy.subject,
+      preheader: copy.preheader,
+      title: copy.title,
+      intro: copy.intro,
+      section_title: copy.sectionTitle,
+      note: copy.note,
+      cta_label: copy.ctaLabel,
+      contact_lead: copy.contactLead,
+      design: null,
+    }
+    const authoritative = { ...emptyDocument(), emails: [email] }
+    const candidate = { ...emptyDocument(), emails: [{ ...email, subject }] }
+    expect(() => validateCompleteDocument(candidate, authoritative)).not.toThrow()
+  }
+
+  function emailChange(subject: string, to: string): PreparedEmail {
+    publishableSubject(subject)
+    expect(emailChangeAccepts(to)).toBe(true)
+    return prepareEmail(
+      'auth_email_change',
+      {
+        to,
+        lang: 'sv',
+        copy: { ...defaultEmailTemplate('auth_email_change', 'sv'), subject },
+        variables: { new_email: to },
+        ctaHref: LINKS.auth_email_change.href,
+        business,
+      },
+      null,
+    )
+  }
+
+  // Four addresses and their spaces, then a literal pad that ends in eleven astral characters
+  // (one code point, two UTF-16 units each): `pad` places the rendered subject on the boundary.
+  const LONG_ADDRESS = address(235)
+  const boundarySubject = (pad: number): string =>
+    '{new_email} '.repeat(4) + 'x'.repeat(pad) + '\u{1F4E8}'.repeat(11)
+
+  it('reads the 998-character bound the delivery log stores', () => {
+    expect(SUBJECT_BOUND).toBe(998)
+  })
+
+  it('stores a rendered subject of exactly the bound as sent, counted in code points', async () => {
+    const email = emailChange(boundarySubject(43), LONG_ADDRESS)
+
+    expect(LONG_ADDRESS).toHaveLength(235)
+    expect(codePoints(email.message.subject)).toBe(4 * 235 + 4 + 43 + 11)
+    expect(codePoints(email.message.subject)).toBe(SUBJECT_BOUND)
+    expect(email.message.subject.length).toBe(SUBJECT_BOUND + 11)
+    const params = await emailSendRecordParams(email, 'auth-email-change/bound', { status: 'sent' })
+    expect(params['p_subject']).toBe(email.message.subject)
+  })
+
+  it('bounds a rendered subject one character over to a recognizable stored subject', async () => {
+    const email = emailChange(boundarySubject(44), LONG_ADDRESS)
+
+    expect(codePoints(email.message.subject)).toBe(SUBJECT_BOUND + 1)
+    const params = await emailSendRecordParams(email, 'auth-email-change/over', { status: 'sent' })
+    const stored = String(params['p_subject'])
+    expect(codePoints(stored)).toBeGreaterThan(0)
+    expect(codePoints(stored)).toBeLessThanOrEqual(SUBJECT_BOUND)
+    // A lone surrogate is not text PostgreSQL accepts: a cut never splits a character.
+    expect(stored).not.toMatch(/\p{Cs}/u)
+    expect(stored.startsWith(email.message.subject.slice(0, 4 * 235 + 4 + 44))).toBe(true)
+  })
+
+  // The review's input: five {new_email} in a 59-character subject and a 218-character address
+  // render 5 * 218 + 4 = 1,094 characters.
+  const REVIEW_ADDRESS = address(218)
+  const REVIEW_SUBJECT = Array(5).fill('{new_email}').join(' ')
+
+  /** A log client that applies the table's subject CHECK the way PostgreSQL does. */
+  function boundedLog() {
+    return {
+      rpc: vi.fn<EmailSendLogClient['rpc']>(async (_name, params) => {
+        const length = codePoints(String(params['p_subject']))
+        return { error: length >= 1 && length <= SUBJECT_BOUND ? null : { code: '23514' } }
+      }),
+    }
+  }
+
+  it.each([
+    ['sent', () => new Response(JSON.stringify({ id: '11111111-1111-4111-8111-111111111111' }))],
+    ['failed', () => new Response(JSON.stringify({ name: 'validation_error' }), { status: 422 })],
+  ] as const)(
+    'records a %s attempt whose expanded subject exceeds the bound',
+    async (status, response) => {
+      vi.spyOn(console, 'info').mockImplementation(() => undefined)
+      const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+      const fetchMock = vi.fn<typeof fetch>(async () => response())
+      vi.stubGlobal('fetch', fetchMock)
+      const email = emailChange(REVIEW_SUBJECT, REVIEW_ADDRESS)
+      const log = boundedLog()
+
+      expect([REVIEW_SUBJECT.length, REVIEW_ADDRESS.length]).toEqual([59, 218])
+      expect(email.message.subject).toHaveLength(1094)
+      const outcome = await sendViaResend(email, 're_test', 'auth-email-change/long', log).then(
+        () => 'sent',
+        () => 'failed',
+      )
+
+      expect(outcome).toBe(status)
+      // The provider still receives the subject as rendered; only the log's copy is bounded.
+      expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)).subject).toBe(
+        email.message.subject,
+      )
+      expect(log.rpc).toHaveBeenCalledTimes(1)
+      expect(log.rpc.mock.calls[0]?.[1]).toMatchObject({ p_status: status })
+      expect(error).not.toHaveBeenCalledWith('email send log write failed', expect.anything())
+    },
+  )
 })
 
 describe('sendViaResend delivery log', () => {
