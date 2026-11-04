@@ -12,6 +12,8 @@ const state = vi.hoisted(() => ({
   subscriptionHandler: undefined as ((status: string) => void) | undefined,
   removeChannel: vi.fn(),
   realtimeReady: Promise.resolve(),
+  // The client the module gives once ready; null when live updates are unavailable.
+  realtimeAvailable: true,
 }))
 
 vi.mock('../../src/backend/config', () => ({
@@ -40,10 +42,11 @@ vi.mock('../../src/backend/publicRealtime', () => ({
         return channel
       }),
     }
-    return state.realtimeReady.then(() => ({
-      channel: () => channel,
-      removeChannel: state.removeChannel,
-    }))
+    return state.realtimeReady.then(() =>
+      state.realtimeAvailable
+        ? { channel: () => channel, removeChannel: state.removeChannel }
+        : null,
+    )
   },
 }))
 
@@ -65,6 +68,7 @@ describe('Supabase site chrome resolution', () => {
     state.subscriptionHandler = undefined
     state.removeChannel.mockReset()
     state.realtimeReady = Promise.resolve()
+    state.realtimeAvailable = true
 
     vi.stubGlobal(
       'fetch',
@@ -298,5 +302,22 @@ describe('Supabase site chrome resolution', () => {
     expect(state.subscriptionHandler).toBeUndefined()
     expect(state.changeFilters).toEqual([])
     expect(state.removeChannel).not.toHaveBeenCalled()
+  })
+
+  it('opens no channel and raises nothing when live updates are unavailable', async () => {
+    state.realtimeAvailable = false
+    const onChange = vi.fn()
+
+    const surfaced = await unhandledRejectionsDuring(async () => {
+      const unsubscribe = supabaseSiteChromeAdapter.subscribe?.('sv', onChange)
+      await flush()
+      expect(() => unsubscribe?.()).not.toThrow()
+    })
+
+    expect(surfaced).toEqual([])
+    expect(state.subscriptionHandler).toBeUndefined()
+    expect(state.changeFilters).toEqual([])
+    expect(state.removeChannel).not.toHaveBeenCalled()
+    expect(onChange).not.toHaveBeenCalled()
   })
 })

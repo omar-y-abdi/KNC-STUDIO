@@ -308,3 +308,67 @@ test('cms-native', async ({ page, context, browserName, evidenceDir }) => {
     throw error
   }
 })
+
+// In WebKit a navigation away from the page cancels its pending loads, and a dynamic import still in
+// flight rejects while the old document still runs. The public page starts live updates
+// (publicRealtime.ts) and loads the booking-catalog module (barbersIndex.ts: the idle preload and
+// each catalog subscriber) after first content; a visitor who leaves during that window must not get
+// a page error. Each case holds one of the two imports and waits until the other has finished, so a
+// page error names its source. A page error that arrives before beforeunload means the page cannot
+// tell that it is leaving.
+const leavingCases = [
+  {
+    load: 'live-update library',
+    held: (pathname) => /\/@supabase_realtime-js\.js$|\/@supabase\/realtime-js\//.test(pathname),
+    // The booking-catalog module has loaded once it asks for the catalog.
+    otherSettled: (page) =>
+      page.waitForRequest(
+        (request) => new URL(request.url()).pathname === '/rest/v1/rpc/public_booking_catalog',
+      ),
+  },
+  {
+    load: 'booking-catalog module',
+    held: (pathname) => pathname === '/src/booking/adapters/supabaseBookingCatalog.ts',
+    // Live updates have their client once it opens its socket.
+    otherSettled: (page) =>
+      page.waitForEvent('websocket', (socket) => socket.url().includes('/realtime/v1/websocket')),
+  },
+]
+for (const { load, held, otherSettled } of leavingCases)
+  test(`cms-native leaving during the ${load} import raises no page error`, async ({
+    page,
+    context,
+  }) => {
+    context.setDefaultTimeout(15000)
+    await nativeBackend(context)
+    const events = []
+    await page.addInitScript(() => {
+      globalThis.addEventListener('beforeunload', () => console.info('cms-native: beforeunload'))
+    })
+    page.on('console', (message) => {
+      if (message.text() === 'cms-native: beforeunload') events.push('beforeunload')
+    })
+    page.on('pageerror', (error) => events.push(`pageerror ${error.message}\n${error.stack}`))
+    // Never released: the navigation below is what ends this request.
+    await page.route(
+      (url) => held(url.pathname),
+      () => undefined,
+    )
+    const requested = page.waitForRequest((request) => held(new URL(request.url()).pathname))
+    const settled = otherSettled(page)
+    // The held request never finishes, so the page may never reach its load event.
+    await page.goto(harnessOrigin, { waitUntil: 'domcontentloaded' })
+    await Promise.all([requested, settled])
+    await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html?view=cms-studio`)
+    const leaving = events.indexOf('beforeunload')
+    const firstError = events.findIndex((event) => event.startsWith('pageerror '))
+    assert.ok(
+      firstError === -1 || (leaving !== -1 && leaving < firstError),
+      `The page saw no beforeunload before the failed import was reported: ${JSON.stringify(events)}`,
+    )
+    assert.deepEqual(
+      events.filter((event) => event.startsWith('pageerror ')),
+      [],
+      `Leaving during the ${load} import raised page errors`,
+    )
+  })
