@@ -416,3 +416,49 @@ describe('a created page stored with a frozen header by main', () => {
     )
   })
 })
+
+// A.R06: an owner edit or import can drop the `cms-site-action-theme` class from a frozen page's
+// theme toggle while keeping its label. withFrozenActionLinks still rewrites the href by label, but
+// leaves the class off; CMS_THEME_SCRIPT only retargets `a.cms-site-action-theme`, so in auto-dark
+// the link stays pinned to dark and a click cannot reach light. Restoring the class is the fix.
+describe('a classless legacy theme link (A.R06)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  const THEME_ID = 'knc-desktop-home-0-i0-i1-i3'
+  const untagTheme = (html: string): string => html.replace(' class="cms-site-action-theme"', '')
+  const classes = (node: Element): string[] =>
+    (value(node, 'class') ?? '').split(/\s+/).filter(Boolean)
+
+  it.each(
+    (['sv', 'en'] as const).flatMap((lang) =>
+      (['auto', 'dark'] as const).map((mode) => ({ lang, mode })),
+    ),
+  )(
+    'restores cms-site-action-theme on an untagged $lang theme link ($mode)',
+    async ({ lang, mode }) => {
+      const page = legacyPage({ sv: untagTheme(LEGACY_HTML.sv), en: untagTheme(LEGACY_HTML.en) })
+      expect(page.content[lang].html).not.toContain('cms-site-action-theme')
+      const presentation = withLegacy(page)
+      expectValid(presentation)
+      const pinned = mode === 'auto' ? '' : `&mode=${mode}`
+      const html = await serve(presentation, `/hemsida?lang=${lang}${pinned}`)
+      const link = withId(parse(html), THEME_ID)
+      // Red on f499463: the served theme link carries no class, so the browser script skips it.
+      expect(classes(link)).toContain('cms-site-action-theme')
+      // The href already follows main's mode, class or not; it stays the control.
+      expect(value(link, 'href')).toBe(`/hemsida?lang=${lang}&mode=${MAIN_THEME_MODE[mode]}`)
+    },
+  )
+
+  it('appends the class to an owner-styled theme link, keeping that link’s own class', async () => {
+    const edited = LEGACY_HTML.sv.replace(' class="cms-site-action-theme"', ' class="owner-theme"')
+    const page = legacyPage({ sv: edited, en: LEGACY_HTML.en })
+    const presentation = withLegacy(page)
+    expectValid(presentation)
+    const html = await serve(presentation, '/hemsida?lang=sv')
+    const link = withId(parse(html), THEME_ID)
+    expect(classes(link)).toEqual(expect.arrayContaining(['owner-theme', 'cms-site-action-theme']))
+  })
+})

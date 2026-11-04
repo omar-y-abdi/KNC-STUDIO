@@ -334,6 +334,74 @@ test.describe('the created page header toggles', () => {
   })
 })
 
+// A.R06: a frozen legacy page whose theme toggle kept its label but lost the
+// `cms-site-action-theme` class after an owner edit or import. The Worker rewrites the toggle's
+// href by its label, but the class is what CMS_THEME_SCRIPT needs to retarget the toggle to the
+// shown scheme. Restoring the class lets the classless toggle reach light from auto-dark; without
+// it the toggle stays pinned to dark and a click never leaves dark.
+test.describe('a frozen legacy page with a classless theme toggle (A.R06)', () => {
+  test.use({ colorScheme: 'dark', viewport: { width: 1280, height: 900 } })
+  const frozenBody = (lang) => {
+    const other = lang === 'sv' ? 'en' : 'sv'
+    const languageLabel = lang === 'sv' ? 'Byt språk till engelska' : 'Switch language to Swedish'
+    const themeLabel = lang === 'sv' ? 'Växla ljust/mörkt' : 'Toggle light/dark'
+    return (
+      `<div id="cms-site-shell"><header id="cms-site-header"><div class="cms-site-controls">` +
+      `<a href="/hemsida?lang=${other}&amp;mode=light" aria-label="${languageLabel}" class="cms-site-action-language"><span aria-hidden="true">SV</span><span aria-hidden="true">EN</span></a>` +
+      `<a title="${themeLabel}" aria-label="${themeLabel}" href="/hemsida?lang=${lang}&amp;mode=dark"><span aria-hidden="true"></span></a>` +
+      `</div></header><nav id="cms-site-menu" aria-label="${lang === 'sv' ? 'Sidmeny' : 'Pages'}"><a href="/?lang=${lang}&amp;mode=light">${lang === 'sv' ? 'Hem' : 'Home'}</a></nav>` +
+      `<div id="cms-site-content"><main id="cms-body-r06-${lang}"><h1>${lang === 'sv' ? 'Ny sida' : 'New page'}</h1><p>Text</p></main></div>` +
+      `<footer id="cms-site-footer"><a href="/privacy?lang=${lang}&amp;mode=light">${lang === 'sv' ? 'Integritet' : 'Privacy'}</a></footer></div>`
+    )
+  }
+  const frozenPresentation = () => {
+    const next = globalThis.structuredClone(fixture)
+    const css = '#cms-site-content main{padding:40px}'
+    next.pages.push({
+      id: '20000000-0000-4000-8000-0000000000a6',
+      kind: 'page',
+      path: '/hemsida',
+      inMenu: true,
+      name: { sv: 'Ny sida', en: 'New page' },
+      title: { sv: 'Ny sida', en: 'New page' },
+      description: { sv: '', en: '' },
+      content: {
+        sv: { html: frozenBody('sv'), css: { light: css, dark: css } },
+        en: { html: frozenBody('en'), css: { light: css, dark: css } },
+      },
+      layout: 'independent',
+    })
+    return next
+  }
+  const themeMode = (page, label) =>
+    page.evaluate((label) => {
+      const link = globalThis.document.querySelector(`#cms-site-header a[aria-label="${label}"]`)
+      return link ? new globalThis.URL(link.href).searchParams.get('mode') : null
+    }, label)
+
+  for (const { lang, label } of [
+    { lang: 'sv', label: 'Växla ljust/mörkt' },
+    { lang: 'en', label: 'Toggle light/dark' },
+  ]) {
+    test(`reaches light from auto-dark on the ${lang} page`, async ({ page, context }) => {
+      await visit(page, context, `/hemsida?lang=${lang}`, frozenPresentation())
+      await expect.poll(() => themeMode(page, label)).toBe('light')
+      await page.locator(`#cms-site-header a[aria-label="${label}"]`).click()
+      await page.waitForURL((url) => url.searchParams.get('mode') === 'light')
+    })
+  }
+
+  test('offers light again across an OS transition to dark', async ({ page, context }) => {
+    const label = 'Växla ljust/mörkt'
+    await visit(page, context, '/hemsida', frozenPresentation())
+    await expect.poll(() => themeMode(page, label)).toBe('light')
+    await page.emulateMedia({ colorScheme: 'light' })
+    await expect.poll(() => themeMode(page, label)).toBe('dark')
+    await page.emulateMedia({ colorScheme: 'dark' })
+    await expect.poll(() => themeMode(page, label)).toBe('light')
+  })
+})
+
 // Owner CSS that paints the page background with a gradient and changes background and text
 // together at the mobile breakpoint: the theme script must leave both under stylesheet control.
 const OWNER_CSS =
