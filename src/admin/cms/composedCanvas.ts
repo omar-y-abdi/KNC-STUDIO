@@ -17,7 +17,12 @@ import {
 } from 'css-tree'
 import type { CmsLang, CmsMode, CmsPage, CmsPresentation } from '../../../shared/cms'
 import type { CmsScene } from '../../cms/Scene'
-import { nativeCanvasTree, parseCanvasSheet, type CanvasTree } from './nativeCanvas'
+import {
+  nativeCanvasTree,
+  parseCanvasSheet,
+  parseLayerBlocks,
+  type CanvasTree,
+} from './nativeCanvas'
 import { bindCmsRootStyles } from './cmsRootStyles'
 
 type CanvasDevice = 'Desktop' | 'Mobile'
@@ -644,10 +649,11 @@ interface ComposedHomeOwners extends ComposedOwners {
   aboutHtml: string
 }
 
-/** GrapesJS imports a conditional block as one rule per child, so match either stored form. */
+/** GrapesJS imports a conditional block as one rule per child, so match either stored form. A layer
+ * statement matches as the empty blocks the canvas writes for it. */
 function storedItems(css: string): Set<string> {
   const items = new Set<string>()
-  for (const node of parseCanvasSheet(css).children) {
+  for (const node of parseLayerBlocks(css).children) {
     items.add(generate(node))
     if (node.type !== 'Atrule' || !node.block || hasLayer(node)) continue
     for (const child of node.block.children)
@@ -662,14 +668,14 @@ function storedItems(css: string): Set<string> {
 }
 
 /** Home's items precede About's on the canvas, so of equal layered items Home owns the first ones,
- * as many as it stored. */
+ * as many as it stored. A stored layer statement counts as the empty blocks the canvas writes. */
 function homeOwned(
   sheet: StyleSheet,
   sources: ReadonlyMap<CssNode, string>,
   home: string,
 ): Set<CssNode> {
   const stored = new Map<string, number>()
-  for (const node of parseCanvasSheet(home).children) {
+  for (const node of parseLayerBlocks(home).children) {
     if (!hasLayer(node)) continue
     const text = generate(node)
     stored.set(text, (stored.get(text) ?? 0) + 1)
