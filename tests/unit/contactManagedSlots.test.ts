@@ -10,6 +10,7 @@ import {
 import { CMS_BUILT_ASSETS } from '../../shared/cms-built-assets'
 import { validateDocumentMarkupPlacements } from '../../shared/cms-markup'
 import worker from '../../src/worker'
+import { withPageReads } from './helpers/cmsPageReads'
 
 // G09 (PR #104 final gate): a Contact body carrying data-business-contact-page="1" is the managed
 // template, and the Worker refills its five server-owned slots on every request
@@ -111,6 +112,37 @@ const VARIANTS: readonly (readonly [string, (html: string) => string, string | n
     'its title on a void element',
     (html) => edit(html, TITLE, '<hr id="contact-title">'),
     'presentation./contact.sv: Contact page server-owned slot #contact-title cannot be filled in <hr>',
+  ],
+  // Phase 2 additions: the same container rule for an enclosing <p>, a table row and SVG.
+  [
+    'its hours on a span inside a paragraph',
+    (html) =>
+      edit(
+        html,
+        HOURS,
+        '<p>Öppet: <span id="contact-hours" data-business-hours>se bokningen</span></p>',
+      ),
+    'presentation./contact.sv: Contact page server-owned slot #contact-hours cannot be filled in <p>',
+  ],
+  [
+    'its title on a table row',
+    (html) =>
+      edit(
+        html,
+        TITLE,
+        '<table><tbody><tr id="contact-title"><td>Kontakta Blade &amp; Blend Studio</td></tr></tbody></table>',
+      ),
+    'presentation./contact.sv: Contact page server-owned slot #contact-title cannot be filled in <tr>',
+  ],
+  [
+    'its city on an SVG element',
+    (html) =>
+      edit(
+        html,
+        '<span data-business-city>Göteborg</span>',
+        'Göteborg <svg data-business-city width="8" height="8"></svg>',
+      ),
+    'presentation./contact.sv: Contact page server-owned slot [data-business-city] cannot be filled in <svg>',
   ],
 ]
 
@@ -221,12 +253,14 @@ const noPublicContent = {
 
 /** The slots the Worker refilled from Företag & SEO and the schedule, as a browser parses them. */
 async function servedSlots(document: CmsDocument): Promise<readonly string[]> {
-  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) =>
-    String(input).endsWith('/rpc/public_cms_presentation')
-      ? Response.json({ revision: 7, presentation: document.presentation })
-      : String(input).endsWith('/rpc/public_business_discovery')
-        ? Response.json(discovery)
-        : new Response(null, { status: 503 }),
+  vi.spyOn(globalThis, 'fetch').mockImplementation(
+    withPageReads(async (input) =>
+      String(input).endsWith('/rpc/public_cms_presentation')
+        ? Response.json({ revision: 7, presentation: document.presentation })
+        : String(input).endsWith('/rpc/public_business_discovery')
+          ? Response.json(discovery)
+          : new Response(null, { status: 503 }),
+    ),
   )
   const response = await worker.fetch(
     new Request('https://bladeblendstudio.se/contact'),

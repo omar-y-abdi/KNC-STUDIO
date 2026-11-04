@@ -12,6 +12,7 @@ import { CMS_BUILT_ASSETS } from '../../shared/cms-built-assets'
 import { createSitePage, SITE_PAGE_CSS } from '../../shared/site-page'
 import { DEFAULT_BUSINESS, SCHEMA_DAYS, type BusinessOpeningHours } from '../../src/site/business'
 import worker, { renderContactMetadata } from '../../src/worker'
+import { withPageReads } from './helpers/cmsPageReads'
 
 // TST-2: /terms rendered by the Worker itself, not the static fallback file. The built shell shape
 // (entry script, preload, stylesheet in <head>) is derived from the real index.html.
@@ -255,10 +256,12 @@ describe('Worker CMS contact and static fallback', () => {
   }
 
   it('renders the editable CMS contact with current phone, address, hours and token base', async () => {
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) =>
-      String(input).endsWith('/rpc/public_cms_presentation')
-        ? Response.json({ revision: 7, presentation: { ...presentation, pages: [contact] } })
-        : Response.json(contactDiscovery),
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      withPageReads(async (input) =>
+        String(input).endsWith('/rpc/public_cms_presentation')
+          ? Response.json({ revision: 7, presentation: { ...presentation, pages: [contact] } })
+          : Response.json(contactDiscovery),
+      ),
     )
     const response = await requestContact()
     expect(response.status).toBe(200)
@@ -276,10 +279,15 @@ describe('Worker CMS contact and static fallback', () => {
   })
 
   it('answers the live Contact title and description when the owner set neither', async () => {
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) =>
-      String(input).endsWith('/rpc/public_cms_presentation')
-        ? Response.json({ revision: 7, presentation: { ...presentation, pages: [adoptedContact] } })
-        : Response.json(contactDiscovery),
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      withPageReads(async (input) =>
+        String(input).endsWith('/rpc/public_cms_presentation')
+          ? Response.json({
+              revision: 7,
+              presentation: { ...presentation, pages: [adoptedContact] },
+            })
+          : Response.json(contactDiscovery),
+      ),
     )
     const html = await (await requestContact()).text()
     const title = 'Kontakta Aktuell &amp; Salong – barbershop i Malmö'
@@ -293,10 +301,12 @@ describe('Worker CMS contact and static fallback', () => {
 
   it('keeps an owner description on the CMS Contact', async () => {
     const described = { ...contact, description: { sv: 'Ägarens beskrivning', en: '' } }
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) =>
-      String(input).endsWith('/rpc/public_cms_presentation')
-        ? Response.json({ revision: 7, presentation: { ...presentation, pages: [described] } })
-        : Response.json(contactDiscovery),
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      withPageReads(async (input) =>
+        String(input).endsWith('/rpc/public_cms_presentation')
+          ? Response.json({ revision: 7, presentation: { ...presentation, pages: [described] } })
+          : Response.json(contactDiscovery),
+      ),
     )
     const html = await (await requestContact()).text()
     expect(html).toMatch(
@@ -307,10 +317,12 @@ describe('Worker CMS contact and static fallback', () => {
   it.each(['GET', 'HEAD'])(
     'answers the CMS Contact with its agent headers on %s',
     async (method) => {
-      vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) =>
-        String(input).endsWith('/rpc/public_cms_presentation')
-          ? Response.json({ revision: 7, presentation: { ...presentation, pages: [contact] } })
-          : Response.json(contactDiscovery),
+      vi.spyOn(globalThis, 'fetch').mockImplementation(
+        withPageReads(async (input) =>
+          String(input).endsWith('/rpc/public_cms_presentation')
+            ? Response.json({ revision: 7, presentation: { ...presentation, pages: [contact] } })
+            : Response.json(contactDiscovery),
+        ),
       )
       const response = await requestContact(method)
       expect(response.status).toBe(200)
@@ -320,10 +332,15 @@ describe('Worker CMS contact and static fallback', () => {
   )
 
   it('answers ?lang=en with the English Contact, its live facts and the English default title', async () => {
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) =>
-      String(input).endsWith('/rpc/public_cms_presentation')
-        ? Response.json({ revision: 7, presentation: { ...presentation, pages: [adoptedContact] } })
-        : Response.json(contactDiscovery),
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      withPageReads(async (input) =>
+        String(input).endsWith('/rpc/public_cms_presentation')
+          ? Response.json({
+              revision: 7,
+              presentation: { ...presentation, pages: [adoptedContact] },
+            })
+          : Response.json(contactDiscovery),
+      ),
     )
     const response = await worker.fetch(
       new Request('https://bladeblendstudio.se/contact?lang=en'),
@@ -342,10 +359,15 @@ describe('Worker CMS contact and static fallback', () => {
   })
 
   it('answers the Swedish Contact without ?lang', async () => {
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) =>
-      String(input).endsWith('/rpc/public_cms_presentation')
-        ? Response.json({ revision: 7, presentation: { ...presentation, pages: [adoptedContact] } })
-        : Response.json(contactDiscovery),
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      withPageReads(async (input) =>
+        String(input).endsWith('/rpc/public_cms_presentation')
+          ? Response.json({
+              revision: 7,
+              presentation: { ...presentation, pages: [adoptedContact] },
+            })
+          : Response.json(contactDiscovery),
+      ),
     )
     const html = await (await requestContact()).text()
     expect(html).toContain('<html lang="sv"')
@@ -407,10 +429,12 @@ describe('Worker CMS contact and static fallback', () => {
       },
     })
     expect(historical.content.sv.html).toBe(body)
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) =>
-      String(input).endsWith('/rpc/public_cms_presentation')
-        ? Response.json({ revision: 7, presentation: { ...presentation, pages: [historical] } })
-        : Response.json(contactDiscovery),
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      withPageReads(async (input) =>
+        String(input).endsWith('/rpc/public_cms_presentation')
+          ? Response.json({ revision: 7, presentation: { ...presentation, pages: [historical] } })
+          : Response.json(contactDiscovery),
+      ),
     )
     const response = await requestContact()
     expect(response.status).toBe(200)
@@ -597,10 +621,12 @@ describe('Worker CMS contact and static fallback', () => {
     reference.path = '/terms'
     delete reference.layout
     let published = reference
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) =>
-      String(input).endsWith('/rpc/public_cms_presentation')
-        ? Response.json({ revision: 7, presentation: { ...presentation, pages: [published] } })
-        : Response.json(contactDiscovery),
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      withPageReads(async (input) =>
+        String(input).endsWith('/rpc/public_cms_presentation')
+          ? Response.json({ revision: 7, presentation: { ...presentation, pages: [published] } })
+          : Response.json(contactDiscovery),
+      ),
     )
     const markedEnv = {
       ...env,
@@ -674,7 +700,8 @@ describe('Worker CMS contact and static fallback', () => {
         const rpc = String(input).split('/').at(-1) ?? ''
         rpcs.push(rpc)
         if (rpc === 'public_business_discovery') return Response.json(contactDiscovery)
-        if (failure === 'missing') return Response.json({ revision: 7, presentation })
+        // The publication holds no Contact page, so its metadata read answers null.
+        if (failure === 'missing') return Response.json(null)
         return new Promise<Response>((_resolve, reject) => {
           const signal = init?.signal
           if (!signal) throw new Error('CMS lookup has no timeout')
@@ -689,7 +716,7 @@ describe('Worker CMS contact and static fallback', () => {
       expect(html).toContain('href="/tokens.css"')
       expect(html).toContain('href="/info.css"')
       expectLiveFacts(html)
-      expect(rpcs.sort()).toEqual(['public_business_discovery', 'public_cms_presentation'])
+      expect(rpcs.sort()).toEqual(['public_business_discovery', 'public_cms_page_metadata'])
       if (failure === 'stalled') expect(timeout).toHaveBeenCalledWith(1800)
     },
   )
@@ -698,14 +725,16 @@ describe('Worker CMS contact and static fallback', () => {
     const assets = vi.spyOn(env.ASSETS, 'fetch')
     const fetch = vi
       .spyOn(globalThis, 'fetch')
-      .mockResolvedValue(
-        Response.json({ revision: 7, presentation: { ...presentation, pages: [contact] } }),
+      .mockImplementation(
+        withPageReads(async () =>
+          Response.json({ revision: 7, presentation: { ...presentation, pages: [contact] } }),
+        ),
       )
     const response = await requestContact('HEAD')
     expect(response.status).toBe(200)
     expect(await response.text()).toBe('')
     expect(fetch).toHaveBeenCalledOnce()
-    expect(String(fetch.mock.calls[0]?.[0])).toContain('/rpc/public_cms_presentation')
+    expect(String(fetch.mock.calls[0]?.[0])).toContain('/rpc/public_cms_page_metadata')
     expect(assets).toHaveBeenCalledOnce()
     const input = assets.mock.calls[0]?.[0]
     expect(input instanceof Request ? new URL(input.url).pathname : '').toBe('/index.html')
@@ -893,10 +922,12 @@ describe('Worker CMS Contact Open Graph identity (A.R05)', () => {
     },
   }
   const serveContact = async (published: CmsPresentation | null, path: string): Promise<string> => {
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) =>
-      String(input).endsWith('/rpc/public_cms_presentation') && published
-        ? Response.json({ revision: 7, presentation: published })
-        : new Response(null, { status: 503 }),
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      withPageReads(async (input) =>
+        String(input).endsWith('/rpc/public_cms_presentation') && published
+          ? Response.json({ revision: 7, presentation: published })
+          : new Response(null, { status: 503 }),
+      ),
     )
     const response = await worker.fetch(
       new Request(`https://bladeblendstudio.se${path}`),

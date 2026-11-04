@@ -8,7 +8,9 @@ import worker from '../../src/worker'
 // holds no Contact page and is 1.35 MB of JSON; every request for /contact used to read and validate
 // all of it before serving the static fallback, and HEAD rendered an authored Contact only to drop
 // the body. Supabase is answered as the database answers: public_cms_page_metadata returns the
-// page's title, description and revision, or null when no page has that path.
+// page's title, description and revision, or null when no page has that path; public_cms_page
+// (supabase/migrations/20261104200000_public_cms_page.sql) returns the page with the publication's
+// themes and fonts, or null. A database without that migration answers 404 PGRST202 for it.
 
 const shell = readFileSync(new URL('../../index.html', import.meta.url), 'utf8')
 const publicFile = (path: string): string =>
@@ -61,8 +63,17 @@ const noPublicContent = {
   },
 }
 
+/** The database before the public_cms_page migration, with it, or with it while the owner
+ * unpublishes Contact between the metadata read and the page read. */
+type Database =
+  'with public_cms_page' | 'before public_cms_page' | 'Contact unpublished after its metadata'
+
 /** One /contact request against `presentation`, recording every RPC and asset it reads. */
-async function requestContact(presentation: CmsPresentation, method: 'GET' | 'HEAD') {
+async function requestContact(
+  presentation: CmsPresentation,
+  method: 'GET' | 'HEAD',
+  database: Database = 'with public_cms_page',
+) {
   const rpcs: string[] = []
   const assets: string[] = []
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
@@ -79,6 +90,25 @@ async function requestContact(presentation: CmsPresentation, method: 'GET' | 'HE
       return Response.json(
         page
           ? { revision: 56, title: page.title[lang], description: page.description[lang] }
+          : null,
+      )
+    }
+    if (rpc === 'public_cms_page') {
+      if (database === 'before public_cms_page')
+        return Response.json(
+          { code: 'PGRST202', message: 'Could not find the function public.public_cms_page' },
+          { status: 404 },
+        )
+      const { p_path: path } = JSON.parse(String(init?.body)) as { p_path: string }
+      const page = presentation.pages.find((item) => item.path === path)
+      return Response.json(
+        page && database === 'with public_cms_page'
+          ? {
+              revision: 56,
+              page,
+              themes: presentation.themes,
+              fonts: presentation.fonts ?? null,
+            }
           : null,
       )
     }
@@ -146,14 +176,69 @@ describe('the reads behind /contact', () => {
     expect(assets).toEqual(['/index.html'])
   })
 
-  // Not a bound: rendering needs the page, themes and fonts, which no bounded RPC returns yet.
-  it('renders a published Contact on GET from one whole-publication read (current-state control)', async () => {
+  // Phase 1 held this as a current-state control (one whole-publication read), since no bounded RPC
+  // returned the page with its themes and fonts. public_cms_page does, so the bound is asserted.
+  it('renders a published Contact on GET from its metadata and one bounded page read', async () => {
     const presentation = revision56()
     presentation.pages.push(contact)
-    const { response, body, rpcs } = await requestContact(presentation, 'GET')
+    const { response, body, rpcs, assets } = await requestContact(presentation, 'GET')
     expect(response.status).toBe(200)
     expect(body).toContain('data-cms-public="1"')
     expect(body).toContain('<h1 id="contact-title">Kontakta Aktuell Salong</h1>')
-    expect(rpcs.filter((rpc) => rpc === 'public_cms_presentation')).toHaveLength(1)
+    expect(rpcs).toEqual([
+      'public_business_discovery',
+      'public_cms_page',
+      'public_cms_page_metadata',
+    ])
+    expect(assets).toEqual(['/index.html', '/info.css', '/tokens.css'])
+  })
+
+  // Both deploy orders: the Worker can deploy before the migration lands (about 90 s apart).
+  // Revision 56 has empty themes and no fonts, so a theme colour and an uploaded font are added: the
+  // bounded read must carry both into the same bytes.
+  it('serves the same published Contact from the whole publication when public_cms_page is missing', async () => {
+    const presentation = revision56()
+    presentation.pages.push(contact)
+    presentation.themes.light = { text: '#123456' }
+    presentation.fonts = {
+      '30000000-0000-4000-8000-000000000001': {
+        ref: { bucket: 'cms-library', path: 'fonts/owner.woff2' },
+        name: 'Ägarens typsnitt',
+      },
+    }
+    const bounded = await requestContact(presentation, 'GET')
+    vi.restoreAllMocks()
+    const before = await requestContact(presentation, 'GET', 'before public_cms_page')
+    expect(before.response.status).toBe(200)
+    expect(before.rpcs).toEqual([
+      'public_business_discovery',
+      'public_cms_page',
+      'public_cms_page_metadata',
+      'public_cms_presentation',
+    ])
+    expect(bounded.body).toContain('--knc-text:#123456')
+    expect(bounded.body).toContain(
+      '@font-face{font-family:"CMSFont-30000000-0000-4000-8000-000000000001";src:url("https://fixture.invalid/storage/v1/object/public/cms-library/fonts/owner.woff2")',
+    )
+    expect(before.body).toBe(bounded.body)
+  })
+
+  it('serves the static Contact when Contact is unpublished between its two reads', async () => {
+    const presentation = revision56()
+    presentation.pages.push(contact)
+    const { response, body, rpcs, assets } = await requestContact(
+      presentation,
+      'GET',
+      'Contact unpublished after its metadata',
+    )
+    expect(response.status).toBe(200)
+    expect(body).not.toContain('data-cms-public="1"')
+    expect(body).toContain('Aktuell Salong')
+    expect(rpcs).toEqual([
+      'public_business_discovery',
+      'public_cms_page',
+      'public_cms_page_metadata',
+    ])
+    expect(assets).toEqual(['/contact.html'])
   })
 })

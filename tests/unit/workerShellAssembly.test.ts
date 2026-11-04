@@ -12,6 +12,7 @@ import { CMS_BUILT_ASSETS } from '../../shared/cms-built-assets'
 import { validateDocumentMarkupPlacements } from '../../shared/cms-markup'
 import { createSitePage } from '../../shared/site-page'
 import worker, { PublicContent } from '../../src/worker'
+import { withPageReads } from './helpers/cmsPageReads'
 
 // G01 and G02 (PR #104 final gate): the Worker assembles the served HTML from the trusted index.html
 // shell and owner bytes. Owner bytes must land where the shell says, as bytes: a dollar sign in a
@@ -105,11 +106,20 @@ function published(page: CmsPage): CmsPresentation {
   return document.presentation
 }
 
-async function serve(presentation: CmsPresentation, url: string): Promise<string> {
-  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) =>
-    String(input).endsWith('/rpc/public_cms_presentation')
-      ? Response.json({ revision: 7, presentation })
-      : new Response(null, { status: 503 }),
+/** Serve `url` from `presentation`; Företag & SEO answers `discovery`, or cannot be read. */
+async function serve(
+  presentation: CmsPresentation,
+  url: string,
+  discovery: unknown = null,
+): Promise<string> {
+  vi.spyOn(globalThis, 'fetch').mockImplementation(
+    withPageReads(async (input) =>
+      String(input).endsWith('/rpc/public_cms_presentation')
+        ? Response.json({ revision: 7, presentation })
+        : String(input).endsWith('/rpc/public_business_discovery') && discovery !== null
+          ? Response.json(discovery)
+          : new Response(null, { status: 503 }),
+    ),
   )
   const response = await worker.fetch(
     new Request(`https://bladeblendstudio.se${url}`),
@@ -291,6 +301,53 @@ describe('the shell #root found among owner bytes (G02)', () => {
     },
   )
 
+  // The Worker fills the head's metadata by id, and the owner title (quotes kept) sits before those
+  // elements. With Företag & SEO read, the JSON-LD fill used to run after assembly and replace
+  // everything up to the authored SVG's </title>: the head end, the styles and the #root.
+  it.each([
+    'business-json-ld',
+    'business-og-site-name',
+    'business-og-image-alt',
+    'business-og-title',
+    'business-twitter-title',
+  ])(
+    'serves a created page whose title names id="%s" with its body in the real #root',
+    async (id) => {
+      const page = createdPage(NORMAL_CSS, `Besök id="${id}" content="x" här`)
+      for (const lang of ['sv', 'en'] as const)
+        page.content[lang].html = page.content[lang].html.replace(
+          '</main>',
+          '<svg width="8" height="8"><title>Ikon</title></svg></main>',
+        )
+      const discovery = {
+        settings: { business_name: 'Gate name' },
+        barbers: [],
+        services: [],
+        schedules: [],
+      }
+      const html = await serve(published(page), '/hemsida?mode=light', discovery)
+      const view = served(html)
+      expect(view.roots).toHaveLength(1)
+      expect(view.root && authoredMain['/hemsida'](view.root)).toBe(true)
+      expect(view.headSheet('cms-page-light')).toBe(storedCss('/hemsida', NORMAL_CSS))
+      expect(html).toContain(`<title id="business-title">Besök id="${id}" content="x" här</title>`)
+    },
+  )
+
+  // G05: the Worker used to inline the whole publication (#cms-native-state) into a CMS-branch page
+  // whose markup carried the native marker. Native routes never reach that branch, and publication
+  // has rejected the marker on every other path since 2026-09-19 (ae76a39). A page stored before
+  // that is served without the publication in it.
+  it('serves a created page stored with the native marker without inlining the publication', async () => {
+    const page = createdPage(NORMAL_CSS)
+    for (const lang of ['sv', 'en'] as const)
+      page.content[lang].html = `<div data-knc-native="1">${page.content[lang].html}</div>`
+    const presentation = { ...emptyDocument().presentation, pages: [page] }
+    const html = await serve(presentation, '/hemsida?mode=light')
+    expect(html).toContain('data-cms-page-id="20000000-0000-4000-8000-0000000000c1"')
+    expect(html).not.toContain('cms-native-state')
+  })
+
   it('serves the /about fallback in the real #root when the SEO title names id="root"', async () => {
     // Företag & SEO accepts any 1-120 characters for the title.
     const document = emptyDocument()
@@ -318,5 +375,58 @@ describe('the shell #root found among owner bytes (G02)', () => {
     expect(
       page.root?.childNodes.some((child) => 'tagName' in child && child.tagName === 'main'),
     ).toBe(true)
+  })
+
+  it('fills the /about JSON-LD when the SEO title names id="business-json-ld"', async () => {
+    const title = 'Om salongen id="business-json-ld" i Göteborg'
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) =>
+      String(input).endsWith('/rpc/public_business_discovery')
+        ? Response.json({
+            settings: { business_name: 'Gate name', seo_title_sv: title },
+            barbers: [],
+            services: [],
+            schedules: [],
+          })
+        : new Response(null, { status: 503 }),
+    )
+    const publicContent = new PublicContent({} as never, env)
+    const response = await worker.fetch(new Request('https://bladeblendstudio.se/about'), env, {
+      exports: { PublicContent: { fetch: (request: Request) => publicContent.fetch(request) } },
+    })
+    const html = await response.text()
+    expect(html).toContain(`<title id="business-title">${title}</title>`)
+    const [script] = elements(parse(html)).filter(
+      (element) => attr(element, 'id') === 'business-json-ld',
+    )
+    expect(script && JSON.parse(text(script))).toMatchObject({ name: 'Gate name' })
+  })
+
+  it('keeps a native page title naming id="business-og-title" whole', async () => {
+    const title = 'Boka id="business-og-title" content="x" här'
+    const booking: CmsPage = {
+      ...createdPage(''),
+      id: '20000000-0000-4000-8000-0000000000b2',
+      path: '/booking',
+      title: { sv: title, en: title },
+    }
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      withPageReads(async (input) =>
+        String(input).endsWith('/rpc/public_cms_presentation')
+          ? Response.json({
+              revision: 7,
+              presentation: { ...emptyDocument().presentation, pages: [booking] },
+            })
+          : new Response(null, { status: 503 }),
+      ),
+    )
+    const publicContent = new PublicContent({} as never, env)
+    const response = await worker.fetch(new Request('https://bladeblendstudio.se/booking'), env, {
+      exports: { PublicContent: { fetch: (request: Request) => publicContent.fetch(request) } },
+    })
+    const html = await response.text()
+    expect(html).toContain(`<title id="business-title">${title}</title>`)
+    expect(html).toContain(
+      `id="business-og-title" property="og:title" content="${title.replaceAll('"', '&quot;')}"`,
+    )
   })
 })
