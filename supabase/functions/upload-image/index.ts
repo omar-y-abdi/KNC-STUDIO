@@ -24,7 +24,7 @@ function ensureImageMagickReady(): Promise<void> {
 
 function isDeletion(value: unknown): value is {
   readonly ok: true
-  readonly bucket: 'gallery' | 'barber-photos'
+  readonly bucket: 'barber-photos'
   readonly path: string
   readonly deletion_id: string
 } {
@@ -34,7 +34,7 @@ function isDeletion(value: unknown): value is {
 
   return (
     row.ok === true &&
-    (row.bucket === 'gallery' || row.bucket === 'barber-photos') &&
+    row.bucket === 'barber-photos' &&
     typeof row.path === 'string' &&
     typeof row.deletion_id === 'string'
   )
@@ -80,7 +80,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   })
 
   const removeObject = async (
-    bucket: 'gallery' | 'barber-photos',
+    bucket: 'barber-photos',
     path: string,
     deletionId: string | null = null,
   ): Promise<boolean> => {

@@ -73,10 +73,7 @@ function encodeWebp(image: {
   throw new ImageValidationError('output_too_large')
 }
 
-export function processImage(
-  input: Uint8Array,
-  kind: 'gallery' | 'barber_photo' | 'site_logo',
-): ProcessedImage {
+export function processImage(input: Uint8Array, kind: 'gallery' | 'barber_photo'): ProcessedImage {
   let output: ProcessedImage | null = null
 
   ImageMagick.read(MagickColors.Transparent, 1, 1, (image) => {
@@ -109,7 +106,7 @@ export function processImage(
     image.autoOrient()
     const { width, height } = imageDimensions(image)
 
-    if (kind === 'gallery' || kind === 'site_logo') {
+    if (kind === 'gallery') {
       const longSide = Math.max(width, height)
 
       if (longSide > GALLERY_LONG_SIDE) {

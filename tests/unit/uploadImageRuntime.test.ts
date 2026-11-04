@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { ImageMagick, MagickFormat, initializeImageMagick } from '@imagemagick/magick-wasm'
-import { beforeAll, describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, expectTypeOf, it } from 'vitest'
 import { processImage } from '../../supabase/functions/upload-image/processImage'
 
 const JPEG_FIXTURE = Uint8Array.from(
@@ -46,14 +46,20 @@ describe('upload-image JPEG runtime', () => {
     })
   })
 
-  it('preserves transparent pixels through logo processing', () => {
+  // With the gallery and logo upload kinds retired, two processing modes remain: gallery, which CMS
+  // assets use, and the barber portrait.
+  it('processes only the gallery and barber-photo kinds', () => {
+    expectTypeOf(processImage).parameter(1).toEqualTypeOf<'gallery' | 'barber_photo'>()
+  })
+
+  it('preserves transparent pixels through gallery processing (CMS assets, the logo included)', () => {
     const input = Uint8Array.from(
       Buffer.from(
         'iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAAEUlEQVR4nGPkEpFj4JKzaQAAAxwBIh+aiOkAAAAASUVORK5CYII=',
         'base64',
       ),
     )
-    const result = processImage(input, 'site_logo')
+    const result = processImage(input, 'gallery')
     expect([result.width, result.height]).toEqual([2, 1])
     ImageMagick.read(result.bytes, (image) => {
       image.write(MagickFormat.Rgba, (data) => {
