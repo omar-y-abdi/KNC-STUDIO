@@ -871,6 +871,208 @@ for (const nested of [false, true])
     await expectBusinessSpans(page, 'editable')
   })
 
+// Elements the Worker regenerates inside the Contact slots, and the slots it keeps with their
+// attributes, generated style ids included.
+const CONTACT_SLOT_CHILDREN = [
+  '#contact-details dl',
+  '#contact-details dd',
+  '#contact-details dd a',
+  '#contact-hours p',
+]
+const CONTACT_STYLE_ROOTS = [...CONTACT_SLOTS, ...BUSINESS_SLOTS]
+// The scheme the information-page canvas pins; it follows the Ljus and Mörk buttons.
+const canvasScheme = (page) => () =>
+  page.evaluate(
+    () =>
+      globalThis.document.querySelector('.gjs-frame').contentDocument.documentElement.style
+        .colorScheme,
+  )
+
+test('Contact slot children offer no styling while the slots themselves stay stylable', async ({
+  page,
+  studio,
+}) => {
+  await page.getByRole('button', { name: 'Kontakt', exact: true }).click()
+  await studio.frame.locator('#contact-title').waitFor()
+  const stylable = (selectors) =>
+    page.evaluate(async (selectors) => {
+      const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+      const editor = cmsGrapes.editors.at(-1)
+      return selectors.map((selector) => editor.getWrapper().find(selector)[0].get('stylable'))
+    }, selectors)
+  // The Worker regenerates every child, so a style on one, generated id included, reaches nobody.
+  expect(await stylable(CONTACT_SLOT_CHILDREN)).toEqual(CONTACT_SLOT_CHILDREN.map(() => false))
+  expect(await stylable(CONTACT_STYLE_ROOTS)).toEqual(CONTACT_STYLE_ROOTS.map(() => true))
+  const inspector = page.locator('#cms-inspector')
+  const sectors = inspector.locator('#cms-styles .gjs-sm-sector-title:visible')
+  const advanced = inspector.getByText('Avancerad CSS', { exact: true })
+  const nudge = inspector.getByRole('button', { name: 'Flytta åt vänster', exact: true })
+  const note = inspector.locator('.cms-lock-note')
+  for (const selector of CONTACT_SLOT_CHILDREN) {
+    await select(page, selector)
+    expect(await isSelected(page, selector)).toBe(true)
+    await expect(sectors).toHaveCount(0)
+    await expect(advanced).toBeHidden()
+    await expect(nudge).toBeHidden()
+    await expect(note).toContainText('Uppgiften hämtas från Företag & SEO')
+    // The note may name the slot to style instead, but never offers this element's appearance.
+    await expect(note).not.toContainText('Utseendet får ändras.')
+  }
+  for (const selector of CONTACT_STYLE_ROOTS) {
+    await select(page, selector)
+    expect(await isSelected(page, selector)).toBe(true)
+    await expect(sectors.first()).toBeVisible()
+    await expect(advanced).toBeVisible()
+  }
+})
+
+test('Contact slot styling survives export, the locked preview and the Worker in both modes', async ({
+  page,
+  context,
+  studio,
+}) => {
+  await page.getByRole('button', { name: 'Kontakt', exact: true }).click()
+  await studio.frame.locator('#contact-title').waitFor()
+  // Geometry is shared by both schemes and appearance is per scheme, so one padding edit holds in
+  // both modes while each mode keeps its own background.
+  const modes = [
+    ['Ljus', 'light', '#123456', { padding: '33px', background: 'rgb(18, 52, 86)' }],
+    ['Mörk', 'dark', '#654321', { padding: '33px', background: 'rgb(101, 67, 33)' }],
+  ]
+  const measure = async (scope) => ({
+    padding: await scope
+      .locator('#contact-details')
+      .evaluate((node) => getComputedStyle(node).paddingTop),
+    background: await scope
+      .locator('[data-business-name]')
+      .evaluate((node) => getComputedStyle(node).backgroundColor),
+  })
+  await page.getByRole('button', { name: 'Ljus', exact: true }).click()
+  await expect.poll(canvasScheme(page)).toBe('light')
+  await select(page, '#contact-details')
+  await openSector(page, 'Avstånd')
+  const padding = page
+    .locator('.gjs-sm-property')
+    .filter({ has: page.locator('.gjs-sm-label').getByText('Inre avstånd', { exact: true }) })
+    .first()
+  await padding.getByLabel('Ovanför', { exact: true }).fill('33')
+  await padding.getByLabel('Ovanför', { exact: true }).press('Enter')
+  for (const [name, mode, colour, expected] of modes) {
+    await page.getByRole('button', { name, exact: true }).click()
+    await expect.poll(canvasScheme(page)).toBe(mode)
+    await select(page, '[data-business-name]')
+    await openSector(page, 'Yta & kanter')
+    const background = page.getByRole('textbox', { name: 'Bakgrundsfärg', exact: true })
+    await background.fill(colour)
+    await background.press('Enter')
+    await expect
+      .poll(() => measure(studio.frame), { message: `canvas in ${mode}` })
+      .toEqual(expected)
+  }
+  const exported = await studio.capture()
+  const rendering = await loadWorker()
+  const visitor = await context.newPage()
+  try {
+    await routeWorkerDocuments(visitor, {
+      origin: new URL(base).origin,
+      paths: ['/contact'],
+      worker: rendering.worker,
+      presentation: exported.presentation,
+      shell: SOURCE_SHELL,
+    })
+    await page.bringToFront()
+    for (const [name, mode, , expected] of modes) {
+      await page.getByRole('button', { name, exact: true }).click()
+      await page.getByRole('button', { name: 'Lås vy', exact: true }).click()
+      const preview = page.frameLocator('.cms-live-preview iframe')
+      await preview.locator('#contact-details').waitFor()
+      await expect
+        .poll(() => measure(preview), { message: `locked preview in ${mode}` })
+        .toEqual(expected)
+      await page.getByRole('button', { name: 'Lås upp', exact: true }).click()
+      await visitor.goto(`${base}/contact?mode=${mode}`, { waitUntil: 'load' })
+      await expect.poll(() => measure(visitor), { message: `Worker in ${mode}` }).toEqual(expected)
+    }
+    expect(studio.backend.writes).toEqual([])
+  } finally {
+    await visitor.close()
+    await rendering.close()
+  }
+})
+
+test('stored styling on Contact slot children looks the same in Studio, the locked preview and the Worker', async ({
+  page,
+  context,
+  studio,
+}) => {
+  const document = await studio.capture()
+  const contact = document.presentation.pages.find((item) => item.path === '/contact')
+  if (!contact) throw new Error('Missing Contact page')
+  // Styling a draft can already hold on slot children: an id rule, a class rule and an inline
+  // style. The descendant rule scoped to the slot keeps its target through rendering.
+  const html = contact.content.sv.html
+    .replace('<dd><a href="tel:', '<dd id="owner-phone"><a href="tel:')
+    .replace('<dd>Geijersgatan 10', '<dd class="owner-detail">Geijersgatan 10')
+    .replace('<p>Se aktuella tider', '<p style="letter-spacing:5px">Se aktuella tider')
+  expect(html.match(/id="owner-phone"|class="owner-detail"|letter-spacing:5px/g)).toHaveLength(3)
+  const css =
+    '#owner-phone{font-size:47px}.owner-detail{color:#ff0000}#contact-details dt{text-transform:uppercase}'
+  const sheets = contact.content.sv.css
+  contact.content.sv = { html, css: { light: sheets.light + css, dark: sheets.dark + css } }
+  await importDocument(page, document, 'contact-child-styles.json')
+  await page.getByRole('button', { name: 'Kontakt', exact: true }).click()
+  await studio.frame.locator('#contact-title').waitFor()
+  const measure = async (scope) => {
+    const details = scope.locator('#contact-details dd')
+    return {
+      address: await details.nth(0).evaluate((node) => getComputedStyle(node).color),
+      phone: await details.nth(1).evaluate((node) => getComputedStyle(node).fontSize),
+      hours: await scope
+        .locator('#contact-hours p')
+        .evaluate((node) => getComputedStyle(node).letterSpacing),
+      label: await scope
+        .locator('#contact-details dt')
+        .first()
+        .evaluate((node) => getComputedStyle(node).textTransform),
+    }
+  }
+  const exported = await studio.capture()
+  const rendering = await loadWorker()
+  const visitor = await context.newPage()
+  try {
+    await routeWorkerDocuments(visitor, {
+      origin: new URL(base).origin,
+      paths: ['/contact'],
+      worker: rendering.worker,
+      presentation: exported.presentation,
+      shell: SOURCE_SHELL,
+    })
+    await page.bringToFront()
+    for (const [name, mode] of [
+      ['Ljus', 'light'],
+      ['Mörk', 'dark'],
+    ]) {
+      await page.getByRole('button', { name, exact: true }).click()
+      await expect.poll(canvasScheme(page)).toBe(mode)
+      await expect.poll(async () => (await measure(studio.frame)).label).toBe('uppercase')
+      const canvas = await measure(studio.frame)
+      await page.getByRole('button', { name: 'Lås vy', exact: true }).click()
+      const preview = page.frameLocator('.cms-live-preview iframe')
+      await preview.locator('#contact-details').waitFor()
+      await expect
+        .poll(() => measure(preview), { message: `locked preview in ${mode}` })
+        .toEqual(canvas)
+      await page.getByRole('button', { name: 'Lås upp', exact: true }).click()
+      await visitor.goto(`${base}/contact?mode=${mode}`, { waitUntil: 'load' })
+      await expect.poll(() => measure(visitor), { message: `Worker in ${mode}` }).toEqual(canvas)
+    }
+    expect(studio.backend.writes).toEqual([])
+  } finally {
+    await visitor.close()
+    await rendering.close()
+  }
+})
+
 // Two owners' businesses, each different from the default business the seed publishes.
 const NORD_BUSINESS = {
   name: 'Ateljé Nord A',

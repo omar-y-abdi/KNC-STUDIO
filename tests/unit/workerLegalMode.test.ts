@@ -451,6 +451,45 @@ describe('Worker CMS contact and static fallback', () => {
     },
   )
 
+  it('serves the name spans of a published CMS legal page as authored', async () => {
+    const source = publicFile('/privacy.html')
+    const body = source
+      .slice(source.indexOf('<body>') + '<body>'.length, source.indexOf('</body>'))
+      .replace(
+        '<span data-business-name>salongen</span> · Senast',
+        '<span data-business-name>Ägarens namn</span> · Senast',
+      )
+    const privacy = publishedPage({
+      ...terms,
+      id: '10000000-0000-4000-8000-000000000005',
+      kind: 'privacy',
+      path: '/privacy',
+      name: { sv: 'Integritetspolicy', en: 'Privacy policy' },
+      title: { sv: 'Integritetspolicy', en: 'Privacy policy' },
+      content: {
+        sv: { ...terms.content.sv, html: body },
+        en: { ...terms.content.en, html: body },
+      },
+    })
+    // Edge stores the attribute reserialised; the Worker's legal fill matches only the bare form.
+    const owner = '<span data-business-name="">Ägarens namn</span> · Senast'
+    expect(privacy.content.sv.html).toContain(owner)
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) =>
+      String(input).endsWith('/rpc/public_cms_presentation')
+        ? Response.json({ revision: 7, presentation: { ...presentation, pages: [privacy] } })
+        : Response.json(contactDiscovery),
+    )
+    const response = await worker.fetch(
+      new Request('https://bladeblendstudio.se/privacy'),
+      env,
+      noPublicContent,
+    )
+    expect(response.status).toBe(200)
+    const html = await response.text()
+    expect(html).toContain('data-cms-public="1"')
+    expect(html).toContain(owner)
+  })
+
   it('fills the CMS fragment without reserialising any shell bytes compared with terms', async () => {
     const opaque = '<meta NAME = "opaque" content=\'a &amp; b\' >'
     const markedShell = shell
