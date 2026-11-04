@@ -45,6 +45,106 @@ const measure = (frame) =>
       next: rect(group.nextElementSibling),
     }
   })
+const intrinsicGeometry = (frame, factor = 1) =>
+  frame.locator(groupSelector).evaluate((group, factor) => {
+    const cards = [...group.children]
+    const view = group.ownerDocument.defaultView
+    const original = cards.map((card) => card.getAttribute('style'))
+    const zoom = (card) => {
+      const value = view.getComputedStyle(card).zoom
+      return (parseFloat(value) || 1) / (value.endsWith('%') ? 100 : 1)
+    }
+    try {
+      if (factor !== 1)
+        for (const card of cards)
+          card.style.setProperty('zoom', String(zoom(card) * factor), 'important')
+      return cards.map((card) => {
+        const photo =
+          card.querySelector('img') ??
+          card.querySelector('[data-knc-surface]') ??
+          card.firstElementChild
+        const description = card.querySelector('p')
+        if (!description) throw new Error('The intrinsic card description is missing')
+        return {
+          width: card.getBoundingClientRect().width,
+          photoHeight: photo.getBoundingClientRect().height,
+          zoom: zoom(card),
+          fontSize: parseFloat(view.getComputedStyle(description).fontSize),
+          sourceFont: description.getAttribute('data-knc-light'),
+        }
+      })
+    } finally {
+      if (factor !== 1)
+        for (const [index, card] of cards.entries()) {
+          if (original[index] === null) card.removeAttribute('style')
+          else card.setAttribute('style', original[index])
+        }
+    }
+  }, factor)
+const inspectGeometry = (page) =>
+  page.evaluate(async (selector) => {
+    const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+    const editor = cmsGrapes.editors.at(-1)
+    const group = editor.getWrapper().find(selector)[0]?.getEl()
+    const card = group?.firstElementChild
+    const photo =
+      card?.querySelector('img') ??
+      card?.querySelector('[data-knc-surface]') ??
+      card?.firstElementChild
+    const properties = [
+      'display',
+      'width',
+      'height',
+      'min-width',
+      'min-height',
+      'max-width',
+      'max-height',
+      'box-sizing',
+      'aspect-ratio',
+      'zoom',
+      'flex',
+      'align-self',
+      'align-items',
+      'gap',
+      'padding',
+      'margin-left',
+      'margin-right',
+      'justify-self',
+      'justify-items',
+      'border-width',
+      'grid-template-columns',
+      'grid-template-rows',
+    ]
+    const nodes = [group, card, photo, photo?.firstElementChild].filter(Boolean)
+    return {
+      device: editor.getDevice(),
+      mediaCondition: editor.getConfig().mediaCondition,
+      nodes: nodes.map((node) => {
+        const view = node.ownerDocument.defaultView
+        const style = view.getComputedStyle(node)
+        const rect = node.getBoundingClientRect()
+        const rules = editor.Css.getAll().filter((rule) =>
+          rule.getSelectors().some((item) => item.get('name') === node.id),
+        )
+        return {
+          tag: node.localName,
+          id: node.id,
+          slot: node.getAttribute('data-knc-slot'),
+          inline: node.getAttribute('style'),
+          rect: { width: rect.width, height: rect.height },
+          offset: { width: node.offsetWidth, height: node.offsetHeight },
+          computed: Object.fromEntries(
+            properties.map((property) => [property, style.getPropertyValue(property)]),
+          ),
+          rules: rules.slice(-8).map((rule) => ({
+            selector: rule.selectorsToString(),
+            media: rule.get('mediaText'),
+            style: JSON.parse(JSON.stringify(rule.toJSON().style ?? {})),
+          })),
+        }
+      }),
+    }
+  }, groupSelector)
 const height = async (page, value) => {
   const input = page.locator('#cms-inspector .gjs-sm-property__height input').first()
   await input.fill(String(Math.round(value)))
@@ -119,6 +219,49 @@ test('cms-hierarchical-resize', async ({ page, context, browserName, evidenceDir
   await page.waitForFunction(
     () => globalThis.document.querySelector('.gjs-frame')?.contentWindow.innerWidth === 390,
   )
+  await page.evaluate(async (selector) => {
+    const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+    const editor = cmsGrapes.editors.at(-1)
+    for (const card of editor.getWrapper().find(selector)[0].components()) {
+      const rule = editor.Css.getIdRule(card.getId()) ?? editor.Css.setIdRule(card.getId(), {})
+      rule.addStyle({
+        '@supports(display:grid)': { '&.owner-inactive': { color: 'var(--owner-mobile-color)' } },
+      })
+    }
+  }, groupSelector)
+  // Commit the owner fixture separately so the following resize's undo keeps its source.
+  await page.getByRole('button', { name: 'Dator', exact: true }).click()
+  await page.waitForFunction(
+    () => globalThis.document.querySelector('.gjs-frame')?.contentWindow.innerWidth === 1440,
+  )
+  await page.getByRole('button', { name: 'Mobil', exact: true }).click()
+  await page.waitForFunction(
+    () => globalThis.document.querySelector('.gjs-frame')?.contentWindow.innerWidth === 390,
+  )
+  const ownerBlocks = () =>
+    page.evaluate(async (selector) => {
+      const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+      const { readCanvasRuleCss } = await import('/src/admin/cms/nativeCanvas.ts')
+      const editor = cmsGrapes.editors.at(-1)
+      const ids = new Set(
+        editor
+          .getWrapper()
+          .find(selector)[0]
+          .components()
+          .map((card) => card.getId()),
+      )
+      // The Home preview can mirror these blocks under preview-shared IDs after
+      // an import. Count the editable cards' rules, including any real duplicates.
+      const css = editor.Css.getAll()
+        .filter(
+          (rule) =>
+            !rule.isNested() && rule.getSelectors().some((item) => ids.has(item.get('name'))),
+        )
+        .map((rule) => readCanvasRuleCss(rule))
+        .join('')
+      return css.match(/color:var\(--owner-mobile-color\)/g)?.length ?? 0
+    }, groupSelector)
+  assert.equal(await ownerBlocks(), 4, 'Mobile owner blocks survive viewport import')
   const before = await measure(frame)
   assert.equal(before.cards.length, 4)
   await select(page, groupSelector)
@@ -135,6 +278,7 @@ test('cms-hierarchical-resize', async ({ page, context, browserName, evidenceDir
     'Group resize must scale its photographs, not crop them',
   )
   assertCardScale(after.cards, before.cards, 0.5, 'Group resize')
+  assert.equal(await ownerBlocks(), 4, 'Mobile group resize preserves nested owner CSS')
   assert.ok(
     after.next.top >= Math.max(...after.cards.map((card) => card.rect.bottom)) - 2,
     'Following content may not overlap cards',
@@ -153,6 +297,7 @@ test('cms-hierarchical-resize', async ({ page, context, browserName, evidenceDir
   await height(page, before.cards[0].rect.height * 0.75)
   const linked = await measure(frame)
   assertCardScale(linked.cards, before.cards, 0.75, 'Card resize')
+  assert.equal(await ownerBlocks(), 4, 'Mobile card resize preserves nested owner CSS')
   assert.ok(
     linked.cards.every((card) => Math.abs(card.rect.height - linked.cards[0].rect.height) < 2),
     'Every corresponding barber card shares its size',
@@ -272,3 +417,319 @@ test('cms-hierarchical-resize: two barbers keep their loop width', async ({
     )
   assert.equal(backend.writes.length, 0, 'Geometry inspection does not publish')
 })
+
+test('cms-hierarchical-resize: narrow Desktop saves the Desktop rule and no viewport state', async ({
+  page,
+  context,
+}) => {
+  const { backend, frame } = await openStudio(page, context, ['a', 'b', 'c', 'd'])
+  const viewport = (width) =>
+    page.waitForFunction(
+      (width) =>
+        globalThis.document.querySelector('.gjs-frame')?.contentWindow.innerWidth === width,
+      width,
+    )
+  const exportBytes = async () => {
+    await page.getByRole('button', { name: 'Utkast & backup', exact: true }).click()
+    const downloaded = page.waitForEvent('download')
+    await page
+      .getByRole('dialog', { name: 'Utkast & backup' })
+      .getByRole('button', { name: 'Export', exact: true })
+      .click()
+    const stream = await (await downloaded).createReadStream()
+    assert.ok(stream, 'The backup must be readable')
+    const chunks = []
+    for await (const chunk of stream) chunks.push(chunk)
+    await page
+      .getByRole('dialog', { name: 'Utkast & backup' })
+      .getByRole('button', { name: 'Stäng panel', exact: true })
+      .click()
+    return Buffer.concat(chunks).toString('utf8')
+  }
+  const narrow = page.getByRole('button', { name: 'Smal dator', exact: true })
+  const untouched = await exportBytes()
+  // Keep the selection across both viewport changes; a new selection would hide a stale snapshot.
+  await select(page, groupSelector)
+  await narrow.click()
+  await viewport(820)
+  assert.equal(await narrow.getAttribute('aria-pressed'), 'true')
+  assert.equal(await exportBytes(), untouched, 'Narrow preview cannot create a saved style rule')
+  const before = await measure(frame)
+  const beforeDetails = await inspectGeometry(page)
+  await height(page, before.group.height * 0.8)
+  const after = await measure(frame)
+  const afterDetails = await inspectGeometry(page)
+  await test.info().attach('narrow-desktop-geometry', {
+    body: JSON.stringify({ before, after, beforeDetails, afterDetails }, null, 2),
+    contentType: 'application/json',
+  })
+  assert.ok(
+    Math.abs(after.cards[0].photo.height / before.cards[0].photo.height - 0.8) < 0.05,
+    `Narrow Desktop portrait scale: ${JSON.stringify({ before, after })}`,
+  )
+  for (const property of ['box-sizing', 'align-self', 'padding'])
+    assert.equal(
+      afterDetails.nodes[1].computed[property],
+      beforeDetails.nodes[1].computed[property],
+      `Resizing must preserve the card's ${property}`,
+    )
+  let saved = await exportBytes()
+  await narrow.click()
+  await viewport(1440)
+  assert.equal(await exportBytes(), saved, 'Leaving narrow preview cannot change saved bytes')
+  const wideBefore = await measure(frame)
+  await height(page, wideBefore.group.height * 0.75)
+  const wideAfter = await measure(frame)
+  assert.ok(
+    Math.abs(wideAfter.cards[0].photo.height / wideBefore.cards[0].photo.height - 0.75) < 0.05,
+    `Wide Desktop portrait scale: ${JSON.stringify({ before: wideBefore, after: wideAfter })}`,
+  )
+  saved = await exportBytes()
+  await narrow.click()
+  await viewport(820)
+  await page.getByRole('button', { name: 'Mobil', exact: true }).click()
+  await viewport(390)
+  assert.equal(await narrow.count(), 0, 'Narrow Desktop is unreachable in Mobile mode')
+  assert.equal(await exportBytes(), saved, 'Mobile preview cannot change saved bytes')
+  await page.getByRole('button', { name: 'Dator', exact: true }).click()
+  await viewport(1440)
+  assert.equal(await narrow.getAttribute('aria-pressed'), 'false')
+  await narrow.click()
+  await viewport(820)
+  assert.equal(await exportBytes(), saved)
+  await page.getByRole('button', { name: 'Publicera', exact: true }).click()
+  await page.getByText('Publicerad · rev 2', { exact: true }).waitFor({ timeout: 15000 })
+  const about = backend.document.presentation.pages.find((item) => item.path === '/about')
+  for (const mode of ['light', 'dark']) {
+    let desktopZoom = false
+    walk(parse(about.content.sv.css[mode]), {
+      visit: 'Rule',
+      enter(rule) {
+        if (generate(rule.prelude) !== `#${after.cards[0].id}`) return
+        for (const declaration of rule.block.children)
+          if (declaration.type === 'Declaration' && declaration.property === 'zoom') {
+            assert.equal(generate(this.atrule.prelude), '(min-width:769px)')
+            desktopZoom = true
+          }
+      },
+    })
+    assert.ok(desktopZoom, `${mode}: resizing at 820px must save Desktop geometry`)
+  }
+  await page.setViewportSize({ width: 320, height: 844 })
+  assert.ok(await narrow.isVisible(), 'Narrow Desktop remains reachable in a compact workspace')
+  assert.ok(
+    await page
+      .locator('.cms-canvas-toolbar')
+      .evaluate((node) => node.scrollWidth <= node.clientWidth + 1),
+    'The extra preview control must fit the compact toolbar',
+  )
+})
+
+for (const [label, authored] of [
+  ['content-box margins', { 'margin-left': '10px', 'margin-right': '10px' }],
+  [
+    'fixed width and alignment',
+    {
+      width: '170px',
+      'box-sizing': 'border-box',
+      'justify-self': 'center',
+      'align-self': 'end',
+      'margin-left': '10px',
+      'margin-right': '10px',
+    },
+  ],
+  [
+    'percentage width',
+    { width: '70%', 'justify-self': 'end', 'margin-left': '10px', 'margin-right': '10px' },
+  ],
+  [
+    'intrinsic width and alignment',
+    { 'justify-self': 'start', 'margin-left': '10px', 'margin-right': '10px' },
+  ],
+  ['class width token', { 'justify-self': 'end', 'margin-left': '10px', 'margin-right': '10px' }],
+]) {
+  test(`cms-hierarchical-resize: authored ${label} survive repeated viewport resizes`, async ({
+    page,
+    context,
+  }) => {
+    const undoEachGesture = ['percentage width', 'class width token'].includes(label)
+    if (undoEachGesture) await page.clock.setSystemTime(Date.now())
+    const { backend, frame } = await openStudio(page, context, ['a', 'b', 'c', 'd'])
+    await page.evaluate(
+      async ({ selector, authored, label }) => {
+        const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+        const editor = cmsGrapes.editors.at(-1)
+        editor
+          .getWrapper()
+          .find(selector)[0]
+          .components()
+          .forEach((card) => card.addStyle(authored))
+        if (label === 'class width token')
+          editor.Css.setRule(`${selector} > [data-knc-source]`, {
+            '--owner-card-width': '70%',
+            width: 'var(--owner-card-width)',
+          })
+      },
+      { selector: groupSelector, authored, label },
+    )
+    await select(page, groupSelector)
+    let firstNarrow
+    let previousStep
+    let selectedCard = false
+    for (const width of [820, 1440, 820]) {
+      await page.getByRole('button', { name: 'Smal dator', exact: true }).click()
+      await page.waitForFunction(
+        (width) =>
+          globalThis.document.querySelector('.gjs-frame')?.contentWindow.innerWidth === width,
+        width,
+      )
+      const before = await measure(frame)
+      previousStep = before
+      if (undoEachGesture && width === 1440) {
+        await select(page, `${groupSelector} > div:first-child`)
+        selectedCard = true
+      }
+      if (width === 820 && firstNarrow)
+        assert.ok(
+          Math.abs(before.cards[0].rect.width / firstNarrow.cards[0].rect.width - 0.8) < 0.05,
+          `Returning to 820px preserves the authored width semantics: ${JSON.stringify({ firstNarrow, before })}`,
+        )
+      if (undoEachGesture) {
+        // Each preview switch flushes the previous gesture. Cross the draft's 800 ms
+        // grouping boundary without pausing Date or waiting for browser timers.
+        await page.clock.setSystemTime((await page.evaluate(() => Date.now())) + 1000)
+      }
+      // WebKit's native minimum physical font size can hold an intrinsic card's
+      // glyph width steady at small zooms. Compare the unchanged owner content
+      // against the browser's own zoom layout before exercising the real control.
+      const intrinsicBefore =
+        label === 'intrinsic width and alignment' ? await intrinsicGeometry(frame) : null
+      const nativeExpected = intrinsicBefore ? await intrinsicGeometry(frame, 0.8) : null
+      await height(page, (selectedCard ? before.cards[0].rect.height : before.group.height) * 0.8)
+      const after = await measure(frame)
+      const nativeActual = intrinsicBefore ? await intrinsicGeometry(frame) : null
+      await test.info().attach(`authored-${width}-geometry`, {
+        body: JSON.stringify(
+          { before, after, nativeExpected, nativeActual, details: await inspectGeometry(page) },
+          null,
+          2,
+        ),
+        contentType: 'application/json',
+      })
+      for (const [index, card] of after.cards.entries()) {
+        if (!nativeExpected || !firstNarrow) {
+          assert.ok(
+            Math.abs(card.rect.width / before.cards[index].rect.width - 0.8) < 0.05,
+            `${label}: ${width}px card ${index} scales proportionally: ${JSON.stringify({ before, after })}`,
+          )
+          assert.ok(
+            Math.abs(card.photo.height / before.cards[index].photo.height - 0.8) < 0.05,
+            `${label}: ${width}px portrait ${index} scales proportionally: ${JSON.stringify({ before, after })}`,
+          )
+        }
+        if (nativeExpected) {
+          assert.ok(Math.abs(card.rect.width - nativeExpected[index].width) < 1)
+          assert.ok(Math.abs(card.photo.height - nativeExpected[index].photoHeight) < 1)
+          assert.ok(Math.abs(nativeActual[index].zoom / intrinsicBefore[index].zoom - 0.8) < 0.005)
+          assert.ok(Math.abs(nativeActual[index].fontSize - nativeExpected[index].fontSize) < 0.02)
+          assert.equal(nativeActual[index].sourceFont, intrinsicBefore[index].sourceFont)
+        }
+      }
+      const styles = await page.evaluate(async (selector) => {
+        const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+        return cmsGrapes.editors
+          .at(-1)
+          .getWrapper()
+          .find(selector)[0]
+          .components()
+          .map((card) => card.getStyle())
+      }, groupSelector)
+      for (const style of styles)
+        for (const [property, value] of Object.entries(authored))
+          if (property !== 'width' || !String(value).includes('%'))
+            assert.equal(
+              String(style[property])
+                .replace(/\s*!important$/i, '')
+                .trim(),
+              value,
+              `${label}: ${property} stays authored`,
+            )
+      if (nativeExpected)
+        for (const style of styles)
+          assert.equal(style.width, undefined, 'The owner intrinsic width remains automatic')
+      firstNarrow ??= after
+    }
+    if (undoEachGesture) {
+      const reference = await measure(frame)
+      const ids = new Map([['sv', reference.cards.map((card) => card.id)]])
+      const retained = async (stage, expected = reference) => {
+        await page.locator('.cms-editor-canvas[aria-busy="false"]').waitFor()
+        await frame.locator(groupSelector).waitFor()
+        const current = await measure(frame)
+        if (
+          current.cards.some(
+            (card, index) =>
+              Math.abs(card.rect.width - expected.cards[index].rect.width) >= 2 ||
+              Math.abs(card.photo.height - expected.cards[index].photo.height) >= 2,
+          )
+        )
+          await test.info().attach(`retained-${stage}-geometry`, {
+            body: JSON.stringify(
+              { expected, current, details: await inspectGeometry(page) },
+              null,
+              2,
+            ),
+            contentType: 'application/json',
+          })
+        for (const [index, card] of current.cards.entries()) {
+          assert.ok(
+            Math.abs(card.rect.width - expected.cards[index].rect.width) < 2,
+            `${stage}: card ${index} retains its Desktop width (${card.rect.width} vs ${expected.cards[index].rect.width})`,
+          )
+          assert.ok(
+            Math.abs(card.photo.height - expected.cards[index].photo.height) < 2,
+            `${stage}: portrait ${index} retains its Desktop size`,
+          )
+        }
+        return current
+      }
+      await page.getByRole('button', { name: 'Ångra', exact: true }).click()
+      await retained('Desktop undo', previousStep)
+      await page.getByRole('button', { name: 'Gör om', exact: true }).click()
+      await retained('Desktop redo')
+      for (const button of ['Mörk', 'EN', 'Ljus', 'SV']) {
+        await page.getByRole('button', { name: button, exact: true }).click()
+        const current = await retained(button)
+        if (button === 'EN')
+          ids.set(
+            'en',
+            current.cards.map((card) => card.id),
+          )
+      }
+      await page.getByRole('button', { name: 'Publicera', exact: true }).click()
+      await page.getByText('Publicerad · rev 2', { exact: true }).waitFor({ timeout: 15000 })
+      const about = backend.document.presentation.pages.find((page) => page.path === '/about')
+      if (label === 'class width token') {
+        assert.ok(about.content.sv.css.light.includes('--owner-card-width:70%'))
+        assert.ok(about.content.sv.css.light.includes('width:var(--owner-card-width)'))
+        for (const lang of ['sv', 'en'])
+          for (const mode of ['light', 'dark'])
+            for (const id of ids.get(lang))
+              assert.ok(
+                about.content[lang].css[mode].includes(`:where(#${id})`),
+                `${lang}/${mode}: #${id} targeted Desktop geometry is published`,
+              )
+      }
+      await page.reload()
+      await page.evaluate(async () =>
+        (await import('/tools/e2e/admin-harness.tsx')).mountCmsStudioHarness(),
+      )
+      await frame.locator(groupSelector).waitFor({ timeout: 15000 })
+      await page.getByRole('button', { name: 'Smal dator', exact: true }).click()
+      await page.waitForFunction(
+        () => globalThis.document.querySelector('.gjs-frame')?.contentWindow.innerWidth === 820,
+      )
+      await retained('Published reload')
+    }
+  })
+}
