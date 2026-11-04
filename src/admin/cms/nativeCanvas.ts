@@ -426,6 +426,23 @@ function appendLayerOrder(style: CanvasStyle, node: Atrule): void {
   })
 }
 
+/** Parse a stored sheet with each layer statement in the form the canvas writes it: the import
+ * orders a statement's layers with an empty block each, in its place, and the export writes those
+ * blocks. Ownership compares stored items with exported ones in this form. */
+export function parseLayerBlocks(css: string): StyleSheet {
+  const sheet = parseCanvasSheet(css)
+  walk(sheet, {
+    visit: 'Atrule',
+    enter(node, item, list) {
+      if (node.block || ident.decode(node.name).toLowerCase() !== 'layer' || !item || !list) return
+      const order: CanvasStyle = Object.create(null)
+      appendLayerOrder(order, node)
+      list.replace(item, parseCanvasSheet(canvasStyleCss(order)).children)
+    },
+  })
+  return sheet
+}
+
 function canvasNestedStyle(
   block: Block,
   withinRule = true,
