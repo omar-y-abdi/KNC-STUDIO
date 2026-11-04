@@ -348,7 +348,8 @@ test.describe('a frozen legacy page with a classless theme toggle (A.R06)', () =
     return (
       `<div id="cms-site-shell"><header id="cms-site-header"><div class="cms-site-controls">` +
       `<a href="/hemsida?lang=${other}&amp;mode=light" aria-label="${languageLabel}" class="cms-site-action-language"><span aria-hidden="true">SV</span><span aria-hidden="true">EN</span></a>` +
-      `<a title="${themeLabel}" aria-label="${themeLabel}" href="/hemsida?lang=${lang}&amp;mode=dark"><span aria-hidden="true"></span></a>` +
+      // The toggle holds visible text so the page's stylesheet-free header gives it a box to click.
+      `<a title="${themeLabel}" aria-label="${themeLabel}" href="/hemsida?lang=${lang}&amp;mode=dark"><span aria-hidden="true">${lang === 'sv' ? 'Tema' : 'Theme'}</span></a>` +
       `</div></header><nav id="cms-site-menu" aria-label="${lang === 'sv' ? 'Sidmeny' : 'Pages'}"><a href="/?lang=${lang}&amp;mode=light">${lang === 'sv' ? 'Hem' : 'Home'}</a></nav>` +
       `<div id="cms-site-content"><main id="cms-body-r06-${lang}"><h1>${lang === 'sv' ? 'Ny sida' : 'New page'}</h1><p>Text</p></main></div>` +
       `<footer id="cms-site-footer"><a href="/privacy?lang=${lang}&amp;mode=light">${lang === 'sv' ? 'Integritet' : 'Privacy'}</a></footer></div>`
