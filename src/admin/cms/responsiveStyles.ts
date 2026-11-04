@@ -98,11 +98,25 @@ interface LayoutTarget {
 interface LayoutSibling {
   readonly header: string
   readonly occurrence: number
+  /** How many siblings share this header in the sheet the path came from. */
+  readonly count: number
 }
 interface LayoutContext {
   readonly header: string
   readonly position: number
   readonly occurrence?: number
+  /** A rule that holds nested rules, numbered among the same-header rules that do. */
+  readonly nested?: { readonly occurrence: number; readonly count: number }
+  /** Such a rule, numbered per geometry property it declares among the same-header rules that
+   * declare that property. */
+  readonly declaring?: ReadonlyMap<string, { readonly occurrence: number; readonly count: number }>
+  /** The rule a guard is nested in, numbered among the same-header rules that declare the
+   * guarded property. */
+  readonly declared?: {
+    readonly property: string
+    readonly occurrence: number
+    readonly count: number
+  }
   readonly preceding?: LayoutSibling
   readonly following?: LayoutSibling
 }
@@ -208,14 +222,44 @@ function isLayerOrder(node: Rule | Atrule): boolean {
   )
 }
 
+function nests(node: Rule | Atrule): boolean {
+  return (
+    node.type === 'Rule' &&
+    node.block.children.some((child) => child.type === 'Rule' || child.type === 'Atrule')
+  )
+}
+
+function declares(node: Rule | Atrule, property: string): boolean {
+  return (
+    node.type === 'Rule' &&
+    node.block.children.some((child) => child.type === 'Declaration' && child.property === property)
+  )
+}
+
+/** A guard's location, with the rule it is nested in numbered by the property it writes. */
+function declaredBy(location: LayoutLocation, property: string): LayoutLocation {
+  const { path } = location
+  const host = path ? path.slice(0, -1).findLastIndex(({ nested }) => nested) : -1
+  const declared = path?.[host]?.declaring?.get(property)
+  if (!path || !declared) return location
+  return {
+    ...location,
+    path: path.map((context, index) =>
+      index === host ? { ...context, declared: { property, ...declared } } : context,
+    ),
+  }
+}
+
 function declarations(css: string): Declarations {
   const result: Declarations = new Map()
   const visit = (block: LayoutBlock, path: LayoutContext[], media: Atrule | null): void => {
     const occurrences = new Map<string, number>()
+    const nestings = new Map<string, number>()
     const siblings: {
       node: Rule | Atrule
       header: string
       occurrence: number
+      nesting?: number
       preceding?: LayoutSibling
       following?: LayoutSibling
     }[] = []
@@ -224,7 +268,9 @@ function declarations(css: string): Declarations {
       const header = contextHeader(node)
       const occurrence = occurrences.get(header) ?? 0
       if (!isLayerOrder(node)) occurrences.set(header, occurrence + 1)
-      siblings.push({ node, header, occurrence })
+      const nesting = nests(node) ? (nestings.get(header) ?? 0) : undefined
+      if (nesting !== undefined) nestings.set(header, nesting + 1)
+      siblings.push({ node, header, occurrence, ...(nesting === undefined ? {} : { nesting }) })
     })
     // Same-header neighbors can be harmless media splitting. Only a distinct owner
     // condition bounds a guard; layer-order placeholders are not such conditions.
@@ -235,20 +281,41 @@ function declarations(css: string): Declarations {
         if (isLayerOrder(sibling.node)) continue
         if (previous?.header !== sibling.header)
           boundary = previous
-            ? { header: previous.header, occurrence: previous.occurrence }
+            ? {
+                header: previous.header,
+                occurrence: previous.occurrence,
+                count: occurrences.get(previous.header) ?? 0,
+              }
             : undefined
         if (boundary) sibling[direction] = boundary
         previous = sibling
       }
     }
-    siblings.forEach(({ node, header, occurrence, preceding, following }, position) => {
+    siblings.forEach(({ node, header, occurrence, nesting, preceding, following }, position) => {
       const ordered =
         !isLayerOrder(node) &&
         (node.type === 'Rule' || ident.decode(node.name).toLowerCase() === 'layer')
+      const declaring =
+        nesting === undefined || node.type !== 'Rule'
+          ? undefined
+          : new Map(
+              node.block.children.toArray().flatMap((child) => {
+                if (child.type !== 'Declaration' || !isGeometry(child.property)) return []
+                const same = siblings.filter(
+                  (sibling) => sibling.header === header && declares(sibling.node, child.property),
+                )
+                const occurrence = same.findIndex((sibling) => sibling.node === node)
+                return [[child.property, { occurrence, count: same.length }] as const]
+              }),
+            )
       const context: LayoutContext = {
         header,
         position,
         ...(ordered ? { occurrence } : {}),
+        ...(nesting === undefined
+          ? {}
+          : { nested: { occurrence: nesting, count: nestings.get(header) ?? 0 } }),
+        ...(declaring ? { declaring } : {}),
         ...(!ordered && preceding ? { preceding } : {}),
         ...(!ordered && following ? { following } : {}),
       }
@@ -269,7 +336,10 @@ function declarations(css: string): Declarations {
             const previous = values.get(declaration.property)?.declaration
             // Within this selector/context, important beats normal; ties retain source order.
             if (previous?.important && !declaration.important) return
-            values.set(declaration.property, { declaration, location })
+            values.set(declaration.property, {
+              declaration,
+              location: declaredBy(location, declaration.property),
+            })
           })
           result.set(key, values)
         }
@@ -360,9 +430,13 @@ function mapContext(
 
 function siblingIndex(siblings: (Rule | Atrule)[], sibling?: LayoutSibling): number {
   if (!sibling) return -1
-  const match = siblings.filter(
+  const same = siblings.filter(
     (node) => !isLayerOrder(node) && contextHeader(node) === sibling.header,
-  )[sibling.occurrence]
+  )
+  // Only the other sheets drop the rules a sync emptied, which renumbers the siblings after them.
+  // Where a sheet holds fewer under the header than the path's sheet, an occurrence may name
+  // another sibling, so it bounds nothing. A sync appends after every earlier sibling.
+  const match = same.length < sibling.count ? undefined : same[sibling.occurrence]
   return match ? siblings.indexOf(match) : -1
 }
 
@@ -385,7 +459,20 @@ function matchingContexts(
       (following < 0 || index < following),
   )
   if (context.occurrence === undefined) return matches
-  const match = matches[context.occurrence]
+  // Only the other sheets drop the rules a sync emptied, so their occurrences can shift. Rules
+  // that nest keep their order: a sheet drops one only when the edited sheet's copy stopped
+  // nesting too. While a sheet holds as many under the header as the path's sheet, that order
+  // names the rule. Otherwise, as when the rule gains its first guard in this sync, the rule a
+  // guard is nested in keeps its order among the rules that declare the property it writes.
+  const nesting = context.nested && matches.filter(nests)
+  const { declared } = context
+  const declaring = declared && matches.filter((node) => declares(node, declared.property))
+  const match =
+    context.nested && nesting?.length === context.nested.count
+      ? nesting[context.nested.occurrence]
+      : declared && declaring?.length === declared.count
+        ? declaring[declared.occurrence]
+        : matches[context.occurrence]
   return match ? [match] : []
 }
 
