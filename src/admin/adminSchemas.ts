@@ -222,33 +222,36 @@ export const failedBookingEmailDeliveryRows = z.array(failedBookingEmailDelivery
 export const retryFailedBookingEmailDeliveryResponse = z.object({ ok: z.boolean() })
 export const discardFailedBookingEmailDeliveryResponse = z.object({ ok: z.boolean() })
 
-/** One `admin_list_email_send_log` entry; a failed row always carries its reason. */
-export const emailSendLogEntryRow = z
-  .object({
-    id: z.guid(),
-    created_at: isoTimestamp,
-    last_attempt_at: isoTimestamp,
-    kind: z.enum(EMAIL_SEND_KINDS),
-    recipient: z.string().min(1),
-    subject: z.string().min(1),
-    status: z.enum(['sent', 'failed']),
-    error_code: z.enum(EMAIL_SEND_FAILURE_CODES).nullable(),
-    booking_id: z.guid().nullable(),
-    attempt_count: z.number().int().positive(),
-  })
-  .refine((row) => (row.status === 'failed') === (row.error_code !== null))
+const emailSendLogEntryFields = z.object({
+  id: z.guid(),
+  created_at: isoTimestamp,
+  last_attempt_at: isoTimestamp,
+  kind: z.enum(EMAIL_SEND_KINDS),
+  recipient: z.string().min(1),
+  subject: z.string().min(1),
+  status: z.enum(['sent', 'failed']),
+  error_code: z.enum(EMAIL_SEND_FAILURE_CODES).nullable(),
+  booking_id: z.guid().nullable(),
+  attempt_count: z.number().int().positive(),
+})
+/** A failed row always carries its reason and a sent one never does. */
+const failureMatchesStatus = (row: z.infer<typeof emailSendLogEntryFields>): boolean =>
+  (row.status === 'failed') === (row.error_code !== null)
+
+/** One `admin_list_email_send_log` entry. */
+export const emailSendLogEntryRow = emailSendLogEntryFields.refine(failureMatchesStatus)
+export type EmailSendLogEntryRow = z.infer<typeof emailSendLogEntryRow>
 export const emailSendLogPage = z.object({
   entries: z.array(emailSendLogEntryRow),
   has_more: z.boolean(),
 })
-/** `admin_get_email_send_log_entry`: null once the 30-day purge removed the copy. */
-export const emailSendLogCopy = z
-  .object({
-    id: z.guid(),
-    subject: z.string(),
-    html: z.string(),
-    text_body: z.string(),
-  })
+/**
+ * `admin_get_email_send_log_entry`: the whole row with its stored bodies, read together so the
+ * envelope always belongs to the body; null once the 30-day purge removed the copy.
+ */
+export const emailSendLogCopy = emailSendLogEntryFields
+  .extend({ html: z.string(), text_body: z.string() })
+  .refine(failureMatchesStatus)
   .nullable()
 
 // --- barber_photos (Task 2 §3) -------------------------------------------------------------------

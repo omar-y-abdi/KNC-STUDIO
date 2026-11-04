@@ -552,16 +552,19 @@ export function mountDeliveryStatusHarness(): void {
             }),
       )
     },
-    readCopy: (id) =>
-      Promise.resolve(
-        id === '55555555-5555-4555-8555-555555555553'
+    // The copy arrives with the row it was read with; Mejl tre has been purged.
+    readCopy: (id) => {
+      const opened = firstPage.find((candidate) => candidate.id === id)
+      return Promise.resolve(
+        opened === undefined
           ? err('not_found', 'Kopian har rensats (äldre än 30 dagar).')
           : ok({
-              subject: 'Mejl ett',
+              ...opened,
               html: DELIVERY_COPY_HTML,
               text: 'Välj nytt lösenord: [dold länk]',
             }),
-      ),
+      )
+    },
   }
   render(h(DeliveryStatus, { port }), root())
 }
@@ -704,12 +707,13 @@ export function mountDeliveryCopyRaceHarness(): void {
     readCopy: (id) =>
       new Promise((resolve) => {
         const copy = `Kopia ${deliveryCopies.length + 1}`
+        const opened = entries.find((candidate) => candidate.id === id)
         const settle = (outcome: 'copy' | 'error'): void =>
           resolve(
-            outcome === 'error'
+            outcome === 'error' || opened === undefined
               ? err('network', 'Kunde inte öppna mejlet.')
               : ok({
-                  subject: entries.find((candidate) => candidate.id === id)?.subject ?? '',
+                  ...opened,
                   html: `<!doctype html><html><head><title>Kopia</title></head><body><p id="stored-copy">${copy}</p></body></html>`,
                   text: copy,
                 }),

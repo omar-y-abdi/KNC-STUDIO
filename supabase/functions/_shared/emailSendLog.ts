@@ -56,7 +56,8 @@ function storedCopy(message: EmailMessage): StoredEmailCopy {
 /**
  * The renderer writes `ctaHref` only into the call-to-action (the HTML href and the text part's
  * link line). Rendering the stored copy with the placeholder therefore leaves the credential out
- * in every encoding, and everything else is byte-identical to the sent message.
+ * in every encoding, and everything else is byte-identical to the sent message. The log row may
+ * still shorten an over-long subject (see storedSubject).
  */
 export function prepareEmail(
   kind: EmailSendKind,
@@ -76,6 +77,21 @@ async function sha256Hex(value: string): Promise<string> {
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
+/** The delivery log's subject CHECK, in code points as PostgreSQL's char_length counts them. */
+const STORED_SUBJECT_MAX = 998
+
+/**
+ * A subject the log accepts. Placeholders such as {new_email} can render a published subject past
+ * the bound; the log then keeps its first 997 characters and an ellipsis, cut between code points so
+ * no character is split. The message itself is sent with the full subject.
+ */
+function storedSubject(subject: string): string {
+  const characters = Array.from(subject)
+  return characters.length <= STORED_SUBJECT_MAX
+    ? subject
+    : `${characters.slice(0, STORED_SUBJECT_MAX - 1).join('')}…`
+}
+
 /**
  * Arguments of `internal_record_email_send`. Auth idempotency keys embed a token_hash prefix, so
  * only the key's SHA-256 is stored; it still groups retries of one message into one row.
@@ -89,7 +105,7 @@ export async function emailSendRecordParams(
     p_dedupe_key: await sha256Hex(idempotencyKey),
     p_kind: email.kind,
     p_recipient: email.message.to,
-    p_subject: email.stored.subject,
+    p_subject: storedSubject(email.stored.subject),
     p_html: email.stored.html,
     p_text_body: email.stored.text,
     p_status: outcome.status,

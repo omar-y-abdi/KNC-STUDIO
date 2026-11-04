@@ -1,5 +1,5 @@
 begin;
-select plan(83);
+select plan(85);
 
 -- The log is reachable only through the narrow RPCs.
 select has_table('public', 'email_send_log', 'the email delivery log table exists');
@@ -128,9 +128,18 @@ select is(public.admin_list_email_send_log(p_before => pg_catalog.now() - interv
   'the last page reports no more rows');
 select is(pg_catalog.jsonb_array_length(public.admin_list_email_send_log(p_limit => 0)->'entries'), 1,
   'the page size is clamped to at least one row');
+select throws_ok($$select public.admin_list_email_send_log(p_before => pg_catalog.now())$$,
+  '22023', null, 'a cursor time without its id is rejected');
+select throws_ok($$select public.admin_list_email_send_log(
+  p_before_id => '67000000-0000-4000-8000-0000000000b2')$$,
+  '22023', null, 'a cursor id without its time is rejected');
 select is(public.admin_get_email_send_log_entry('67000000-0000-4000-8000-0000000000a1'),
-  '{"id": "67000000-0000-4000-8000-0000000000a1", "subject": "S-old", "html": "<p>old</p>", "text_body": "old"}'::jsonb,
-  'the owner reads one stored copy by id');
+  '{"id": "67000000-0000-4000-8000-0000000000a1", "kind": "barber_confirmation",
+    "recipient": "barber@email-log.local", "subject": "S-old", "status": "sent", "error_code": null,
+    "booking_id": null, "attempt_count": 1, "html": "<p>old</p>", "text_body": "old"}'::jsonb
+    || pg_catalog.jsonb_build_object('created_at', pg_catalog.now() - interval '2 hours',
+      'last_attempt_at', pg_catalog.now()),
+  'the owner reads one stored copy by id with the row it belongs to');
 select ok(public.admin_get_email_send_log_entry('67000000-0000-4000-8000-0000000000ff') is null,
   'a purged or unknown copy reads as null');
 reset role;
