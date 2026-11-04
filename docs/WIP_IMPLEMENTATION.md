@@ -2,8 +2,8 @@
 
 This ledger maps the recovered WIP to current source and regression surfaces. It supplements
 [the recovery plan](WIP_RECOVERY_PLAN.md), which owns authorization, integration order and final
-gates. The local checkpoint receipts below are bounded evidence; they are not final browser,
-startup, pushed-head CI, deployment or production-publication approval.
+gates. The gates run in CI on the stack PRs (#119 to #138) and on #104; a green run there is not
+deployment or production-publication approval.
 
 ## Feature ledger
 
@@ -41,18 +41,11 @@ The first two migrations precede deployment of the logged senders: `send-confirm
 and [CMS compatibility/recovery](operations/CMS_RELEASE.md); these source files do not establish
 which migrations or functions are hosted.
 
-## Verification checkpoint and deferred work
+## Verification and deferred work
 
-Coordinator-reported source checkpoint `49e442b`, before later editor integration:
-
-- [Unit receipt](/tmp/knc-wip-gate4-unit.log): 160 files, 1,865 tests passed.
-- [Integration receipt](/tmp/knc-wip-full-integration.log): 12 files, 79 tests passed against the clean local database.
-- [Database receipt](/tmp/knc-wip-b5-pgtap.log): 67 files, 1,396 assertions passed at `42f25f3`; its SQL and migrations are unchanged at `49e442b`.
-- [Typecheck log](/tmp/knc-wip-gate4-typecheck.log): coordinator reports a successful full typecheck.
-
-These local artifacts are outside version control. They do not certify later source changes,
-full browser/startup acceptance, production authentication, delivery, migration or publication.
-Final exact-head CI/CodeQL and local acceptance receipts belong in the final PR.
+The static, unit, build, browser, startup, Edge Function, database and integration gates run in CI
+on the stack PRs (#119 to #138) and on #104. Those runs do not certify production authentication,
+delivery, migration or publication.
 
 E1b part 2 and render-repair removal remain deferred until the owner's post-rollout publication
 and a separate compatibility check of still-supported legacy inputs. Production migration
