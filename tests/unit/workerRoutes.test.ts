@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { gunzipSync } from 'node:zlib'
 import { describe, expect, it, vi } from 'vitest'
 import worker, {
   PublicContent,
@@ -567,6 +568,93 @@ describe('launch page documents', () => {
       expect(html).not.toContain('<script')
     },
   )
+})
+
+// G05 (PR #104 final gate): a supported native route written with a trailing slash is canonicalized
+// the way /contact/ already is: 308 to the slashless path, query kept, before any read.
+describe('trailing-slash native routes', () => {
+  // The committed revision-56 publication, which holds every native page.
+  const revision56 = gunzipSync(
+    readFileSync(new URL('../../tools/e2e/fixtures/presentation.json.gz', import.meta.url)),
+  )
+  const request = async (method: string, path: string) => {
+    const rpcs: string[] = []
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const rpc = String(input).split('/').at(-1) ?? ''
+      rpcs.push(rpc)
+      if (rpc === 'public_cms_presentation') return new Response(revision56)
+      if (rpc === 'public_cms_page_metadata')
+        return Response.json({ revision: 56, title: 'CMS title', description: 'CMS description' })
+      return new Response(null, { status: 503 })
+    })
+    const env = {
+      ...createEnv(),
+      SUPABASE_URL: 'https://fixture.invalid',
+      SUPABASE_ANON_KEY: 'fixture-anon-key',
+    }
+    try {
+      const response = await worker.fetch(
+        new Request(`https://bladeblendstudio.se${path}?lang=en&mode=dark`, {
+          method,
+          headers: { Accept: 'text/html' },
+        }),
+        env,
+        createWorkerContext(env),
+      )
+      return { response, body: await response.text(), rpcs, assets: env.requestedPaths }
+    } finally {
+      fetchMock.mockRestore()
+    }
+  }
+
+  it.each(
+    ['GET', 'HEAD'].flatMap((method) =>
+      ['/booking', '/about', '/my-bookings'].flatMap((path) => [
+        [method, `${path}/`, path],
+        [method, `${path}//`, path],
+      ]),
+    ),
+  )('answers %s %s with 308 to %s, query kept, without reading', async (method, path, target) => {
+    const { response, body, rpcs, assets } = await request(method, path)
+    expect(response.status).toBe(308)
+    expect(response.headers.get('Location')).toBe(
+      `https://bladeblendstudio.se${target}?lang=en&mode=dark`,
+    )
+    expect(body).toBe('')
+    expect(rpcs).toEqual([])
+    expect(assets).toEqual([])
+  })
+
+  it.each(
+    ['GET', 'HEAD'].flatMap((method) =>
+      ['/booking', '/about', '/my-bookings'].map((path) => [method, path]),
+    ),
+  )('keeps %s %s answered by the native route (control)', async (method, path) => {
+    const { response, body } = await request(method, path)
+    expect(response.status).toBe(200)
+    expect(body === '').toBe(method === 'HEAD')
+  })
+
+  it.each(['GET', 'HEAD'])(
+    'keeps %s /contact/ redirecting with its query (control)',
+    async (method) => {
+      const { response } = await request(method, '/contact/')
+      expect(response.status).toBe(308)
+      expect(response.headers.get('Location')).toBe(
+        'https://bladeblendstudio.se/contact?lang=en&mode=dark',
+      )
+    },
+  )
+
+  it.each(
+    ['GET', 'HEAD'].flatMap((method) =>
+      ['/missing-example', '/missing-example/'].map((path) => [method, path]),
+    ),
+  )('keeps %s %s a noindex 404 (control)', async (method, path) => {
+    const { response } = await request(method, path)
+    expect(response.status).toBe(404)
+    expect(response.headers.get('X-Robots-Tag')).toBe('noindex, nofollow')
+  })
 })
 
 describe('CMS legal page rendering', () => {
