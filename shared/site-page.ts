@@ -2,6 +2,7 @@ import { repairDesktopCss } from './cms-device-css.ts'
 import { generate, parse, walk, type Atrule, type CssNode, type Rule } from 'css-tree'
 import { parseFragment, serialize, serializeOuter, type DefaultTreeAdapterMap } from 'parse5'
 import {
+  isMenuPage,
   isSitePage,
   type CmsDocument,
   type CmsLang,
@@ -57,7 +58,8 @@ const query = (lang: CmsLang, mode: ServedMode): string =>
   `?lang=${lang}${mode ? `&mode=${mode}` : ''}`
 
 /** The site menu in the served language and scheme: the three native pages, then every created
- * page shown in the menu. A deleted page is simply absent from `presentation.pages`. */
+ * page and Contact shown in the menu, in presentation order. A deleted page is simply absent from
+ * `presentation.pages`. */
 export function menuLinks(
   presentation: CmsPresentation,
   lang: CmsLang,
@@ -74,7 +76,7 @@ export function menuLinks(
       label: lang === 'sv' ? sv : en,
     })),
     ...presentation.pages
-      .filter((page) => page.inMenu && isSitePage(page))
+      .filter((page) => page.inMenu && isMenuPage(page))
       .map((page) => ({ href: `${page.path}${query(lang, mode)}`, label: page.name[lang] })),
   ]
 }
@@ -140,12 +142,17 @@ export function homepageLogoElement(html: string): Element | undefined {
 const LOGO_ID_PREFIX = 'cms-logo-'
 const ID_LIST_ATTRIBUTES = new Set(['aria-labelledby', 'aria-describedby'])
 
-/** An attribute value with every CSS `url(#id)` naming a renamed id rewritten. css-tree reads the
- * url() spellings and escapes CSS allows (`URL(#a)`, `url('#a')`, `url(#\61)`); a value with no
- * rename keeps its bytes. */
-function renamedUrls(value: string, rename: ReadonlyMap<string, string>): string {
+/** The SVG presentation attributes the validator reads as CSS (CSS_URL_ATTRIBUTES in cms-markup.ts),
+ * so the only attributes left on a logo where `url(#id)` is a reference rather than text. */
+const PAINT_ATTRIBUTES = new Set(['fill', 'stroke', 'clip-path', 'mask'])
+
+/** A paint attribute's value with every CSS `url(#id)` naming a renamed id rewritten. It is read as
+ * the validator reads it, as the declaration `name:value`, so `!important` or a second declaration
+ * parses too; css-tree reads the url() spellings and escapes CSS allows (`URL(#a)`, `url('#a')`,
+ * `url(#\61)`); a value with no rename keeps its bytes. */
+function renamedUrls(name: string, value: string, rename: ReadonlyMap<string, string>): string {
   if (!/url\(/i.test(value)) return value
-  const tree = parse(value, { context: 'value' })
+  const tree = parse(`${name}:${value}`, { context: 'declarationList', parseCustomProperty: true })
   let changed = false
   walk(tree, (node) => {
     if (node.type !== 'Url' || !node.value.startsWith('#')) return
@@ -154,7 +161,7 @@ function renamedUrls(value: string, rename: ReadonlyMap<string, string>): string
     node.value = `#${target}`
     changed = true
   })
-  return changed ? generate(tree) : value
+  return changed ? generate(tree).slice(name.length + 1) : value
 }
 
 /** The homepage logo as it is stored now (the first graphic in the desktop header's brand), without
@@ -162,8 +169,9 @@ function renamedUrls(value: string, rename: ReadonlyMap<string, string>): string
  * identity. The ids inside it are the targets of its own references, so they stay, renamed to
  * cms-logo-<id> (then -2, -3, … while the name is in `taken`, the page body's ids, or already
  * allocated) so they cannot collide with ids in the page body; every `#id` href and xlink:href,
- * CSS `url(#id)` and aria-labelledby/-describedby token naming one of them is renamed with it.
- * References to ids outside the logo are left as they are. */
+ * `url(#id)` in a paint attribute and aria-labelledby/-describedby token naming one of them is
+ * renamed with it. References to ids outside the logo are left as they are, and so is text: a
+ * `url(#id)` in an aria-label, alt or title keeps its bytes. */
 export function homepageLogo(
   presentation: CmsPresentation,
   lang: CmsLang,
@@ -194,7 +202,7 @@ export function homepageLogo(
   const reference = (name: string, value: string): string => {
     if (name === 'href' && value.startsWith('#')) return `#${renamed(value.slice(1))}`
     if (ID_LIST_ATTRIBUTES.has(name)) return value.replace(/[^\s]+/g, (token) => renamed(token))
-    return renamedUrls(value, rename)
+    return PAINT_ATTRIBUTES.has(name) ? renamedUrls(name, value, rename) : value
   }
   const clean = (node: Element, root: boolean): void => {
     node.attrs = node.attrs

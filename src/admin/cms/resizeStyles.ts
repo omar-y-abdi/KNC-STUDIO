@@ -98,6 +98,18 @@ const probes = {
 const name = (suffix: string): string => prefix + suffix
 const keyword = (value: string): string => ident.decode(value.trim()).toLowerCase()
 const cssWide = new Set(['initial', 'inherit', 'unset', 'revert', 'revert-layer'])
+/** Elements that browsers lay out as replaced boxes, unless they show fallback content.
+ * `normal` alignment does not stretch a replaced box. */
+const replacedElements = new Set([
+  'img',
+  'video',
+  'audio',
+  'canvas',
+  'iframe',
+  'embed',
+  'object',
+  'svg',
+])
 const typedWidth =
   '<length-percentage> | auto | min-content | max-content | fit-content | stretch | contain'
 
@@ -348,7 +360,12 @@ function readSamples(
               ].reduce((sum, value) => sum + (parseFloat(value) || 0), 0),
         horizontalMargin:
           (parseFloat(computed.marginLeft) || 0) + (parseFloat(computed.marginRight) || 0),
-        stretch: !alignment || alignment === 'normal' || alignment === 'stretch',
+        // `normal` aligns a replaced element, or a box with a preferred aspect ratio, as start.
+        stretch:
+          alignment === 'stretch' ||
+          ((!alignment || alignment === 'normal') &&
+            computed.aspectRatio === 'auto' &&
+            !replacedElements.has(element.localName)),
         ...(widthSource ? { widthSource } : {}),
         ...(zoomSource ? { zoomSource } : {}),
         widthBranch: 0,

@@ -28,6 +28,8 @@ import {
   isReadOnlyPreview,
   isServerOwned,
   runtimeOwnedRole,
+  setCanvasPagePath,
+  slotSource,
   styleSectors,
 } from './editorPolicy'
 import { siteThemeCss } from '../../../shared/site-theme'
@@ -55,6 +57,7 @@ import {
   connectCanvasStyles,
   exportNativeCanvas,
   legalCanvasBase,
+  nativeCanvas,
   parseCanvasCss,
   parseCanvasSheet,
   readCanvasCss,
@@ -603,11 +606,23 @@ export function CmsEditor(props: Props): JSX.Element {
             { about: aboutOwner.content[current.lang].css[current.mode], home: storedHome },
           )
         : null
+      // Home's part of this export and of the checkpoint is stripped with the same owners. In each
+      // canvas, the About sheet extracted from it owns its copies. With none extracted, About's
+      // stored sheet does, in the form the canvas imported it.
+      const homeOwners = (extracted: { css: string } | null) =>
+        aboutOwner
+          ? {
+              about:
+                extracted?.css ?? nativeCanvas(aboutOwner.content[current.lang], current.mode).css,
+              home: storedHome,
+              aboutHtml: aboutOwner.content[current.lang].html,
+            }
+          : undefined
       const exported = stripComposedCanvas(
         nativeExport.html,
         exportedCss,
         composedScene,
-        aboutExport ? { about: aboutExport.css, home: storedHome } : undefined,
+        homeOwners(aboutExport),
       )
       const fragment = pageFragment(exported.html, wrapperId)
       const persisted = {
@@ -622,7 +637,32 @@ export function CmsEditor(props: Props): JSX.Element {
           [current.mode]: persisted.css,
         },
       }
-      next = syncPageLayout(current.page, next, current.lang, current.mode)
+      // Import and export mark conditional and changed owner declarations important, so a
+      // sheet stored without passing the canvas differs from its own export. Every page compares
+      // with the canvas before this edit, exported, canonicalized and stripped as this export is,
+      // so the two differ only by the edit. On Home, its About part is compared the same way.
+      const checkpointExport = exportNativeCanvas(
+        checkpoint.current.html,
+        checkpoint.current.css,
+        current.mode,
+      )
+      const checkpointCss = canonicalizeCmsRootStyles(checkpointExport.css, wrapperId)
+      const aboutBaseline = aboutOwner
+        ? extractComposedAbout(
+            checkpointExport.html,
+            checkpointCss,
+            aboutOwner.content[current.lang].html,
+            { about: aboutOwner.content[current.lang].css[current.mode], home: storedHome },
+          )
+        : null
+      const pageBaseline = structuredClone(current.page)
+      pageBaseline.content[current.lang].css[current.mode] = stripComposedCanvas(
+        checkpointExport.html,
+        checkpointCss,
+        composedScene,
+        homeOwners(aboutBaseline),
+      ).css
+      next = syncPageLayout(pageBaseline, next, current.lang, current.mode)
       persisted.css = next.content[current.lang].css[current.mode]
       const pages = [next]
       if (aboutOwner && aboutExport) {
@@ -635,7 +675,9 @@ export function CmsEditor(props: Props): JSX.Element {
             [current.mode]: aboutExport.css,
           },
         }
-        pages.push(syncPageLayout(aboutOwner, about, current.lang, current.mode))
+        const baseline = structuredClone(aboutOwner)
+        if (aboutBaseline) baseline.content[current.lang].css[current.mode] = aboutBaseline.css
+        pages.push(syncPageLayout(baseline, about, current.lang, current.mode))
       }
       const updatedPresentation = {
         ...current.presentation,
@@ -870,6 +912,10 @@ export function CmsEditor(props: Props): JSX.Element {
       const rules = structuredClone(compilation.rules)
       editor.select()
       setSelected(null)
+      // Contact slot ids are Worker-owned only on /contact. Record the page before the reused
+      // path's in-place update configures its children; that update runs inside the check below.
+      const canvasWrapper = editor.getWrapper()
+      if (canvasWrapper) setCanvasPagePath(canvasWrapper, props.page.path)
       const reused =
         previous?.pageId === props.page.id &&
         previous.device === props.device &&
@@ -1166,6 +1212,8 @@ export function CmsEditor(props: Props): JSX.Element {
       ? selected.components().filter((child: Component) => child.is('textnode'))
       : []
   const readOnly = selected ? isReadOnlyPreview(selected) : false
+  // The policy's flag, which the style manager reads too: nudges and advanced CSS follow it.
+  const stylable = selected?.get('stylable') !== false
   const logoText = tag === 'svg' ? (selected?.find('text') ?? []) : []
 
   if (loadError) throw loadError
@@ -1185,6 +1233,7 @@ export function CmsEditor(props: Props): JSX.Element {
           page={props.page}
           presentation={props.preview}
           {...(props.draft ? { draft: props.draft } : {})}
+          business={contact}
           lang={props.lang}
           mode={props.mode}
           device={props.device}
@@ -1434,8 +1483,8 @@ export function CmsEditor(props: Props): JSX.Element {
                   )}
                 </>
               )}
-              <h3>Finjustera</h3>
-              <div class="cms-nudge-grid">
+              <h3 hidden={!stylable}>Finjustera</h3>
+              <div class="cms-nudge-grid" hidden={!stylable}>
                 <button
                   type="button"
                   aria-label="Flytta åt vänster"
@@ -1482,7 +1531,7 @@ export function CmsEditor(props: Props): JSX.Element {
               {isProtected(selected) && (
                 <p class="cms-lock-note">
                   {serverOwned
-                    ? 'Uppgiften hämtas från Företag & SEO och bokningsschemat. Utseendet får ändras.'
+                    ? `Uppgiften hämtas från ${slotSource(selected)}. ${stylable ? 'Utseendet får ändras.' : 'Välj fältet runt den för att ändra utseendet.'}`
                     : 'Funktionsblocket är skyddat. Utseendet får ändras; kopplingen till runtime bevaras.'}
                 </p>
               )}
@@ -1508,7 +1557,7 @@ export function CmsEditor(props: Props): JSX.Element {
             <div id="cms-traits" />
             <div id="cms-styles" />
           </div>
-          {selected && !readOnly && (
+          {selected && !readOnly && stylable && (
             <details class="cms-advanced">
               <summary>Avancerad CSS</summary>
               <label>

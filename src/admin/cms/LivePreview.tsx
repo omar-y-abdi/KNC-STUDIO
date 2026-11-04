@@ -13,10 +13,20 @@ import {
   type SiteContact,
   type SitePageRender,
 } from '../../../shared/site-page'
-import { resolveBusinessSettings } from '../../site/business'
+import type { BusinessSettings } from '../../site/business'
+import { CANCELLATION_SLOT_IDS, LEGAL_SLOTS, type BusinessSlots } from '../../site/businessSlots'
 import { renderContactFragment } from '../../site/contactPage'
+import { renderLegalFragment } from '../../site/legalPage'
 import type { CmsScene } from '../../cms/Scene'
 import { NATIVE_PUBLIC_PATHS } from '../../site/routeMetadata'
+
+const cancellationSlotIds: readonly string[] = CANCELLATION_SLOT_IDS
+// The draft holds no cancellation window, an operational booking setting, so those slots keep
+// their stored text here; every other legal slot fills from the draft's business.
+const LEGAL_PREVIEW_SLOTS: BusinessSlots = {
+  ...LEGAL_SLOTS,
+  ids: LEGAL_SLOTS.ids.filter((id) => !cancellationSlotIds.includes(id)),
+}
 
 /** A created page as the preview shows it. A frozen page (history review of an old revision) is
  * migrated here, in the browser, so it shows one live header; the Worker never migrates. */
@@ -41,6 +51,7 @@ export function LivePreview({
   page,
   presentation,
   draft,
+  business,
   lang,
   mode,
   device,
@@ -52,6 +63,9 @@ export function LivePreview({
   page: CmsPage
   presentation: CmsPresentation
   draft?: CmsDocument
+  /** The business of the document this preview shows: a created page's live header and the
+   * Contact and legal slots render from it. The native frame reads `draft` instead. */
+  business: BusinessSettings
   lang: CmsLang
   mode: CmsMode
   device: 'Desktop' | 'Mobile'
@@ -150,7 +164,6 @@ export function LivePreview({
       )
     return () => clearTimeout(deadline.current)
   }, [connected, native, page.path, presentation, draft, lang, mode, device, scene, attempt])
-  const business = resolveBusinessSettings(new Map(Object.entries(draft?.settings ?? {})))
   const sitePage = isSitePage(page)
   const site = sitePage ? previewSitePage(presentation, page, lang, mode, business) : null
   // lazy dev: the draft holds no schedule, so #contact-hours shows its fallback; fetch public
@@ -161,7 +174,12 @@ export function LivePreview({
           ...page.content[lang],
           html: renderContactFragment(page.content[lang].html, business, lang),
         }
-      : page.content[lang]
+      : page.path === '/privacy' || page.path === '/terms'
+        ? {
+            ...page.content[lang],
+            html: renderLegalFragment(page.content[lang].html, business, LEGAL_PREVIEW_SLOTS),
+          }
+        : page.content[lang]
   const content = native
     ? null
     : site

@@ -13,6 +13,7 @@ import {
   renderContactFragment,
   renderContactPage,
 } from './site/contactPage'
+import { renderLegalFragment, renderLegalPage } from './site/legalPage'
 import { repairDesktopCss } from '../shared/cms-device-css'
 import { siteThemeCss } from '../shared/site-theme'
 import { themeDeclarations } from '../shared/site-theme-declarations'
@@ -20,6 +21,7 @@ import { WorkerEntrypoint } from 'cloudflare:workers'
 import {
   SITE_PAGE_CSS,
   isLiveSitePage,
+  isSitePage,
   renderSitePage,
   type SiteContact,
 } from '../shared/site-page'
@@ -405,6 +407,115 @@ const COLOR_SCHEMES: readonly CmsMode[] = ['light', 'dark']
 const CMS_RESET = '<style id="cms-reset">html,body{background:none}</style>'
 const RUNTIME_ISLAND = /\bid="knc-(?:about|booking|my-bookings)-runtime"/
 const COLOR_SCHEME_META = /(<meta\b[^>]*\bname="color-scheme"[^>]*\bcontent=")[^"]*(")/i
+const LANGUAGE_ACTION = 'cms-site-action-language'
+const THEME_ACTION = 'cms-site-action-theme'
+
+/** A frozen page's stored markup with its header's language and theme actions pointed at this
+ * response, as main's Worker pointed them on every response: the language action at the other
+ * language in `mode`, the theme action at the other mode (dark when `mode` is null and the response
+ * follows the OS; CMS_THEME_SCRIPT then retargets a tagged one in the browser). An action is found
+ * by its class or, without one, by the label main gave it. Only those href values change, each in
+ * its own quotes; every other stored byte stays, so an action found by its label stays untagged. */
+function withFrozenActionLinks(
+  html: string,
+  path: string,
+  lang: CmsLang,
+  mode: CmsMode | null,
+): string {
+  type Node = DefaultTreeAdapterMap['node']
+  type Element = DefaultTreeAdapterMap['element']
+  const attr = (node: Element, name: string): string =>
+    node.attrs.find((item) => item.name === name)?.value ?? ''
+  const hasClass = (node: Element, name: string): boolean =>
+    attr(node, 'class').split(/\s+/).includes(name)
+  const elements = (node: Node): Element[] =>
+    'childNodes' in node
+      ? node.childNodes.filter((child): child is Element => 'tagName' in child)
+      : []
+  const find = (node: Node): Element | undefined => {
+    if ('tagName' in node && node.tagName === 'header' && attr(node, 'id') === 'cms-site-header')
+      return node
+    for (const child of elements(node)) {
+      const found = find(child)
+      if (found) return found
+    }
+    return undefined
+  }
+  const replacements: { readonly start: number; readonly end: number; readonly text: string }[] = []
+  const update = (node: Element): void => {
+    if (node.tagName === 'a') {
+      const label = attr(node, 'aria-label')
+      const taggedLanguage = hasClass(node, LANGUAGE_ACTION)
+      const taggedTheme = hasClass(node, THEME_ACTION)
+      const languageToggle =
+        taggedLanguage ||
+        (!taggedTheme &&
+          (label === 'Byt språk till engelska' || label === 'Switch language to Swedish'))
+      const themeToggle =
+        !taggedLanguage &&
+        (taggedTheme || label === 'Växla ljust/mörkt' || label === 'Toggle light/dark')
+      if ((languageToggle || themeToggle) && attr(node, 'href')) {
+        let url: URL
+        try {
+          url = new URL(attr(node, 'href'), 'https://site.invalid')
+        } catch {
+          return
+        }
+        if (url.origin !== 'https://site.invalid' || url.pathname !== path) return
+        url.searchParams.set('lang', languageToggle ? (lang === 'sv' ? 'en' : 'sv') : lang)
+        if (themeToggle) url.searchParams.set('mode', mode === 'dark' ? 'light' : 'dark')
+        else if (mode) url.searchParams.set('mode', mode)
+        else url.searchParams.delete('mode')
+        const href = `${url.pathname}${url.search}${url.hash}`
+        for (const item of node.attrs) {
+          // An element the parser re-created from an earlier tag has no location of its own; it
+          // is re-created from the rewritten tag the same way.
+          const location =
+            item.name === 'href' && item.value !== href
+              ? node.sourceCodeLocation?.attrs?.[
+                  item.prefix ? `${item.prefix}:${item.name}` : item.name
+                ]
+              : undefined
+          if (!location) continue
+          const source = html.slice(location.startOffset, location.endOffset)
+          const head = /^[^=]*=[\t\n\f\r ]*/.exec(source)?.[0] ?? `${source}=`
+          const quote = source.charAt(head.length) === "'" ? "'" : '"'
+          const value = href
+            .replaceAll('&', '&amp;')
+            .replaceAll(quote, quote === '"' ? '&quot;' : '&#39;')
+          replacements.push({
+            start: location.startOffset,
+            end: location.endOffset,
+            text: `${head}${quote}${value}${quote}`,
+          })
+        }
+      }
+    }
+    for (const child of elements(node)) update(child)
+  }
+  // The frozen header opens the page, so parse only up to the first `</header>`: the whole page at
+  // the 100 000 character cap costs most of the 10ms CPU budget. A header closed by its own end tag
+  // inside that prefix is final, with the same offsets, since both parses start at 0. A `</header>`
+  // in an attribute value or a comment cuts the prefix early and leaves the header open; then the
+  // whole markup is parsed.
+  const cut = html.indexOf('</header>')
+  const sliced =
+    cut < 0
+      ? undefined
+      : find(
+          parseFragment(html.slice(0, cut + '</header>'.length), { sourceCodeLocationInfo: true }),
+        )
+  const header = sliced?.sourceCodeLocation?.endTag
+    ? sliced
+    : find(parseFragment(html, { sourceCodeLocationInfo: true }))
+  if (header) update(header)
+  return replacements
+    .sort((left, right) => right.start - left.start)
+    .reduce(
+      (result, { start, end, text }) => result.slice(0, start) + text + result.slice(end),
+      html,
+    )
+}
 
 function planCmsRender(
   page: CmsPage,
@@ -415,11 +526,22 @@ function planCmsRender(
 ): CmsRender {
   const native = page.content[lang].html.includes('data-knc-native="1"')
   // A created page's live header has one markup for both schemes, so it can follow the OS. A page
-  // still holding a frozen header copy is served as stored, as before the live header.
+  // still holding a frozen header copy is served as stored, as before the live header, except for
+  // the hrefs of its language and theme actions, which follow the response's language and mode.
   const variant =
     presentation && isLiveSitePage(page)
       ? renderSitePage(presentation, page, lang, requested, contact)
-      : page.content[lang]
+      : presentation && isSitePage(page)
+        ? {
+            ...page.content[lang],
+            html: withFrozenActionLinks(
+              page.content[lang].html,
+              page.path,
+              lang,
+              native ? (requested ?? 'light') : requested,
+            ),
+          }
+        : page.content[lang]
   return native
     ? { markup: 'native', mode: requested ?? 'light', variant }
     : { markup: 'authored', mode: requested ?? 'auto', variant }
@@ -749,53 +871,17 @@ export function renderLegalMetadata(
       ? `Bokning, priser, avbokning och kontakt hos ${business.name}.`
       : `Så hanterar ${business.name} bokningsuppgifter, cookies, e-post och kalenderkoppling.`,
   )
-  rendered = rendered.replaceAll(
-    /<span data-business-name\s*>[^<]*<\/span\s*>/g,
-    () => `<span data-business-name>${escapeElementText(business.name)}</span>`,
+  // Only the body is parsed and filled as on a CMS legal page; the head is never reserialised.
+  const opening = /<body\b[^>]*>/i.exec(rendered)
+  const end = rendered.lastIndexOf('</body>')
+  if (!opening || end < opening.index + opening[0].length)
+    return renderLegalFragment(rendered, business)
+  const start = opening.index + opening[0].length
+  return (
+    rendered.slice(0, start) +
+    renderLegalFragment(rendered.slice(start, end), business) +
+    rendered.slice(end)
   )
-  rendered = rendered.replaceAll(
-    /<span data-business-controller="(sv|en)"\s*>[^<]*<\/span\s*>/g,
-    (_match, lang: string) =>
-      `<span data-business-controller="${lang}">${escapeElementText(business.legalName || business.name)}</span>`,
-  )
-  const contact =
-    business.email === ''
-      ? '<a href="/">Kontakt / Contact</a>'
-      : `<a href="mailto:${escapeAttribute(business.email)}">${escapeElementText(business.email)}</a>`
-  rendered = rendered.replaceAll(
-    /<span data-business-contact\s*>[\s\S]*?<\/span\s*>/g,
-    () => `<span data-business-contact>${contact}</span>`,
-  )
-  for (const lang of ['sv', 'en'] as const) {
-    const rows: readonly (readonly [string, string])[] = [
-      [lang === 'sv' ? 'Salong' : 'Salon', business.name],
-      [lang === 'sv' ? 'Juridiskt företagsnamn' : 'Legal business name', business.legalName],
-      [lang === 'sv' ? 'Organisationsnummer' : 'Registration number', business.organizationNumber],
-      [lang === 'sv' ? 'Adress' : 'Address', formatBusinessAddress(business)],
-      [lang === 'sv' ? 'E-post' : 'Email', business.email],
-      [lang === 'sv' ? 'Telefon' : 'Phone', business.phoneDisplay],
-    ]
-    const details = rows
-      .filter(([, value]) => value !== '')
-      .map(
-        ([label, value]) =>
-          `<dt>${escapeElementText(label)}</dt><dd>${escapeElementText(value)}</dd>`,
-      )
-      .join('')
-    rendered = replaceElementContent(
-      rendered,
-      `legal-business-details-${lang}`,
-      `<dl>${details}</dl>`,
-    )
-    rendered = replaceElementText(
-      rendered,
-      `cancellation-policy-${lang}`,
-      lang === 'sv'
-        ? `Avboka senast ${business.cancellationPolicyHours} timmar före den bokade tiden.`
-        : `Cancel at least ${business.cancellationPolicyHours} hours before your appointment.`,
-    )
-  }
-  return rendered
 }
 
 function priceRange(facts: BusinessDiscoveryFacts): string | null {
@@ -1156,7 +1242,9 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
               discovery?.business ?? DEFAULT_BUSINESS,
               discovery?.facts ?? EMPTY_BUSINESS_FACTS,
             )
-          : cmsPage
+          : (cmsPage.path === '/privacy' || cmsPage.path === '/terms') && discovery
+            ? renderLegalPage(cmsPage, lang, discovery.business)
+            : cmsPage
       let body = renderCmsPage(
         await index.text(),
         page,
@@ -1185,8 +1273,6 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
           `<script type="application/json" id="cms-native-state">${state}</script></head>`,
         )
       }
-      if (cmsPage.path === '/privacy' || cmsPage.path === '/terms')
-        body = renderLegalMetadata(body, cmsPage.path, discovery?.business ?? null)
       return new Response(request.method === 'HEAD' ? null : body, {
         status: index.status,
         headers,

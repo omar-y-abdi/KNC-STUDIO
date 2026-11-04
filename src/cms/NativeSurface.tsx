@@ -10,7 +10,7 @@ import { useLocation } from 'wouter-preact'
 import { useContext, useEffect, useMemo, useState } from 'preact/hooks'
 import {
   validatePresentation,
-  isSitePage,
+  isMenuPage,
   type CmsLang,
   type CmsMode,
   type CmsPresentation,
@@ -40,7 +40,7 @@ export function useNativeSource(): boolean {
 export function useCmsPageLinks(): readonly CmsPage[] {
   return (
     useContext(NativeContext)?.presentation?.pages.filter(
-      (page) => page.inMenu && isSitePage(page),
+      (page) => page.inMenu && isMenuPage(page),
     ) ?? []
   )
 }
