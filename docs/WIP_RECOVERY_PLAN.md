@@ -64,8 +64,11 @@ commit solely to record the preceding successful CI run.
 ## Editor invariants — 2026-10-30
 
 Canonical CssRule models and exported CSS must remain unchanged by preview rendering.
-Both engines enforce 3,000 ms startup readiness. The synchronous editor spans that the
-startup check reports are browser instrumentation, not OS or Edge CPU measurements.
+In both engines, the stored-page and real-fixture startup checks each load the editor three
+times, each in a fresh context, and assert that the median time from document start to the
+`cms:startup:ready` mark is under 3,000 ms (`tools/e2e/cms-startup.spec.mjs`). The
+synchronous editor spans that the startup checks report are browser instrumentation, not OS
+or Edge CPU measurements.
 
 Native priority uses the existing complete normalization policy only for targeted native
 IDs, including inactive contexts. Current-frame measurements replace stale Desktop
