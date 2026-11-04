@@ -1017,6 +1017,87 @@ test('cms-lifecycle a recovered draft accepts no block insertion while its canva
   await expect(nameField(page)).toHaveValue(name)
 })
 
+// Whether setComponents has installed the page in the actual editor's model.
+const pageInstalled = (page) =>
+  page.evaluate(async () => {
+    const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+    return cmsGrapes.editors.at(-1).getWrapper().components().length > 0
+  })
+
+// What the actual editor has selected: nothing, its wrapper (the page body), or another component.
+const selection = (page) =>
+  page.evaluate(async () => {
+    const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+    const editor = cmsGrapes.editors.at(-1)
+    const selected = editor.getSelected()
+    if (!selected) return null
+    return selected === editor.getWrapper() ? 'wrapper' : selected.getName()
+  })
+
+test('cms-lifecycle a layer click selects nothing while a recovered draft loads, and selects after it', async ({
+  context,
+}) => {
+  await nativeBackend(context)
+  const first = await context.newPage()
+  await openStudio(first)
+  await publishAdopted(first)
+  const name = 'Utkastet som återställs med lagren öppna'
+  await nameField(first).fill(name)
+  await expect.poll(() => storedDrafts(first)).toEqual([name])
+  await first.close()
+
+  const page = await context.newPage()
+  await holdCanvasYield(page)
+  await openStudio(page)
+  // The owner keeps Lager open; recovery mounts a new editor, which loads under it.
+  const layersTab = page.getByRole('tab', { name: 'Lager', exact: true })
+  await layersTab.click()
+  // The root row of the layer tree, the page body: until a layer is opened, the only one shown.
+  const root = page.locator('#cms-layers > .gjs-layer > .gjs-layer-item')
+  await expect(root).toBeVisible()
+  await page.getByRole('button', { name: 'Visa utkast', exact: true }).click()
+  const offers = page.getByRole('region', { name: 'Utkast från stängda flikar', exact: true })
+  await page.evaluate(() => globalThis.__canvasYield.arm())
+  await offers.getByRole('button', { name: 'Fortsätt här', exact: true }).click()
+  // Advance the held load one work step at a time until setComponents has installed the page,
+  // then keep it held there.
+  let held = 1
+  await page.waitForFunction(() => globalThis.__canvasYield.held() === 1, undefined, {
+    timeout: 90000,
+  })
+  while (!(await pageInstalled(page))) {
+    await page.evaluate(() => {
+      globalThis.__canvasYield.arm()
+      globalThis.__canvasYield.release()
+    })
+    held++
+    await page.waitForFunction((count) => globalThis.__canvasYield.held() === count, held, {
+      timeout: 90000,
+    })
+  }
+  const canvas = page.locator('.cms-editor-canvas')
+  await expect(canvas).toHaveAttribute('aria-busy', 'true')
+  await expect(layersTab).toHaveAttribute('aria-selected', 'true')
+  await expect(root).toBeVisible()
+  await realClick(page, root)
+  await nextTask(page)
+  const during = await selection(page)
+  await page.evaluate(() => globalThis.__canvasYield.release())
+  await expect(canvas).toHaveAttribute('data-cms-canvas-ready', 'true', { timeout: 90000 })
+  // The render that ends the load also makes the layers available again.
+  await expect(canvas).toHaveAttribute('aria-busy', 'false')
+  const after = await selection(page)
+  await realClick(page, root)
+  expect({ during, after, clicked: await selection(page) }).toEqual({
+    during: null,
+    after: null,
+    clicked: 'wrapper',
+  })
+  await expect(
+    page.locator('.cms-page-list').getByRole('button', { name, exact: true }),
+  ).toBeVisible()
+})
+
 test('cms-lifecycle a page opened during the first canvas load replaces it, and that load stops', async ({
   page,
   context,
