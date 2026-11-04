@@ -1212,13 +1212,15 @@ export function stripComposedCanvas(
 }
 
 /** Home's part of the canvas sheet: no selector branch or alternative for a discarded ID and, with
- * owners, no copy of About's items. It reads no markup. */
+ * owners, no copy of About's items. It reads no markup. The canvas sheet is parsed as the stored
+ * sheets are, custom properties included: the canvas writes `--x:red !important`, which only
+ * then reads as the stored `--x:red!important`. */
 export function stripHomeSheet(
   css: string,
   discarded: ReadonlySet<string>,
   owners?: HomeSheetOwners,
 ): string {
-  const sheet = parse(css) as StyleSheet
+  const sheet = parseCanvasSheet(css)
   const sources = new Map(sheet.children.toArray().map((node) => [node, generate(node)]))
   dropSelectors(sheet, idsIn(discarded))
   if (owners) dropAboutCopies(sheet, sources, owners, discarded)
@@ -1252,14 +1254,15 @@ export function extractComposedAbout(
 }
 
 /** About's part of the canvas sheet: no selector branch or alternative for another ID of the
- * canvas and, with owners, none of Home's items, in About's layer order. It reads no markup. */
+ * canvas and, with owners, none of Home's items, in About's layer order. It reads no markup. The
+ * canvas sheet is parsed as stripHomeSheet parses it. */
 export function extractAboutSheet(
   css: string,
   aboutIds: ReadonlySet<string>,
   otherIds: ReadonlySet<string>,
   owners?: ComposedOwners,
 ): string {
-  const tree = parse(css) as StyleSheet
+  const tree = parseCanvasSheet(css)
   const sources = new Map(tree.children.toArray().map((node) => [node, generate(node)]))
   dropSelectors(tree, idsIn(otherIds))
   if (owners) dropHomeItems(tree, sources, owners, aboutIds)
