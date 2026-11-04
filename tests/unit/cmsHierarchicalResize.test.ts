@@ -1,7 +1,30 @@
 import { expect, it } from 'vitest'
 import { scaledZoom } from '../../src/admin/cms/hierarchicalResize'
-import { desktopMarqueeCardStyle } from '../../src/admin/cms/resizeStyles'
+import {
+  desktopMarqueeCardStyle,
+  stretchesToTrack,
+  type TrackStretchInput,
+} from '../../src/admin/cms/resizeStyles'
 import { syncLayout } from '../../src/admin/cms/responsiveStyles'
+
+// Initial computed values of a card and its parent, as getComputedStyle reports them.
+const card = { justifySelf: 'auto', alignSelf: 'auto', aspectRatio: 'auto' }
+const parent = {
+  display: 'block',
+  flexDirection: 'row',
+  justifyItems: 'normal',
+  alignItems: 'normal',
+}
+const stretches = (
+  parentStyle: Partial<NonNullable<TrackStretchInput['parent']>>,
+  cardStyle: Partial<TrackStretchInput['card']> = {},
+  localName = 'div',
+): boolean =>
+  stretchesToTrack({
+    localName,
+    card: { ...card, ...cardStyle },
+    parent: { ...parent, ...parentStyle },
+  })
 
 it('scales from the current measured geometry without cumulative drift', () => {
   expect(scaledZoom(1, 400, 200)).toBe(0.5)
@@ -91,6 +114,51 @@ it('keeps intrinsic auto sizing on a card aligned to the start', () => {
       stretch: false,
     }),
   ).toEqual({ ...style, zoom: '0.8' })
+})
+it('never sizes a row flex item from its track, whatever its alignment', () => {
+  for (const display of ['flex', 'inline-flex'])
+    for (const flexDirection of ['row', 'row-reverse']) {
+      expect(stretches({ display, flexDirection })).toBe(false)
+      expect(stretches({ display, flexDirection, alignItems: 'stretch' })).toBe(false)
+      expect(stretches({ display, flexDirection }, { justifySelf: 'stretch' })).toBe(false)
+      expect(stretches({ display, flexDirection, justifyItems: 'stretch' })).toBe(false)
+    }
+})
+it('stretches a column flex item from its cross-axis alignment, not its justification', () => {
+  for (const flexDirection of ['column', 'column-reverse']) {
+    const column = { display: 'flex', flexDirection }
+    expect(stretches(column)).toBe(true)
+    expect(stretches({ ...column, alignItems: 'stretch' })).toBe(true)
+    expect(stretches(column, { justifySelf: 'start' })).toBe(true)
+    expect(stretches({ ...column, justifyItems: 'center' })).toBe(true)
+    // `normal` behaves as stretch for every flex item, replaced or with an aspect ratio.
+    expect(stretches(column, {}, 'img')).toBe(true)
+    expect(stretches(column, { aspectRatio: '16 / 9' })).toBe(true)
+    expect(stretches(column, { alignSelf: 'center' })).toBe(false)
+    expect(stretches({ ...column, alignItems: 'flex-start' })).toBe(false)
+    expect(stretches({ ...column, alignItems: 'center' }, { alignSelf: 'stretch' })).toBe(true)
+    expect(stretches({ ...column, alignItems: 'stretch' }, { alignSelf: 'end' })).toBe(false)
+  }
+})
+it('keeps the justification rule for grid items', () => {
+  for (const display of ['grid', 'inline-grid']) {
+    expect(stretches({ display })).toBe(true)
+    expect(stretches({ display }, { alignSelf: 'center' })).toBe(true)
+    expect(stretches({ display, justifyItems: 'center' })).toBe(false)
+    expect(stretches({ display, justifyItems: 'center' }, { justifySelf: 'stretch' })).toBe(true)
+    expect(stretches({ display, justifyItems: 'stretch' }, { justifySelf: 'start' })).toBe(false)
+    expect(stretches({ display }, { aspectRatio: '1 / 1' })).toBe(false)
+    expect(stretches({ display }, { aspectRatio: '1 / 1', justifySelf: 'stretch' })).toBe(true)
+    expect(stretches({ display }, {}, 'img')).toBe(false)
+    expect(stretches({ display, justifyItems: 'stretch' }, {}, 'img')).toBe(true)
+  }
+})
+it('keeps the justification rule for block-level items in block containers', () => {
+  for (const display of ['block', 'flow-root']) {
+    expect(stretches({ display })).toBe(true)
+    expect(stretches({ display, alignItems: 'center' }, { alignSelf: 'center' })).toBe(true)
+    expect(stretches({ display }, {}, 'video')).toBe(false)
+  }
 })
 it('shares layout scale across themes without changing colors or other devices', () => {
   const result = syncLayout(
