@@ -19,7 +19,7 @@ import type {
   CmsPage,
   CmsPresentation,
 } from '../../../shared/cms'
-import { mediaUrl } from '../../../shared/cms'
+import { cmsFontFaceCss, mediaUrl } from '../../../shared/cms'
 import { SUPABASE_URL } from '../../backend/config'
 import {
   configureComponent,
@@ -103,7 +103,8 @@ interface Props {
   compare: boolean
   zoom: number
   locked: boolean
-  preview: CmsPresentation | null
+  /** The validated document the locked preview shows. */
+  preview: CmsDocument | null
   presentation: CmsPresentation
   draft?: CmsDocument
   onOpenResources?: (destination: ResourceDestination) => void
@@ -1215,6 +1216,10 @@ export function CmsEditor(props: Props): JSX.Element {
   // The policy's flag, which the style manager reads too: nudges and advanced CSS follow it.
   const stylable = selected?.get('stylable') !== false
   const logoText = tag === 'svg' ? (selected?.find('text') ?? []) : []
+  // The locked preview shows one validated document whole: its page, presentation, business and
+  // fonts. Studio replaces it only with the next validated draft; until then a page that document
+  // lacks shows no preview rather than a mix of the two documents.
+  const previewPage = props.preview?.presentation.pages.find((item) => item.id === props.page.id)
 
   if (loadError) throw loadError
   return (
@@ -1227,17 +1232,17 @@ export function CmsEditor(props: Props): JSX.Element {
         ref={host}
         style={{ visibility: props.locked || loading ? 'hidden' : 'visible' }}
       />
-      {props.locked && props.preview && (
+      {props.locked && props.preview && previewPage && (
         <LivePreview
           scene={props.scene}
-          page={props.page}
-          presentation={props.preview}
-          {...(props.draft ? { draft: props.draft } : {})}
-          business={contact}
+          page={previewPage}
+          presentation={props.preview.presentation}
+          draft={props.preview}
+          business={resolveBusinessSettings(new Map(Object.entries(props.preview.settings)))}
           lang={props.lang}
           mode={props.mode}
           device={props.device}
-          fontCss={props.fontCss}
+          fontCss={cmsFontFaceCss(props.preview.presentation.fonts, SUPABASE_URL ?? '')}
           onNavigate={props.onNavigate}
         />
       )}
