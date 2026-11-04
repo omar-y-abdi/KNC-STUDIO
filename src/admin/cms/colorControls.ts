@@ -43,11 +43,18 @@ export function colorControls(
  * control takes its property's value again: the commit then repeats what the targets hold, and
  * a picker change in progress still completes.
  *
- * Two events precede the commit, and each covers a path the other misses. setSelected (a click,
- * the layers, editor.select) emits `component:select:before` first, also for a click that only
- * adds to the selection. An undo or redo of a selection change bypasses setSelected: the
- * UndoManager tracks the selected collection and edits it directly, removing the selection it
- * replaces (`component:deselected`) before it adds the one it restores (`component:selected`). */
+ * Three kinds of event precede the commit, each on a path the others miss. setSelected (a click,
+ * a ctrl or shift click, the layers, editor.select) emits `component:select:before` first, also
+ * when it only adds to the selection. An undo or redo of a selection change bypasses
+ * setSelected: the UndoManager tracks the selected collection and edits it directly. A step that
+ * replaces a selection removes it (`component:deselected`) before it adds the one it restores
+ * (`component:selected`), also when editor.UndoManager is called directly. A step that only
+ * adds, such as the redo of an added selection or the undo of a deselection, emits neither; the
+ * Studio reaches this history only through the undo and redo keymaps (⌘Z, ⌘⇧Z and their Ctrl
+ * forms), whose commands emit `command:run:before:core:undo` and `command:run:before:core:redo`
+ * before the UndoManager changes the selection. A direct editor.UndoManager call whose step only
+ * adds stays outside, as do editor.selectAdd and selectToggle, which add without setSelected;
+ * src makes none of these calls. */
 export function connectColorControls(editor: Editor): () => void {
   const sync = (): void => {
     const properties = editor.StyleManager.getSectors({ array: true }).flatMap((sector) =>
@@ -57,8 +64,12 @@ export function connectColorControls(editor: Editor): () => void {
   }
   editor.on('component:select:before', sync)
   editor.on('component:deselected', sync)
+  editor.on('command:run:before:core:undo', sync)
+  editor.on('command:run:before:core:redo', sync)
   return () => {
     editor.off('component:select:before', sync)
     editor.off('component:deselected', sync)
+    editor.off('command:run:before:core:undo', sync)
+    editor.off('command:run:before:core:redo', sync)
   }
 }
