@@ -2,7 +2,9 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { gunzipSync } from 'node:zlib'
-import { emptyDocument } from '../../shared/cms.ts'
+import { emptyDocument, validateDocument } from '../../shared/cms.ts'
+import { CMS_BUILT_ASSETS } from '../../shared/cms-built-assets.ts'
+import { validateDocumentMarkupPlacements } from '../../shared/cms-markup.ts'
 import { createSitePage } from '../../shared/site-page.ts'
 import { nativeBackend } from './cms-backend.mjs'
 import { attachTabState } from './cms-tab-state.mjs'
@@ -342,6 +344,78 @@ test('cms-lifecycle normalization is publishable but only owner edits prompt and
   await expect(resume).toBeEnabled()
   await resume.click()
   await expect(nameField(recovery)).toHaveValue(name)
+})
+
+// G16: accepted owner sheets that only mention the old Desktop width hold no legacy ID-rule
+// breakpoint, so no adoption path may rewrite them.
+const DESKTOP_WIDTH_SHEETS = {
+  sv: '/* Owner comment */\n@media (max-width: 1440px) {\n  .price {\n    color: red;\n  }\n}\n',
+  en: ".note::after {\n  content: 'max-width: 1440px';\n}\n",
+}
+
+test('cms-lifecycle ordinary Desktop-width Contact CSS opens as published and survives publication', async ({
+  page,
+  context,
+}) => {
+  const backend = await nativeBackend(context)
+  await openStudio(page)
+  await publishAdopted(page)
+  const status = page.locator('.cms-status')
+  // Control: the published head reopens as published.
+  await openStudio(page)
+  await expect(status).toHaveText('Publicerad · rev 2')
+  const contactOf = (document) =>
+    document.presentation.pages.find(({ path }) => path === '/contact')
+  for (const lang of ['sv', 'en'])
+    contactOf(backend.document).content[lang].css = {
+      light: DESKTOP_WIDTH_SHEETS[lang],
+      dark: DESKTOP_WIDTH_SHEETS[lang],
+    }
+  validateDocument(backend.document)
+  validateDocumentMarkupPlacements(backend.document, {
+    siteOrigin: new URL(harnessOrigin).origin,
+    storageOrigin: 'https://admin-harness.invalid',
+    builtAssets: CMS_BUILT_ASSETS,
+  })
+  const owner = globalThis.structuredClone(contactOf(backend.document).content)
+  await openStudio(page)
+  assert.equal(
+    await page.evaluate(
+      async (document) =>
+        (await import('/src/admin/cms/corePages.ts')).needsCorePageSource(document),
+      backend.document,
+    ),
+    false,
+    'The head needs no source upgrade',
+  )
+  await expect(status).toHaveText('Publicerad · rev 2')
+  await expect(page.getByRole('button', { name: 'Publicera', exact: true })).toBeDisabled()
+  // An unrelated owner edit publishes the Contact sheets as stored.
+  await nameField(page).fill('Startsida med ägarens Kontakt-CSS')
+  await publishAdopted(page)
+  await expect(status).toHaveText('Publicerad · rev 3')
+  assert.deepEqual(contactOf(backend.document).content, owner, 'publication')
+  // An imported copy of the published head keeps them as well.
+  const copy = globalThis.structuredClone(backend.document)
+  copy.presentation.pages[0].name.sv = 'Importerad startsida'
+  await page.getByRole('button', { name: /Utkast & backup/ }).click()
+  await page.locator('input[type="file"][accept="application/json,.json"]').setInputFiles({
+    name: 'kontakt-css.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(copy)),
+  })
+  await page
+    .getByText('JSON-utkastet importerades och är ännu inte publicerat.', { exact: true })
+    .waitFor()
+  await page
+    .getByRole('dialog', { name: 'Utkast & backup', exact: true })
+    .getByRole('button', { name: 'Stäng panel', exact: true })
+    .click()
+  await publishAdopted(page)
+  await expect(status).toHaveText('Publicerad · rev 4')
+  assert.deepEqual(contactOf(backend.document).content, owner, 'import')
+  await openStudio(page)
+  await expect(status).toHaveText('Publicerad · rev 4')
 })
 
 test('cms-lifecycle closed tabs keep their drafts until the owner acts', async ({ context }) => {
