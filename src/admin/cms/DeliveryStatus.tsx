@@ -118,6 +118,8 @@ export function DeliveryStatus({ port = defaultPort }: { port?: DeliveryStatusPo
   const [discardTarget, setDiscardTarget] = useState<FailedBookingEmailDelivery | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [viewing, setViewing] = useState<{
+    /** This opening of the copy; every opening, of the same entry too, has its own. */
+    readonly opening: symbol
     readonly entry: EmailSendLogEntry
     readonly copy: Loaded<EmailSendLogCopy>
   } | null>(null)
@@ -202,12 +204,16 @@ export function DeliveryStatus({ port = defaultPort }: { port?: DeliveryStatusPo
   }
 
   const openCopy = async (entry: EmailSendLogEntry): Promise<void> => {
-    setViewing({ entry, copy: { state: 'loading' } })
+    // The answer belongs to this opening only. Closing the copy drops the opening, and opening it
+    // again makes a new one, so a late answer to an earlier opening changes nothing.
+    const opening = Symbol(entry.id)
+    setViewing({ opening, entry, copy: { state: 'loading' } })
     const result = await port.readCopy(entry.id)
     setViewing((current) =>
-      current?.entry.id !== entry.id
+      current?.opening !== opening
         ? current
         : {
+            opening,
             entry,
             copy: result.ok
               ? { state: 'ready', value: result.value }
