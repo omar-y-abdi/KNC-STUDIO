@@ -99,7 +99,7 @@ const name = (suffix: string): string => prefix + suffix
 const keyword = (value: string): string => ident.decode(value.trim()).toLowerCase()
 const cssWide = new Set(['initial', 'inherit', 'unset', 'revert', 'revert-layer'])
 /** Elements that browsers lay out as replaced boxes, unless they show fallback content.
- * `normal` alignment does not stretch a replaced box. */
+ * `normal` justification does not stretch a replaced box. */
 const replacedElements = new Set([
   'img',
   'video',
@@ -112,6 +112,43 @@ const replacedElements = new Set([
 ])
 const typedWidth =
   '<length-percentage> | auto | min-content | max-content | fit-content | stretch | contain'
+
+/** Computed values that decide whether a card's auto width fills its track. Results of
+ * getComputedStyle satisfy both style shapes. */
+export interface TrackStretchInput {
+  localName: string
+  card: Pick<CSSStyleDeclaration, 'justifySelf' | 'alignSelf' | 'aspectRatio'>
+  parent:
+    | Pick<CSSStyleDeclaration, 'display' | 'flexDirection' | 'justifyItems' | 'alignItems'>
+    | undefined
+}
+
+/** Whether a card's auto width fills its track, so a resize writes a width relative to the
+ * track beside the zoom. Axes assume a horizontal writing mode, as the justification rule
+ * always has.
+ * - Row flex parent: the width is the main size, from flex-basis, width and the flex
+ *   factors. Alignment never stretches it, so zoom alone scales the card.
+ * - Column flex parent: the width is the cross size. align-self, or the parent's
+ *   align-items for auto, stretches it when stretch or normal, which behaves as stretch for
+ *   every flex item, replaced or with an aspect ratio; justify-self does not apply. A
+ *   wrapping parent stretches items to their line; computed values do not tell how many
+ *   lines it has, so it counts as one.
+ * - Any other parent: justify-self, or the parent's justify-items for auto. */
+export function stretchesToTrack({ localName, card, parent }: TrackStretchInput): boolean {
+  if (parent?.display === 'flex' || parent?.display === 'inline-flex') {
+    if (!parent.flexDirection.startsWith('column')) return false
+    const alignment = card.alignSelf === 'auto' ? parent.alignItems : card.alignSelf
+    return alignment === 'stretch' || alignment === 'normal'
+  }
+  const alignment = card.justifySelf === 'auto' && parent ? parent.justifyItems : card.justifySelf
+  // `normal` aligns a replaced element, or a box with a preferred aspect ratio, as start.
+  return (
+    alignment === 'stretch' ||
+    ((!alignment || alignment === 'normal') &&
+      card.aspectRatio === 'auto' &&
+      !replacedElements.has(localName))
+  )
+}
 
 function declaration(
   property: string,
@@ -341,10 +378,6 @@ function readSamples(
       else if (width === 'auto' && raw !== 'auto' && !cssWide.has(keyword(raw))) width = raw
       if (!width) throw new Error('Webbläsaren kunde inte lösa kortets bredd.')
       const parent = element.parentElement
-      const alignment =
-        computed.justifySelf === 'auto' && parent
-          ? view.getComputedStyle(parent).justifyItems
-          : computed.justifySelf
       return {
         component,
         width,
@@ -360,12 +393,11 @@ function readSamples(
               ].reduce((sum, value) => sum + (parseFloat(value) || 0), 0),
         horizontalMargin:
           (parseFloat(computed.marginLeft) || 0) + (parseFloat(computed.marginRight) || 0),
-        // `normal` aligns a replaced element, or a box with a preferred aspect ratio, as start.
-        stretch:
-          alignment === 'stretch' ||
-          ((!alignment || alignment === 'normal') &&
-            computed.aspectRatio === 'auto' &&
-            !replacedElements.has(element.localName)),
+        stretch: stretchesToTrack({
+          localName: element.localName,
+          card: computed,
+          parent: parent ? view.getComputedStyle(parent) : undefined,
+        }),
         ...(widthSource ? { widthSource } : {}),
         ...(zoomSource ? { zoomSource } : {}),
         widthBranch: 0,
