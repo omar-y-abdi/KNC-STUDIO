@@ -1,4 +1,4 @@
-import { updateNativeCanvas } from './updateCanvas'
+import { updateNativeCanvas, updateSiteHeader } from './updateCanvas'
 import {
   canReplaceResourceGraphic,
   connectResourcePicker,
@@ -32,17 +32,34 @@ import {
 import { siteThemeCss } from '../../../shared/site-theme'
 import {
   composedCanvas,
+  composedCanvasPasses,
+  installHomeAboutPreview,
+  type ComposedCanvasTree,
   stripComposedCanvas,
   extractComposedAbout,
   moveHomeAbout,
   moveBookingScene,
 } from './composedCanvas'
 import { syncResponsiveText } from './responsiveText'
-import { syncLayout } from './responsiveStyles'
+import {
+  canvasDevice,
+  connectTextAutoHeight,
+  editorDevices,
+  syncPageLayout,
+} from './responsiveStyles'
 import { nudgeStyle, resetNudgeStyle } from './position'
 import { cloneComponent } from './clone'
 import { captureViewState, restoreViewState, type CmsViewState } from './viewState'
-import { exportNativeCanvas, legalCanvasBase, parseCanvasCss, readCanvasCss } from './nativeCanvas'
+import {
+  connectCanvasStyles,
+  exportNativeCanvas,
+  legalCanvasBase,
+  parseCanvasCss,
+  parseCanvasSheet,
+  readCanvasCss,
+  yieldCanvasTask,
+  type CanvasTree,
+} from './nativeCanvas'
 import { bindCmsRootStyles, canonicalizeCmsRootStyles } from './cmsRootStyles'
 import { CmsModal } from './Modal'
 import { CmsIcon } from './Icon'
@@ -51,7 +68,15 @@ import { editorLocale } from './editorLocale'
 import { LivePreview } from './LivePreview'
 import type { CmsScene } from '../../cms/Scene'
 import { canvasBehavior, sceneVisibilityCss } from './canvasBehavior'
-import { isSitePage, renderSitePage, createSitePage } from '../../../shared/site-page'
+import {
+  SITE_PAGE_CSS,
+  isSitePage,
+  renderSitePage,
+  siteHeader,
+  sitePageBody,
+  type SiteContact,
+} from '../../../shared/site-page'
+import { resolveBusinessSettings } from '../../site/business'
 
 export interface EditorHandle {
   flush: () => void
@@ -71,6 +96,7 @@ interface Props {
   lang: CmsLang
   mode: CmsMode
   device: 'Desktop' | 'Mobile'
+  narrowDesktop: boolean
   compare: boolean
   zoom: number
   locked: boolean
@@ -92,6 +118,23 @@ interface Props {
 
 // The comparison frame is static; the editing canvas runs the shared fold behavior.
 const canvasScrollCss = '[data-knc-surface^="mobile-"]>div:first-child{position:relative!important}'
+
+/** Schedule derived work only after a visible canvas has had an opportunity to paint. */
+function afterCanvasPaint(callback: () => void): () => void {
+  let idle: number | undefined
+  let timer: number | undefined
+  let frame = requestAnimationFrame(() => {
+    frame = requestAnimationFrame(() => {
+      if (window.requestIdleCallback) idle = window.requestIdleCallback(callback)
+      else timer = window.setTimeout(callback, 0)
+    })
+  })
+  return () => {
+    cancelAnimationFrame(frame)
+    if (idle !== undefined) window.cancelIdleCallback(idle)
+    if (timer !== undefined) window.clearTimeout(timer)
+  }
+}
 
 function fontFamilyOptions(assets: CmsAsset[]): { id: string; label: string }[] {
   return [
@@ -158,12 +201,11 @@ function fitEditor(editor: Editor): number | undefined {
   return editor.Canvas.getZoom()
 }
 
-function editorContextKey(props: Props): string {
-  // Materialized pages own their chrome. Other pages' names/content cannot alter it.
-  if (isSitePage(props.page) && props.page.layout === 'independent')
-    return `${props.page.id}:${props.lang}:${props.mode}:independent:${props.page.path}`
+/** `chrome` is a created page's live header: menu, logo and contact changes invalidate its view. */
+function editorContextKey(props: Props, chrome: string): string {
+  if (isSitePage(props.page)) return `${props.page.id}:${props.lang}:${props.mode}:site:${chrome}`
   const sharedChromeKey =
-    isSitePage(props.page) || props.page.path === '/'
+    props.page.path === '/'
       ? JSON.stringify(
           props.presentation.pages
             .filter((page) => props.page.path !== '/' || page.path === '/about')
@@ -182,6 +224,37 @@ function editorContextKey(props: Props): string {
   return `${props.page.id}:${props.lang}:${props.mode}${bookingContext}${homeDevice}:${sharedChromeKey}`
 }
 
+/** The live header is edited on the homepage: a created page's canvas shows it, never picks it. */
+function lockSiteHeader(editor: Editor): void {
+  const lock = (component: Component): void => {
+    component.set(
+      {
+        selectable: false,
+        hoverable: false,
+        highlightable: false,
+        editable: false,
+        removable: false,
+        copyable: false,
+        draggable: false,
+        droppable: false,
+        stylable: false,
+        layerable: false,
+        badgable: false,
+        resizable: false,
+      },
+      { silent: true },
+    )
+    component.components().forEach(lock)
+  }
+  editor.getWrapper()?.find('#cms-site-header').forEach(lock)
+}
+
+/** The comparison frame's created page: the live header, the base sheet and the page's own CSS. */
+function comparedSitePage(props: Props, contact: SiteContact): { html: string; css: string } {
+  const site = renderSitePage(props.presentation, props.page, props.lang, props.mode, contact)
+  return { html: site.html, css: `${SITE_PAGE_CSS}\n${site.css[props.mode]}` }
+}
+
 function pageFragment(html: string, wrapperId: string): string {
   if (!wrapperId || !/<body(?:\s|>)/i.test(html)) return html
   const document = new DOMParser().parseFromString(html, 'text/html')
@@ -197,6 +270,13 @@ export function CmsEditor(props: Props): JSX.Element {
   const latest = useRef(props)
   latest.current = props
   const applying = useRef(false)
+  const flushCanvas = useRef<(() => void) | null>(null)
+  const deferredAbout = useRef<(() => CanvasTree) | null>(null)
+  const aboutPreviewBuilt = useRef(false)
+  const cancelAboutIdle = useRef<(() => void) | null>(null)
+  const startup = useRef<{ key: string; html: string; css: string } | null>(null)
+  const [loadError, setLoadError] = useState<unknown>(null)
+  const [loading, setLoading] = useState(true)
   const timer = useRef<number | null>(null)
   const [selected, setSelected] = useState<Component | null>(null)
   const [imageTarget, setImageTarget] = useState<Component | null>(null)
@@ -208,6 +288,7 @@ export function CmsEditor(props: Props): JSX.Element {
     device: Props['device']
     scene: CmsScene
     key: string
+    chrome: string
     html: string
     css: string
   } | null>(null)
@@ -217,27 +298,66 @@ export function CmsEditor(props: Props): JSX.Element {
       sourceHtml: string
       sourceCss: string
       wrapperId: string
-      content: { html: string; css: string }
+      deferAbout: boolean
+      content: { html: string; aboutPreview?: () => CanvasTree }
       rules: ReturnType<typeof parseCanvasCss>
     }[]
   >([])
   const checkpoint = useRef<{ html: string; css: string } | null>(null)
-  const contextKey = editorContextKey(props)
+  const sitePage = isSitePage(props.page)
+  const contact = useMemo(
+    () => resolveBusinessSettings(new Map(Object.entries(props.draft?.settings ?? {}))),
+    [props.draft?.settings],
+  )
+  const chrome = useMemo(
+    () =>
+      isSitePage(props.page)
+        ? siteHeader(props.presentation, props.page, props.lang, props.mode, contact)
+        : '',
+    [props.presentation, props.page, props.lang, props.mode, contact],
+  )
+  const latestChrome = useRef(chrome)
+  latestChrome.current = chrome
+  const contextKey = editorContextKey(props, chrome)
   const variant = props.page.content[props.lang]
+  const materializeAbout = (): void => {
+    cancelAboutIdle.current?.()
+    cancelAboutIdle.current = null
+    const editor = instance.current
+    const create = deferredAbout.current
+    if (!editor || !create) return
+    // Capture a pending owner edit before advancing the checkpoint for derived-only changes.
+    flushCanvas.current?.()
+    const wasApplying = applying.current
+    applying.current = true
+    try {
+      installHomeAboutPreview(editor, create)
+      aboutPreviewBuilt.current = true
+      deferredAbout.current = null
+      checkpoint.current = { html: editor.getHtml({ cleanId: false }), css: readCanvasCss(editor) }
+      editor.clearDirtyCount()
+      // Startup readiness stays separate from completion of the inactive model tree.
+      host.current?.setAttribute('data-cms-about-preview-ready', 'true')
+    } finally {
+      applying.current = wasApplying
+    }
+  }
   const compareHost = useRef<HTMLDivElement>(null)
   const [compareScale, setCompareScale] = useState(1)
   const compareWidth = props.device === 'Desktop' ? 390 : 1440
   const compareHeight = props.device === 'Desktop' ? 844 : 900
+  const canvasBase = useMemo(
+    () =>
+      sitePage
+        ? { styles: ['/tokens.css'], scheme: props.mode }
+        : legalCanvasBase(props.page.path, props.mode),
+    [sitePage, props.page.path, props.mode],
+  )
   const comparison = useMemo(
     () =>
       props.active && props.compare
         ? isSitePage(props.page)
-          ? renderSitePage(
-              props.presentation,
-              createSitePage(props.presentation, props.page),
-              props.lang,
-              props.mode,
-            )
+          ? comparedSitePage(props, contact)
           : composedCanvas(
               props.page,
               props.presentation,
@@ -256,11 +376,13 @@ export function CmsEditor(props: Props): JSX.Element {
       props.presentation,
       props.scene,
       props.device,
+      contact,
     ],
   )
 
   useLayoutEffect(() => {
     if (!host.current) return
+    const start = performance.now()
     const editor = grapesjs.init({
       container: host.current,
       height: '100%',
@@ -335,18 +457,21 @@ export function CmsEditor(props: Props): JSX.Element {
         },
       },
       deviceManager: {
-        devices: [
-          { id: 'Desktop', name: 'Desktop', width: '1440px', height: '900px', widthMedia: '769px' },
-          { id: 'Mobile', name: 'Mobile', width: '390px', height: '844px', widthMedia: '768px' },
-        ],
+        devices: editorDevices,
       },
       assetManager: { assets: [], upload: false, custom: true },
     })
     // storageManager:false disables its target, not its autosave serialization in 0.23.6.
     // The CMS draft/backup owns persistence; never build a second project on every update.
     editor.Storage.setAutosave(false)
+    const releaseCanvasStyles = connectCanvasStyles(editor)
     instance.current = editor
     const releaseResize = connectHierarchicalResize(
+      editor,
+      () => applying.current || latest.current.locked,
+      () => latest.current.mode,
+    )
+    const releaseTextHeight = connectTextAutoHeight(
       editor,
       () => applying.current || latest.current.locked,
     )
@@ -437,10 +562,7 @@ export function CmsEditor(props: Props): JSX.Element {
       const css = readCanvasCss(editor)
       if (html === checkpoint.current.html && css === checkpoint.current.css) return
       const current = latest.current
-      // Ownership is page-wide: materialize both languages before editing either.
-      const next = isSitePage(current.page)
-        ? createSitePage(current.presentation, current.page)
-        : structuredClone(current.page)
+      let next = structuredClone(current.page)
       applying.current = true
       try {
         const textHtml =
@@ -468,18 +590,10 @@ export function CmsEditor(props: Props): JSX.Element {
           )
         : null
       const exported = stripComposedCanvas(nativeExport.html, nativeExport.css, composedScene)
-      const otherMode = current.mode === 'light' ? 'dark' : 'light'
-      const otherCss = stripComposedCanvas(
-        html,
-        syncLayout(
-          bindCmsRootStyles(baseVariant.css[current.mode], wrapperId),
-          exported.css,
-          bindCmsRootStyles(baseVariant.css[otherMode], wrapperId),
-        ),
-        composedScene,
-      ).css
+      const fragment = pageFragment(exported.html, wrapperId)
       const persisted = {
-        html: pageFragment(exported.html, wrapperId),
+        // A created page stores only its body; the live header is rendered, never saved.
+        html: isSitePage(current.page) ? sitePageBody(fragment) : fragment,
         css: canonicalizeCmsRootStyles(exported.css, wrapperId),
       }
       next.content[current.lang] = {
@@ -487,9 +601,10 @@ export function CmsEditor(props: Props): JSX.Element {
         css: {
           ...baseVariant.css,
           [current.mode]: persisted.css,
-          [otherMode]: canonicalizeCmsRootStyles(otherCss, wrapperId),
         },
       }
+      next = syncPageLayout(current.page, next, current.lang, current.mode)
+      persisted.css = next.content[current.lang].css[current.mode]
       const pages = [next]
       if (aboutOwner && aboutExport) {
         const about = structuredClone(aboutOwner)
@@ -499,14 +614,9 @@ export function CmsEditor(props: Props): JSX.Element {
           css: {
             ...before.css,
             [current.mode]: aboutExport.css,
-            [otherMode]: syncLayout(
-              before.css[current.mode],
-              aboutExport.css,
-              before.css[otherMode],
-            ),
           },
         }
-        pages.push(about)
+        pages.push(syncPageLayout(aboutOwner, about, current.lang, current.mode))
       }
       const updatedPresentation = {
         ...current.presentation,
@@ -518,7 +628,11 @@ export function CmsEditor(props: Props): JSX.Element {
         pageId: current.page.id,
         device: current.device,
         scene: current.scene,
-        key: editorContextKey({ ...current, presentation: updatedPresentation }),
+        key: editorContextKey(
+          { ...current, presentation: updatedPresentation },
+          latestChrome.current,
+        ),
+        chrome: latestChrome.current,
         ...persisted,
       }
       current.onChange(pages)
@@ -530,6 +644,7 @@ export function CmsEditor(props: Props): JSX.Element {
       if (timer.current !== null) window.clearTimeout(timer.current)
       timer.current = window.setTimeout(flush, 180)
     }
+    flushCanvas.current = flush
     // Synchronous notification catches immediate edit-then-switch, without delayed
     // import updates scheduling another export after applying has finished.
     editor.on('updateBefore', schedule)
@@ -566,10 +681,14 @@ export function CmsEditor(props: Props): JSX.Element {
       pending: () => timer.current !== null,
       fit: () => fitEditor(editor),
     })
+    performance.measure('cms:startup:work', { start, end: performance.now() })
 
     return () => {
       // Destruction mutates components too; it must not queue a capture against a dead editor.
       editor.off('updateBefore', schedule)
+      cancelAboutIdle.current?.()
+      startup.current = null
+      deferredAbout.current = null
       if (timer.current !== null) window.clearTimeout(timer.current)
       timer.current = null
       props.onReady(null)
@@ -577,6 +696,8 @@ export function CmsEditor(props: Props): JSX.Element {
       releaseAccessibility?.()
       releaseResourcePicker()
       releaseResize()
+      releaseTextHeight()
+      releaseCanvasStyles()
       window.removeEventListener('keydown', keydown)
       editor.destroy()
       instance.current = null
@@ -595,6 +716,37 @@ export function CmsEditor(props: Props): JSX.Element {
       previous.css === variant.css[props.mode]
     )
       return
+    if (
+      sitePage &&
+      previous &&
+      previous.key === editorContextKey(props, previous.chrome) &&
+      previous.html === variant.html &&
+      previous.css === variant.css[props.mode]
+    ) {
+      // Metadata can change a menu label without changing the authored canvas. Do not cancel
+      // pending body edits or clear selection just to update the read-only header.
+      applying.current = true
+      const reused = updateSiteHeader(editor, chrome)
+      if (reused) lockSiteHeader(editor)
+      applying.current = false
+      if (reused) {
+        rendered.current = { ...previous, key: contextKey, chrome }
+        if (timer.current === null)
+          checkpoint.current = {
+            html: editor.getHtml({ cleanId: false }),
+            css: readCanvasCss(editor),
+          }
+        editor.clearDirtyCount()
+        return
+      }
+    }
+    if (
+      !previous &&
+      startup.current?.key === contextKey &&
+      startup.current.html === variant.html &&
+      startup.current.css === variant.css[props.mode]
+    )
+      return
     if (previous) viewStates.current.set(previous.pageId, captureViewState(editor))
     const previousState = viewStates.current.get(props.page.id)
     if (timer.current !== null) window.clearTimeout(timer.current)
@@ -603,12 +755,12 @@ export function CmsEditor(props: Props): JSX.Element {
     if (
       previous &&
       previous.key ===
-        editorContextKey({ ...props, device: previous.device, scene: previous.scene }) &&
+        editorContextKey({ ...props, device: previous.device, scene: previous.scene }, chrome) &&
       previous.html === variant.html &&
       previous.css === variant.css[props.mode] &&
       ((props.page.path === '/' &&
         previous.device !== props.device &&
-        moveHomeAbout(editor, props.device)) ||
+        (materializeAbout(), moveHomeAbout(editor, props.device))) ||
         (props.page.path === '/booking' &&
           (previous.scene !== props.scene || previous.device !== props.device) &&
           moveBookingScene(editor, props.scene, props.device)))
@@ -622,89 +774,159 @@ export function CmsEditor(props: Props): JSX.Element {
       if (previousState) restoreViewState(editor, previousState)
       return
     }
-    const wrapperId = editor.getWrapper()?.getId() ?? ''
-    const sitePage = isSitePage(props.page)
-    const cacheable = !sitePage || props.page.layout === 'independent'
-    let compilation = !cacheable
-      ? undefined
-      : compiled.current.find(
-          (item) =>
-            item.key === contextKey &&
-            item.sourceHtml === variant.html &&
-            item.sourceCss === variant.css[props.mode] &&
-            item.wrapperId === wrapperId,
-        )
-    if (!compilation) {
-      const content = sitePage
-        ? renderSitePage(
-            props.presentation,
-            createSitePage(props.presentation, props.page),
-            props.lang,
-            props.mode,
-          )
-        : composedCanvas(
+    const deferAbout = props.page.path === '/' && !aboutPreviewBuilt.current
+    cancelAboutIdle.current?.()
+    deferredAbout.current = null
+    host.current?.removeAttribute('data-cms-about-preview-ready')
+    const request = { key: contextKey, html: variant.html, css: variant.css[props.mode] }
+    startup.current = request
+    // Only the first, empty canvas loads asynchronously. Subsequent context changes remain
+    // atomic with Studio's synchronous flush, so an edit can never land in the wrong language.
+    const initial = !previous
+    const measure = <T,>(pass: () => T): T => {
+      const start = performance.now()
+      try {
+        return pass()
+      } finally {
+        if (initial) performance.measure('cms:startup:work', { start, end: performance.now() })
+      }
+    }
+    const load = function* (): Generator<void> {
+      const wrapperId = editor.getWrapper()?.getId() ?? ''
+      let compilation = compiled.current.find(
+        (item) =>
+          item.key === contextKey &&
+          item.sourceHtml === variant.html &&
+          item.sourceCss === variant.css[props.mode] &&
+          item.deferAbout === deferAbout &&
+          item.wrapperId === wrapperId,
+      )
+      if (!compilation) {
+        const site = sitePage
+          ? renderSitePage(props.presentation, props.page, props.lang, props.mode, contact)
+          : null
+        let content: ComposedCanvasTree
+        if (site) content = { html: site.html, sheet: parseCanvasSheet(site.css[props.mode]) }
+        else {
+          const passes = composedCanvasPasses(
             props.page,
             props.presentation,
             props.lang,
             props.mode,
             props.scene,
             props.device,
+            deferAbout,
           )
-      compilation = {
-        key: contextKey,
-        sourceHtml: variant.html,
-        sourceCss: variant.css[props.mode],
-        wrapperId,
-        content,
-        rules: parseCanvasCss(bindCmsRootStyles(content.css, wrapperId), editor),
-      }
-      // Four recent contexts cover language/theme roundtrips without retaining
-      // whole draft histories. The exact source strings also invalidate undo and edits.
-      if (cacheable) {
+          let step = passes.next()
+          while (!step.done) {
+            yield
+            step = passes.next()
+          }
+          content = step.value
+        }
+        yield
+        compilation = {
+          key: contextKey,
+          sourceHtml: variant.html,
+          sourceCss: variant.css[props.mode],
+          wrapperId,
+          deferAbout,
+          content: {
+            html: content.html,
+            ...(content.aboutPreview ? { aboutPreview: content.aboutPreview } : {}),
+          },
+          rules: parseCanvasCss(bindCmsRootStyles(content.sheet, wrapperId), editor),
+        }
+        // Four recent contexts cover language/theme roundtrips without retaining
+        // whole draft histories. The exact source strings also invalidate undo and edits.
         compiled.current.unshift(compilation)
         compiled.current.length = Math.min(4, compiled.current.length)
       }
+      yield
+      const { content } = compilation
+      // GrapesJS owns its imported definitions; never hand it the cached originals.
+      const rules = structuredClone(compilation.rules)
+      editor.select()
+      setSelected(null)
+      const reused =
+        previous?.pageId === props.page.id &&
+        previous.device === props.device &&
+        updateNativeCanvas(editor, content.html, rules)
+      if (!reused) {
+        // Structural imports still remove old IDs before installing their replacement rules.
+        editor.setComponents('')
+        // Definitions are already parsed. Reset once instead of inserting each rule into the live frame.
+        editor.Css.getAll().reset(rules)
+        yield
+        editor.setComponents(content.html)
+      }
+      yield
+      const configure = (component: Component): void => {
+        // SVG layerability changes otherwise rerender the same parent subtree per node.
+        configureComponent(component, { silent: true })
+        component.components().forEach(configure)
+      }
+      if (!reused) editor.getWrapper()?.components().forEach(configure)
+      // After the configure pass, which makes SVG parts selectable, on both import paths.
+      if (sitePage) lockSiteHeader(editor)
+      deferredAbout.current = content.aboutPreview ?? null
+      // Layers and restored IDs may reach the inactive surface before idle completion.
+      // The tab can change while the first load yields, so read the current request.
+      if (latest.current.tab === 'layers' || previousState?.selectedId) materializeAbout()
+      // Reuse the existing layer view once, with the complete policy already applied.
+      if (latest.current.tab === 'layers') editor.Layers.getAll()?.render()
+      // A created page's blocks belong in #cms-site-content: only its body is saved.
+      editor
+        .getWrapper()
+        ?.set('droppable', !sitePage && !variant.html.includes('data-knc-native="1"'))
+      rendered.current = {
+        pageId: props.page.id,
+        device: props.device,
+        scene: props.scene,
+        key: contextKey,
+        chrome,
+        html: variant.html,
+        css: variant.css[props.mode],
+      }
+      checkpoint.current = {
+        html: editor.getHtml({ cleanId: false }),
+        css: readCanvasCss(editor),
+      }
+      applying.current = false
+      editor.clearDirtyCount()
+      if (previousState) restoreViewState(editor, previousState)
+      if (deferredAbout.current)
+        cancelAboutIdle.current = afterCanvasPaint(() => {
+          try {
+            materializeAbout()
+          } catch (error) {
+            setLoadError(error)
+          }
+        })
+      else host.current?.setAttribute('data-cms-about-preview-ready', 'true')
+      startup.current = null
+      host.current?.setAttribute('data-cms-canvas-ready', 'true')
+      setLoading(false)
+      if (initial) performance.mark('cms:startup:ready')
     }
-    const { content } = compilation
-    // GrapesJS owns its imported definitions; never hand it the cached originals.
-    const rules = structuredClone(compilation.rules)
-    editor.select()
-    setSelected(null)
-    const reused =
-      previous?.pageId === props.page.id &&
-      previous.device === props.device &&
-      updateNativeCanvas(editor, content.html, rules)
-    if (!reused) {
-      // Structural imports still remove old IDs before installing their replacement rules.
-      editor.setComponents('')
-      // Definitions are already parsed. Reset once instead of inserting each rule into the live frame.
-      editor.Css.getAll().reset(rules)
-      editor.setComponents(content.html)
+    const passes = load()
+    if (!initial) {
+      while (!passes.next().done) {
+        /* Context switches finish in the same task. */
+      }
+      return
     }
-    const configure = (component: Component): void => {
-      // SVG layerability changes otherwise rerender the same parent subtree per node.
-      configureComponent(component, { silent: true })
-      component.components().forEach(configure)
-    }
-    if (!reused) editor.getWrapper()?.components().forEach(configure)
-    // Reuse the existing layer view once, with the complete policy already applied.
-    if (props.tab === 'layers') editor.Layers.getAll()?.render()
-    editor.getWrapper()?.set('droppable', !variant.html.includes('data-knc-native="1"'))
-    rendered.current = {
-      pageId: props.page.id,
-      device: props.device,
-      scene: props.scene,
-      key: contextKey,
-      html: variant.html,
-      css: variant.css[props.mode],
-    }
-    checkpoint.current = {
-      html: editor.getHtml({ cleanId: false }),
-      css: readCanvasCss(editor),
-    }
-    applying.current = false
-    editor.clearDirtyCount()
-    if (previousState) restoreViewState(editor, previousState)
+    void (async () => {
+      while (startup.current === request && instance.current === editor) {
+        if (measure(() => passes.next()).done) return
+        await yieldCanvasTask()
+      }
+    })().catch((error: unknown) => {
+      if (startup.current === request && instance.current === editor) {
+        applying.current = false
+        setLoadError(error)
+      }
+    })
   })
 
   useLayoutEffect(() => {
@@ -714,6 +936,7 @@ export function CmsEditor(props: Props): JSX.Element {
     let mounted = false
     const mount = (): void => {
       if (mounted || !editor.Layers.getRoot()) return
+      materializeAbout()
       mounted = true
       container.replaceChildren(editor.Layers.render())
     }
@@ -766,7 +989,9 @@ export function CmsEditor(props: Props): JSX.Element {
   useEffect(() => {
     const editor = instance.current
     if (!editor || !props.active) return
-    const base = legalCanvasBase(props.page.path, props.mode)
+    // A created page sits on the token base and SITE_PAGE_CSS the Worker inlines, in the edited
+    // scheme, so the tokens follow Ljus/Mörk rather than the editor's OS.
+    const base = canvasBase
     // The canvas model's `styles` never reaches a rendered frame, so the links are kept in the frame
     // head directly. Every frame load replaces the document, not only the editor's first one, so the
     // base is applied again once GrapesJS has rendered the new head (before `load:head` it is empty).
@@ -774,6 +999,14 @@ export function CmsEditor(props: Props): JSX.Element {
       const frame = editor.Canvas.getDocument()
       if (!frame) return
       frame.documentElement.style.colorScheme = base.scheme
+      const siteStyle = frame.querySelector('style[data-cms-site-base]')
+      if (!sitePage) siteStyle?.remove()
+      else if (!siteStyle) {
+        const style = frame.createElement('style')
+        style.dataset['cmsSiteBase'] = ''
+        style.textContent = SITE_PAGE_CSS
+        frame.head.appendChild(style)
+      }
       const linked = [...frame.querySelectorAll('link[data-cms-legal-base]')]
       if (linked.map((link) => link.getAttribute('href')).join() === base.styles.join()) return
       linked.forEach((link) => link.remove())
@@ -790,7 +1023,7 @@ export function CmsEditor(props: Props): JSX.Element {
     return () => {
       editor.off('canvas:frame:load:head', apply)
     }
-  }, [props.active, props.page.path, props.mode])
+  }, [props.active, canvasBase, sitePage])
 
   useEffect(() => {
     const editor = instance.current
@@ -807,12 +1040,13 @@ export function CmsEditor(props: Props): JSX.Element {
     const editor = instance.current
     if (!editor || !props.active) return
     editor.getConfig().mediaCondition = props.device === 'Desktop' ? 'min-width' : 'max-width'
-    changingDevice.current ||= editor.getDevice() !== props.device
-    editor.setDevice(props.device)
+    const device = canvasDevice(props.device, props.narrowDesktop && !props.locked)
+    changingDevice.current ||= editor.getDevice() !== device
+    editor.setDevice(device)
     // Before the frame exists, the editor's load handler fits it.
     const zoom = fitEditor(editor)
     if (zoom !== undefined) latest.current.onZoom(zoom)
-  }, [props.active, props.device])
+  }, [props.active, props.device, props.narrowDesktop, props.locked])
 
   useEffect(() => {
     const editor = instance.current
@@ -911,14 +1145,16 @@ export function CmsEditor(props: Props): JSX.Element {
   const readOnly = selected ? isReadOnlyPreview(selected) : false
   const logoText = tag === 'svg' ? (selected?.find('text') ?? []) : []
 
+  if (loadError) throw loadError
   return (
     <>
       <div
         class="cms-editor-canvas"
         data-device={props.device}
-        inert={props.inspectorModal}
+        inert={props.inspectorModal || loading}
+        aria-busy={loading}
         ref={host}
-        style={{ visibility: props.locked ? 'hidden' : 'visible' }}
+        style={{ visibility: props.locked || loading ? 'hidden' : 'visible' }}
       />
       {props.locked && props.preview && (
         <LivePreview
@@ -954,7 +1190,7 @@ export function CmsEditor(props: Props): JSX.Element {
                   transform: `scale(${compareScale})`,
                   transformOrigin: 'top left',
                 }}
-                srcDoc={`<!doctype html><html lang="${props.lang}"><head><style>html,body{margin:0}${props.fontCss}${siteThemeCss(props.presentation, props.mode)}${comparison.css}${sceneVisibilityCss(props.scene, props.mode)}${canvasScrollCss}</style></head><body>${comparison.html}</body></html>`}
+                srcDoc={`<!doctype html><html lang="${props.lang}"${canvasBase.scheme ? ` style="color-scheme:${canvasBase.scheme}"` : ''}><head>${canvasBase.styles.map((href) => `<link rel="stylesheet" href="${href}">`).join('')}<style>html,body{margin:0}${props.fontCss}${siteThemeCss(props.presentation, props.mode)}${comparison.css}${sceneVisibilityCss(props.scene, props.mode)}${canvasScrollCss}</style></head><body>${comparison.html}</body></html>`}
               />
             </div>
           </div>
@@ -971,6 +1207,17 @@ export function CmsEditor(props: Props): JSX.Element {
       >
         <div class="cms-inspector-heading">
           <strong>Egenskaper</strong>
+          <button
+            type="button"
+            class="cms-page-settings"
+            onClick={() => {
+              instance.current?.select()
+              setSelected(null)
+              props.onTab('design')
+            }}
+          >
+            Sidinställningar
+          </button>
           <button
             type="button"
             class="cms-panel-close"
@@ -1036,24 +1283,10 @@ export function CmsEditor(props: Props): JSX.Element {
           </div>
           {selected && readOnly ? (
             <p class="cms-lock-note">
-              {isSitePage(props.page) ? (
-                <>
-                  Sidhuvud, logotyp och sidfot delas med webbplatsen.
-                  <button type="button" onClick={() => props.onOpenPage('/')}>
-                    Redigera sidhuvud
-                  </button>
-                  <button type="button" onClick={() => props.onOpenPage('/about')}>
-                    Redigera sidfot
-                  </button>
-                </>
-              ) : (
-                <>
-                  Det här innehållet delas med Om oss. Ändringar där visas också här.
-                  <button type="button" onClick={() => props.onOpenPage('/about')}>
-                    Redigera Om oss
-                  </button>
-                </>
-              )}
+              Det här innehållet delas med Om oss. Ändringar där visas också här.
+              <button type="button" onClick={() => props.onOpenPage('/about')}>
+                Redigera Om oss
+              </button>
             </p>
           ) : selected ? (
             <section class="cms-inspector-section">
@@ -1236,6 +1469,14 @@ export function CmsEditor(props: Props): JSX.Element {
                 Klicka på text, bild eller logotyp för att redigera. Sidans namn och sökresultat
                 ändrar du här.
               </p>
+              {sitePage && (
+                <p class="cms-lock-note">
+                  Sidhuvudet med logotyp och meny följer startsidan.
+                  <button type="button" onClick={() => props.onOpenPage('/')}>
+                    Redigera sidhuvud
+                  </button>
+                </p>
+              )}
               {props.pageSettings}
             </>
           )}
@@ -1265,6 +1506,7 @@ export function CmsEditor(props: Props): JSX.Element {
               <button
                 type="button"
                 onClick={() => {
+                  materializeAbout()
                   const property = advancedProperty.trim()
                   const value = advancedValue.trim()
                   if (

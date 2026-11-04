@@ -1,7 +1,7 @@
 import type { JSX } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import type { CmsDocument, CmsLang, CmsMode, CmsRevision } from '../../../shared/cms'
-import { mediaUrl } from '../../../shared/cms'
+import { cmsFontFaceCss } from '../../../shared/cms'
 import { SUPABASE_URL } from '../../backend/config'
 import { cmsApi } from './api'
 import { CmsModal } from './Modal'
@@ -133,12 +133,7 @@ export function HistoryPanel({
                 lang={lang}
                 mode={mode}
                 device={device}
-                fontCss={Object.entries(review.document.presentation.fonts ?? {})
-                  .map(
-                    ([id, font]) =>
-                      `@font-face{font-family:"CMSFont-${id}";src:url("${mediaUrl(font.ref, SUPABASE_URL ?? '')}") format("woff2");font-display:swap}`,
-                  )
-                  .join('\n')}
+                fontCss={cmsFontFaceCss(review.document.presentation.fonts, SUPABASE_URL ?? '')}
                 onNavigate={setPath}
               />
             </div>
