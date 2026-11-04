@@ -844,6 +844,116 @@ test('the locked preview fills every legal slot from the draft except the cancel
   }
 })
 
+// Undo, Redo and Återställ stay available in the locked preview and change the draft under it. A
+// created page's live menu there must follow the draft, as the saved document and the Worker do.
+// Every menu starts with the three native pages; Contact is not in the seed's menu.
+const NATIVE_MENU = ['Hem', 'Boka tid', 'Om oss']
+// The menu labels of a page the Worker served.
+const servedMenu = (html) => {
+  const nav = html.match(/<nav id="cms-site-menu"[^>]*>([\s\S]*?)<\/nav>/)
+  if (!nav) throw new Error('The served page has no site menu')
+  return [...nav[1].matchAll(/<a [^>]*>([^<]*)<\/a>/g)].map((link) => link[1])
+}
+const renamePage = async (page, name) => {
+  await page.getByRole('button', { name: 'Sidinställningar', exact: true }).click()
+  await page.locator('.cms-page-meta').getByLabel('Namn', { exact: true }).fill(name)
+}
+
+test('a locked preview follows Undo and Redo of a rename, as the draft and the Worker do', async ({
+  page,
+  studio,
+}) => {
+  await create(page, { name: 'Original', path: '/original' })
+  await renamePage(page, 'Changed')
+  await expect(studio.frame.locator('#cms-site-menu a[href^="/original?"]')).toHaveText('Changed')
+  await page.getByRole('button', { name: 'Lås vy', exact: true }).click()
+  const menu = page.frameLocator('.cms-live-preview iframe').locator('#cms-site-menu a')
+  await expect(menu).toHaveText([...NATIVE_MENU, 'Changed'])
+  const rendering = await loadWorker()
+  try {
+    for (const [action, name, revision] of [
+      ['Ångra', 'Original', 2],
+      ['Gör om', 'Changed', 3],
+    ]) {
+      await page.getByRole('button', { name: action, exact: true }).click()
+      // Studio's page list reads the draft.
+      await expect(
+        page.locator('.cms-page-list').getByRole('button', { name, exact: true }),
+      ).toBeVisible()
+      await expect(menu).toHaveText([...NATIVE_MENU, name])
+      // Publish with the preview still open: the saved document and the Worker's page agree.
+      await page.getByRole('button', { name: 'Publicera', exact: true }).click()
+      await page.getByText(`Publicerad · rev ${revision}`, { exact: true }).waitFor()
+      const saved = globalThis.structuredClone(studio.backend.document.presentation)
+      expect(saved.pages.find((item) => item.path === '/original')?.name.sv).toBe(name)
+      const served = await renderPublicDocument(rendering.worker, {
+        url: `${base}/original?lang=sv&mode=dark`,
+        presentation: saved,
+        shell: SOURCE_SHELL,
+      })
+      expect(served.status).toBe(200)
+      expect(servedMenu(served.body)).toEqual([...NATIVE_MENU, name])
+      await expect(menu).toHaveText([...NATIVE_MENU, name])
+    }
+  } finally {
+    await rendering.close()
+  }
+})
+
+test('a locked preview follows Återställ back to the published page', async ({ page, studio }) => {
+  await create(page, { name: 'Sommar', path: '/sommar' })
+  await page.getByRole('button', { name: 'Publicera', exact: true }).click()
+  await page.getByText('Publicerad · rev 2', { exact: true }).waitFor()
+  await renamePage(page, 'Vinter')
+  await expect(studio.frame.locator('#cms-site-menu a[href^="/sommar?"]')).toHaveText('Vinter')
+  await page.getByRole('button', { name: 'Lås vy', exact: true }).click()
+  const menu = page.frameLocator('.cms-live-preview iframe').locator('#cms-site-menu a')
+  await expect(menu).toHaveText([...NATIVE_MENU, 'Vinter'])
+  await page.locator('.cms-revert').click()
+  await expect(
+    page.locator('.cms-page-list').getByRole('button', { name: 'Sommar', exact: true }),
+  ).toBeVisible()
+  await expect(menu).toHaveText([...NATIVE_MENU, 'Sommar'])
+})
+
+test('a locked preview follows Undo and Redo of menu visibility and of a page deletion', async ({
+  page,
+  studio,
+}) => {
+  await create(page, { name: 'Kvar', path: '/kvar' })
+  await create(page, { name: 'Borttagen', path: '/borttagen' })
+  const meta = page.locator('.cms-page-meta')
+  await page.getByRole('button', { name: 'Sidinställningar', exact: true }).click()
+  await meta.getByRole('button', { name: 'Ta bort', exact: true }).click()
+  const confirm = page.getByRole('dialog', { name: 'Ta bort Borttagen?', exact: true })
+  await confirm.getByRole('button', { name: 'Ta bort sidan', exact: true }).click()
+  await confirm.waitFor({ state: 'detached' })
+  const pageList = page.locator('.cms-page-list')
+  await pageList.getByRole('button', { name: 'Kvar', exact: true }).click()
+  await studio.frame.getByRole('heading', { name: 'Kvar', exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Sidinställningar', exact: true }).click()
+  const inMenu = meta.getByLabel('Visa i meny', { exact: true })
+  await inMenu.uncheck()
+  await expect(studio.frame.locator('#cms-site-menu a[href^="/kvar?"]')).toHaveCount(0)
+  await page.getByRole('button', { name: 'Lås vy', exact: true }).click()
+  const menu = page.frameLocator('.cms-live-preview iframe').locator('#cms-site-menu a')
+  await expect(menu).toHaveText(NATIVE_MENU)
+  // History: create Kvar, create Borttagen, delete Borttagen, hide Kvar from the menu.
+  for (const [action, links, listed, shown] of [
+    ['Ångra', [...NATIVE_MENU, 'Kvar'], 0, true],
+    ['Ångra', [...NATIVE_MENU, 'Kvar', 'Borttagen'], 1, true],
+    ['Gör om', [...NATIVE_MENU, 'Kvar'], 0, true],
+    ['Gör om', NATIVE_MENU, 0, false],
+  ]) {
+    await page.getByRole('button', { name: action, exact: true }).click()
+    await expect(pageList.getByRole('button', { name: 'Borttagen', exact: true })).toHaveCount(
+      listed,
+    )
+    await expect(inMenu).toBeChecked({ checked: shown })
+    await expect(menu).toHaveText(links)
+  }
+})
+
 test('contact-named ids on an ordinary page stay editable, removable and copyable', async ({
   page,
   studio,
