@@ -42,6 +42,13 @@ fontSeed.presentation.fonts = {
     name: 'Reload Check',
   },
 }
+const gate = () => {
+  let release
+  const promise = new Promise((resolve) => {
+    release = resolve
+  })
+  return { promise, release }
+}
 const test = baseTest.extend({
   catalogFixture: [false, { option: true }],
   fontFixture: [false, { option: true }],
@@ -57,7 +64,8 @@ const test = baseTest.extend({
       document.presentation = JSON.parse(
         gunzipSync(readFileSync(new URL('./fixtures/presentation.json.gz', import.meta.url))),
       ).presentation
-    const backend = await nativeBackend(context, document)
+    const options = {}
+    const backend = await nativeBackend(context, document, [], undefined, options)
     if (catalogFixture) {
       await routeApi(context, [
         [
@@ -101,7 +109,12 @@ const test = baseTest.extend({
       if (!opened) await panel.getByRole('button', { name: 'Stäng panel', exact: true }).click()
       return document
     }
-    await use({ backend, frame, shot, capture })
+    // From now on the backend holds every `operation` request until the returned `done` is released.
+    const hold = (operation) => {
+      options.delay = { operation, started: gate(), done: gate() }
+      return options.delay
+    }
+    await use({ backend, frame, shot, capture, hold })
     assert.deepEqual(errors, [], 'no unhandled browser errors')
   },
 })
@@ -952,6 +965,115 @@ test('a locked preview follows Undo and Redo of menu visibility and of a page de
     await expect(inMenu).toBeChecked({ checked: shown })
     await expect(menu).toHaveText(links)
   }
+})
+
+// While locked, every change of the draft is validated as locking validates it. Until that
+// validation answers, the preview shows the last validated document whole: page, menu, business
+// and fonts. If it fails, Studio unlocks and the owner reads the server's reason.
+test.describe('a locked preview with an uploaded font', () => {
+  test.use({ fontFixture: true })
+  // The uploaded font file again under a second id: a new placement of the same file.
+  const COPY_FONT_ID = '0b9e6a4d-2c7f-4e1a-9d3b-5f8c7a6e4d21'
+  const ARCHIVED_FONT =
+    'Filen reload-check.woff2 är arkiverad och kan inte läggas till på en ny plats. Återställ den under Resurser först.'
+  // A created page as the preview's document holds it: the live menu, the page heading, the
+  // header's phone link and the uploaded font faces.
+  const shown = (html) => ({
+    menu: servedMenu(html),
+    heading: html.match(/<h1 [^>]*>([^<]*)<\/h1>/)?.[1] ?? null,
+    phone: html.match(/class="cms-site-phone" href="([^"]*)"/)?.[1] ?? null,
+    fonts: [...html.matchAll(/@font-face\{font-family:"CMSFont-([^"]+)"/g)].map((face) => face[1]),
+  })
+
+  test('a locked preview keeps its validated snapshot while the rebuild validates, and unlocks when it fails', async ({
+    page,
+    studio,
+  }) => {
+    await create(page, { name: 'Sommarkurs', path: '/sommarkurs' })
+    // One import renames the page, rewrites its heading, sets the business phone and adds a font
+    // placement, so Ångra and Gör om move every part of the draft at once.
+    const changed = await studio.capture()
+    const course = changed.presentation.pages.find((item) => item.path === '/sommarkurs')
+    if (!course) throw new Error('Missing created course page')
+    const rewritten = course.content.sv.html.replace('>Sommarkurs</h1>', '>Vinterkursen</h1>')
+    if (rewritten === course.content.sv.html) throw new Error('The course page has no heading')
+    course.name.sv = 'Vinterkurs'
+    course.content.sv.html = rewritten
+    changed.settings.business_phone_display = '031-123 45 67'
+    changed.settings.business_phone_tel = '0311234567'
+    changed.presentation.fonts[COPY_FONT_ID] = {
+      ...changed.presentation.fonts[UPLOADED_FONT_ID],
+      name: 'Reload Check kopia',
+    }
+    await importDocument(page, changed, 'vinterkurs.json')
+    const pageList = page.locator('.cms-page-list')
+    await pageList.getByRole('button', { name: 'Vinterkurs', exact: true }).click()
+    await studio.frame.getByRole('heading', { name: 'Vinterkursen', exact: true }).waitFor()
+    await page.getByRole('button', { name: 'Ångra', exact: true }).click()
+    await studio.frame.getByRole('heading', { name: 'Sommarkurs', exact: true }).waitFor()
+    await page.getByRole('button', { name: 'Lås vy', exact: true }).click()
+    // The seed has no business settings, so the header links the default phone.
+    const snapshot = {
+      menu: [...NATIVE_MENU, 'Sommarkurs'],
+      heading: 'Sommarkurs',
+      phone: 'tel:0793043671',
+      fonts: [UPLOADED_FONT_ID],
+    }
+    const previewFrame = page.frameLocator('.cms-live-preview iframe')
+    await expect(previewFrame.locator('#cms-site-menu a')).toHaveText(snapshot.menu)
+    await expect(previewFrame.locator('main h1')).toHaveText(snapshot.heading)
+    const preview = page.locator('.cms-live-preview iframe')
+    expect(shown((await preview.getAttribute('srcdoc')) ?? '')).toEqual(snapshot)
+
+    // Another client archives the font file: validation now refuses its second placement.
+    const font = studio.backend.assets.find((asset) => asset.path === 'fonts/reload-check.woff2')
+    if (!font) throw new Error('The uploaded font is not registered')
+    await page.evaluate(
+      async (asset) => {
+        const { cmsApi } = await import('/src/admin/cms/api.ts')
+        await cmsApi.assetLifecycle(asset, 'archive')
+      },
+      { id: font.id, version: font.version },
+    )
+    expect(studio.backend.assets.find((asset) => asset.id === font.id)?.archived).toBe(true)
+    const validations = () =>
+      studio.backend.requests.filter((request) => request.operation === 'validate')
+    const sent = validations().length
+    // Locking's own validation has answered; the next one waits until it is released.
+    const validation = studio.hold('validate')
+    await page.getByRole('button', { name: 'Gör om', exact: true }).click()
+    await expect(pageList.getByRole('button', { name: 'Vinterkurs', exact: true })).toBeVisible()
+    const redone = () =>
+      validations()
+        .slice(sent)
+        .some(
+          (request) =>
+            request.document.presentation.pages.find((item) => item.path === '/sommarkurs')?.name
+              .sv === 'Vinterkurs',
+        )
+    await expect.poll(redone, { message: 'Gör om sends the rebuild validation' }).toBe(true)
+    // That validation left after the render of the redone draft. The preview's document is still
+    // the locked snapshot, every part of it, and Studio stays locked.
+    expect(shown((await preview.getAttribute('srcdoc')) ?? '')).toEqual(snapshot)
+    await expect(previewFrame.locator('main h1')).toHaveText(snapshot.heading)
+    await expect(page.getByRole('button', { name: 'Lås upp', exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+
+    validation.done.release()
+    await expect(page.getByRole('alert').filter({ hasText: ARCHIVED_FONT })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Lås vy', exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    )
+    await expect(page.locator('.cms-live-preview')).toHaveCount(0)
+    // The draft keeps the change the preview could not show.
+    await expect(pageList.getByRole('button', { name: 'Vinterkurs', exact: true })).toBeVisible()
+    await expect(
+      studio.frame.getByRole('heading', { name: 'Vinterkursen', exact: true }),
+    ).toBeVisible()
+  })
 })
 
 test('contact-named ids on an ordinary page stay editable, removable and copyable', async ({
