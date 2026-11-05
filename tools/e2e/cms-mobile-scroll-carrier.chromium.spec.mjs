@@ -1,11 +1,11 @@
 import { writeFile } from 'node:fs/promises'
 import { test, expect } from './fixtures.mjs'
 import { harnessOrigin } from './origins.mjs'
+import { nativeMobileScroll } from './native-mobile-scroll.mjs'
 import { installPublicBackend, installStoredBackend } from './public-fixtures.mjs'
 
 // These cases send native touchscreen gestures through CDP.
-const input = process.env['MOBILE_PAINT_INPUT'] ?? 'synthetic'
-test.use({ hasTouch: true, isMobile: input === 'mobile' })
+test.use({ hasTouch: true })
 
 // CDP captures compositor output, unlike reading layout inside an early rAF callback.
 // Chromium captures painted frames; mobile-viewport and keyboard tests cover all three engines.
@@ -44,14 +44,6 @@ for (const [stored, reducedMotion, deviceScaleFactor] of [
           })),
         })
       })
-      const diagnostic = { input, phases: [] }
-      const save = async () => {
-        diagnostic.page = await page.evaluate(() => ({
-          events: globalThis.__touchDiagnostic ?? [],
-          scroll: globalThis.document.querySelector('[data-testid="mobile-site-scroll"]')?.scrollTop,
-        })).catch(error => ({error: String(error)}))
-        await writeFile(`${evidenceDir}/input-diagnostic.json`, JSON.stringify(diagnostic, null, 2))
-      }
       try {
         await page.goto(`${harnessOrigin}/?mode=light`)
         await page.getByTestId('mobile-site-scroll').evaluate((root) => {
@@ -64,35 +56,7 @@ for (const [stored, reducedMotion, deviceScaleFactor] of [
               .evaluate((p) => globalThis.getComputedStyle(p).marginTop),
           )
           .toBe('24px')
-        diagnostic.initial = await page.evaluate(() => {
-          const root = globalThis.document.querySelector('[data-testid="mobile-site-scroll"]')
-          const describe = node => {
-            const style = globalThis.getComputedStyle(node)
-            const box = node.getBoundingClientRect()
-            return {tag:node.tagName, id:node.id, fold:node.getAttribute('data-knc-fold'),
-              position:style.position, touchAction:style.touchAction, pointerEvents:style.pointerEvents,
-              overflowY:style.overflowY, scrollTop:node.scrollTop, scrollHeight:node.scrollHeight,
-              clientHeight:node.clientHeight, box:{x:box.x,y:box.y,width:box.width,height:box.height}}
-          }
-          const path=[]
-          for(let node=globalThis.document.elementFromPoint(200,600);node;node=node.parentElement)path.push(describe(node))
-          globalThis.__touchDiagnostic=[]
-          for(const type of ['touchstart','touchmove','touchend','touchcancel','pointerdown','pointermove','pointerup','pointercancel','wheel','scroll'])
-            globalThis.document.addEventListener(type,event=>{
-              const row={type,time:globalThis.performance.now(),trusted:event.isTrusted,target:event.target?.id,
-                pointerType:event.pointerType,scroll:root.scrollTop,defaultPrevented:event.defaultPrevented,
-                touches:event.touches?[...event.touches].map(t=>({x:t.clientX,y:t.clientY,pageX:t.pageX,pageY:t.pageY})):undefined}
-              globalThis.__touchDiagnostic.push(row)
-              globalThis.queueMicrotask(()=>{row.defaultPrevented=event.defaultPrevented})
-            },{capture:true,passive:true})
-          return {path,root:describe(root),maxTouchPoints:globalThis.navigator.maxTouchPoints,
-            touchEvent:'ontouchstart' in globalThis,innerWidth:globalThis.innerWidth,innerHeight:globalThis.innerHeight,
-            dpr:globalThis.devicePixelRatio,visibility:globalThis.document.visibilityState,
-            viewport:{width:globalThis.visualViewport.width,height:globalThis.visualViewport.height,scale:globalThis.visualViewport.scale}}
-        })
         const cdp = await context.newCDPSession(page)
-        diagnostic.browser = await cdp.send('Browser.getVersion')
-        await save()
         const frames = []
         let firstFrame
         const painted = new Promise((resolve) => {
@@ -112,28 +76,8 @@ for (const [stored, reducedMotion, deviceScaleFactor] of [
         const reference = await painted
         await writeFile(`${evidenceDir}/reference.png`, Buffer.from(reference, 'base64'))
         for (const [index, distance] of [-800, 800, -800, 800].entries()) {
-          const phase={index,distance,status:'pending'}
-          diagnostic.phases.push(phase)
-          const dispatch = async () => {
-            let remaining=Math.abs(distance)
-            while(remaining>0){
-              const travel=Math.min(400,remaining)
-              const start=distance<0?600:200
-              await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:200,y:start,id:0}]})
-              const steps=Math.ceil(travel/10)
-              for(let step=1;step<=steps;step++){
-                await new Promise(resolve=>setTimeout(resolve,1000/60))
-                await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:200,y:start+Math.sign(distance)*travel*step/steps,id:0}]})
-              }
-              // Holding the contact before lifting removes fling velocity; the browser owns all scroll.
-              await new Promise(resolve=>setTimeout(resolve,120))
-              await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]})
-              remaining-=travel
-            }
-          }
-          const gesture=(input==='dispatch'?dispatch():cdp.send('Input.synthesizeScrollGesture', {
-            x:200,y:600,yDistance:distance,speed:600,gestureSourceType:'touch',preventFling:true,
-          })).then(response=>{phase.status='resolved';phase.response=response},error=>{phase.status='rejected';phase.error=String(error)})
+          const before = await page.getByTestId('mobile-site-scroll').evaluate((root) => root.scrollTop)
+          const gesture = nativeMobileScroll(cdp, distance)
           if (index === 0) {
             await page.waitForFunction(
               () =>
@@ -143,8 +87,9 @@ for (const [stored, reducedMotion, deviceScaleFactor] of [
             releaseReviews()
           }
           await gesture
-          await save()
-          if(phase.status==='rejected')throw new Error(phase.error)
+          const after = () => page.getByTestId('mobile-site-scroll').evaluate((root) => root.scrollTop)
+          if (distance < 0) await expect.poll(after).toBeGreaterThan(before)
+          else await expect.poll(after).toBeLessThan(before)
         }
         await cdp.send('Page.stopScreencast')
         expect(frames.length).toBeGreaterThan(10)
@@ -203,8 +148,6 @@ for (const [stored, reducedMotion, deviceScaleFactor] of [
         expect(offsets.filter((frame) => frame.offset !== 0)).toEqual([])
       } finally {
         releaseReviews()
-        await save()
-        await page.screenshot({path:`${evidenceDir}/input-final.png`}).catch(()=>undefined)
       }
     })
   })

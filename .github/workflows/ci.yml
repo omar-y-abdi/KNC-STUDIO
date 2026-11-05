@@ -10,13 +10,8 @@ jobs:
       image: mcr.microsoft.com/playwright:v1.64.1-noble
       options: --user 1001 --ipc=host
     timeout-minutes: 8
-    strategy:
-      fail-fast: false
-      matrix:
-        input: [synthetic, mobile, dispatch]
     env:
       E2E_GROUP: cms
-      MOBILE_PAINT_INPUT: ${{ matrix.input }}
       NPM_CONFIG_CACHE: /tmp/npm-cache
     defaults:
       run:
@@ -31,12 +26,12 @@ jobs:
           node-version: 22
           package-manager-cache: false
       - run: npm ci
-      - name: One native input case with unchanged pixel oracle
-        run: npx playwright test tools/e2e/cms-mobile-scroll-carrier.chromium.spec.mjs --project=cms-chromium --grep 'source, reduce' --workers=1
+      - name: All nine native touch paint regressions
+        run: npx playwright test tools/e2e/cms-mobile-scroll-carrier.chromium.spec.mjs tools/e2e/cms-mobile-scroll-edges.chromium.spec.mjs --project=cms-chromium --workers=1
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
-          name: native-touch-${{ matrix.input }}
+          name: native-touch-nine
           path: |
             test-results
             playwright-report
