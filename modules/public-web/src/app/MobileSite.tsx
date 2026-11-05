@@ -7,6 +7,7 @@ import {
   primeMobileFold,
 } from './mobileFold'
 import { mobileFoldLayout } from './mobileFoldLayout'
+import { observeMobileBrandGeometry } from './mobileBrandGeometry'
 // Mobile (M3) layout — folding panel (hero <-> compact header) + booking below.
 //
 // Invariants:
@@ -125,12 +126,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     if (root === null) return
     const sync = (): void => syncCollapse()
     window.addEventListener('resize', sync)
-    const observer = new ResizeObserver(() => {
-      onScroll()
-      // A width-only resize need not change fold state, but it changes the logo's travel path.
-      const height = mobileLayoutViewportHeight(root)
-      paintMobileBrand(root, mobileFold(root.scrollTop, height, privacyOpen).collapse, height, reduceMotion)
-    })
+    const observer = new ResizeObserver(onScroll)
     observer.observe(root)
     sync()
     return () => {
@@ -158,6 +154,14 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
   const motion = mobileFold(collapse, viewportHeight)
   const pinnedPanel = privacyOpen ? motion.pinned : scrolling || collapse > 0
   const brandMotion = mobileBrandMotion(collapse, viewportHeight, reduceMotion)
+  useLayoutEffect(() => {
+    const root = scrollRoot.current
+    if (!root) return
+    return observeMobileBrandGeometry(root, () => {
+      const height = mobileLayoutViewportHeight(root)
+      paintMobileBrand(root, mobileFold(root.scrollTop, height, privacyOpen).collapse, height, reduceMotion)
+    })
+  }, [props.homepageLogo, props.homepageScale, props.mode, props.lang, privacyOpen, reduceMotion])
   useLayoutEffect(() => {
     const root = scrollRoot.current
     if (root) paintMobileBrand(root, collapse, viewportHeight, reduceMotion)
@@ -331,6 +335,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
               <span />
             ) : (
               <a
+                data-knc-fold="phone"
                 href={`tel:${business.phoneTel}`}
                 style={{
                   display: 'flex',

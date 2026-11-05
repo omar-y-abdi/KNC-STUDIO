@@ -1,6 +1,7 @@
 import type { Editor } from 'grapesjs'
 import {
   mobileFold,
+  observeMobileBrandGeometry,
   mobileLayoutViewportHeight,
   paintMobileBrand,
   primeMobileFold,
@@ -39,6 +40,9 @@ export function canvasBehavior(editor: Editor, scene: CmsScene, mode: CmsMode): 
     let headerCarrier: HTMLElement | null = null
     let primed = false
     let stopPriming = (): void => undefined
+    let stopBrandGeometry = (): void => undefined
+    let brandRoot: HTMLElement | null = null
+    let brandGeometryDirty = false
     const update = (): void => {
       frame = 0
       const root = doc.querySelector<HTMLElement>(
@@ -113,6 +117,12 @@ export function canvasBehavior(editor: Editor, scene: CmsScene, mode: CmsMode): 
         style.textContent = css
         editor.refresh()
       }
+      if (root !== brandRoot || brandGeometryDirty) {
+        brandGeometryDirty = false
+        stopBrandGeometry()
+        brandRoot = root
+        stopBrandGeometry = root ? observeMobileBrandGeometry(root, schedule) : () => undefined
+      }
       if (root)
         paintMobileBrand(
           root,
@@ -124,16 +134,21 @@ export function canvasBehavior(editor: Editor, scene: CmsScene, mode: CmsMode): 
     const schedule = (): void => {
       if (!frame) frame = win.requestAnimationFrame(update)
     }
+    const changed = (): void => {
+      brandGeometryDirty = true
+      schedule()
+    }
     doc.addEventListener('scroll', schedule, true)
-    win.addEventListener('resize', schedule)
-    editor.on('component:mount', schedule)
+    win.addEventListener('resize', changed)
+    editor.on('component:mount', changed)
     update()
     dispose = () => {
       doc.removeEventListener('scroll', schedule, true)
-      win.removeEventListener('resize', schedule)
-      editor.off('component:mount', schedule)
+      win.removeEventListener('resize', changed)
+      editor.off('component:mount', changed)
       win.cancelAnimationFrame(frame)
       stopPriming()
+      stopBrandGeometry()
       if (headerCarrier) headerCarrier.replaceWith(...headerCarrier.childNodes)
       if (carrier) carrier.replaceWith(...carrier.childNodes)
       style.remove()
