@@ -92,9 +92,7 @@ function pair(sourceFont, sourceChar, targetChar) {
     const target = to[index]
       ? align(source, sample(to[index], count))
       : Array.from({ length: count }, () => [0.075, -0.35])
-    return source.map(([x, y], point) =>
-      [x, y, ...target[point]].map((value) => +value.toFixed(5)),
-    )
+    return source.map(([x, y], point) => [x, y, ...target[point]].map((value) => +value.toFixed(5)))
   })
 }
 const glyphs = [pair(bold, 'B', 'B'), pair(italic, '&', 'N'), pair(bold, 'B', 'B')]

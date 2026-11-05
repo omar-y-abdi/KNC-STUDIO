@@ -425,7 +425,10 @@ for (const path of ['/admin/cms', '/admin/cms/'])
     expect(routeLoads).toBe(2)
   })
 
-test('public layout loads the selected renderer before exposing mobile interaction', async ({ page, context }) => {
+test('public layout loads the selected renderer before exposing mobile interaction', async ({
+  page,
+  context,
+}) => {
   await nativeBackend(context)
   let releaseLayout
   const held = new Promise((resolve) => {
