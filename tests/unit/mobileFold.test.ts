@@ -36,31 +36,31 @@ describe('shared mobile hero motion', () => {
   })
 })
 
-
 describe('reversible mobile branding', () => {
-  it('keeps the compact banner absent until the large logo has reached its anchor', () => {
+  it('moves both complete assets together while their crossfade overlaps', () => {
     const height = 844
     const limit = height - 112
     expect(mobileBrandMotion(0, height)).toEqual({
-      actions: 1, brand: 1, banner: 0, shrink: 0, lift: 0, slide: 0,
+      actions: 1, brand: 1, banner: 0, travel: 0,
     })
-    expect(mobileBrandMotion(limit * 0.3, height).actions).toBe(0)
-    const arrival = mobileBrandMotion(limit * 0.86, height)
-    expect(arrival).toEqual({ actions: 0, brand: 1, banner: 0, shrink: 1, lift: 1, slide: 1 })
-    const halfway = mobileBrandMotion(limit * 0.93, height)
+    expect(mobileBrandMotion(limit * 0.3, height).actions).toBeGreaterThan(0)
+    expect(mobileBrandMotion(limit * 0.55, height).actions).toBe(0)
+    const halfway = mobileBrandMotion(limit * 0.5, height)
+    expect(halfway.travel).toBe(0.5)
+    expect(halfway.brand).toBeGreaterThan(0)
+    expect(halfway.banner).toBeGreaterThan(0)
     expect(halfway.brand + halfway.banner).toBe(1)
-    expect(halfway.banner).toBeCloseTo(0.5)
     expect(mobileBrandMotion(limit, height)).toEqual({
-      actions: 0, brand: 0, banner: 1, shrink: 1, lift: 1, slide: 1,
+      actions: 0, brand: 0, banner: 1, travel: 1,
     })
-    expect(mobileBrandMotion(limit * 0.86, height)).toEqual(arrival)
+    expect(mobileBrandMotion(limit * 0.5, height)).toEqual(halfway)
   })
 
-  it('uses fading without decorative travel or scaling for reduced motion', () => {
-    const motion = mobileBrandMotion(400, 844, true)
-    expect(motion.brand).toBe(0)
-    expect(motion.shrink).toBe(0)
-    expect(motion.lift).toBe(0)
-    expect(motion.slide).toBe(0)
+  it('uses the same overlapping fade without decorative travel for reduced motion', () => {
+    const ordinary = mobileBrandMotion(400, 844)
+    const reduced = mobileBrandMotion(400, 844, true)
+    expect(reduced).toEqual({ ...ordinary, travel: 0 })
+    expect(reduced.brand).toBeGreaterThan(0)
+    expect(reduced.banner).toBeGreaterThan(0)
   })
 })

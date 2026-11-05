@@ -105,7 +105,7 @@ export function canvasBehavior(editor: Editor, scene: CmsScene, mode: CmsMode): 
         `${scope}"panel"]{position:relative!important;transform:none!important;top:0!important;height:100dvh!important;overflow:clip!important;border-radius:${motion.compact ? '0 0 28px 28px' : '0'}!important}` +
         `${scope}"spacer"]{height:0!important}` +
         `${scope}"controls"]{margin-top:${motion.compact ? 24 : 0}px!important}` +
-        `${scope}"mark"]{transition:none!important}` +
+        `${scope}"mark"]{transition:none!important;transform-origin:50% 0!important}` +
         `${scope}"brand"]{position:relative!important;z-index:20!important;transform-origin:50% 0!important;pointer-events:none!important}` +
         `${scope}"return"]{display:${motion.compact ? 'flex' : 'none'}!important}` +
         `${scope}"hero"]{opacity:1!important;overflow:visible!important}`

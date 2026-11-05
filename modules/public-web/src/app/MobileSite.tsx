@@ -188,7 +188,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     height: 'auto',
     display: 'block',
   }
-  // The compact banner appears only after the large brand reaches its emblem anchor.
+  // Both existing brand assets share one moving frame during their crossfade.
   // It remains decorative and never takes pointer input from the controls beneath it.
   const headerMarkStyle: JSX.CSSProperties = {
     position: 'absolute',
@@ -201,6 +201,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     top: 'calc(env(safe-area-inset-top, 0px) + 22px)',
     left: '22px',
     opacity: brandMotion.banner,
+    transformOrigin: '50% 0',
     pointerEvents: 'none',
     transition: 'none',
   }

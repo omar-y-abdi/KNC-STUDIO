@@ -105,14 +105,12 @@ export function mobileBrandMotion(collapse: number, viewportHeight: number, redu
     const t = Math.min(1, Math.max(0, (progress - start) / (end - start)))
     return t * t * (3 - 2 * t)
   }
-  const banner = phase(0.86, 1)
+  const banner = phase(0.35, 0.9)
   return {
-    actions: 1 - phase(0, 0.3),
-    brand: reduced ? 1 - phase(0, 0.18) : 1 - banner,
+    actions: 1 - phase(0, 0.55),
+    brand: 1 - banner,
     banner,
-    shrink: reduced ? 0 : phase(0, 0.65),
-    lift: reduced ? 0 : phase(0, 0.8),
-    slide: reduced ? 0 : phase(0.7, 0.86),
+    travel: reduced ? 0 : phase(0, 1),
   }
 }
 
@@ -176,30 +174,35 @@ export function paintMobileBrand(
   if (!win) return
   const motion = mobileBrandMotion(collapse, viewportHeight, reduced)
   brand.setAttribute('data-knc-fold', 'brand')
-  const assetHeight = Number.parseFloat(win.getComputedStyle(asset).height) || asset.clientHeight
+  const assetStyle = win.getComputedStyle(asset)
+  const assetHeight = Number.parseFloat(assetStyle.height) || asset.clientHeight
+  const assetWidth = Number.parseFloat(assetStyle.width) || asset.clientWidth
   const compactStyle = win.getComputedStyle(compact)
   const compactHeight = Number.parseFloat(compactStyle.height)
   const compactWidth = Number.parseFloat(compactStyle.width)
-  if (!(assetHeight > 0 && compactHeight > 0 && compactWidth > 0)) return
+  if (!(assetWidth > 0 && assetHeight > 0 && compactHeight > 0 && compactWidth > 0)) return
   const centerX = brand.offsetLeft + brand.offsetWidth / 2
   const centerY = brand.offsetTop + assetHeight / 2
-  // CornerMark's emblem is centered at (29,24) in its 322×48 viewBox.
-  const anchorX = mark.offsetLeft + compactWidth * (29 / 322)
+  const anchorX = mark.offsetLeft + compactWidth / 2
   const anchorY = mark.offsetTop + compactHeight / 2
-  const scale = 1 + (compactHeight / assetHeight - 1) * motion.shrink
-  const x = (anchorX - centerX) * motion.slide
-  const y = reduced
-    ? 0
-    : collapse +
-      centerY +
-      (anchorY - centerY) * motion.lift -
-      brand.offsetTop -
-      (assetHeight / 2) * scale
+  // Both complete assets share one moving center and width. Their differing aspect ratios
+  // blend through opacity rather than shrinking the lockup to just the corner emblem.
+  const frameX = centerX + (anchorX - centerX) * motion.travel
+  const frameY = centerY + (anchorY - centerY) * motion.travel
+  const frameWidth = assetWidth + (compactWidth - assetWidth) * motion.travel
+  const brandScale = reduced ? 1 : frameWidth / assetWidth
+  const markScale = reduced ? 1 : frameWidth / compactWidth
+  const brandX = reduced ? 0 : frameX - centerX
+  const brandY = reduced ? 0 : collapse + frameY - centerY + (assetHeight / 2) * (1 - brandScale)
+  const markX = reduced ? 0 : frameX - anchorX
+  const markY = reduced ? 0 : frameY - anchorY + (compactHeight / 2) * (1 - markScale)
   rememberBrandBaseline(brand, ['translate', 'scale', 'opacity'])
-  rememberBrandBaseline(mark, ['opacity'])
-  brand.style.translate = `${x}px ${y}px`
-  brand.style.scale = String(scale)
+  rememberBrandBaseline(mark, ['translate', 'scale', 'opacity'])
+  brand.style.translate = `${brandX}px ${brandY}px`
+  brand.style.scale = String(brandScale)
   brand.style.opacity = String(motion.brand)
+  mark.style.translate = `${markX}px ${markY}px`
+  mark.style.scale = String(markScale)
   mark.style.opacity = String(motion.banner)
   const fade = (element: HTMLElement): void => {
     rememberBrandBaseline(element, ['opacity'], true)
