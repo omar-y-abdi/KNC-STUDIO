@@ -102,6 +102,7 @@ test('cms-native', async ({ page, context, browserName, evidenceDir }) => {
           inert: false,
         }),
       )
+      fixture.insertAdjacentHTML('beforeend', '<svg data-knc-brand-runtime aria-hidden="true"><path d="M0,0L1,1Z" /></svg>')
       const desktop = snapshotNative(fixture, 'desktop-test')
       const mobile = snapshotNative(fixture, 'mobile-test')
       const doc = new globalThis.DOMParser().parseFromString(desktop + mobile, 'text/html')
@@ -110,6 +111,8 @@ test('cms-native', async ({ page, context, browserName, evidenceDir }) => {
         capturedBrandStyle: doc.querySelector('span').getAttribute('data-knc-light'),
         capturedBrandInert: doc.querySelector('span').hasAttribute('inert'),
         runtimeMetadata: doc.querySelectorAll('[data-knc-brand-baseline]').length,
+        runtimeArtwork: doc.querySelectorAll('[data-knc-brand-runtime]').length,
+        liveArtwork: fixture.querySelectorAll('[data-knc-brand-runtime]').length,
         liveBrandInert: animated.hasAttribute('inert'),
         nestedSlots: doc.querySelectorAll('[data-knc-slot="nested"]').length,
         privacy: doc.querySelector('a').getAttribute('href'),
@@ -123,6 +126,8 @@ test('cms-native', async ({ page, context, browserName, evidenceDir }) => {
     assert.doesNotMatch(sourceContract.capturedBrandStyle, /translate|scale/)
     assert.equal(sourceContract.capturedBrandInert, false)
     assert.equal(sourceContract.runtimeMetadata, 0)
+    assert.equal(sourceContract.runtimeArtwork, 0, 'Decorative glyphs must not become CMS source')
+    assert.equal(sourceContract.liveArtwork, 1, 'Capture must retain the live artwork')
     assert.equal(sourceContract.liveBrandInert, true, 'Capture must only restore the clone')
     assert.equal(sourceContract.nestedSlots, 0, 'Nested runtime identities leaked into snapshots')
     assert.equal(sourceContract.privacy, '/#privacy-preferences')

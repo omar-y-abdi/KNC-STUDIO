@@ -2,6 +2,7 @@ import type { Editor } from 'grapesjs'
 import {
   mobileFold,
   observeMobileBrandGeometry,
+  mobileBrandMotion,
   mobileLayoutViewportHeight,
   paintMobileBrand,
   primeMobileFold,
@@ -96,10 +97,8 @@ export function canvasBehavior(editor: Editor, scene: CmsScene, mode: CmsMode): 
           for (const child of prefix) headerCarrier.appendChild(child)
         }
       }
-      const motion = mobileFold(
-        root?.scrollTop ?? 0,
-        root ? mobileLayoutViewportHeight(root) : win.innerHeight,
-      )
+      const height = root ? mobileLayoutViewportHeight(root) : win.innerHeight
+      const motion = mobileFold(root?.scrollTop ?? 0, height)
       const pinned = primed || motion.collapse > 0
       const scope = `[data-knc-surface="${surface}"] [data-knc-fold=`
       const css =
@@ -108,7 +107,7 @@ export function canvasBehavior(editor: Editor, scene: CmsScene, mode: CmsMode): 
         `${scope}"header-carrier"]{display:${pinned ? 'block' : 'contents'}!important;position:${pinned ? 'sticky' : 'static'}!important;top:0!important;flex:none!important;z-index:10!important;background:inherit!important}` +
         `${scope}"panel"]{position:relative!important;transform:none!important;top:0!important;height:100dvh!important;overflow:clip!important;border-radius:${motion.compact ? '0 0 28px 28px' : '0'}!important}` +
         `${scope}"spacer"]{height:0!important}` +
-        `${scope}"controls"]{margin-top:${motion.compact ? 24 : 0}px!important}` +
+        `${scope}"controls"]{margin-top:0!important;translate:0 ${mobileBrandMotion(motion.collapse, height).controlsShift}px!important}` +
         `${scope}"mark"]{transition:none!important;transform-origin:50% 0!important}` +
         `${scope}"brand"]{position:relative!important;z-index:20!important;transform-origin:50% 0!important;pointer-events:none!important}` +
         `${scope}"return"]{display:${motion.compact ? 'flex' : 'none'}!important}` +

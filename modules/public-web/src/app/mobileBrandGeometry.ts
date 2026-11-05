@@ -118,7 +118,12 @@ export function refreshMobileBrandGeometry(root: HTMLElement, fontsChanged = fal
         '[data-knc-brand-part="monogram"],line,text[x="29"]',
       ),
     ]
-    if (word && finalWord && monogram.length && emblem.length) {
+    if (
+      source.getAttribute('viewBox') === '0 0 460 330' &&
+      target.getAttribute('viewBox') === '0 0 322 48' &&
+      monogram.map((node) => node.textContent).join('') === 'BB&' &&
+      word && finalWord && monogram.length && emblem.length
+    ) {
       vector = {
         word,
         finalWord,

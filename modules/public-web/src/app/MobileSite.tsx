@@ -13,7 +13,7 @@ import { observeMobileBrandGeometry } from './mobileBrandGeometry'
 // Invariants:
 //  - native sticky bounds reduce the visible panel from PANEL_FULL to PANEL_COMPACT in either section;
 //    scrolling back up restores the hero without discarding the active booking selection.
-//  - the original hero brand shrinks toward the compact emblem, then cross-fades into CornerMark;
+//  - the monogram changes its outline while the wordmark follows one continuous path;
 //    both scroll directions use the same progress, without timed state transitions.
 //  - fully faded hero controls are inert so they never steal taps from the section below.
 
@@ -37,7 +37,7 @@ import {
   type SizePreset,
 } from '../site/siteChrome'
 import type { Mode, ShellPalette, View } from './shared'
-import { EASE, PANEL_COMPACT, PANEL_FULL, useReducedMotion } from './shared'
+import { PANEL_COMPACT, PANEL_FULL, useReducedMotion } from './shared'
 import type { BookingContact, CustomerProfile } from '../mybookings/domain'
 
 /** Style object that also defines CSS custom properties (`--mob-*`). Subtype of CSSProperties. */
@@ -148,7 +148,6 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     action()
   }
   const chromeIcon = props.chromeIconStyle
-  const phoneShift = compactPanel ? '24px' : '0px'
   // Muted, theme-aware colour for the underlined hero links (sits on the panel surface).
   const heroLinkColor = dark ? 'rgba(255,255,255,.72)' : 'rgba(0,0,0,.6)'
   const motion = mobileFold(collapse, viewportHeight)
@@ -192,7 +191,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     height: 'auto',
     display: 'block',
   }
-  // The compact banner receives the moving wordmark and emblem before controls return.
+  // The banner receives the moving brand before the phone and emblem rules fade in.
   // It remains decorative and never takes pointer input from the controls beneath it.
   const headerMarkStyle: JSX.CSSProperties = {
     position: 'absolute',
@@ -327,8 +326,8 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
               alignItems: 'center',
               justifyContent: 'space-between',
               gap: '10px',
-              marginTop: phoneShift,
-              transition: reduceMotion ? 'none' : 'margin-top .6s ' + EASE,
+              marginTop: 0,
+              translate: `0px ${brandMotion.controlsShift}px`,
             }}
           >
             {business.phoneTel === '' || business.phoneDisplay === '' ? (

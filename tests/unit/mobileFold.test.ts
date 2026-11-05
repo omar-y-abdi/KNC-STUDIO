@@ -37,32 +37,36 @@ describe('shared mobile hero motion', () => {
 })
 
 describe('reversible mobile branding', () => {
-  it('settles the banner before controls return and keeps one source wordmark until arrival', () => {
-    const height = 844
-    const limit = height - 112
-    expect(mobileBrandMotion(0, height)).toEqual({
-      actions: 1, controls: 1, brand: 1, banner: 0, travel: 0, settled: false,
-    })
-    expect(mobileBrandMotion(limit * 0.12, height).controls).toBe(0)
-    expect(mobileBrandMotion(limit * 0.25, height).actions).toBe(0)
-    const crossing = mobileBrandMotion(limit * 0.7, height)
-    expect(crossing.brand).toBeGreaterThan(0)
-    expect(crossing.banner).toBeGreaterThan(0)
-    expect(crossing.brand + crossing.banner).toBe(1)
-    expect(crossing.controls).toBe(0)
-    expect(crossing.settled).toBe(false)
-    expect(mobileBrandMotion(limit * 0.86, height)).toEqual({
-      actions: 0, controls: 0, brand: 0, banner: 1, travel: 1, settled: true,
-    })
-    expect(mobileBrandMotion(limit * 0.95, height).controls).toBeGreaterThan(0)
-    expect(mobileBrandMotion(limit, height)).toEqual({
-      actions: 0, controls: 1, brand: 0, banner: 1, travel: 1, settled: true,
-    })
-    expect(mobileBrandMotion(limit * 0.7, height)).toEqual(crossing)
+  const height = 844
+  const limit = height - 112
+
+  it('fades supporting details progressively while the brand travels', () => {
+    expect(mobileBrandMotion(0, height).actions).toBe(1)
+    const early = mobileBrandMotion(limit * 0.2, height)
+    const middle = mobileBrandMotion(limit * 0.4, height)
+    expect(early.actions).toBeGreaterThan(middle.actions)
+    expect(middle.actions).toBeGreaterThan(0)
+    expect(mobileBrandMotion(limit * 0.65, height).actions).toBe(0)
   })
 
-  it('keeps the same fade and control sequence without decorative travel for reduced motion', () => {
-    const ordinary = mobileBrandMotion(400, 844)
-    expect(mobileBrandMotion(400, 844, true)).toEqual({ ...ordinary, travel: 0 })
+  it('settles the banner before the phone and BNB rules appear together', () => {
+    expect(mobileBrandMotion(0, height).phone).toBe(1)
+    expect(mobileBrandMotion(0, height).rules).toBe(0)
+    const settled = mobileBrandMotion(limit * 0.86, height)
+    expect(settled.travel).toBe(1)
+    expect(settled.phone).toBe(0)
+    expect(settled.rules).toBe(0)
+    for (const progress of [0.9, 0.93, 0.97, 1]) {
+      const motion = mobileBrandMotion(limit * progress, height)
+      expect(motion.phone).toBe(motion.rules)
+    }
+    expect(mobileBrandMotion(limit, height).phone).toBe(1)
+  })
+
+  it('reverses the same poses and uses fading without travel for reduced motion', () => {
+    const positions = [0, 120, 340, 650, limit]
+    const forward = positions.map((position) => mobileBrandMotion(position, height))
+    expect([...positions].reverse().map((position) => mobileBrandMotion(position, height))).toEqual([...forward].reverse())
+    expect(mobileBrandMotion(400, height, true)).toEqual({ ...mobileBrandMotion(400, height), travel: 0, form: 0 })
   })
 })

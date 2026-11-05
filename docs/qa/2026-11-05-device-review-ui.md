@@ -56,18 +56,8 @@ UI implementation commit: `418eb8379b0f219144b1cd957d5220ed02055aba`. The separa
 path described above; its exact SHA is supplied with the handoff. No additional executable
 verification ran for that follow-up.
 
-## Pending MobileSite edit owned by the hero integration
+## Integrated MobileSite cleanup
 
-`MobileSite.tsx` is deliberately untouched while the hero author owns it. Once that work is
-frozen, remove exactly these two lines in `modules/public-web/src/app/MobileSite.tsx`:
-
-```diff
--  readonly onVerifyBooking?: () => void
-```
-
-```diff
--            {...(props.onVerifyBooking ? { onVerifyBooking: props.onVerifyBooking } : {})}
-```
-
-The App no longer supplies this callback and AboutSection no longer renders it. Removing these
-last two lines completes the obsolete prop cleanup without modifying the hero layout.
+The hero integration removes the remaining `onVerifyBooking` prop declaration and AboutSection
+callback spread from `MobileSite.tsx`. App, DesktopSite and MobileSite now use the same review form
+without an email-verification prompt. Existing My Bookings recovery remains available.
