@@ -81,3 +81,23 @@ approved phone fade/return, and their Linux synthetic-touch input was already pr
 No pre-existing main-branch tests, security checks, budgets, accounting or retries were weakened.
 Booking-scroll, keyboard, viewport, source/canvas, first-paint and customer/browser coverage remain.
 The retired diagnostic implementation remains available in Git history at `bd65445`.
+
+Hosted run `42108123897` at `46fb790` passed static/unit checks, the production budget and
+startup checks, Edge checks, historical migrations, current SQL, integration, and the complete
+real customer-browser job. Its source artifact tree matched the pushed tree exactly.
+
+The remaining browser findings exposed two renderer-readiness mistakes: a separate import probe
+could retry a rejected import in WebKit, and import completion could precede the actual DOM mount.
+The renderer now reports its committed mount; preview readiness and viewport colors use that
+signal. Suspense alone owns the import and its visible reload action. The privacy contrast fixture
+waits for the same two required hero labels rather than counting before asynchronous mounting.
+
+The review fixture trace showed WebKit filling offscreen fields while the hero was still onscreen.
+Its first star click then scrolled into About and started deferred data/layout work; no star became
+checked. The fixture now enters About, waits for its published data, scrolls to the form and verifies
+the selected rating before submitting. The real HTTPS-cookie customer flow already passed.
+
+Twelve stored mobile reference images were updated from that hosted run after reviewing the
+rendered images and diffs. Resting changes are SVG text rasterization; the folded dark references
+reflect the approved banner/phone appearance. Screenshot tolerances, contrast requirements,
+viewport color assertions and request-count assertions remain unchanged. No local suites ran.

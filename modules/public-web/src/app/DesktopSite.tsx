@@ -28,7 +28,7 @@ import {
   type SizePreset,
 } from '../site/siteChrome'
 import type { ShellProps, View } from './shared'
-import { useCallback, useEffect, useRef, useState } from 'preact/hooks'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import { EASE, useReducedMotion } from './shared'
 
 /** Explicit read-only seams for an embedded CMS replica; absent on the public site. */
@@ -44,6 +44,8 @@ export interface DesktopSitePreviewPorts {
 const DESKTOP_PANEL_HEIGHT = 61
 
 export interface DesktopSiteProps extends ShellProps {
+  /** Report a mounted renderer, so viewport colors and preview capture read the real DOM. */
+  readonly onLayoutReady?: () => void
   readonly tx: AppStrings
   readonly view: View
   readonly toggleDeskBooking: () => void
@@ -72,6 +74,7 @@ export interface DesktopSiteProps extends ShellProps {
 }
 
 export function DesktopSite(props: DesktopSiteProps): JSX.Element {
+  useLayoutEffect(() => props.onLayoutReady?.(), [props.onLayoutReady])
   const previewPorts = useContext(PreviewPorts)
   if (previewPorts) props = { ...props, previewPorts }
 

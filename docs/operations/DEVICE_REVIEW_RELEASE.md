@@ -1,7 +1,8 @@
 # Device receipt review rollout
 
-Status: implementation prepared, runtime verification and deployment pending. This document is a
-release dependency and verification plan, not a production execution receipt.
+Status: backend and real customer-browser verification passed in hosted run `42108123897`
+at `46fb790`; complete PR qualification and production rollout remain pending. This document
+is a release dependency and verification plan, not a production execution receipt.
 
 A visitor who has accepted optional storage can review a finished booking created with that
 browser's HttpOnly receipt without opening an email link. The server still requires a confirmed,
@@ -16,8 +17,9 @@ The public reviewer name is derived from that booking.
    Local tests, builds and database execution were deliberately not run for this change.
 2. Confirm the target project and its migration history with the authenticated, repository-pinned
    Supabase CLI and a read-only connection. Inspect CLI `--version` and command `--help` first.
-   The repository pins CLI 2.114.0; the globally installed CLI used only to create the migration file
-   was 2.108.0. Do not silently upgrade or assume CLI v3 hosted-target flags apply to v2.
+   The repository pins CLI 2.114.0; the globally installed CLI used for migration-file creation
+   and read-only history inspection was 2.108.0. Do not silently upgrade or assume CLI v3
+   hosted-target flags apply to v2.
 3. Apply `20261105182545_device_booking_reviews.sql` before deploying the changed
    `public-booking-actions`. This additive migration creates
    `create_review_for_browser(text,text,text,integer,text)` and grants execution only to

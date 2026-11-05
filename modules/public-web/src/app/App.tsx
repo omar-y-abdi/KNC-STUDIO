@@ -7,7 +7,14 @@ import { CmsSceneContext } from '../cms/Scene'
 // passed down so both layouts render identical controls.
 
 import type { JSX, ComponentChildren } from 'preact'
-import { useContext, useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'preact/hooks'
 import type { AppStrings, Lang } from '../i18n/index'
 import { appStrings } from '../i18n/index'
 import type { BookingPopupText } from '../booking/BookingFlow'
@@ -34,7 +41,7 @@ import { defaultSiteChromePort } from '../site/adapters/index'
 import type { SiteChromePort } from '../site/port'
 
 const sourceChromePort: SiteChromePort = { load: (lang) => defaultSiteChromePort.load(lang) }
-import { DesktopSite, MobileSite, preloadSiteLayout } from './siteLayouts'
+import { DesktopSite, MobileSite } from './siteLayouts'
 import type { Mode, View } from './shared'
 import { MOBILE_MQ, chromeIcon, mobBtnBg, mobMuted, shellPalette } from './shared'
 
@@ -159,18 +166,8 @@ export function App({
   const [isMobile, setIsMobile] = useState<boolean>(() => window.matchMedia(MOBILE_MQ).matches)
   const [readyLayout, setReadyLayout] = useState<boolean | null>(null)
   const layoutReady = readyLayout === isMobile
-  useEffect(() => {
-    let active = true
-    void preloadSiteLayout(isMobile).then(
-      () => {
-        if (active) setReadyLayout(isMobile)
-      },
-      () => undefined, // LazySurface owns the visible load-error/retry state.
-    )
-    return () => {
-      active = false
-    }
-  }, [isMobile])
+  const mobileLayoutReady = useCallback(() => setReadyLayout(true), [])
+  const desktopLayoutReady = useCallback(() => setReadyLayout(false), [])
   const [bookingAccess, setBookingAccess] = useState<{
     readonly token?: string
     readonly error?: 'invalid' | 'cookies_disabled' | 'system'
@@ -613,6 +610,7 @@ export function App({
           minHeight="100dvh"
         >
           <MobileSite
+            onLayoutReady={mobileLayoutReady}
             privacy={privacy}
             onManagePrivacy={openPrivacy}
             mode={state.mode}
@@ -660,6 +658,7 @@ export function App({
         minHeight="100dvh"
       >
         <DesktopSite
+          onLayoutReady={desktopLayoutReady}
           privacy={privacy}
           onManagePrivacy={openPrivacy}
           mode={state.mode}

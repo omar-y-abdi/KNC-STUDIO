@@ -2670,7 +2670,7 @@ async function verifyPrivacy(
     .getByText(strings.app.hours, { exact: true })
     .locator('..')
     .locator(':scope > span')
-  assert((await infoText.count()) === 2, 'Hero opening hours/address are missing')
+  await expect(infoText, 'Hero opening hours/address are missing').toHaveCount(2)
   for (const label of [
     ...(await infoText.all()),
     ...(width > 768 ? [page.getByText(strings.app.kicker, { exact: true })] : []),

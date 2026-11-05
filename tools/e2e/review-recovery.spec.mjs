@@ -15,6 +15,9 @@ const row = {
 }
 const copy = {
   sv: {
+    about: 'Om oss',
+    reviewsEmpty: 'Inga publicerade omdömen ännu.',
+    galleryLoading: 'Hämtar bilder …',
     phone: 'Telefonnummer',
     text: 'Ditt omdöme',
     submit: 'Lämna ett omdöme',
@@ -29,6 +32,9 @@ const copy = {
     send: 'Skicka säker länk',
   },
   en: {
+    about: 'About',
+    reviewsEmpty: 'No published reviews yet.',
+    galleryLoading: 'Loading photos …',
     phone: 'Phone number',
     text: 'Your review',
     submit: 'Leave a review',
@@ -141,6 +147,11 @@ for (const width of [390, 1440]) {
       ).toBeVisible()
       expect(deviceLists).toBeGreaterThan(0)
       await dialog.getByRole('button', { name: labels.close, exact: true }).click()
+      // Enter About before filling its form. WebKit's locator.fill can mutate offscreen
+      // fields while still showing the hero; the first later click then starts lazy data/layout.
+      await page.getByRole('button', { name: labels.about, exact: true }).click()
+      await expect(page.getByText(labels.reviewsEmpty, { exact: true })).toBeVisible()
+      await expect(page.getByText(labels.galleryLoading, { exact: true })).toHaveCount(0)
       await expect(
         page.getByRole('button', { name: /Verifiera bokning via e-post|Verify booking by email/ }),
       ).toHaveCount(0)
@@ -149,9 +160,11 @@ for (const width of [390, 1440]) {
       const text = page.getByRole('textbox', { name: labels.text, exact: true })
       const rating = page.getByRole('radio').last()
       const submit = page.getByRole('button', { name: labels.submit, exact: true })
+      await number.scrollIntoViewIfNeeded()
       await number.fill('0701111111')
       await text.fill('My completed booking on this device.')
       await rating.click()
+      await expect(rating).toBeChecked()
       await submit.click()
       await expect.poll(() => submissions).toBe(1)
       await expect(page.getByRole('alert')).toContainText(labels.denied)
