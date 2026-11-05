@@ -422,12 +422,14 @@ export function App({
   }
   // Mobile: the hero becomes the compact header as its own scroll container advances.
   const openMobBooking = (): void => {
-    setState({ view: 'booking' })
-    window.requestAnimationFrame(() => {
-      document
-        .querySelector<HTMLElement>('[data-testid="mobile-site-scroll"]')
-        ?.scrollTo({ top: 0 })
-    })
+    if (state.view !== 'booking') {
+      // MobileSite positions a newly entered section in its layout effect before paint.
+      setState({ view: 'booking' })
+      return
+    }
+    document
+      .querySelector<HTMLElement>('[data-testid="mobile-site-scroll"] [data-knc-fold="body"]')
+      ?.scrollIntoView({ block: 'start', behavior: 'instant' })
   }
   const scrollMobToHero = (): void => {
     setState({ view: 'home' })

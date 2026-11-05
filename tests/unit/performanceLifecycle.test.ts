@@ -186,6 +186,24 @@ describe('public performance lifecycles', () => {
       return callbacks.length
     })
     const cancel = vi.fn()
+    const observer: { resize?: () => void } = {}
+    const observe = vi.fn()
+    const disconnect = vi.fn()
+    let cssHeight = 680
+    vi.stubGlobal('getComputedStyle', () => ({
+      height: `${cssHeight}px`,
+      getPropertyValue: () => '120px',
+    }))
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(callback: () => void) {
+          observer.resize = callback
+        }
+        observe = observe
+        disconnect = disconnect
+      },
+    )
     vi.stubGlobal('requestAnimationFrame', frame)
     vi.stubGlobal('cancelAnimationFrame', cancel)
     const tree = render(() =>
@@ -217,6 +235,7 @@ describe('public performance lifecycles', () => {
     // The mobile scroll root element ref.
     ref(0, root)
     const dispose = mount()
+    expect(observe).toHaveBeenCalledWith(root)
     const host = nodes(tree).find((node) => node.props['data-testid'] === 'mobile-site-scroll')
     if (!host) throw new Error('Missing mobile scroll host')
     const onScroll = host.props.onScroll as () => void
@@ -226,10 +245,28 @@ describe('public performance lifecycles', () => {
     expect(frame).toHaveBeenCalledOnce()
     root.scrollTop = 200
     callbacks[0]?.(16)
-    expect(hooks.values[0]).toBe(200)
+    expect(hooks.values[0]).toEqual({ collapse: 200, viewportHeight: 800 })
+    const unchanged = hooks.values[0]
     onScroll()
     expect(frame).toHaveBeenCalledTimes(2)
+    callbacks[1]?.(32)
+    expect(hooks.values[0]).toBe(unchanged)
+    // Keyboard-visible innerHeight must not replace the CSS viewport basis.
+    window.innerHeight = 400
+    onScroll()
+    callbacks[2]?.(48)
+    expect(hooks.values[0]).toBe(unchanged)
+    // Real CSS/root resizes do update the measured basis, with the privacy space restored.
+    cssHeight = 600
+    observer.resize?.()
+    observer.resize?.()
+    expect(frame).toHaveBeenCalledTimes(4)
+    callbacks[3]?.(64)
+    expect(hooks.values[0]).toEqual({ collapse: 200, viewportHeight: 720 })
+    observer.resize?.()
     dispose()
-    expect(cancel).toHaveBeenCalledWith(2)
+    expect(cancel).toHaveBeenCalledWith(5)
+    expect(disconnect).toHaveBeenCalledOnce()
+    expect(window.removeEventListener).toHaveBeenCalledWith('resize', expect.any(Function))
   })
 })

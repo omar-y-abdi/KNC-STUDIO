@@ -29,14 +29,23 @@ export function canvasBehavior(editor: Editor, scene: CmsScene, mode: CmsMode): 
     doc.head.appendChild(style)
     const visibility = sceneVisibilityCss(scene, mode)
     let frame = 0
+    let previousRoot: HTMLElement | null = null
     const update = (): void => {
       frame = 0
-      const root = doc.querySelector<HTMLElement>('[data-knc-surface="mobile-home"]')
+      const root = doc.querySelector<HTMLElement>(
+        '[data-knc-surface="mobile-home"], [data-knc-surface="mobile-booking"]',
+      )
+      const surface = root?.getAttribute('data-knc-surface') ?? 'mobile-home'
+      if (root && root !== previousRoot && root.clientHeight > 0) {
+        previousRoot = root
+        if (surface === 'mobile-booking')
+          root.scrollTop = mobileFold(Infinity, mobileLayoutViewportHeight(root)).collapse
+      }
       const motion = mobileFold(
         root?.scrollTop ?? 0,
         root ? mobileLayoutViewportHeight(root) : win.innerHeight,
       )
-      const scope = '[data-knc-surface="mobile-home"] [data-knc-fold='
+      const scope = `[data-knc-surface="${surface}"] [data-knc-fold=`
       const css =
         visibility +
         `${scope}"panel"]{position:${motion.pinned ? 'sticky' : 'relative'}!important;transform:${!motion.pinned && motion.collapse > 0 ? `translateY(${motion.collapse}px)` : 'none'}!important;top:0!important;height:calc(100dvh - ${motion.collapse}px)!important;border-radius:${motion.compact ? '0 0 28px 28px' : '0'}!important}` +

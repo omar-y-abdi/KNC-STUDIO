@@ -3,14 +3,14 @@ import { mobileFold, mobileLayoutViewportHeight } from './mobileFold'
 // Mobile (M3) layout — folding panel (hero <-> compact header) + booking below.
 //
 // Invariants:
-//  - folding panel: borderRadius `0 0 28px 28px` when booking, flush `0` on homepage;
-//    height PANEL_COMPACT (booking) vs PANEL_FULL (homepage).
+//  - folding panel: scrolling changes its height from PANEL_FULL to PANEL_COMPACT in either section;
+//    scrolling back up restores the hero without discarding the active booking selection.
 //  - the brand cross-fades between the centered hero lockup (home flow) and the compact CornerMark
 //    (absolute top-left, fades in when a section opens) — two elements, not one sliding element.
-//  - faded hero (heroExtras) has pointer-events:none while booking so it never steals taps.
+//  - fully faded hero controls are inert so they never steal taps from the section below.
 
 import type { JSX } from 'preact'
-import { useEffect, useRef, useState } from 'preact/hooks'
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import { AboutSection } from '../about/AboutSection'
 import { HeroLinks } from '../about/HeroLinks'
 import { CornerMark } from '../ui/logos/CornerMark'
@@ -76,8 +76,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
   const { c, tx, dark, mobMutedColor, mobBtnBgColor, business } = props
   const reduceMotion = useReducedMotion()
   const view = props.view
-  // Booking collapses immediately. On home the same panel collapses continuously as its scroll
-  // container advances, exposing the always-mounted About section below.
+  // Both sections live below the full hero; scrolling alone never changes the active section.
   const inSection = view === 'booking'
   const scrollRoot = useRef<HTMLDivElement>(null)
   const privacyOpen =
@@ -85,10 +84,10 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
   const [fold, setFold] = useState(() => ({ collapse: 0, viewportHeight: window.innerHeight }))
   const { collapse, viewportHeight } = fold
   const scrollFrame = useRef<number | null>(null)
-  const compactPanel = inSection || collapse > 0
+  const compactPanel = collapse > 0
   const syncCollapse = (): void => {
     const root = scrollRoot.current
-    if (inSection || root === null) return
+    if (root === null) return
     // Leave the whole hero scrollable above an open privacy panel, then retain the normal
     // compact navigation once About begins. The spacer preserves the document position.
     const height = mobileLayoutViewportHeight(root)
@@ -100,15 +99,22 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     )
   }
   const onScroll = (): void => {
-    if (inSection || scrollFrame.current !== null) return
+    if (scrollFrame.current !== null) return
     scrollFrame.current = requestAnimationFrame(() => {
       scrollFrame.current = null
       syncCollapse()
     })
   }
+  useLayoutEffect(() => {
+    const root = scrollRoot.current
+    if (root === null || !inSection) return
+    // Enter a new booking section before paint, while keeping its full hero reachable above it.
+    root.scrollTop = mobileFold(Infinity, mobileLayoutViewportHeight(root)).collapse
+    syncCollapse()
+  }, [inSection])
   useEffect(() => {
     const root = scrollRoot.current
-    if (root === null || inSection) return
+    if (root === null) return
     const sync = (): void => syncCollapse()
     window.addEventListener('resize', sync)
     const observer = new ResizeObserver(onScroll)
@@ -128,8 +134,8 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
   // Muted, theme-aware colour for the underlined hero links (sits on the panel surface).
   const heroLinkColor = dark ? 'rgba(255,255,255,.72)' : 'rgba(0,0,0,.6)'
   const motion = mobileFold(collapse, viewportHeight)
-  const pinnedPanel = inSection || motion.pinned
-  const heroOpacity = inSection ? 0 : motion.opacity
+  const pinnedPanel = motion.pinned
+  const heroOpacity = motion.opacity
 
   const foldingPanelStyle: StyleWithVars = {
     position: 'relative',
@@ -139,9 +145,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     background: dark ? '#242427' : '#f4f3f0',
     color: c.text,
     borderRadius: compactPanel ? '0 0 28px 28px' : '0',
-    height: inSection ? PANEL_COMPACT : `calc(${PANEL_FULL} - ${collapse}px)`,
-    // Booking must pin at its compact height immediately; animating a pinned full-screen box
-    // through this height range would seed Safari's cached bottom-edge color again.
+    height: `calc(${PANEL_FULL} - ${collapse}px)`,
     transition: reduceMotion ? 'none' : 'border-radius .3s ease',
     '--mob-text': c.text,
     '--mob-muted': mobMutedColor,
@@ -211,7 +215,6 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     // Visible controls remain usable throughout the fade. Disabling at 24px left almost opaque
     // buttons untappable when a browser restored scroll/focus after closing the privacy notice.
     pointerEvents: heroOpacity === 0 ? 'none' : 'auto',
-    transition: reduceMotion ? 'none' : inSection ? 'opacity .34s ease' : undefined,
   }
   const heroBtnDarkStyle: JSX.CSSProperties = {
     alignSelf: 'stretch',
@@ -254,14 +257,15 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     background: c.bg,
     color: c.text,
     minHeight: 'calc(100dvh - ' + PANEL_COMPACT + ')',
+    scrollMarginTop: PANEL_COMPACT,
   }
 
   return useNativeSurface(
     <div
       style={{
         position: 'relative',
-        // Fixed viewport scroll container. Home keeps the full hero in normal flow while its sticky
-        // panel compresses with scroll; booking starts with the compact panel and replaces About.
+        // Fixed viewport scroll container. Both sections retain the full hero in normal flow;
+        // entering booking starts at its content, and reverse scrolling restores the hero.
         height: 'calc(100dvh - var(--privacy-overlay-space, 0px))',
         overflowX: 'hidden',
         overflowY: 'auto',
@@ -454,12 +458,10 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
         </div>
       </div>
 
-      {/* Keep panel + spacer at one viewport tall. At max collapse About begins exactly below the
+      {/* Keep panel + spacer at one viewport tall. At max collapse the section begins below the
           compact top panel, while reverse scrolling recreates the hero without a mode switch. */}
-      {!inSection ? (
-        <div data-knc-fold="spacer" aria-hidden="true" style={{ height: collapse + 'px' }} />
-      ) : null}
-      <div style={m3BodyStyle}>
+      <div data-knc-fold="spacer" aria-hidden="true" style={{ height: collapse + 'px' }} />
+      <div data-knc-fold="body" style={m3BodyStyle}>
         {inSection ? (
           <LazySurface
             loadingLabel={tx.lazyBookingLoading}
