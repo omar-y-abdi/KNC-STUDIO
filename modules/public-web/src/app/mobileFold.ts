@@ -19,3 +19,13 @@ export function mobileFold(
     opacity: Math.max(0, 1 - collapse / Math.max(1, limit * 0.45)),
   }
 }
+
+/** The fold uses CSS 100dvh, which can differ from innerHeight while a mobile keyboard is open.
+ * The scroll root is exactly that CSS height minus the separately reserved privacy-panel space. */
+export function mobileLayoutViewportHeight(root: HTMLElement): number {
+  const style = getComputedStyle(root)
+  return (
+    Number.parseFloat(style.height) +
+    (Number.parseFloat(style.getPropertyValue('--privacy-overlay-space')) || 0)
+  )
+}

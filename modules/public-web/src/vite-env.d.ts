@@ -16,4 +16,6 @@ interface ImportMetaEnv {
   // Cloudflare Turnstile PUBLIC site key (safe to inline). Unset -> the widget renders nothing;
   // production booking then fails closed at the gateway. Set it in every production build.
   readonly VITE_TURNSTILE_SITE_KEY?: string
+  // Must match that site's Cloudflare widget mode; required whenever the site key is configured.
+  readonly VITE_TURNSTILE_WIDGET_MODE?: string
 }

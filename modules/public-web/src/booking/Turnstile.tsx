@@ -1,5 +1,6 @@
 // One shared script; independent, disposable widgets. Retries recover from script/network failure
 // as well as expired tokens. Action + hostname are checked again by the Edge gateway.
+import { configuredTurnstileWidgetMode } from './turnstileWidgetMode'
 import type { JSX } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import type { Lang } from '../i18n/index'
@@ -7,6 +8,10 @@ import type { TurnstilePolicy } from '@bladeblend/backend-contracts/turnstile'
 
 const SCRIPT_SRC = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit'
 const SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY?.trim() || undefined
+const WIDGET_MODE = configuredTurnstileWidgetMode(
+  SITE_KEY,
+  import.meta.env.VITE_TURNSTILE_WIDGET_MODE,
+)
 export const turnstileConfigured = SITE_KEY !== undefined
 
 interface TurnstileRenderOptions {
@@ -137,9 +142,12 @@ export function Turnstile(props: TurnstileProps): JSX.Element | null {
   if (SITE_KEY === undefined) return null
   return (
     <div style={{ marginTop: '4px' }}>
-      {/* Reserve the normal widget's height while loading. After success/failure, the provider's
-          visible widget sizes itself; an invisible widget or load error must not leave a blank gap. */}
-      <div ref={containerRef} style={{ minHeight: status === 'pending' ? '65px' : '0px' }} />
+      {/* The site key's public mode is known before the first render. Invisible verification
+          reserves nothing; visible widgets retain loading space and then size themselves. */}
+      <div
+        ref={containerRef}
+        style={{ minHeight: status === 'pending' && WIDGET_MODE !== 'invisible' ? '65px' : '0px' }}
+      />
       {status === 'failed' && props.onError === undefined ? (
         <div role="alert" style={{ fontSize: '12px', lineHeight: 1.5, margin: '8px 0' }}>
           <span>

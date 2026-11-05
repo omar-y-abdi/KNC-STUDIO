@@ -1,5 +1,5 @@
 import { useNativeSurface } from '../cms/NativeSurface'
-import { mobileFold } from './mobileFold'
+import { mobileFold, mobileLayoutViewportHeight } from './mobileFold'
 // Mobile (M3) layout — folding panel (hero <-> compact header) + booking below.
 //
 // Invariants:
@@ -82,19 +82,22 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
   const scrollRoot = useRef<HTMLDivElement>(null)
   const privacyOpen =
     props.privacy !== undefined && (props.privacy.preferences === null || props.privacy.expanded)
-  const [collapse, setCollapse] = useState(0)
+  const [fold, setFold] = useState(() => ({ collapse: 0, viewportHeight: window.innerHeight }))
+  const { collapse, viewportHeight } = fold
   const scrollFrame = useRef<number | null>(null)
   const compactPanel = inSection || collapse > 0
   const syncCollapse = (): void => {
-    if (inSection) return
+    const root = scrollRoot.current
+    if (inSection || root === null) return
     // Leave the whole hero scrollable above an open privacy panel, then retain the normal
     // compact navigation once About begins. The spacer preserves the document position.
-    const next = mobileFold(
-      scrollRoot.current?.scrollTop ?? 0,
-      window.innerHeight,
-      privacyOpen,
-    ).collapse
-    setCollapse((current) => (current === next ? current : next))
+    const height = mobileLayoutViewportHeight(root)
+    const next = mobileFold(root.scrollTop, height, privacyOpen).collapse
+    setFold((current) =>
+      current.collapse === next && current.viewportHeight === height
+        ? current
+        : { collapse: next, viewportHeight: height },
+    )
   }
   const onScroll = (): void => {
     if (inSection || scrollFrame.current !== null) return
@@ -108,9 +111,12 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     if (root === null || inSection) return
     const sync = (): void => syncCollapse()
     window.addEventListener('resize', sync)
+    const observer = new ResizeObserver(onScroll)
+    observer.observe(root)
     sync()
     return () => {
       window.removeEventListener('resize', sync)
+      observer.disconnect()
       if (scrollFrame.current !== null) {
         cancelAnimationFrame(scrollFrame.current)
         scrollFrame.current = null
@@ -121,7 +127,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
   const phoneShift = compactPanel ? '24px' : '0px'
   // Muted, theme-aware colour for the underlined hero links (sits on the panel surface).
   const heroLinkColor = dark ? 'rgba(255,255,255,.72)' : 'rgba(0,0,0,.6)'
-  const motion = mobileFold(collapse, window.innerHeight)
+  const motion = mobileFold(collapse, viewportHeight)
   const pinnedPanel = inSection || motion.pinned
   const heroOpacity = inSection ? 0 : motion.opacity
 
@@ -171,10 +177,10 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
   const panelTopStyle: JSX.CSSProperties = {
     flex: 'none',
     padding: '0 22px 16px',
-    // Keep the real header as the small edge-paint surface. Auto inset preserves normal flow;
-    // the surrounding folding panel supplies its position, including privacy-panel scrolling.
-    position: 'sticky',
-    top: 'auto',
+    // The surrounding panel owns pinning. An inset-free sticky header does not move, but Safari
+    // still registers it as a viewport-constrained color source and can retain its old tint.
+    position: 'relative',
+    zIndex: 0,
     background: 'inherit',
   }
   const expandChevStyle: JSX.CSSProperties = {

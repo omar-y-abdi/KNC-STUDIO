@@ -1,5 +1,5 @@
 import type { Editor } from 'grapesjs'
-import { mobileFold } from '@bladeblend/public-web/mobile-layout'
+import { mobileFold, mobileLayoutViewportHeight } from '@bladeblend/public-web/mobile-layout'
 import type { CmsScene } from '@bladeblend/public-web/preview'
 import { SITE_THEME_DEFAULTS } from '@bladeblend/content-contracts/site-theme'
 import type { CmsMode } from '@bladeblend/content-contracts/cms'
@@ -32,7 +32,10 @@ export function canvasBehavior(editor: Editor, scene: CmsScene, mode: CmsMode): 
     const update = (): void => {
       frame = 0
       const root = doc.querySelector<HTMLElement>('[data-knc-surface="mobile-home"]')
-      const motion = mobileFold(root?.scrollTop ?? 0, win.innerHeight)
+      const motion = mobileFold(
+        root?.scrollTop ?? 0,
+        root ? mobileLayoutViewportHeight(root) : win.innerHeight,
+      )
       const scope = '[data-knc-surface="mobile-home"] [data-knc-fold='
       const css =
         visibility +

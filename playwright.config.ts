@@ -49,6 +49,8 @@ const projects: NonNullable<PlaywrightTestConfig['projects']> = [
             'upload-budget.spec.mjs',
             'turnstile-layout.spec.mjs',
             'mobile-viewport.spec.mjs',
+            'booking-first-frame.spec.mjs',
+            'mobile-keyboard.spec.mjs',
             'booking-prefill.spec.mjs',
             'network-guard.spec.mjs',
             'legal-mode.spec.mjs',
@@ -58,6 +60,8 @@ const projects: NonNullable<PlaywrightTestConfig['projects']> = [
             'admin-shared.spec.mjs',
             'turnstile-layout.spec.mjs',
             'mobile-viewport.spec.mjs',
+            'booking-first-frame.spec.mjs',
+            'mobile-keyboard.spec.mjs',
             'booking-prefill.spec.mjs',
             'network-guard.spec.mjs',
             'legal-mode.spec.mjs',
@@ -91,6 +95,7 @@ const devServer = {
     VITE_SUPABASE_URL: 'https://admin-harness.invalid',
     VITE_SUPABASE_ANON_KEY: 'e2e-public-anon-key',
     VITE_TURNSTILE_SITE_KEY: '1x00000000000000000000AA',
+    VITE_TURNSTILE_WIDGET_MODE: 'managed',
   },
 }
 

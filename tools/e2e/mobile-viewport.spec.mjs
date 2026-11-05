@@ -408,11 +408,51 @@ for (const stored of [false, true])
         }
         return { top: sample(false), bottom: sample(true) }
       })
-    const assertTheme = async (color) => {
-      await expect.poll(edges).toEqual({ top: { viewportSized: false, color }, bottom: null })
+    const assertTheme = async (color, pinned = false) => {
+      await expect
+        .poll(edges)
+        .toEqual({ top: pinned ? { viewportSized: false, color } : null, bottom: null })
+      await expect
+        .poll(() =>
+          page.locator('[data-knc-fold="panel"]').evaluate((panel) => {
+            const style = globalThis.getComputedStyle(panel.firstElementChild)
+            return { position: style.position, top: style.top, bottom: style.bottom }
+          }),
+        )
+        .toEqual({ position: 'relative', top: '0px', bottom: '0px' })
     }
     await assertTheme('rgb(36, 36, 39)')
-    await toggle.click()
+    const themeFrames = await page.evaluate(async () => {
+      const root = globalThis.document.querySelector('[data-testid="mobile-site-scroll"]')
+      const toggle = globalThis.document.querySelector('[aria-label="Växla ljust/mörkt"]')
+      toggle.click()
+      const frames = []
+      for (let i = 0; i < 5; i++) {
+        await new Promise(globalThis.requestAnimationFrame)
+        const header =
+          globalThis.document.querySelector('[data-knc-fold="panel"]').firstElementChild
+        frames.push({
+          scroll: root.scrollTop,
+          header: globalThis.getComputedStyle(header).backgroundColor,
+          position: globalThis.getComputedStyle(header).position,
+          body: globalThis.getComputedStyle(globalThis.document.body).backgroundColor,
+          html: globalThis.getComputedStyle(globalThis.document.documentElement).backgroundColor,
+          scheme: globalThis.getComputedStyle(globalThis.document.documentElement).colorScheme,
+          theme: globalThis.document.querySelector('meta[name="theme-color"]').content,
+        })
+      }
+      return frames
+    })
+    for (const frame of themeFrames)
+      expect(frame).toEqual({
+        scroll: 0,
+        header: 'rgb(244, 243, 240)',
+        position: 'relative',
+        body: 'rgb(244, 243, 240)',
+        html: 'rgb(244, 243, 240)',
+        scheme: 'light',
+        theme: stored ? 'rgb(244, 243, 240)' : '#f4f3f0',
+      })
     await assertTheme('rgb(244, 243, 240)')
     const scroll = page.getByTestId('mobile-site-scroll')
     for (const amount of [1, 100, 500, 732, 900, 0]) {
@@ -442,11 +482,11 @@ for (const stored of [false, true])
           spacerBottom: 844 - amount,
           scroll: amount,
         })
-      await assertTheme('rgb(244, 243, 240)')
+      await assertTheme('rgb(244, 243, 240)', amount >= 732)
     }
     await page.getByRole('button', { name: 'Boka tid', exact: true }).click()
     await toggle.click()
-    await assertTheme('rgb(36, 36, 39)')
+    await assertTheme('rgb(36, 36, 39)', true)
     await page.getByRole('button', { name: 'Till startsidan' }).click()
     await toggle.click()
     await assertTheme('rgb(244, 243, 240)')

@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { defineConfig, loadEnv, type ProxyOptions } from 'vite'
 import preact from '@preact/preset-vite'
 import { Features } from 'lightningcss'
+import { configuredTurnstileWidgetMode } from '@bladeblend/public-web/turnstile-widget-mode'
 
 function loopbackOrigin(value: string, name: string): string {
   const target = new URL(value)
@@ -26,6 +27,7 @@ function loopbackOrigin(value: string, name: string): string {
 //  - everything bundled from pinned local deps (no CDN, no runtime third-party)
 export default defineConfig(({ command, mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
+  configuredTurnstileWidgetMode(env['VITE_TURNSTILE_SITE_KEY'], env['VITE_TURNSTILE_WIDGET_MODE'])
   if (command === 'build' && mode === 'production') {
     for (const name of ['VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY']) {
       if (!env[name]?.trim()) {
