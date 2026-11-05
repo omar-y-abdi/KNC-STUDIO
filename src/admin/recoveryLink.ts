@@ -13,6 +13,7 @@ export type PasswordLinkType = 'recovery' | 'invite'
 
 /** What a password-setup URL resolved to. `tokens` = implicit flow, `code` = PKCE, else error/none. */
 export type RecoveryLink =
+  | { readonly kind: 'staff_invite'; readonly token: string }
   | { readonly kind: 'tokens'; readonly accessToken: string; readonly refreshToken: string }
   | { readonly kind: 'code'; readonly code: string }
   | { readonly kind: 'token_hash'; readonly tokenHash: string }
@@ -37,6 +38,11 @@ export function parseRecoveryLink(
   const h = toParams(hash)
   const hashError = h.get('error_description') ?? h.get('error')
   if (hashError !== null) return { kind: 'error', message: hashError }
+
+  const staffToken = h.get('staff_invite')
+  if (expectedType === 'invite' && staffToken !== null && /^[a-f0-9]{64}$/.test(staffToken)) {
+    return { kind: 'staff_invite', token: staffToken }
+  }
 
   const accessToken = h.get('access_token')
   const refreshToken = h.get('refresh_token')

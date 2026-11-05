@@ -43,6 +43,7 @@ import {
   confirmOwnEmailChange,
   requestPasswordReset,
   requestOwnEmailChange,
+  redeemStaffInvitation,
   setOwnPasswordKeepSession,
   signIn,
 } from '../../src/admin/auth'
@@ -80,6 +81,28 @@ describe('admin account settings auth', () => {
     authMocks.select.mockReturnValue({ eq: authMocks.eq })
     authMocks.eq.mockReturnValue({ maybeSingle: authMocks.maybeSingle })
   })
+
+  it('exchanges the staff capability before verifying the fresh Auth token', async () => {
+    authMocks.invoke.mockResolvedValue({
+      data: { ok: true, token_hash: 'fresh-token' },
+      error: null,
+    })
+    authMocks.verifyOtp.mockResolvedValue({ error: null })
+    expect(await redeemStaffInvitation('durable-token')).toEqual({ ok: true, value: undefined })
+    expect(authMocks.invoke).toHaveBeenCalledWith('redeem-staff-invite', {
+      body: { token: 'durable-token' },
+    })
+    expect(authMocks.verifyOtp).toHaveBeenCalledWith({ token_hash: 'fresh-token', type: 'invite' })
+  })
+
+  it.each([null, { ok: false }, { ok: true }, { ok: true, token_hash: '' }])(
+    'never verifies a rejected or malformed staff invitation response',
+    async (data) => {
+      authMocks.invoke.mockResolvedValue({ data, error: null })
+      expect((await redeemStaffInvitation('durable-token')).ok).toBe(false)
+      expect(authMocks.verifyOtp).not.toHaveBeenCalled()
+    },
+  )
 
   it('verifies the current password, updates it and keeps the session', async () => {
     passwordMocks.signInWithPassword.mockResolvedValue({

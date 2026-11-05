@@ -2,6 +2,16 @@ import { describe, expect, it } from 'vitest'
 import { parseRecoveryLink } from '../../src/admin/recoveryLink'
 
 describe('parseRecoveryLink', () => {
+  it('accepts a durable staff invitation only on the invite route and only from the fragment', () => {
+    const token = 'a'.repeat(64)
+    expect(parseRecoveryLink(`#staff_invite=${token}`, '', 'invite')).toEqual({
+      kind: 'staff_invite',
+      token,
+    })
+    expect(parseRecoveryLink(`#staff_invite=${token}`, '', 'recovery')).toEqual({ kind: 'none' })
+    expect(parseRecoveryLink('', `?staff_invite=${token}`, 'invite')).toEqual({ kind: 'none' })
+    expect(parseRecoveryLink('#staff_invite=invalid', '', 'invite')).toEqual({ kind: 'none' })
+  })
   it('parses implicit-flow recovery tokens from the hash', () => {
     const hash =
       '#access_token=AT123&refresh_token=RT456&expires_in=3600&token_type=bearer&type=recovery'

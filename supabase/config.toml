@@ -443,6 +443,11 @@ verify_jwt = false
 enabled = true
 verify_jwt = true
 
+# Recipient has no session yet; the one-use staff capability authorizes enrollment.
+[functions.redeem-staff-invite]
+enabled = true
+verify_jwt = false
+
 [functions.admin-manage-barber]
 enabled = true
 verify_jwt = true
