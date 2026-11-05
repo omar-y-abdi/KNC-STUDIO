@@ -14,6 +14,10 @@ that booking already has a review.
   than claiming email verification is required or that no booking exists globally.
 - Remove the review-only App/Desktop callback and the App state that requested forced lookup.
   The ordinary My Bookings dialog, device listing, email links, and no-device recovery remain.
+- Remove the now-unreferenced `verifyEmail` prop and forced-lookup branch in MyBookingsDialog.
+  With no caller setting that prop, this preserves the existing default behavior: an access
+  error opens lookup, an explicit token loads its bookings, and otherwise cookie restoration
+  runs. Port/token/error changes still start a fresh dialog session and invalidate old work.
 - Preserve the review heading and all existing editable field identities. No storage mechanism,
   authorization claim in browser state, new request field, or extra customer step is introduced.
 
@@ -46,6 +50,11 @@ also asserts submission without an explicit access token through the existing ga
 No local tests, typecheck, formatter, build, install, browser, or Docker execution was performed.
 Only static inspection and edits are authorized; all executable verification belongs to GitHub
 Actions. No push, deployment, production mutation, or email was performed.
+
+UI implementation commit: `418eb8379b0f219144b1cd957d5220ed02055aba`. The separate
+`fix(mybookings): remove unused forced email lookup` follow-up removes the orphaned dialog
+path described above; its exact SHA is supplied with the handoff. No additional executable
+verification ran for that follow-up.
 
 ## Pending MobileSite edit owned by the hero integration
 
