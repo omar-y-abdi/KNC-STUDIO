@@ -425,50 +425,29 @@ for (const path of ['/admin/cms', '/admin/cms/'])
     expect(routeLoads).toBe(2)
   })
 
-test('public layout loads the selected renderer before exposing mobile interaction', async ({
-  page,
-  context,
-}) => {
-  await nativeBackend(context)
-  let releaseLayout
-  const held = new Promise((resolve) => {
-    releaseLayout = resolve
+for (const width of [390, 1440]) {
+  test(`public homepage renders immediately without a layout loading screen (${width})`, async ({
+    page,
+    context,
+  }) => {
+    await nativeBackend(context)
+    await page.setViewportSize({ width, height: 844 })
+    await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
+    const firstRender = await page.evaluate(async () => {
+      const { mountPrivacyHarness } = await import('/tools/e2e/admin-harness.tsx')
+      mountPrivacyHarness()
+      // Inspect the synchronous render, before a promise or effect can hide a loading screen.
+      const doc = globalThis.document
+      return {
+        hero: doc.querySelector('h1') !== null,
+        booking: [...doc.querySelectorAll('button')].some(
+          (button) => button.textContent.trim() === 'Boka tid',
+        ),
+        loading: [...doc.querySelectorAll('[role="status"]')].some(
+          (status) => status.textContent.trim() === 'Laddar …',
+        ),
+      }
+    })
+    expect(firstRender).toEqual({ hero: true, booking: true, loading: false })
   })
-  let mobileRequests = 0
-  const pendingMobile = async (route) => {
-    mobileRequests++
-    await held
-    await route.continue()
-  }
-  await context.route('**/modules/public-web/src/app/MobileSite.tsx*', pendingMobile)
-  try {
-    await page.goto(harnessOrigin)
-    await expect(page.getByText('KNC source sv', { exact: true }).first()).toBeVisible()
-    expect(mobileRequests).toBe(0)
-    await page.setViewportSize({ width: 390, height: 844 })
-    await expect(page.getByRole('status').filter({ hasText: 'Laddar …' })).toBeVisible()
-    expect(mobileRequests).toBeGreaterThan(0)
-    await expect(page.getByTestId('mobile-site-scroll')).toHaveCount(0)
-    releaseLayout()
-    await expect(page.getByTestId('mobile-site-scroll')).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Boka tid', exact: true })).toBeVisible()
-  } finally {
-    releaseLayout()
-    await context.unroute('**/modules/public-web/src/app/MobileSite.tsx*', pendingMobile)
-  }
-})
-
-test('a failed public renderer request offers a real reload', async ({ page, context }) => {
-  await nativeBackend(context)
-  await page.setViewportSize({ width: 390, height: 844 })
-  let requests = 0
-  await page.route('**/modules/public-web/src/app/MobileSite.tsx*', (route) => {
-    requests++
-    return requests === 1 ? route.abort('failed') : route.continue()
-  })
-  await page.goto(harnessOrigin)
-  await expect(page.getByRole('alert')).toContainText('Kunde inte ladda sidan.')
-  await page.getByRole('button', { name: 'Ladda om', exact: true }).click()
-  await expect(page.getByTestId('mobile-site-scroll')).toBeVisible()
-  expect(requests).toBe(2)
-})
+}

@@ -61,14 +61,14 @@ not have been persisted. The follow-up replaces non-null assertions with typed g
 uses DOM appendChild, and strips the marker in capture without relaxing markup validation.
 The approved shape coordinates and animation behavior are unchanged.
 
-## Approved follow-up qualification
+## Historical follow-up qualification
 
 The next hosted run (`42103454710`, `bd65445`) passed lint/type checks, units, CodeQL and the
 CMS publication groups that had rejected the private marker. Production compilation succeeded,
-but public boot reached 122.0 kB against the unchanged 115 kB limit. Mobile and desktop layouts
-now load as separate renderer modules; a mobile layout includes all morph code before becoming
-interactive. App preview readiness and viewport metadata wait for that selected renderer.
-Controlled browser cases cover a held mobile-module response and a failed request followed by reload.
+but public boot reached 122.0 kB against the unchanged 115 kB limit. At that checkpoint, mobile and desktop layouts
+were split into asynchronously loaded renderer modules. This introduced an unrequested full-page
+"Laddar …" state. The user approved the hero animation, not this startup behavior; the loading
+implementation is withdrawn below.
 
 The real customer suite also caught an authored ampersand-opacity rule being overwritten at home
 rest. Source glyphs now retain their original opacity cascade at rest; animation opacity multiplies
@@ -88,8 +88,8 @@ real customer-browser job. Its source artifact tree matched the pushed tree exac
 
 The remaining browser findings exposed two renderer-readiness mistakes: a separate import probe
 could retry a rejected import in WebKit, and import completion could precede the actual DOM mount.
-The renderer now reports its committed mount; preview readiness and viewport colors use that
-signal. Suspense alone owns the import and its visible reload action. The privacy contrast fixture
+That follow-up added a renderer mount signal and kept the Suspense loading screen. Those
+layout-only mechanisms are also withdrawn below. The privacy contrast fixture
 waits for the same two required hero labels rather than counting before asynchronous mounting.
 
 The review fixture trace showed WebKit filling offscreen fields while the hero was still onscreen.
@@ -101,3 +101,19 @@ Twelve stored mobile reference images were updated from that hosted run after re
 rendered images and diffs. Resting changes are SVG text rasterization; the folded dark references
 reflect the approved banner/phone appearance. Screenshot tolerances, contrast requirements,
 viewport color assertions and request-count assertions remain unchanged. No local suites ran.
+
+## Withdrawal of the unrequested homepage loading screen
+
+The follow-up restores direct imports and synchronous rendering of MobileSite and DesktopSite.
+The full-page LazySurface wrappers, siteLayouts module, and layout readiness state/callbacks are
+removed. The two tests that enforced layout loading/reload are replaced by first-render checks
+for mobile and desktop: the hero and booking control must exist before yielding to a promise,
+without a visible layout-loading status. Booking/dialog-specific loading boundaries and the
+existing CMS presentation gate retain their established behavior. Hero motion is unchanged.
+
+Verification for this withdrawal runs in GitHub Actions; no local automated suites or builds run.
+
+Run `42119610488` built the restored eager homepage successfully and measured 122.3 kB gzip.
+The owner explicitly approved changing the boot budget from 115 to 123 kB to finish this
+withdrawal without another change to the website's startup behavior. Boundary checks retain
+both accepted and rejected sizes around the new limit.
