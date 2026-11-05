@@ -2714,7 +2714,7 @@ async function verifyPrivacy(
   const animatedShell =
     width > 768
       ? page.getByTestId('fold-booking')
-      : page.getByTestId('mobile-site-scroll').locator(':scope > div').first()
+      : page.getByTestId('mobile-site-scroll').locator('[data-knc-fold="panel"]')
   assert(
     await animatedShell.evaluate((element) =>
       globalThis
@@ -2750,7 +2750,9 @@ async function verifyPrivacy(
   await page.waitForFunction((desktop) => {
     const shell = desktop
       ? globalThis.document.querySelector('[data-testid="fold-booking"]')
-      : globalThis.document.querySelector('[data-testid="mobile-site-scroll"] > div')
+      : globalThis.document.querySelector(
+          '[data-testid="mobile-site-scroll"] [data-knc-fold="panel"]',
+        )
     return (
       shell !== null &&
       globalThis
@@ -2763,7 +2765,9 @@ async function verifyPrivacy(
   await page.waitForFunction((desktop) => {
     const shell = desktop
       ? globalThis.document.querySelector('[data-testid="fold-booking"]')
-      : globalThis.document.querySelector('[data-testid="mobile-site-scroll"] > div')
+      : globalThis.document.querySelector(
+          '[data-testid="mobile-site-scroll"] [data-knc-fold="panel"]',
+        )
     return (
       shell !== null &&
       globalThis
