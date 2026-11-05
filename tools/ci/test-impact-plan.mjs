@@ -107,7 +107,7 @@ test('aggregate CLI allows only rederived omissions and rejects altered context,
   assert.notEqual(run({ ...needs, surprise: { result: 'success' } }).status, 0)
   assert.notEqual(run(needs, { ...f.env, CI_EVENT_NAME: 'push' }).status, 0)
   assert.notEqual(run(needs, { ...f.env, CI_HEAD_SHA: 'b'.repeat(40) }).status, 0)
-  const tampered = structuredClone(f.plan)
+  const tampered = globalThis.structuredClone(f.plan)
   tampered.jobs.cms.required = false
   f.write('.ci-source/impact.json', tampered)
   assert.notEqual(run().status, 0)

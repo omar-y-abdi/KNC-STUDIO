@@ -84,8 +84,8 @@ export default defineConfig(({ command, mode }) => {
   }
   return {
     plugins: [preact()],
-    // Every worktree's node_modules is a symlink to one shared install, so the default cache
-    // (node_modules/.vite) would be shared too: parallel dev servers race on the dependency optimizer.
+    // Keep optimizer state local to this worktree, including when node_modules is shared with
+    // another checkout. Parallel dev servers must not race on the same dependency cache.
     cacheDir: '.vite-cache',
     server: { proxy, https },
     preview: { proxy, https },

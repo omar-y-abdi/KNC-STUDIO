@@ -122,6 +122,12 @@ and protected client; Studio consumes those capabilities through staff interface
 owns the isolated read-only runtime at `/cms-public/source`, with a lightweight `public-web/preview`
 protocol separate from its lazy runtime entry. Neither public startup nor staff imports Studio.
 
+[Module boundaries and local commands](tools/modules/README.md) describes the enforced interfaces
+and test ownership. For example, `npm run test --workspace @bladeblend/studio` runs its selected
+unit contracts. [CI architecture](docs/CI.md) explains source-bound affected plans and the broad
+fallbacks for shared/runtime changes; [qualification evidence](docs/qa/2026-11-05-module-boundaries.md)
+records the extraction, review and execution results.
+
 ### Owner content and operations
 
 The owner edits pages, site/About copy, business and appearance settings, gallery/logo assignments
