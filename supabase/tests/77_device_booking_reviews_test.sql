@@ -11,12 +11,15 @@ values
 ('77000000-0000-4000-8000-000000000003','device-review','s','Cut',100,30,now()-interval '8 days',now()-interval '8 days'+interval '30 minutes','Other Device','email','0707700001','other-review@example.test','sv','confirmed'),
 ('77000000-0000-4000-8000-000000000004','device-review','s','Cut',100,30,now()+interval '2 days',now()+interval '2 days 30 minutes','Future Customer','email','0707700004','future-review@example.test','sv','confirmed'),
 ('77000000-0000-4000-8000-000000000005','device-review','s','Cut',100,30,now()-interval '15 minutes',now()+interval '15 minutes','Ongoing Customer','email','0707700005','ongoing-review@example.test','sv','confirmed'),
-('77000000-0000-4000-8000-000000000006','device-review','s','Cut',100,30,now()-interval '6 days',now()-interval '6 days'+interval '30 minutes','Cancelled Customer','email','0707700006','cancelled-review@example.test','sv','cancelled'),
+('77000000-0000-4000-8000-000000000006','device-review','s','Cut',100,30,now()-interval '6 days',now()-interval '6 days'+interval '30 minutes','Cancelled Customer','email','0707700006','cancelled-review@example.test','sv','confirmed'),
 ('77000000-0000-4000-8000-000000000007','device-review','s','Cut',100,30,now()-interval '5 days',now()-interval '5 days'+interval '30 minutes','Parent Receipt','email','0707700007','child-review@example.test','sv','confirmed'),
 ('77000000-0000-4000-8000-000000000008','device-review','s','Cut',100,30,now()-interval '4 days',now()-interval '4 days'+interval '30 minutes','Wrong Parent','email','0707700008','wrong-parent@example.test','sv','confirmed'),
 ('77000000-0000-4000-8000-000000000009','device-review','s','Cut',100,30,now()-interval '3 days',now()-interval '3 days'+interval '30 minutes','Expired Receipt','email','0707700009','expired-review@example.test','sv','confirmed'),
 ('77000000-0000-4000-8000-000000000010','device-review','s','Cut',100,30,now()-interval '2 days',now()-interval '2 days'+interval '30 minutes','Revoked Receipt','email','0707700010','revoked-review@example.test','sv','confirmed'),
 ('77000000-0000-4000-8000-000000000011','device-review','s','Cut',100,30,now()-interval '1 day',now()-interval '1 day'+interval '30 minutes','Expired Session','email','0707700011','fallback-review@example.test','sv','confirmed');
+
+update public.bookings set status='cancelled',cancelled_at=now()-interval '7 days'
+where id='77000000-0000-4000-8000-000000000006';
 
 insert into public.customer_booking_access_sessions(phone,email,token_hash,expires_at) values
 ('0707700099','receipt-review@example.test',repeat('aa',32),now()+interval '1 day'),
