@@ -1,6 +1,7 @@
 import { writeFile } from 'node:fs/promises'
 import { test, expect } from './fixtures.mjs'
 import { harnessOrigin } from './origins.mjs'
+import { nativeMobileScroll } from './native-mobile-scroll.mjs'
 import { installPublicBackend, installStoredBackend } from './public-fixtures.mjs'
 
 // These cases send native touchscreen gestures through CDP.
@@ -75,14 +76,8 @@ for (const [stored, reducedMotion, deviceScaleFactor] of [
         const reference = await painted
         await writeFile(`${evidenceDir}/reference.png`, Buffer.from(reference, 'base64'))
         for (const [index, distance] of [-800, 800, -800, 800].entries()) {
-          const gesture = cdp.send('Input.synthesizeScrollGesture', {
-            x: 200,
-            y: 600,
-            yDistance: distance,
-            speed: 600,
-            gestureSourceType: 'touch',
-            preventFling: true,
-          })
+          const before = await page.getByTestId('mobile-site-scroll').evaluate((root) => root.scrollTop)
+          const gesture = nativeMobileScroll(cdp, distance)
           if (index === 0) {
             await page.waitForFunction(
               () =>
@@ -92,6 +87,9 @@ for (const [stored, reducedMotion, deviceScaleFactor] of [
             releaseReviews()
           }
           await gesture
+          const after = () => page.getByTestId('mobile-site-scroll').evaluate((root) => root.scrollTop)
+          if (distance < 0) await expect.poll(after).toBeGreaterThan(before)
+          else await expect.poll(after).toBeLessThan(before)
         }
         await cdp.send('Page.stopScreencast')
         expect(frames.length).toBeGreaterThan(10)
