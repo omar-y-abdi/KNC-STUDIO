@@ -1,8 +1,8 @@
 import { test, expect } from './fixtures.mjs'
 import { harnessOrigin } from './origins.mjs'
 import { installStoredBackend } from './public-fixtures.mjs'
-import { validateMarkup } from '../../shared/cms-markup.ts'
-import { CMS_BUILT_ASSETS } from '../../shared/cms-built-assets.ts'
+import { validateMarkup } from '../../packages/content-contracts/src/cms-markup.ts'
+import { CMS_BUILT_ASSETS } from '../../packages/content-contracts/src/cms-built-assets.ts'
 
 test('captured booking opens at its content and folds reversibly in the editing canvas', async ({
   page,
@@ -17,9 +17,9 @@ test('captured booking opens at its content and folds reversibly in the editing 
   await page.goto(`${harnessOrigin}/booking?mode=light`)
   await page.getByTestId('booking-barber-option').first().waitFor()
   const capture = await page.evaluate(async () => {
-    const { snapshotNative, mergeModes } = await import('/src/admin/cms/nativePages.ts')
-    const { nativeCanvas } = await import('/src/admin/cms/nativeCanvas.ts')
-    const { canvasBehavior } = await import('/src/admin/cms/canvasBehavior.ts')
+    const { snapshotNative, mergeModes } = await import('/modules/studio/src/nativePages.ts')
+    const { nativeCanvas } = await import('/modules/studio/src/nativeCanvas.ts')
+    const { canvasBehavior } = await import('/modules/studio/src/canvasBehavior.ts')
     const source = globalThis.document.querySelector('[data-knc-surface="mobile-booking"]')
     const snapshot = snapshotNative(source, 'mobile-booking')
     const html = mergeModes(snapshot, snapshot)

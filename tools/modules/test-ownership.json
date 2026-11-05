@@ -1009,68 +1009,47 @@
   },
   "tests/unit/aboutMerge.test.ts": {
     "kind": "unit",
-    "owners": [
-      "public-web"
-    ],
+    "owners": ["public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/adminAuth.test.ts": {
     "kind": "unit",
-    "owners": [
-      "staff-admin"
-    ],
+    "owners": ["staff-admin"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/adminEmailDeliverySchema.test.ts": {
     "kind": "unit",
-    "owners": [
-      "staff-admin"
-    ],
+    "owners": ["staff-admin"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/adminNavigationState.test.ts": {
     "kind": "unit",
-    "owners": [
-      "staff-admin"
-    ],
+    "owners": ["staff-admin"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/adminTime.test.ts": {
     "kind": "unit",
-    "owners": [
-      "staff-admin"
-    ],
+    "owners": ["staff-admin"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/agentReadiness.test.ts": {
     "kind": "unit",
-    "owners": [
-      "backend",
-      "public-web"
-    ],
+    "owners": ["backend", "public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/appearanceFields.test.ts": {
     "kind": "unit",
-    "owners": [
-      "content-contracts",
-      "public-web",
-      "studio"
-    ],
+    "owners": ["content-contracts", "public-web", "studio"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/availabilityMutationAdapters.test.ts": {
     "kind": "unit",
-    "owners": [
-      "staff-admin"
-    ],
+    "owners": ["staff-admin"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/backgroundLoad.test.ts": {
     "kind": "unit",
-    "owners": [
-      "public-web"
-    ],
+    "owners": ["public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/backupScripts.test.ts": {
@@ -1087,59 +1066,42 @@
   },
   "tests/unit/barberAccountAdmin.test.ts": {
     "kind": "unit",
-    "owners": [
-      "staff-admin"
-    ],
+    "owners": ["staff-admin"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/barberLinkStatus.test.ts": {
     "kind": "unit",
-    "owners": [
-      "staff-admin"
-    ],
+    "owners": ["staff-admin"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/barberMarqueeLoop.test.ts": {
     "kind": "unit",
-    "owners": [
-      "public-web"
-    ],
+    "owners": ["public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/barberSocialLinks.test.ts": {
     "kind": "unit",
-    "owners": [
-      "public-web"
-    ],
+    "owners": ["public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/bookingCatalog.test.ts": {
     "kind": "unit",
-    "owners": [
-      "public-web"
-    ],
+    "owners": ["public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/bookingDialogAccessibility.test.ts": {
     "kind": "unit",
-    "owners": [
-      "public-web"
-    ],
+    "owners": ["public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/bookingLinks.test.ts": {
     "kind": "unit",
-    "owners": [
-      "public-web"
-    ],
+    "owners": ["public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/bookingsSections.test.ts": {
     "kind": "unit",
-    "owners": [
-      "public-web",
-      "staff-admin"
-    ],
+    "owners": ["public-web", "staff-admin"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/bundleBudget.test.ts": {
@@ -1156,25 +1118,17 @@
   },
   "tests/unit/businessStructuredData.test.ts": {
     "kind": "unit",
-    "owners": [
-      "public-web"
-    ],
+    "owners": ["public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/calendar.test.ts": {
     "kind": "unit",
-    "owners": [
-      "public-web"
-    ],
+    "owners": ["public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/calendarDeletionOwnership.test.ts": {
     "kind": "unit",
-    "owners": [
-      "backend",
-      "public-web",
-      "staff-admin"
-    ],
+    "owners": ["backend", "public-web", "staff-admin"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/calendarDocumentationContract.test.ts": {
@@ -1191,24 +1145,17 @@
   },
   "tests/unit/calendarOAuthBackfill.test.ts": {
     "kind": "unit",
-    "owners": [
-      "backend"
-    ],
+    "owners": ["backend"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/calendarSync.test.ts": {
     "kind": "unit",
-    "owners": [
-      "backend",
-      "staff-admin"
-    ],
+    "owners": ["backend", "staff-admin"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cancellationWindow.test.ts": {
     "kind": "unit",
-    "owners": [
-      "staff-admin"
-    ],
+    "owners": ["staff-admin"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/ciSupplyChain.test.ts": {
@@ -1225,25 +1172,17 @@
   },
   "tests/unit/cmsActualSite.test.ts": {
     "kind": "unit",
-    "owners": [
-      "content-contracts",
-      "studio"
-    ],
+    "owners": ["content-contracts", "studio"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsApiErrors.test.ts": {
     "kind": "unit",
-    "owners": [
-      "content-contracts",
-      "studio"
-    ],
+    "owners": ["content-contracts", "studio"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsAssetCopy.test.ts": {
     "kind": "unit",
-    "owners": [
-      "backend"
-    ],
+    "owners": ["backend"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsAssetTrashMigration.test.ts": {
@@ -1260,264 +1199,177 @@
   },
   "tests/unit/cmsAssetUrl.test.ts": {
     "kind": "unit",
-    "owners": [
-      "content-contracts"
-    ],
+    "owners": ["content-contracts"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsBackup.test.ts": {
     "kind": "unit",
-    "owners": [
-      "content-contracts",
-      "studio"
-    ],
+    "owners": ["content-contracts", "studio"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsCanonicalResource.test.ts": {
     "kind": "unit",
-    "owners": [
-      "content-contracts"
-    ],
+    "owners": ["content-contracts"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsClone.test.ts": {
     "kind": "unit",
-    "owners": [
-      "studio"
-    ],
+    "owners": ["studio"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsColorControls.test.ts": {
     "kind": "unit",
-    "owners": [
-      "studio"
-    ],
+    "owners": ["studio"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsComposedSheets.test.ts": {
     "kind": "unit",
-    "owners": [
-      "studio"
-    ],
+    "owners": ["studio"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsCorePages.test.ts": {
     "kind": "unit",
-    "owners": [
-      "content-contracts",
-      "studio"
-    ],
+    "owners": ["content-contracts", "studio"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsDatabaseParity.test.ts": {
     "kind": "unit",
-    "owners": [
-      "content-contracts",
-      "public-web"
-    ],
+    "owners": ["content-contracts", "public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsDocumentAdoption.test.ts": {
     "kind": "unit",
-    "owners": [
-      "content-contracts",
-      "studio"
-    ],
+    "owners": ["content-contracts", "studio"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsDraft.test.ts": {
     "kind": "unit",
-    "owners": [
-      "content-contracts",
-      "studio"
-    ],
+    "owners": ["content-contracts", "studio"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsDraftPreview.test.ts": {
     "kind": "unit",
-    "owners": [
-      "content-contracts",
-      "public-web",
-      "studio"
-    ],
+    "owners": ["content-contracts", "public-web", "studio"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsEditorBoundary.test.ts": {
     "kind": "unit",
-    "owners": [
-      "studio"
-    ],
+    "owners": ["studio"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsEmailDesign.test.ts": {
     "kind": "unit",
-    "owners": [
-      "content-contracts"
-    ],
+    "owners": ["content-contracts"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsEmailPreview.test.ts": {
     "kind": "unit",
-    "owners": [
-      "backend",
-      "content-contracts",
-      "studio"
-    ],
+    "owners": ["backend", "content-contracts", "studio"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsFakeBackend.test.ts": {
     "kind": "unit",
-    "owners": [
-      "content-contracts"
-    ],
+    "owners": ["content-contracts"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsFontContract.test.ts": {
     "kind": "unit",
-    "owners": [
-      "content-contracts"
-    ],
+    "owners": ["content-contracts"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsFontDecoder.test.ts": {
     "kind": "unit",
-    "owners": [
-      "backend"
-    ],
+    "owners": ["backend"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsHierarchicalResize.test.ts": {
     "kind": "unit",
-    "owners": [
-      "studio"
-    ],
+    "owners": ["studio"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsHistoryRestore.test.ts": {
     "kind": "unit",
-    "owners": [
-      "content-contracts",
-      "studio"
-    ],
+    "owners": ["content-contracts", "studio"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsIndexedDb.test.ts": {
     "kind": "unit",
-    "owners": [
-      "studio"
-    ],
+    "owners": ["studio"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsInstanceScope.test.ts": {
     "kind": "unit",
-    "owners": [
-      "public-web"
-    ],
+    "owners": ["public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsLayoutProvenance.test.ts": {
     "kind": "unit",
-    "owners": [
-      "content-contracts",
-      "studio"
-    ],
+    "owners": ["content-contracts", "studio"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsLegacyEmailAuthority.test.ts": {
     "kind": "unit",
-    "owners": [
-      "content-contracts"
-    ],
+    "owners": ["content-contracts"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsLegacyLegal.test.ts": {
     "kind": "unit",
-    "owners": [
-      "content-contracts",
-      "studio"
-    ],
+    "owners": ["content-contracts", "studio"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsMarqueePolicy.test.ts": {
     "kind": "unit",
-    "owners": [
-      "studio"
-    ],
+    "owners": ["studio"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsMarqueeZoom.test.ts": {
     "kind": "unit",
-    "owners": [
-      "content-contracts",
-      "studio"
-    ],
+    "owners": ["content-contracts", "studio"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsMediaRetention.test.ts": {
     "kind": "unit",
-    "owners": [
-      "backend"
-    ],
+    "owners": ["backend"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsMerge.test.ts": {
     "kind": "unit",
-    "owners": [
-      "content-contracts",
-      "studio"
-    ],
+    "owners": ["content-contracts", "studio"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsModeCss.test.ts": {
     "kind": "unit",
-    "owners": [
-      "content-contracts"
-    ],
+    "owners": ["content-contracts"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsNativeRegion.test.ts": {
     "kind": "unit",
-    "owners": [
-      "content-contracts",
-      "public-web"
-    ],
+    "owners": ["content-contracts", "public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsNativeSecurity.test.ts": {
     "kind": "unit",
-    "owners": [
-      "backend",
-      "content-contracts"
-    ],
+    "owners": ["backend", "content-contracts"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsNativeSize.test.ts": {
     "kind": "unit",
-    "owners": [
-      "content-contracts"
-    ],
+    "owners": ["content-contracts"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsNativeTree.test.ts": {
     "kind": "unit",
-    "owners": [
-      "public-web"
-    ],
+    "owners": ["public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsPosition.test.ts": {
     "kind": "unit",
-    "owners": [
-      "studio"
-    ],
+    "owners": ["studio"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsPublicPage.test.ts": {
     "kind": "unit",
-    "owners": [
-      "backend",
-      "content-contracts"
-    ],
+    "owners": ["backend", "content-contracts"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsRelease.test.ts": {
@@ -1534,115 +1386,77 @@
   },
   "tests/unit/cmsResourceAssignment.test.ts": {
     "kind": "unit",
-    "owners": [
-      "content-contracts"
-    ],
+    "owners": ["content-contracts"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsResourceReplacement.test.ts": {
     "kind": "unit",
-    "owners": [
-      "content-contracts",
-      "studio"
-    ],
+    "owners": ["content-contracts", "studio"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsResourceUsage.test.ts": {
     "kind": "unit",
-    "owners": [
-      "content-contracts"
-    ],
+    "owners": ["content-contracts"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsResponsiveStyles.test.ts": {
     "kind": "unit",
-    "owners": [
-      "content-contracts",
-      "studio"
-    ],
+    "owners": ["content-contracts", "studio"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsRootStyles.test.ts": {
     "kind": "unit",
-    "owners": [
-      "studio"
-    ],
+    "owners": ["studio"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsRuntimeMode.test.ts": {
     "kind": "unit",
-    "owners": [
-      "public-web"
-    ],
+    "owners": ["public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsRuntimeSlots.test.ts": {
     "kind": "unit",
-    "owners": [
-      "content-contracts"
-    ],
+    "owners": ["content-contracts"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsSaveEditing.test.ts": {
     "kind": "unit",
-    "owners": [
-      "content-contracts",
-      "studio"
-    ],
+    "owners": ["content-contracts", "studio"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsSaveNormalization.test.ts": {
     "kind": "unit",
-    "owners": [
-      "content-contracts",
-      "studio"
-    ],
+    "owners": ["content-contracts", "studio"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsSeedPublication.test.ts": {
     "kind": "unit",
-    "owners": [
-      "content-contracts",
-      "studio"
-    ],
+    "owners": ["content-contracts", "studio"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsSemanticValidation.test.ts": {
     "kind": "unit",
-    "owners": [
-      "content-contracts"
-    ],
+    "owners": ["content-contracts"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsSitePage.test.ts": {
     "kind": "unit",
-    "owners": [
-      "backend",
-      "content-contracts",
-      "studio"
-    ],
+    "owners": ["backend", "content-contracts", "studio"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsSiteResources.test.ts": {
     "kind": "unit",
-    "owners": [
-      "content-contracts"
-    ],
+    "owners": ["content-contracts"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsSourceCss.test.ts": {
     "kind": "unit",
-    "owners": [
-      "content-contracts",
-      "studio"
-    ],
+    "owners": ["content-contracts", "studio"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsSourceReadCache.test.ts": {
     "kind": "unit",
-    "owners": [
-      "public-web"
-    ],
+    "owners": ["public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsStyleLeaves.test.ts": {
@@ -1659,67 +1473,47 @@
   },
   "tests/unit/cmsSvgText.test.ts": {
     "kind": "unit",
-    "owners": [
-      "content-contracts"
-    ],
+    "owners": ["content-contracts"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsThemeScript.test.ts": {
     "kind": "unit",
-    "owners": [
-      "public-web"
-    ],
+    "owners": ["public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/cmsUploadErrors.test.ts": {
     "kind": "unit",
-    "owners": [
-      "backend"
-    ],
+    "owners": ["backend"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/contactManagedSlots.test.ts": {
     "kind": "unit",
-    "owners": [
-      "backend",
-      "content-contracts"
-    ],
+    "owners": ["backend", "content-contracts"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/customerAccessSecurityContract.test.ts": {
     "kind": "unit",
-    "owners": [
-      "backend",
-      "public-web"
-    ],
+    "owners": ["backend", "public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/customerAccessToken.test.ts": {
     "kind": "unit",
-    "owners": [
-      "backend"
-    ],
+    "owners": ["backend"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/customerPhoneMemoryRemoval.test.ts": {
     "kind": "unit",
-    "owners": [
-      "public-web"
-    ],
+    "owners": ["public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/databaseRosterContract.test.ts": {
     "kind": "unit",
-    "owners": [
-      "public-web"
-    ],
+    "owners": ["public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/deleteAdapters.test.ts": {
     "kind": "unit",
-    "owners": [
-      "staff-admin"
-    ],
+    "owners": ["staff-admin"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/documentationContracts.test.ts": {
@@ -1808,187 +1602,132 @@
   },
   "tests/unit/edgeContracts.test.ts": {
     "kind": "unit",
-    "owners": [
-      "backend"
-    ],
+    "owners": ["backend"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/edgeRequestParsers.test.ts": {
     "kind": "unit",
-    "owners": [
-      "backend"
-    ],
+    "owners": ["backend"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/emailBusiness.test.ts": {
     "kind": "unit",
-    "owners": [
-      "backend"
-    ],
+    "owners": ["backend"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/emailChangeLink.test.ts": {
     "kind": "unit",
-    "owners": [
-      "staff-admin"
-    ],
+    "owners": ["staff-admin"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/emailDeliveryAdmin.test.ts": {
     "kind": "unit",
-    "owners": [
-      "staff-admin"
-    ],
+    "owners": ["staff-admin"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/emailSendLog.test.ts": {
     "kind": "unit",
-    "owners": [
-      "backend",
-      "backend-contracts",
-      "content-contracts"
-    ],
+    "owners": ["backend", "backend-contracts", "content-contracts"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/externalActionSettlement.test.ts": {
     "kind": "unit",
-    "owners": [
-      "backend"
-    ],
+    "owners": ["backend"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/externalActions.test.ts": {
     "kind": "unit",
-    "owners": [
-      "backend"
-    ],
+    "owners": ["backend"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/galleryMarqueeAccessibility.test.ts": {
     "kind": "unit",
-    "owners": [
-      "public-web"
-    ],
+    "owners": ["public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/homepageBoot.test.ts": {
     "kind": "unit",
-    "owners": [
-      "backend",
-      "public-web"
-    ],
+    "owners": ["backend", "public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/homepageLogo.test.ts": {
     "kind": "unit",
-    "owners": [
-      "public-web"
-    ],
+    "owners": ["public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/homepageReplicaPreview.test.ts": {
     "kind": "unit",
-    "owners": [
-      "public-web"
-    ],
+    "owners": ["public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/i18n.test.ts": {
     "kind": "unit",
-    "owners": [
-      "public-web"
-    ],
+    "owners": ["public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/ics.test.ts": {
     "kind": "unit",
-    "owners": [
-      "public-web"
-    ],
+    "owners": ["public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/imageUploadAdapters.test.ts": {
     "kind": "unit",
-    "owners": [
-      "staff-admin"
-    ],
+    "owners": ["staff-admin"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/launchReviewFixes.test.ts": {
     "kind": "unit",
-    "owners": [
-      "backend"
-    ],
+    "owners": ["backend"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/lazySurface.test.ts": {
     "kind": "unit",
-    "owners": [
-      "public-web"
-    ],
+    "owners": ["public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/mobileFold.test.ts": {
     "kind": "unit",
-    "owners": [
-      "public-web"
-    ],
+    "owners": ["public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/mockMyBookings.test.ts": {
     "kind": "unit",
-    "owners": [
-      "public-web"
-    ],
+    "owners": ["public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/mockReviews.test.ts": {
     "kind": "unit",
-    "owners": [
-      "public-web"
-    ],
+    "owners": ["public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/mockServices.test.ts": {
     "kind": "unit",
-    "owners": [
-      "public-web"
-    ],
+    "owners": ["public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/myBookingsFormat.test.ts": {
     "kind": "unit",
-    "owners": [
-      "public-web"
-    ],
+    "owners": ["public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/passwordPolicy.test.ts": {
     "kind": "unit",
-    "owners": [
-      "staff-admin"
-    ],
+    "owners": ["staff-admin"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/passwordRecoveryContract.test.ts": {
     "kind": "unit",
-    "owners": [
-      "backend"
-    ],
+    "owners": ["backend"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/performanceLifecycle.test.ts": {
     "kind": "unit",
-    "owners": [
-      "public-web"
-    ],
+    "owners": ["public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/privacyEmailLogDisclosure.test.ts": {
     "kind": "unit",
-    "owners": [
-      "backend"
-    ],
+    "owners": ["backend"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/productionSecrets.test.ts": {
@@ -2005,31 +1744,22 @@
   },
   "tests/unit/publicAdapterRequests.test.ts": {
     "kind": "unit",
-    "owners": [
-      "public-web"
-    ],
+    "owners": ["public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/publicApi.test.ts": {
     "kind": "unit",
-    "owners": [
-      "public-web"
-    ],
+    "owners": ["public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/publicBookingActionAdapters.test.ts": {
     "kind": "unit",
-    "owners": [
-      "public-web"
-    ],
+    "owners": ["public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/publicBookingActions.test.ts": {
     "kind": "unit",
-    "owners": [
-      "backend-contracts",
-      "public-web"
-    ],
+    "owners": ["backend-contracts", "public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/publicBookingRolloutContract.test.ts": {
@@ -2046,37 +1776,27 @@
   },
   "tests/unit/publicClientBoundary.test.ts": {
     "kind": "unit",
-    "owners": [
-      "public-web"
-    ],
+    "owners": ["public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/publicCustomerInputSemantics.test.ts": {
     "kind": "unit",
-    "owners": [
-      "public-web"
-    ],
+    "owners": ["public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/publicRealtime.test.ts": {
     "kind": "unit",
-    "owners": [
-      "public-web"
-    ],
+    "owners": ["public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/publicRest.test.ts": {
     "kind": "unit",
-    "owners": [
-      "public-web"
-    ],
+    "owners": ["public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/recoveryLink.test.ts": {
     "kind": "unit",
-    "owners": [
-      "staff-admin"
-    ],
+    "owners": ["staff-admin"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/removeSeededFakeReviews.test.ts": {
@@ -2093,75 +1813,52 @@
   },
   "tests/unit/reserveDialogContract.test.ts": {
     "kind": "unit",
-    "owners": [
-      "staff-admin"
-    ],
+    "owners": ["staff-admin"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/reviewGatewayContract.test.ts": {
     "kind": "unit",
-    "owners": [
-      "backend-contracts",
-      "public-web"
-    ],
+    "owners": ["backend-contracts", "public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/reviewValidation.test.ts": {
     "kind": "unit",
-    "owners": [
-      "public-web"
-    ],
+    "owners": ["public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/routeMetadata.test.ts": {
     "kind": "unit",
-    "owners": [
-      "public-web"
-    ],
+    "owners": ["public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/scheduleConflicts.test.ts": {
     "kind": "unit",
-    "owners": [
-      "public-web",
-      "staff-admin"
-    ],
+    "owners": ["public-web", "staff-admin"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/serviceValidation.test.ts": {
     "kind": "unit",
-    "owners": [
-      "staff-admin"
-    ],
+    "owners": ["staff-admin"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/serviceWeekdaySchema.test.ts": {
     "kind": "unit",
-    "owners": [
-      "backend-contracts",
-      "staff-admin"
-    ],
+    "owners": ["backend-contracts", "staff-admin"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/servicesAdmin.test.ts": {
     "kind": "unit",
-    "owners": [
-      "staff-admin"
-    ],
+    "owners": ["staff-admin"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/siteAdmin.test.ts": {
     "kind": "unit",
-    "owners": [
-      "staff-admin"
-    ],
+    "owners": ["staff-admin"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/siteChrome.test.ts": {
     "kind": "unit",
-    "owners": [
-      "public-web"
-    ],
+    "owners": ["public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/siteContentMigrationContract.test.ts": {
@@ -2178,9 +1875,7 @@
   },
   "tests/unit/slotPacking.test.ts": {
     "kind": "unit",
-    "owners": [
-      "public-web"
-    ],
+    "owners": ["public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/staffInviteRedeem.test.ts": {
@@ -2197,23 +1892,17 @@
   },
   "tests/unit/staffInviteSend.test.ts": {
     "kind": "unit",
-    "owners": [
-      "backend"
-    ],
+    "owners": ["backend"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/stockholmTime.test.ts": {
     "kind": "unit",
-    "owners": [
-      "public-web"
-    ],
+    "owners": ["public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/styleTokens.test.ts": {
     "kind": "unit",
-    "owners": [
-      "public-web"
-    ],
+    "owners": ["public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/supabaseAuthConfig.test.ts": {
@@ -2230,45 +1919,32 @@
   },
   "tests/unit/supabaseServices.test.ts": {
     "kind": "unit",
-    "owners": [
-      "public-web"
-    ],
+    "owners": ["public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/supabaseSiteChrome.test.ts": {
     "kind": "unit",
-    "owners": [
-      "public-web"
-    ],
+    "owners": ["public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/turnstileContract.test.ts": {
     "kind": "unit",
-    "owners": [
-      "public-web",
-      "staff-admin"
-    ],
+    "owners": ["public-web", "staff-admin"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/turnstileVerify.test.ts": {
     "kind": "unit",
-    "owners": [
-      "backend"
-    ],
+    "owners": ["backend"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/turnstileWidgetMode.test.ts": {
     "kind": "unit",
-    "owners": [
-      "public-web"
-    ],
+    "owners": ["public-web"],
     "reason": "Public booking widget mode and build configuration validation"
   },
   "tests/unit/uploadImageBudget.test.ts": {
     "kind": "unit",
-    "owners": [
-      "backend"
-    ],
+    "owners": ["backend"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/uploadImageDependency.test.ts": {
@@ -2285,23 +1961,17 @@
   },
   "tests/unit/uploadImageRuntime.test.ts": {
     "kind": "unit",
-    "owners": [
-      "backend"
-    ],
+    "owners": ["backend"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/validation.test.ts": {
     "kind": "unit",
-    "owners": [
-      "public-web"
-    ],
+    "owners": ["public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/validationParity.test.ts": {
     "kind": "unit",
-    "owners": [
-      "public-web"
-    ],
+    "owners": ["public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/vitestConfig.test.ts": {
@@ -2330,77 +2000,47 @@
   },
   "tests/unit/weekOfYear.test.ts": {
     "kind": "unit",
-    "owners": [
-      "staff-admin"
-    ],
+    "owners": ["staff-admin"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/workerCache.test.ts": {
     "kind": "unit",
-    "owners": [
-      "backend",
-      "content-contracts",
-      "public-web"
-    ],
+    "owners": ["backend", "content-contracts", "public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/workerContactReads.test.ts": {
     "kind": "unit",
-    "owners": [
-      "backend",
-      "content-contracts"
-    ],
+    "owners": ["backend", "content-contracts"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/workerCreatedPages.test.ts": {
     "kind": "unit",
-    "owners": [
-      "backend",
-      "content-contracts",
-      "studio"
-    ],
+    "owners": ["backend", "content-contracts", "studio"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/workerLegalMode.test.ts": {
     "kind": "unit",
-    "owners": [
-      "backend",
-      "content-contracts",
-      "public-web"
-    ],
+    "owners": ["backend", "content-contracts", "public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/workerRoutes.test.ts": {
     "kind": "unit",
-    "owners": [
-      "backend",
-      "public-web"
-    ],
+    "owners": ["backend", "public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/workerShellAssembly.test.ts": {
     "kind": "unit",
-    "owners": [
-      "backend",
-      "content-contracts"
-    ],
+    "owners": ["backend", "content-contracts"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/zodCsp.test.ts": {
     "kind": "unit",
-    "owners": [
-      "backend-contracts",
-      "staff-admin"
-    ],
+    "owners": ["backend-contracts", "staff-admin"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tests/unit/zodMigration.test.ts": {
     "kind": "unit",
-    "owners": [
-      "backend",
-      "backend-contracts",
-      "staff-admin"
-    ],
+    "owners": ["backend", "backend-contracts", "staff-admin"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
   "tools/ci/test-format.mjs": {
@@ -2477,469 +2117,222 @@
   },
   "tools/e2e/admin-schedule.spec.mjs": {
     "kind": "public",
-    "owners": [
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Public rendering, staff behavior and visual contracts"
   },
   "tools/e2e/admin-shared.spec.mjs": {
     "kind": "public",
-    "owners": [
-      "backend-contracts",
-      "content-contracts",
-      "public-web",
-      "staff-admin",
-      "studio"
-    ],
+    "owners": ["backend-contracts", "content-contracts", "public-web", "staff-admin", "studio"],
     "reason": "Staff privacy/invitation plus real CMS Studio shell in all public engines"
   },
   "tools/e2e/admin-state.spec.mjs": {
     "kind": "public",
-    "owners": [
-      "backend-contracts",
-      "content-contracts",
-      "public-web",
-      "staff-admin",
-      "studio"
-    ],
+    "owners": ["backend-contracts", "content-contracts", "public-web", "staff-admin", "studio"],
     "reason": "Staff behavior plus Studio DeliveryStatus retry/reload/copy races through admin-checks and delivery harness"
   },
   "tools/e2e/booking-first-frame.spec.mjs": {
     "kind": "public",
-    "owners": [
-      "public-web"
-    ],
+    "owners": ["public-web"],
     "reason": "Public booking verification first-frame geometry and token gating"
   },
   "tools/e2e/booking-prefill.spec.mjs": {
     "kind": "public",
-    "owners": [
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Public rendering, staff behavior and visual contracts"
   },
   "tools/e2e/cms-adversarial.spec.mjs": {
     "kind": "cms",
-    "owners": [
-      "studio",
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["studio", "public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Complete Studio behavioral cohort; shared harness imports are not per-spec behavior"
   },
   "tools/e2e/cms-barber-marquee.spec.mjs": {
     "kind": "cms",
-    "owners": [
-      "studio",
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["studio", "public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Complete Studio behavioral cohort; shared harness imports are not per-spec behavior"
   },
   "tools/e2e/cms-composition-roundtrip.spec.mjs": {
     "kind": "cms",
-    "owners": [
-      "studio",
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["studio", "public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Complete Studio behavioral cohort; shared harness imports are not per-spec behavior"
   },
   "tools/e2e/cms-conflict.spec.mjs": {
     "kind": "cms",
-    "owners": [
-      "studio",
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["studio", "public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Complete Studio behavioral cohort; shared harness imports are not per-spec behavior"
   },
   "tools/e2e/cms-context-latency.spec.mjs": {
     "kind": "cms",
-    "owners": [
-      "studio",
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["studio", "public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Complete Studio behavioral cohort; shared harness imports are not per-spec behavior"
   },
   "tools/e2e/cms-core-page-bytes.spec.mjs": {
     "kind": "cms",
-    "owners": [
-      "studio",
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["studio", "public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Complete Studio behavioral cohort; shared harness imports are not per-spec behavior"
   },
   "tools/e2e/cms-delivery-status.spec.mjs": {
     "kind": "cms",
-    "owners": [
-      "studio",
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["studio", "public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Complete Studio behavioral cohort; shared harness imports are not per-spec behavior"
   },
   "tools/e2e/cms-draft-resources.spec.mjs": {
     "kind": "cms",
-    "owners": [
-      "studio",
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["studio", "public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Complete Studio behavioral cohort; shared harness imports are not per-spec behavior"
   },
   "tools/e2e/cms-engineering.spec.mjs": {
     "kind": "cms",
-    "owners": [
-      "studio",
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["studio", "public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Complete Studio behavioral cohort; shared harness imports are not per-spec behavior"
   },
   "tools/e2e/cms-gallery-gesture.chromium.spec.mjs": {
     "kind": "cms",
-    "owners": [
-      "studio",
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["studio", "public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Complete Studio behavioral cohort; shared harness imports are not per-spec behavior"
   },
   "tools/e2e/cms-gallery-interaction.spec.mjs": {
     "kind": "cms",
-    "owners": [
-      "studio",
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["studio", "public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Complete Studio behavioral cohort; shared harness imports are not per-spec behavior"
   },
   "tools/e2e/cms-hierarchical-resize.spec.mjs": {
     "kind": "cms",
-    "owners": [
-      "studio",
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["studio", "public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Complete Studio behavioral cohort; shared harness imports are not per-spec behavior"
   },
   "tools/e2e/cms-interaction-latency.spec.mjs": {
     "kind": "cms",
-    "owners": [
-      "studio",
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["studio", "public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Complete Studio behavioral cohort; shared harness imports are not per-spec behavior"
   },
   "tools/e2e/cms-layout-provenance.spec.mjs": {
     "kind": "cms",
-    "owners": [
-      "studio",
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["studio", "public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Complete Studio behavioral cohort; shared harness imports are not per-spec behavior"
   },
   "tools/e2e/cms-lifecycle.chromium.spec.mjs": {
     "kind": "cms",
-    "owners": [
-      "studio",
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["studio", "public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Complete Studio behavioral cohort; shared harness imports are not per-spec behavior"
   },
   "tools/e2e/cms-lifecycle.spec.mjs": {
     "kind": "cms",
-    "owners": [
-      "studio",
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["studio", "public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Complete Studio behavioral cohort; shared harness imports are not per-spec behavior"
   },
   "tools/e2e/cms-marquee-geometry.spec.mjs": {
     "kind": "cms",
-    "owners": [
-      "studio",
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["studio", "public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Complete Studio behavioral cohort; shared harness imports are not per-spec behavior"
   },
   "tools/e2e/cms-marquee-zoom.spec.mjs": {
     "kind": "cms",
-    "owners": [
-      "studio",
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["studio", "public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Complete Studio behavioral cohort; shared harness imports are not per-spec behavior"
+  },
+  "tools/e2e/cms-mobile-booking-scroll.spec.mjs": {
+    "kind": "cms",
+    "owners": ["content-contracts", "public-web", "studio"],
+    "reason": "Public booking capture, markup validation, and Studio canvas scroll parity"
   },
   "tools/e2e/cms-mobile.spec.mjs": {
     "kind": "cms",
-    "owners": [
-      "studio",
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["studio", "public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Complete Studio behavioral cohort; shared harness imports are not per-spec behavior"
   },
   "tools/e2e/cms-native.spec.mjs": {
     "kind": "cms",
-    "owners": [
-      "studio",
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["studio", "public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Complete Studio behavioral cohort; shared harness imports are not per-spec behavior"
   },
   "tools/e2e/cms-new-page-mobile.spec.mjs": {
     "kind": "cms",
-    "owners": [
-      "studio",
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["studio", "public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Complete Studio behavioral cohort; shared harness imports are not per-spec behavior"
   },
   "tools/e2e/cms-owner.spec.mjs": {
     "kind": "cms",
-    "owners": [
-      "studio",
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["studio", "public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Complete Studio behavioral cohort; shared harness imports are not per-spec behavior"
   },
   "tools/e2e/cms-page-metadata.spec.mjs": {
     "kind": "cms",
-    "owners": [
-      "studio",
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["studio", "public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Complete Studio behavioral cohort; shared harness imports are not per-spec behavior"
   },
   "tools/e2e/cms-populated.spec.mjs": {
     "kind": "cms",
-    "owners": [
-      "studio",
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["studio", "public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Complete Studio behavioral cohort; shared harness imports are not per-spec behavior"
   },
   "tools/e2e/cms-preview-css-isolation.spec.mjs": {
     "kind": "cms",
-    "owners": [
-      "studio",
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["studio", "public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Complete Studio behavioral cohort; shared harness imports are not per-spec behavior"
   },
   "tools/e2e/cms-projection.spec.mjs": {
     "kind": "cms",
-    "owners": [
-      "studio",
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["studio", "public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Complete Studio behavioral cohort; shared harness imports are not per-spec behavior"
   },
   "tools/e2e/cms-public-regression.spec.mjs": {
     "kind": "cms",
-    "owners": [
-      "studio",
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["studio", "public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Complete Studio behavioral cohort; shared harness imports are not per-spec behavior"
   },
   "tools/e2e/cms-reported.spec.mjs": {
     "kind": "cms",
-    "owners": [
-      "studio",
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["studio", "public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Complete Studio behavioral cohort; shared harness imports are not per-spec behavior"
   },
   "tools/e2e/cms-resource-projection.spec.mjs": {
     "kind": "cms",
-    "owners": [
-      "studio",
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["studio", "public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Complete Studio behavioral cohort; shared harness imports are not per-spec behavior"
   },
   "tools/e2e/cms-resource-usage.spec.mjs": {
     "kind": "cms",
-    "owners": [
-      "studio",
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["studio", "public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Complete Studio behavioral cohort; shared harness imports are not per-spec behavior"
   },
   "tools/e2e/cms-resource-workflow.spec.mjs": {
     "kind": "cms",
-    "owners": [
-      "studio",
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["studio", "public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Complete Studio behavioral cohort; shared harness imports are not per-spec behavior"
   },
   "tools/e2e/cms-responsive.spec.mjs": {
     "kind": "cms",
-    "owners": [
-      "studio",
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["studio", "public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Complete Studio behavioral cohort; shared harness imports are not per-spec behavior"
   },
   "tools/e2e/cms-restore-adoption.spec.mjs": {
     "kind": "cms",
-    "owners": [
-      "studio",
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["studio", "public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Complete Studio behavioral cohort; shared harness imports are not per-spec behavior"
   },
   "tools/e2e/cms-scenes.spec.mjs": {
     "kind": "cms",
-    "owners": [
-      "studio",
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["studio", "public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Complete Studio behavioral cohort; shared harness imports are not per-spec behavior"
   },
   "tools/e2e/cms-startup.spec.mjs": {
     "kind": "startup",
-    "owners": [
-      "studio",
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["studio", "public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Public bootstrap and Studio lazy entry startup"
   },
   "tools/e2e/cms-workspace-edge.spec.mjs": {
     "kind": "cms",
-    "owners": [
-      "studio",
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["studio", "public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Complete Studio behavioral cohort; shared harness imports are not per-spec behavior"
   },
   "tools/e2e/cms-workspace-views.spec.mjs": {
     "kind": "cms",
-    "owners": [
-      "studio",
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["studio", "public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Complete Studio behavioral cohort; shared harness imports are not per-spec behavior"
   },
   "tools/e2e/cms-workspace.spec.mjs": {
     "kind": "cms",
-    "owners": [
-      "studio",
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["studio", "public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Complete Studio behavioral cohort; shared harness imports are not per-spec behavior"
   },
   "tools/e2e/customer.spec.mjs": {
@@ -2956,109 +2349,62 @@
   },
   "tools/e2e/id-coverage.spec.mjs": {
     "kind": "public",
-    "owners": [
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Public rendering, staff behavior and visual contracts"
   },
   "tools/e2e/legal-mode.spec.mjs": {
     "kind": "public",
-    "owners": [
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Public rendering, staff behavior and visual contracts"
+  },
+  "tools/e2e/mobile-booking-scroll.spec.mjs": {
+    "kind": "public",
+    "owners": ["public-web"],
+    "reason": "Public mobile booking entry and reversible hero scrolling"
   },
   "tools/e2e/mobile-keyboard.spec.mjs": {
     "kind": "public",
-    "owners": [
-      "public-web"
-    ],
+    "owners": ["public-web"],
     "reason": "Public mobile fold layout across keyboard and viewport changes"
   },
   "tools/e2e/mobile-viewport.spec.mjs": {
     "kind": "public",
-    "owners": [
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Public rendering, staff behavior and visual contracts"
   },
   "tools/e2e/network-guard.spec.mjs": {
     "kind": "public",
-    "owners": [
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Public rendering, staff behavior and visual contracts"
   },
   "tools/e2e/public-smoke.spec.mjs": {
     "kind": "public",
-    "owners": [
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Public rendering, staff behavior and visual contracts"
   },
   "tools/e2e/style-contract.spec.mjs": {
     "kind": "public",
-    "owners": [
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Public rendering, staff behavior and visual contracts"
   },
   "tools/e2e/turnstile-layout.spec.mjs": {
     "kind": "public",
-    "owners": [
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Public rendering, staff behavior and visual contracts"
   },
   "tools/e2e/upload-budget.spec.mjs": {
     "kind": "public",
-    "owners": [
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Public rendering, staff behavior and visual contracts"
   },
   "tools/e2e/visual-stored.spec.mjs": {
     "kind": "public",
-    "owners": [
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Public rendering, staff behavior and visual contracts"
   },
   "tools/e2e/visual.spec.mjs": {
     "kind": "public",
-    "owners": [
-      "public-web",
-      "staff-admin",
-      "content-contracts",
-      "backend-contracts"
-    ],
+    "owners": ["public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Public rendering, staff behavior and visual contracts"
   },
   "tools/modules/test-modules.mjs": {
