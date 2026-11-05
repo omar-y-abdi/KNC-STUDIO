@@ -3,6 +3,9 @@ import { test, expect } from './fixtures.mjs'
 import { harnessOrigin } from './origins.mjs'
 import { installPublicBackend, installStoredBackend } from './public-fixtures.mjs'
 
+// These cases send native touchscreen gestures through CDP.
+test.use({ hasTouch: true })
+
 for (const [stored, reducedMotion] of [
   [false, 'reduce'],
   [false, 'no-preference'],

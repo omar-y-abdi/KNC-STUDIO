@@ -3,6 +3,9 @@ import { test, expect } from './fixtures.mjs'
 import { harnessOrigin } from './origins.mjs'
 import { installPublicBackend, installStoredBackend } from './public-fixtures.mjs'
 
+// These cases send native touchscreen gestures through CDP.
+test.use({ hasTouch: true })
+
 // CDP captures compositor output, unlike reading layout inside an early rAF callback.
 // Chromium captures painted frames; mobile-viewport and keyboard tests cover all three engines.
 for (const [stored, reducedMotion, deviceScaleFactor] of [
