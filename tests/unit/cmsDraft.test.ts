@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
-import { emptyDocument } from '../../shared/cms'
-import { createSitePage } from '../../shared/site-page'
-import { CmsDraft, mergeCmsDocuments } from '../../src/admin/cms/draft'
-import { normalizeDocument } from '../../src/admin/cms/normalizeDocument'
+import { emptyDocument } from '../../packages/content-contracts/src/cms'
+import { createSitePage } from '../../packages/content-contracts/src/site-page'
+import { CmsDraft, mergeCmsDocuments } from '../../modules/studio/src/draft'
+import { normalizeDocument } from '../../modules/studio/src/normalizeDocument'
 
 function legacyDocument() {
   const document = emptyDocument()

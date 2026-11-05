@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { LazyLoadBoundary } from '../../src/ui/LazySurface'
+import { LazyLoadBoundary } from '../../modules/public-web/src/ui/LazySurface'
 
 describe('lazy surface error boundary', () => {
   it('replaces a failed lazy child with the visible recovery surface', () => {

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { mockServicesAdapter } from '../../src/booking/adapters/mockServices'
-import { asBarberId } from '../../src/booking/domain'
+import { mockServicesAdapter } from '../../modules/public-web/src/booking/adapters/mockServices'
+import { asBarberId } from '../../modules/public-web/src/booking/domain'
 
 describe('mockServicesAdapter', () => {
   it('returns no invented catalog for any barber', async () => {

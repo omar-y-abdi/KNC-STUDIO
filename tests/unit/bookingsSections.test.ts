@@ -4,9 +4,9 @@
 // directly, and inputs are fed OUT OF ORDER so the ordering assertions actually exercise the sort.
 
 import { describe, expect, it } from 'vitest'
-import { partitionSections } from '../../src/admin/views/bookingsSections'
-import type { AdminBooking } from '../../src/admin/types'
-import { stockholmInstant } from '../../src/booking/stockholmTime'
+import { partitionSections } from '../../modules/staff-admin/src/views/bookingsSections'
+import type { AdminBooking } from '../../modules/staff-admin/src/types'
+import { stockholmInstant } from '../../modules/public-web/src/booking/stockholmTime'
 
 // A fully-populated AdminBooking (all 13 fields); each test overrides only what it asserts on.
 function booking(overrides: Partial<AdminBooking>): AdminBooking {

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { runInNewContext } from 'node:vm'
 import { describe, expect, it } from 'vitest'
-import { CMS_THEME_SCRIPT } from '../../src/site/cmsThemeScript'
+import { CMS_THEME_SCRIPT } from '../../modules/public-web/src/site/cmsThemeScript'
 
 const scriptSources = (): readonly string[] => {
   const headers = readFileSync(new URL('../../public/_headers', import.meta.url), 'utf8')

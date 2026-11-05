@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { formatRowLabel, splitByTime } from '../../src/mybookings/format'
-import { asBarberId } from '../../src/booking/domain'
-import type { MyBooking } from '../../src/mybookings/domain'
+import { formatRowLabel, splitByTime } from '../../modules/public-web/src/mybookings/format'
+import { asBarberId } from '../../modules/public-web/src/booking/domain'
+import type { MyBooking } from '../../modules/public-web/src/mybookings/domain'
 
 // "now"/dates are injected, so these are fully deterministic (no clock read, no DOM).
 function mk(start: Date, id: string): MyBooking {

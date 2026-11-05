@@ -8,7 +8,7 @@ import {
   EMAIL_SEND_KINDS,
   HIDDEN_LINK,
   type EmailSendKind,
-} from '../../shared/email-send-log'
+} from '../../packages/backend-contracts/src/email-send-log'
 import {
   deliverEmailBatch,
   defaultEmailTemplate,
@@ -25,7 +25,11 @@ import {
   type PreparedEmail,
 } from '../../supabase/functions/_shared/emailSendLog'
 import { requestSchema as emailChangeRequest } from '../../supabase/functions/send-email-change/request'
-import { emptyDocument, validateCompleteDocument, type CmsEmail } from '../../shared/cms'
+import {
+  emptyDocument,
+  validateCompleteDocument,
+  type CmsEmail,
+} from '../../packages/content-contracts/src/cms'
 import { encryptCustomerAccessToken } from '../../supabase/functions/_shared/customerAccess'
 import { buildCustomerEmailLinkMessage } from '../../supabase/functions/_shared/customerEmailLink'
 import {

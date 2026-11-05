@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { packSlots } from '../../src/booking/slotPacking'
-import type { BlockedInterval } from '../../src/booking/slotPacking'
+import { packSlots } from '../../modules/public-web/src/booking/slotPacking'
+import type { BlockedInterval } from '../../modules/public-web/src/booking/slotPacking'
 
 // packSlots is the pure TS twin of the SQL `available_slots` RPC. These cases mirror EVERY worked
 // example in `.claude/runtime/SLOT_PACKING_SPEC.md` (open 09:00–18:00 = [540, 1080], STEP = 15) plus

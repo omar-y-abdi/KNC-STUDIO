@@ -9,7 +9,7 @@ then retry the Cloudflare build for that commit. Keep the compatibility check en
 ## Release order
 
 1. If the CMS backend or its shared validators changed, run `npm run cms:stamp` and commit
-   `shared/cms-release.ts` with the source. CI rejects a stale stamp. It covers the handler,
+   `packages/content-contracts/src/cms-release.ts` with the source. CI rejects a stale stamp. It covers the handler,
    import map, shared document and markup validators, and built-asset allowlist. Add new local
    backend dependencies to `releaseFiles` in `tools/release/cms-release.mjs`.
 2. Run applicable unit, browser, type and lint checks. Database migrations require their own
@@ -162,7 +162,7 @@ not fix stale validators, panel stacking or discarded styles.
 These fixes follow O-Y-A's `src/cms/client/editor.mjs`, `dom.mjs`, `inspector.mjs` and `app.mjs`:
 CSS-before-HTML import, native dialogs, explicit image picking and direct element controls.
 Booking/auth components remain native to Blade & Blend. Current created pages persist only their
-authored body and CSS. `shared/site-page.ts` renders the live homepage logo, current business
+authored body and CSS. `packages/content-contracts/src/site-page.ts` renders the live homepage logo, current business
 contact links, language/theme controls and page menu around that body, and the live privacy and
 terms footer below it, in the editor, locked preview and public Worker. The header and footer are
 locked in a created page's canvas; neither is materialized into another page-owned copy. Menus use
@@ -176,16 +176,16 @@ as frozen. Existing owner Contact bodies remain supported. New managed Contact t
 their required slots with `data-business-contact-page="1"`; information pages use the token/layout
 base, not created-page chrome.
 
-Update `shared/cms-release.ts` with shared validator changes and deploy the matching `cms-studio`
+Update `packages/content-contracts/src/cms-release.ts` with shared validator changes and deploy the matching `cms-studio`
 Function before the frontend. A source stamp or fixture publication does not prove that the
 production Function or database has been updated. The recovered feature and migration ledger is
 `docs/WIP_IMPLEMENTATION.md`.
 
-The editor's screenshot-driven visual contract lives in `src/admin/cms/DESIGN.md` and
+The editor's screenshot-driven visual contract lives in `modules/studio/src/DESIGN.md` and
 `UX-CONTRACT.md`. Chrome stays light when editing a dark website. Sidinställningar clears selection
 and opens page metadata in the right inspector; fit considers viewport height as well as width.
 
-Email preview imports `shared/email-render.ts`, the same pure renderer re-exported by
+Email preview imports `packages/content-contracts/src/email-render.ts`, the same pure renderer re-exported by
 `supabase/functions/_shared/email.ts`. It expands sample variables and shows actual booking rows,
 sender and subject. It never sends mail. When that shared renderer changes, deploy all importing
 entrypoints: `send-confirmation`, `send-recovery-email`, `send-email-change`, `admin-create-barber`,

@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { validateMarkup } from '../../shared/cms-markup'
+import { validateMarkup } from '../../packages/content-contracts/src/cms-markup'
 
 const policy = {
   siteOrigin: 'https://bladeblendstudio.se',

@@ -12,20 +12,31 @@
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { FunctionsHttpError } from '@supabase/supabase-js'
-import { getAdminClient } from '../../src/admin/adminClient'
+import { getAdminClient } from '../../modules/staff-admin/src/adminClient'
 import {
   createBarber,
   listBarbers,
   setBarberActive,
   updateBarber,
-} from '../../src/admin/adapters/barbersAdmin'
-import { removeBarberPhoto, uploadBarberPhoto } from '../../src/admin/adapters/barberPhotoAdmin'
-import { availableSlotsFor, readWeek, saveWeek } from '../../src/admin/adapters/schedulesAdmin'
-import { addTimeOff } from '../../src/admin/adapters/timeOffAdmin'
-import { cancelBooking } from '../../src/admin/adapters/bookingsAdmin'
-import { saveSiteSetting } from '../../src/admin/adapters/siteAdmin'
-import { setDayHours } from '../../src/admin/time'
-import { validateDocument, type CmsDocument, type CmsState } from '../../shared/cms'
+} from '../../modules/staff-admin/src/adapters/barbersAdmin'
+import {
+  removeBarberPhoto,
+  uploadBarberPhoto,
+} from '../../modules/staff-admin/src/adapters/barberPhotoAdmin'
+import {
+  availableSlotsFor,
+  readWeek,
+  saveWeek,
+} from '../../modules/staff-admin/src/adapters/schedulesAdmin'
+import { addTimeOff } from '../../modules/staff-admin/src/adapters/timeOffAdmin'
+import { cancelBooking } from '../../modules/staff-admin/src/adapters/bookingsAdmin'
+import { saveSiteSetting } from '../../modules/staff-admin/src/adapters/siteAdmin'
+import { setDayHours } from '../../modules/staff-admin/src/time'
+import {
+  validateDocument,
+  type CmsDocument,
+  type CmsState,
+} from '../../packages/content-contracts/src/cms'
 import { Client } from 'pg'
 import {
   OTHER_BARBER_ID,

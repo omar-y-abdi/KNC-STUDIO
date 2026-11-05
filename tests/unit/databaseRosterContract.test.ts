@@ -1,17 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { useRoster } from '../../src/booking/useRoster'
-import { useServices } from '../../src/booking/useServices'
-import { mockBarbersAdapter } from '../../src/booking/adapters/mockBarbers'
-import { mockServicesAdapter } from '../../src/booking/adapters/mockServices'
-import { asBarberId } from '../../src/booking/domain'
+import { useRoster } from '../../modules/public-web/src/booking/useRoster'
+import { useServices } from '../../modules/public-web/src/booking/useServices'
+import { mockBarbersAdapter } from '../../modules/public-web/src/booking/adapters/mockBarbers'
+import { mockServicesAdapter } from '../../modules/public-web/src/booking/adapters/mockServices'
+import { asBarberId } from '../../modules/public-web/src/booking/domain'
 import { hooks, render as renderWithHooks, reset } from './helpers/fakeHooks'
 
 vi.mock('preact/hooks', () => import('./helpers/fakeHooks'))
-vi.mock('../../src/booking/adapters/barbersIndex', () => ({
+vi.mock('../../modules/public-web/src/booking/adapters/barbersIndex', () => ({
   defaultBarbersPort: {},
   subscribeBookingCatalog: vi.fn(),
 }))
-vi.mock('../../src/booking/adapters/servicesIndex', () => ({ defaultServicesPort: {} }))
+vi.mock('../../modules/public-web/src/booking/adapters/servicesIndex', () => ({
+  defaultServicesPort: {},
+}))
 
 beforeEach(reset)
 afterEach(() => vi.unstubAllGlobals())

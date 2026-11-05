@@ -43,6 +43,7 @@ export async function customerStackFixture({ browserName }, use) {
     LOCAL_SUPABASE_URL: stack.API_URL,
     VITE_SUPABASE_ANON_KEY: stack.ANON_KEY,
     VITE_TURNSTILE_SITE_KEY: '1x00000000000000000000AA',
+    VITE_TURNSTILE_WIDGET_MODE: 'managed',
     CUSTOMER_GATEWAY_PROXY_URL: workerOrigin,
     LOCAL_WORKER_DOCUMENTS: '1',
     LOCAL_HTTPS_KEY: key,
@@ -150,6 +151,7 @@ export async function customerStackFixture({ browserName }, use) {
         'customer_booking_receipt_bookings',
         'booking_email_delivery_jobs',
         'booking_reminders',
+        'reviews',
       ])
         await db.query(
           `delete from public.${table} where booking_id in (select id from public.bookings where barber_id=$1)`,
@@ -163,6 +165,14 @@ export async function customerStackFixture({ browserName }, use) {
         await db.query('delete from public.booking_attempts where id=any($1)', [
           state.fixture.attempts,
         ])
+      await db.query(
+        "delete from public.public_action_attempts where action='review' and phone_hash=any($1::text[])",
+        [
+          state.fixture.people.map((person) =>
+            hash(`phone:${person.phone}:ci-public-action-hash-salt-not-for-production`),
+          ),
+        ],
+      )
       for (const table of ['bookings', 'services', 'barber_schedules'])
         await db.query(`delete from public.${table} where barber_id=$1`, [state.fixture.barber])
       await db.query('delete from public.barbers where id=$1', [state.fixture.barber])
@@ -247,7 +257,7 @@ export async function customerStackFixture({ browserName }, use) {
       workerConfig,
       JSON.stringify({
         name: 'knc-customer-browser',
-        main: resolve('src/worker.ts'),
+        main: resolve('supabase/worker/index.ts'),
         compatibility_date: '2026-08-09',
         vars: { SUPABASE_URL: `http://127.0.0.1:${upstreamAddress.port}` },
         assets: {

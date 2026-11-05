@@ -39,7 +39,7 @@ test('cms-context-latency', async ({ page, context, evidenceDir }) => {
     }
     const css = await page.evaluate(async () => {
       const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
-      const { readCanvasCss } = await import('/src/admin/cms/nativeCanvas.ts')
+      const { readCanvasCss } = await import('/modules/studio/src/nativeCanvas.ts')
       const editor = cmsGrapes.editors.at(-1)
       return {
         canvas: readCanvasCss(editor),
@@ -170,7 +170,7 @@ test('cms-context-latency', async ({ page, context, evidenceDir }) => {
     const patchContract = await page.evaluate(async () => {
       const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
       const { updateNativeCanvas, updateSiteHeader } =
-        await import('/src/admin/cms/updateCanvas.ts')
+        await import('/modules/studio/src/updateCanvas.ts')
       const host = globalThis.document.createElement('div')
       globalThis.document.body.append(host)
       const isolated = cmsGrapes.init({

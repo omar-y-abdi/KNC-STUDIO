@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { emptyDocument } from '../../shared/cms'
-import { validateDocumentMarkupPlacements } from '../../shared/cms-markup'
-import { CMS_BUILT_ASSETS } from '../../shared/cms-built-assets'
+import { emptyDocument } from '../../packages/content-contracts/src/cms'
+import { validateDocumentMarkupPlacements } from '../../packages/content-contracts/src/cms-markup'
+import { CMS_BUILT_ASSETS } from '../../packages/content-contracts/src/cms-built-assets'
 
 const policy = {
   siteOrigin: 'https://bladeblendstudio.se',

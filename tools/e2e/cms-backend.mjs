@@ -8,9 +8,9 @@ import {
   mediaKey,
   validateCompleteDocument,
   validateDocumentMedia,
-} from '../../shared/cms.ts'
-import { validateDocumentMarkupPlacements } from '../../shared/cms-markup.ts'
-import { CMS_BUILT_ASSETS } from '../../shared/cms-built-assets.ts'
+} from '../../packages/content-contracts/src/cms.ts'
+import { validateDocumentMarkupPlacements } from '../../packages/content-contracts/src/cms-markup.ts'
+import { CMS_BUILT_ASSETS } from '../../packages/content-contracts/src/cms-built-assets.ts'
 
 // A fake cms-studio and upload-image that answer like the real Edge functions and database:
 // the same validators, registration and missing-media checks, the archived-media rule, 409 on a

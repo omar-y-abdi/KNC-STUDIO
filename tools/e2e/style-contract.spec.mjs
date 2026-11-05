@@ -2,11 +2,11 @@
 // public/tokens.css and passes axe wcag2aa in both colour schemes. Static documents and the app's
 // status and staff screens are served by the preview build; /terms, /privacy and /contact are real Worker
 // render of the committed production fixture (tools/e2e/cms-render.mjs), both as stored and after
-// the Studio's legacy legal upgrade (src/admin/cms/legacyLegal.ts) that the owner publishes.
+// the Studio's legacy legal upgrade (modules/studio/src/legacyLegal.ts) that the owner publishes.
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { gunzipSync } from 'node:zlib'
-import { INFORMATION_PAGE_PATHS } from '../../shared/cms.ts'
+import { INFORMATION_PAGE_PATHS } from '../../packages/content-contracts/src/cms.ts'
 import { loadWorker, routeWorkerDocuments } from './cms-render.mjs'
 import { expect, test } from './fixtures.mjs'
 import { publicOrigin } from './origins.mjs'
@@ -19,7 +19,7 @@ const AXE_SOURCE = readFileSync(
 const fixture = JSON.parse(
   gunzipSync(readFileSync(new URL('./fixtures/presentation.json.gz', import.meta.url))),
 ).presentation
-// The homepage surface (src/app/shared.ts) that every tokenised page paints.
+// The homepage surface (modules/public-web/src/app/shared.ts) that every tokenised page paints.
 const SURFACE = { light: 'rgb(255, 255, 255)', dark: 'rgb(28, 28, 30)' }
 const WORKER_PATHS = INFORMATION_PAGE_PATHS
 // Where the token surface is painted: the app's status and staff screens on their own element, the
@@ -49,7 +49,7 @@ const presentations = { stored: fixture }
 test.beforeAll(async () => {
   shell = await (await fetch(`${publicOrigin}/index.html`)).text()
   rendering = await loadWorker()
-  const { upgradeLegacyLegalPages } = await rendering.load('/src/admin/cms/legacyLegal.ts')
+  const { upgradeLegacyLegalPages } = await rendering.load('/modules/studio/src/legacyLegal.ts')
   presentations.upgraded = upgradeLegacyLegalPages({ presentation: fixture }).presentation
   if (presentations.upgraded === fixture) throw new Error('The fixture has no legacy legal CSS')
   // Contact's new Studio import stores the fallback body and its own rules, without copying the

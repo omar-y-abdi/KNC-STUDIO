@@ -6,9 +6,9 @@ import { unhandledRejectionsDuring } from './helpers/unhandledRejections'
 // leaves during it, while the page still runs; that must pass without a trace. A failure while the
 // page stays still surfaces as an unhandled rejection, as before.
 
-const CONFIG = '../../src/backend/config'
-const CATALOG = '../../src/booking/adapters/supabaseBookingCatalog'
-const SITE_CHROME = '../../src/site/adapters/supabaseSiteChrome'
+const CONFIG = '../../modules/public-web/src/backend/config'
+const CATALOG = '../../modules/public-web/src/booking/adapters/supabaseBookingCatalog'
+const SITE_CHROME = '../../modules/public-web/src/site/adapters/supabaseSiteChrome'
 
 /** One adapter import, held until the test settles it. */
 interface HeldImport {
@@ -45,14 +45,16 @@ const SITES: Record<string, Site> = {
   'the booking-catalog preload': async () => {
     const adapter = vi.fn()
     const held = holdImport(CATALOG, { preloadBookingCatalog: adapter })
-    const { preloadBookingCatalog } = await import('../../src/booking/adapters/barbersIndex')
+    const { preloadBookingCatalog } =
+      await import('../../modules/public-web/src/booking/adapters/barbersIndex')
     preloadBookingCatalog()
     return { held, adapter }
   },
   'the booking-catalog subscription': async () => {
     const adapter = vi.fn(() => () => undefined)
     const held = holdImport(CATALOG, { subscribeBookingCatalog: adapter })
-    const { subscribeBookingCatalog } = await import('../../src/booking/adapters/barbersIndex')
+    const { subscribeBookingCatalog } =
+      await import('../../modules/public-web/src/booking/adapters/barbersIndex')
     subscribeBookingCatalog(() => undefined)
     return { held, adapter }
   },
@@ -61,7 +63,8 @@ const SITES: Record<string, Site> = {
     const held = holdImport(SITE_CHROME, {
       supabaseSiteChromeAdapter: { load: vi.fn(), subscribe: adapter },
     })
-    const { defaultSiteChromePort } = await import('../../src/site/adapters')
+    const { defaultSiteChromePort } =
+      await import('../../modules/public-web/src/site/adapters/index')
     defaultSiteChromePort.subscribe?.('sv', () => undefined)
     return { held, adapter }
   },

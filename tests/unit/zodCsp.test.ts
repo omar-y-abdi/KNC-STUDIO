@@ -25,7 +25,8 @@ it.each(['public', 'admin'] as const)(
       z.config({ jitless: false })
       vi.stubGlobal('Function', blockedFunction)
       if (entry === 'public') {
-        const { publicBusinessDiscoveryResponse } = await import('../../src/backend/rpcSchemas')
+        const { publicBusinessDiscoveryResponse } =
+          await import('../../packages/backend-contracts/src/rpcSchemas')
         expect(
           publicBusinessDiscoveryResponse.safeParse({
             settings: {},
@@ -45,7 +46,7 @@ it.each(['public', 'admin'] as const)(
       } else {
         // Import admin directly: its static parseWith re-export must configure the shared
         // dependency before this module constructs its first object schema.
-        const { profileRow } = await import('../../src/admin/adminSchemas')
+        const { profileRow } = await import('../../modules/staff-admin/src/adminSchemas')
         const profile = {
           role: 'owner',
           barber_id: null,

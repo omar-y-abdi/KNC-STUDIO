@@ -22,7 +22,7 @@ const passwordMocks = vi.hoisted(() => ({
   dispose: vi.fn(),
 }))
 
-vi.mock('../../src/admin/adminClient', () => ({
+vi.mock('../../modules/staff-admin/src/adminClient', () => ({
   createAdminAuthOperationClient: () => passwordMocks,
   clearStoredAdminSession: authMocks.clearStored,
   getAdminAuthClient: () => ({
@@ -46,8 +46,8 @@ import {
   redeemStaffInvitation,
   setOwnPasswordKeepSession,
   signIn,
-} from '../../src/admin/auth'
-import { invalidateAdminOperations } from '../../src/admin/orderedOperations'
+} from '../../modules/staff-admin/src/auth'
+import { invalidateAdminOperations } from '../../modules/staff-admin/src/orderedOperations'
 
 describe('admin account settings auth', () => {
   beforeEach(() => {

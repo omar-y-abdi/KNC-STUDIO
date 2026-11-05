@@ -1,12 +1,15 @@
 import { render } from 'preact'
 import { useState } from 'preact/hooks'
-import { emptyDocument } from '../../shared/cms'
-import { NativeSiteProvider, useNativeSurface } from '../../src/cms/NativeSurface'
-import { snapshotNative, mergeModes } from '../../src/admin/cms/nativePages'
-import { HomepageLogo } from '../../src/site/HomepageLogo'
-import { HeroLinks } from '../../src/about/HeroLinks'
-import { GalleryMarquee } from '../../src/about/GalleryMarquee'
-import { palette } from '../../src/booking/bookingStyles'
+import { emptyDocument } from '../../packages/content-contracts/src/cms'
+import {
+  NativeSiteProvider,
+  useNativeSurface,
+} from '../../modules/public-web/src/cms/NativeSurface'
+import { snapshotNative, mergeModes } from '../../modules/studio/src/nativePages'
+import { HomepageLogo } from '../../modules/public-web/src/site/HomepageLogo'
+import { HeroLinks } from '../../modules/public-web/src/about/HeroLinks'
+import { GalleryMarquee } from '../../modules/public-web/src/about/GalleryMarquee'
+import { palette } from '../../modules/public-web/src/booking/bookingStyles'
 
 export async function verifyNativeProjection(): Promise<string[]> {
   const host = document.createElement('div')

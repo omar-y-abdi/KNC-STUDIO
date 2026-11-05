@@ -72,7 +72,11 @@ describe('CI supply-chain pins', () => {
       npm: Record<string, { integrity: string }>
     }
     const specifiers = new Set(
-      ['supabase/functions', 'shared'].flatMap((directory) =>
+      [
+        'supabase/functions',
+        'packages/content-contracts/src',
+        'packages/backend-contracts/src',
+      ].flatMap((directory) =>
         readdirSync(directory, { recursive: true })
           .map(String)
           .filter((file) => file.endsWith('.ts'))

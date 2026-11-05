@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { resourceReference, validateMarkup } from '../../shared/cms-markup'
+import { resourceReference, validateMarkup } from '../../packages/content-contracts/src/cms-markup'
 
 // SQL reads stored references by their literal spelling; Edge may accept only that spelling.
 const policy = { siteOrigin: 'https://site.example', storageOrigin: 'https://media.example' }

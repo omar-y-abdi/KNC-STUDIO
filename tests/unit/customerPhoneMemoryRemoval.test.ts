@@ -14,7 +14,7 @@ describe('current public storage choice', () => {
         if (!blocked) cookie = value.split(';')[0] ?? ''
       },
     })
-    const consent = await import('../../src/site/storageConsent')
+    const consent = await import('../../modules/public-web/src/site/storageConsent')
     return {
       ...consent,
       changeCookie: (value: string) => {

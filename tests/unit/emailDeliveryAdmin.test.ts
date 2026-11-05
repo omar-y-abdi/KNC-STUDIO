@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { rpc } = vi.hoisted(() => ({ rpc: vi.fn() }))
 
-vi.mock('../../src/admin/adminClient', () => ({
+vi.mock('../../modules/staff-admin/src/adminClient', () => ({
   getAdminClient: () => ({ rpc }),
 }))
 
@@ -12,7 +12,7 @@ import {
   listEmailSendLog,
   listFailedBookingEmailDeliveries,
   retryFailedBookingEmailDelivery,
-} from '../../src/admin/adapters/emailDeliveryAdmin'
+} from '../../modules/staff-admin/src/adapters/emailDeliveryAdmin'
 
 beforeEach(() => rpc.mockReset())
 

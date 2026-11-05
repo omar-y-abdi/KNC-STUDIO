@@ -1,12 +1,12 @@
-// Reviews adapter ↔ live stack. Review writes require the short-lived customer-access session that
-// proves possession of the booking email, and the submitted phone must match that session's scope.
-// The tests seed the server-side session directly, then drive the real browser adapter + Edge gateway.
+// Verified-email reviews adapter ↔ live stack. These tests preserve the email-session path;
+// deviceReviews.test.ts covers exact-booking receipt access without an email exchange.
+// The submitted phone remains a booking cross-check within the authorized scope.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createHash, randomBytes } from 'node:crypto'
-import { supabaseReviewsAdapter } from '../../src/about/reviews/adapters/supabaseReviews'
-import { supabaseMyBookingsAdapter } from '../../src/mybookings/adapters/supabaseMyBookings'
-import type { Phone } from '../../src/booking/validation'
+import { supabaseReviewsAdapter } from '../../modules/public-web/src/about/reviews/adapters/supabaseReviews'
+import { supabaseMyBookingsAdapter } from '../../modules/public-web/src/mybookings/adapters/supabaseMyBookings'
+import type { Phone } from '../../modules/public-web/src/booking/validation'
 import {
   backendReady,
   readStackEnv,

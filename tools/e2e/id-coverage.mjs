@@ -1,6 +1,6 @@
 // LIB-14 id coverage, the comparison half. id-coverage.spec.mjs reads stored and live source nodes
 // in the browser; this module decides, without a DOM, which stored edits the live tree would lose.
-// projectNativeTree (src/cms/NativeSurface.tsx) resolves every stored id against the live nativeTree
+// projectNativeTree (modules/public-web/src/cms/NativeSurface.tsx) resolves every stored id against the live nativeTree
 // output, in which an element is a source (a native element) or a slot (the wrapper of a component):
 //  - an element that carries both attributes is resolved as a slot, which is read first, while
 //    duplicates are counted by its source id, which is the one projectNativeTree registers;

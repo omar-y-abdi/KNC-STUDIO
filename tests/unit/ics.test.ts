@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { escapeIcsText, buildIcs } from '../../src/booking/ics'
+import { escapeIcsText, buildIcs } from '../../modules/public-web/src/booking/ics'
 
 describe('escapeIcsText (RFC 5545)', () => {
   it('escapes backslash, comma, semicolon and newlines', () => {

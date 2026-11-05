@@ -1,11 +1,11 @@
 import { expect, it } from 'vitest'
-import { scaledZoom } from '../../src/admin/cms/hierarchicalResize'
+import { scaledZoom } from '../../modules/studio/src/hierarchicalResize'
 import {
   desktopMarqueeCardStyle,
   stretchesToTrack,
   type TrackStretchInput,
-} from '../../src/admin/cms/resizeStyles'
-import { syncLayout } from '../../src/admin/cms/responsiveStyles'
+} from '../../modules/studio/src/resizeStyles'
+import { syncLayout } from '../../modules/studio/src/responsiveStyles'
 
 // Initial computed values of a card and its parent, as getComputedStyle reports them.
 const card = { justifySelf: 'auto', alignSelf: 'auto', aspectRatio: 'auto' }

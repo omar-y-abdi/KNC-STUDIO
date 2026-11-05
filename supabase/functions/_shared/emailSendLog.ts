@@ -3,12 +3,12 @@ import {
   buildEmailMessage,
   type EmailBuildInput,
   type EmailMessage,
-} from '../../../shared/email-render.ts'
+} from '../../../packages/content-contracts/src/email-render.ts'
 import {
   HIDDEN_LINK,
   type EmailSendKind,
   type EmailSendOutcome,
-} from '../../../shared/email-send-log.ts'
+} from '../../../packages/backend-contracts/src/email-send-log.ts'
 
 /**
  * Whether a kind's call-to-action link is a bearer credential: an Auth token_hash, the permanent

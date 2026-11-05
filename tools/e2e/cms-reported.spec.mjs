@@ -5,13 +5,13 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import { gunzipSync } from 'node:zlib'
-import { EMAIL_NAMES } from '../../shared/cms.ts'
+import { EMAIL_NAMES } from '../../packages/content-contracts/src/cms.ts'
 import {
   SITE_PAGE_CSS,
   createSitePage,
   dropFrozenChrome,
   renderSitePage,
-} from '../../shared/site-page.ts'
+} from '../../packages/content-contracts/src/site-page.ts'
 import { defaultEmailTemplate } from '../../supabase/functions/_shared/email.ts'
 import { nativeBackend } from './cms-backend.mjs'
 import { loadWorker, renderPublicDocument, routeWorkerDocuments } from './cms-render.mjs'
@@ -309,7 +309,7 @@ for (const partial of [false, true])
     // This is the same shared validation pipeline used by the real cms-studio validate/publish
     // handlers. An arbitrary legacy body must not depend on capturing a replacement template.
     const validated = await page.evaluate(async (document) => {
-      const { cmsApi } = await import('/src/admin/cms/api.ts')
+      const { cmsApi } = await import('/modules/studio/src/api.ts')
       return cmsApi.validate(document)
     }, document)
     expect(validated.document.presentation.pages[0].content).toEqual(contact.content)
@@ -440,8 +440,8 @@ test.describe('contact upgrade', () => {
     const result = await page.evaluate(
       async ({ fixture, source }) => {
         const { ensureCorePages, hasCorePageLayouts, needsCorePageSource } =
-          await import('/src/admin/cms/corePages.ts')
-        const { emptyDocument } = await import('/shared/cms.ts')
+          await import('/modules/studio/src/corePages.ts')
+        const { emptyDocument } = await import('/packages/content-contracts/src/cms.ts')
         const document = emptyDocument()
         document.presentation = fixture
         const before = JSON.stringify(document)
@@ -552,7 +552,7 @@ test.describe('contact upgrade', () => {
       await page.reload()
       await page.evaluate(
         async ({ backup, draft }) => {
-          const session = await (await import('/src/admin/cms/backup.ts')).cmsBackups()
+          const session = await (await import('/modules/studio/src/backup.ts')).cmsBackups()
           session.schedule({
             document: draft,
             base: backup.base,
@@ -640,10 +640,10 @@ test('contact remains core after import with another id, a name edit and menu vi
   await creation.getByRole('button', { name: 'Avbryt', exact: true }).click()
   const links = await page.evaluate(async (presentation) => {
     const { h, render } = await import('/tools/e2e/admin-harness.tsx')
-    const { NativeSiteProvider } = await import('/src/cms/NativeSurface.tsx')
-    const { SitePageLinks } = await import('/src/cms/SitePageLinks.tsx')
-    const { menuLinks } = await import('/shared/site-page.ts')
-    const { isNativePublicPath } = await import('/src/site/routeMetadata.ts')
+    const { NativeSiteProvider } = await import('/modules/public-web/src/cms/NativeSurface.tsx')
+    const { SitePageLinks } = await import('/modules/public-web/src/cms/SitePageLinks.tsx')
+    const { menuLinks } = await import('/packages/content-contracts/src/site-page.ts')
+    const { isNativePublicPath } = await import('/modules/public-web/src/site/routeMetadata.ts')
     const host = globalThis.document.createElement('div')
     try {
       render(
@@ -1035,7 +1035,7 @@ test.describe('a locked preview with an uploaded font', () => {
     if (!font) throw new Error('The uploaded font is not registered')
     await page.evaluate(
       async (asset) => {
-        const { cmsApi } = await import('/src/admin/cms/api.ts')
+        const { cmsApi } = await import('/modules/studio/src/api.ts')
         await cmsApi.assetLifecycle(asset, 'archive')
       },
       { id: font.id, version: font.version },
@@ -1427,7 +1427,7 @@ test('stored styling on Contact slot children looks the same in Studio, the lock
 
 // Företag & SEO fills every legal business slot on every page that needs it, so the owner never
 // enters it page by page (owner decision, 2026-11-03). Studio locks exactly the slots the Worker
-// fills, from the same definitions (src/site/businessSlots.ts), and only on /privacy and /terms.
+// fills, from the same definitions (modules/public-web/src/site/businessSlots.ts), and only on /privacy and /terms.
 const LEGAL_PAGES = [
   [
     'Integritetspolicy',
@@ -2004,12 +2004,16 @@ test('legal page shows the owner body colours in the canvas and to visitors', as
   }
 })
 
-const LEGACY_LEGAL_CSS = Object.fromEntries(
-  ['terms', 'privacy'].map((kind) => [
-    `/${kind}`,
-    readFileSync(new URL(`../../src/admin/cms/legacy-legal-${kind}.txt`, import.meta.url), 'utf8'),
-  ]),
-)
+const LEGACY_LEGAL_CSS = {
+  '/terms': readFileSync(
+    new URL('../../modules/studio/src/legacy-legal-terms.txt', import.meta.url),
+    'utf8',
+  ),
+  '/privacy': readFileSync(
+    new URL('../../modules/studio/src/legacy-legal-privacy.txt', import.meta.url),
+    'utf8',
+  ),
+}
 const OWNER_CSS = '\n.owner-edit{letter-spacing:.01em}'
 
 /** The document as a draft saved before the legal upgrade held it (legacy sheets, bare <main>), with
@@ -2040,7 +2044,7 @@ async function savedBackup(page) {
   await page.getByRole('textbox', { name: 'Namn', exact: true }).fill('Återställningstestets källa')
   const read = () =>
     page.evaluate(async () => {
-      const session = await (await import('/src/admin/cms/backup.ts')).cmsBackups()
+      const session = await (await import('/modules/studio/src/backup.ts')).cmsBackups()
       await session.flush()
       return session.own()
     })
@@ -2065,7 +2069,7 @@ test('legal upgrade survives a pre-upgrade local draft', async ({ page, studio }
   await page.reload()
   await page.evaluate(
     async ({ backup, draft }) => {
-      const session = await (await import('/src/admin/cms/backup.ts')).cmsBackups()
+      const session = await (await import('/modules/studio/src/backup.ts')).cmsBackups()
       session.schedule({
         document: draft,
         revision: backup.revision,
@@ -2115,7 +2119,7 @@ test('legal upgrade survives conflict resolution, Undo and Redo', async ({ page,
   // Another session publishes the legacy pages, so this draft's next publication is stale.
   await page.evaluate(
     async ({ legacyHead, revision, fingerprint }) =>
-      (await import('/src/admin/cms/api.ts')).cmsApi.publish(
+      (await import('/modules/studio/src/api.ts')).cmsApi.publish(
         legacyHead,
         revision,
         fingerprint,
@@ -2130,8 +2134,8 @@ test('legal upgrade survives conflict resolution, Undo and Redo', async ({ page,
   // Match resolveConflict's pristine adoption of the authoritative raw server head, including
   // whitespace preserved by the legal migration. Import's DOM reserialization is a different path.
   const migratedServerHead = await page.evaluate(async (rawServerHead) => {
-    const { withCorePages } = await import('/src/admin/cms/corePages.ts')
-    const { normalizeDocument } = await import('/src/admin/cms/normalizeDocument.ts')
+    const { withCorePages } = await import('/modules/studio/src/corePages.ts')
+    const { normalizeDocument } = await import('/modules/studio/src/normalizeDocument.ts')
     return normalizeDocument(withCorePages(rawServerHead))
   }, backend.document)
   const serverHead = Object.fromEntries(
@@ -2727,7 +2731,8 @@ test.describe('booking scenes', () => {
     const { frame, shot } = studio
     const captured = await studio.capture()
     const legacyUpgrade = await page.evaluate(async (capturedDocument) => {
-      const { ensureCorePages, needsCorePageSource } = await import('/src/admin/cms/corePages.ts')
+      const { ensureCorePages, needsCorePageSource } =
+        await import('/modules/studio/src/corePages.ts')
       const sourceDocument = globalThis.structuredClone(capturedDocument)
       const document = globalThis.structuredClone(capturedDocument)
       const page = document.presentation.pages.find((item) => item.path === '/booking')
@@ -3055,7 +3060,7 @@ const collisionStudio = async (page, context, body) => {
   raw.presentation.pages.push(created)
   await page.goto(`${base}/tools/e2e/admin-harness.html`)
   const { stored, adopted } = await page.evaluate(async (document) => {
-    const { normalizeDocument } = await import('/src/admin/cms/normalizeDocument.ts')
+    const { normalizeDocument } = await import('/modules/studio/src/normalizeDocument.ts')
     const stored = normalizeDocument(document)
     return { stored, adopted: normalizeDocument(stored) === stored }
   }, raw)
@@ -3068,7 +3073,7 @@ const collisionStudio = async (page, context, body) => {
     document.presentation.pages.find((item) => item.path === '/collision')
   // The shared validation pipeline of the cms-studio validate and publish handlers accepts it.
   const validated = await page.evaluate(async (document) => {
-    const { cmsApi } = await import('/src/admin/cms/api.ts')
+    const { cmsApi } = await import('/modules/studio/src/api.ts')
     return cmsApi.validate(document)
   }, stored)
   expect(collision(validated.document).content.sv.html).toBe(body)

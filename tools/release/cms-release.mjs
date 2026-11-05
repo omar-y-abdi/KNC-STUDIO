@@ -3,19 +3,20 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const root = new URL('../../', import.meta.url)
-const stampFile = new URL('shared/cms-release.ts', root)
+const stampFile = new URL('packages/content-contracts/src/cms-release.ts', root)
 // Complete local dependency set of cms-studio. External imports are pinned in these files.
 export const releaseFiles = [
+  'packages/content-contracts/package.json',
   'supabase/functions/cms-studio/index.ts',
   'supabase/functions/cms-studio/copyAsset.ts',
   'supabase/functions/cms-studio/request.ts',
   'supabase/functions/cms-studio/deno.json',
   'supabase/functions/_shared/http.ts',
-  'shared/cms.ts',
-  'shared/cms-primitives.ts',
-  'shared/email-design.ts',
-  'shared/cms-markup.ts',
-  'shared/cms-built-assets.ts',
+  'packages/content-contracts/src/cms.ts',
+  'packages/content-contracts/src/cms-primitives.ts',
+  'packages/content-contracts/src/email-design.ts',
+  'packages/content-contracts/src/cms-markup.ts',
+  'packages/content-contracts/src/cms-built-assets.ts',
 ]
 
 export function releaseDigest(read = (path) => readFileSync(new URL(path, root), 'utf8')) {

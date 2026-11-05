@@ -2,19 +2,19 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { rpc } = vi.hoisted(() => ({ rpc: vi.fn() }))
 
-vi.mock('../../src/admin/adminClient', () => ({
+vi.mock('../../modules/staff-admin/src/adminClient', () => ({
   getAdminClient: () => ({ rpc }),
 }))
 
-import { saveWeek } from '../../src/admin/adapters/schedulesAdmin'
-import { addSlotBlock } from '../../src/admin/adapters/slotBlocksAdmin'
-import { addTimeOff } from '../../src/admin/adapters/timeOffAdmin'
+import { saveWeek } from '../../modules/staff-admin/src/adapters/schedulesAdmin'
+import { addSlotBlock } from '../../modules/staff-admin/src/adapters/slotBlocksAdmin'
+import { addTimeOff } from '../../modules/staff-admin/src/adapters/timeOffAdmin'
 import {
   addRecurringBreak,
   deleteRecurringBreak,
-} from '../../src/admin/adapters/recurringBreaksAdmin'
-import { createManualBooking } from '../../src/admin/adapters/bookingsAdmin'
-import { defaultWeek } from '../../src/admin/time'
+} from '../../modules/staff-admin/src/adapters/recurringBreaksAdmin'
+import { createManualBooking } from '../../modules/staff-admin/src/adapters/bookingsAdmin'
+import { defaultWeek } from '../../modules/staff-admin/src/time'
 
 beforeEach(() => rpc.mockReset())
 

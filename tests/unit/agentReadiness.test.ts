@@ -1,12 +1,16 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 import { parse, type DefaultTreeAdapterMap } from 'parse5'
-import worker, { PublicContent, renderContactMetadata, renderLlmsText } from '../../src/worker'
+import worker, {
+  PublicContent,
+  renderContactMetadata,
+  renderLlmsText,
+} from '../../supabase/worker/index'
 import {
   buildBusinessStructuredData,
   DEFAULT_BUSINESS,
   EMPTY_BUSINESS_FACTS,
-} from '../../src/site/business'
+} from '../../modules/public-web/src/site/business'
 
 type HtmlNode = DefaultTreeAdapterMap['node']
 

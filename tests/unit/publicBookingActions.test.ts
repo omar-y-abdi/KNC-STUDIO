@@ -1,20 +1,20 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('../../src/backend/config', () => ({
+vi.mock('../../modules/public-web/src/backend/config', () => ({
   SUPABASE_URL: 'https://example.supabase.co',
   SUPABASE_ANON_KEY: 'test-anon-key',
 }))
 
-import { invokePublicBookingAction } from '../../src/backend/publicBookingActions'
-import { supabaseBookingAdapter } from '../../src/booking/adapters/supabaseBooking'
-import { asBarberId, type Booking } from '../../src/booking/domain'
+import { invokePublicBookingAction } from '../../modules/public-web/src/backend/publicBookingActions'
+import { supabaseBookingAdapter } from '../../modules/public-web/src/booking/adapters/supabaseBooking'
+import { asBarberId, type Booking } from '../../modules/public-web/src/booking/domain'
 import {
   customerAccessExchangeResponse,
   customerAccessRequestResponse,
   customerBookingCancelResponse,
   listCustomerBookingsResponse,
   parseWith,
-} from '../../src/backend/rpcSchemas'
+} from '../../packages/backend-contracts/src/rpcSchemas'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -47,13 +47,21 @@ describe('public booking action gateway client', () => {
     expect(parseWith(customerBookingCancelResponse, { ok: true }).ok).toBe(true)
   })
 
-  it('forwards protected action payloads unchanged', async () => {
-    const payload = {
-      action: 'request_access' as const,
+  it.each([
+    {
+      action: 'request_access',
       email: 'customer@example.com',
-      lang: 'sv' as const,
+      lang: 'sv',
       turnstileToken: 'challenge-token',
-    }
+    },
+    {
+      action: 'review',
+      phone: '0701234567',
+      rating: 5,
+      text: 'Fixture review.',
+      turnstileToken: 'challenge-token',
+    },
+  ] as const)('forwards $action unchanged with same-origin cookie credentials', async (payload) => {
     const fetch = vi
       .fn()
       .mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }))

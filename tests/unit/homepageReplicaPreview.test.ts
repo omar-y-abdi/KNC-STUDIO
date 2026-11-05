@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { DesktopSitePreviewPorts } from '../../src/app/DesktopSite'
-import { readOnlyHomepagePreviewPorts } from '../../src/cms/homepageReplicaPorts'
-import { asBarberId } from '../../src/booking/domain'
+import type { DesktopSitePreviewPorts } from '../../modules/public-web/src/app/DesktopSite'
+import { readOnlyHomepagePreviewPorts } from '../../modules/public-web/src/cms/homepageReplicaPorts'
+import { asBarberId } from '../../modules/public-web/src/booking/domain'
 
 describe('homepage replica preview ports', () => {
   it('keeps production reads but blocks booking and review writes', async () => {

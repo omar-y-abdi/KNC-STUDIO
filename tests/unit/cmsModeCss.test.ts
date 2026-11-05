@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { modeCss } from '../../shared/cms-mode-css'
+import { modeCss } from '../../packages/content-contracts/src/cms-mode-css'
 import { generate, parse, type StyleSheet } from 'css-tree'
 
 describe('explicit CMS theme', () => {

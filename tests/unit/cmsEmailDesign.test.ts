@@ -1,12 +1,12 @@
-import { buildEmailMessage } from '../../shared/email-render'
+import { buildEmailMessage } from '../../packages/content-contracts/src/email-render'
 import { describe, expect, it } from 'vitest'
 import {
   defaultEmailDesign,
   emptyDocument,
   validateCompleteDocument,
   validateDocument,
-} from '../../shared/cms'
-import { renderDesignedEmail } from '../../shared/cms-email'
+} from '../../packages/content-contracts/src/cms'
+import { renderDesignedEmail } from '../../packages/content-contracts/src/cms-email'
 
 function emailFixture() {
   return {

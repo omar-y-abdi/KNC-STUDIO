@@ -14,12 +14,12 @@ import {
   scalePx,
   textOrDefault,
   SIZE_PRESETS,
-} from '../../src/site/siteChrome'
+} from '../../modules/public-web/src/site/siteChrome'
 import {
   canReplaceDocumentMetadata,
   createSiteChromeVisibilityLifecycle,
   resolveSiteChromeSnapshot,
-} from '../../src/site/useSiteChrome'
+} from '../../modules/public-web/src/site/useSiteChrome'
 
 describe('parseScale', () => {
   it('passes through the four valid presets', () => {

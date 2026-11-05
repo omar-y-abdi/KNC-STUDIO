@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { emptyDocument, type CmsAsset } from '../../shared/cms'
+import { emptyDocument, type CmsAsset } from '../../packages/content-contracts/src/cms'
 import {
   siteResources,
   editSiteResource,
   replaceSiteResource,
-} from '../../shared/cms-site-resources'
+} from '../../packages/content-contracts/src/cms-site-resources'
 
 const asset: CmsAsset = {
   id: '28000000-0000-4000-8000-000000000001',

@@ -8,7 +8,7 @@ import {
   localWallClockToStockholmIso,
   stockholmInstant,
   stockholmWallClockDate,
-} from '../../src/booking/stockholmTime'
+} from '../../modules/public-web/src/booking/stockholmTime'
 
 describe('stockholmInstant — DST-correct wall-clock → UTC', () => {
   it('CET (winter, UTC+1): 2040-03-14 13:30 Stockholm = 12:30:00Z', () => {

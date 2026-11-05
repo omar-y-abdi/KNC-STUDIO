@@ -3,37 +3,55 @@
 
 import { h, render } from 'preact'
 import { useRef, useState } from 'preact/hooks'
-import { BookingFlow } from '../../src/booking/BookingFlow'
-import { AboutSection } from '../../src/about/AboutSection'
-import { DesktopSite, type DesktopSitePreviewPorts } from '../../src/app/DesktopSite'
-import { shellPalette } from '../../src/app/shared'
-import { appStrings, bookingStrings, type Lang } from '../../src/i18n/index'
-import { DEFAULT_BUSINESS } from '../../src/config'
-import { asBarberId } from '../../src/booking/domain'
+import { BookingFlow } from '../../modules/public-web/src/booking/BookingFlow'
+import { AboutSection } from '../../modules/public-web/src/about/AboutSection'
+import {
+  DesktopSite,
+  type DesktopSitePreviewPorts,
+} from '../../modules/public-web/src/app/DesktopSite'
+import { shellPalette } from '../../modules/public-web/src/app/shared'
+import { appStrings, bookingStrings, type Lang } from '../../modules/public-web/src/i18n/index'
+import { DEFAULT_BUSINESS } from '../../modules/public-web/src/config'
+import { asBarberId } from '../../modules/public-web/src/booking/domain'
 import type {
   CustomerEmailLinkResult,
   CustomerProfile,
   MyBookingsResult,
   MyCancelResult,
-} from '../../src/mybookings/domain'
-import { MyBookingsDialog } from '../../src/mybookings/MyBookingsDialog'
-import type { MyBookingsListParams, MyBookingsPort } from '../../src/mybookings/port'
-import { ServicesView, type ServicesViewPort } from '../../src/admin/views/ServicesView'
-import { ProfileView, type ProfileViewPort } from '../../src/admin/views/ProfileView'
-import { BookingsView, type BookingsViewPort } from '../../src/admin/views/BookingsView'
-import type { AdminBooking, AdminResult, AdminService } from '../../src/admin/types'
-import { AdminShell } from '../../src/admin/AdminShell'
-import { AdminApp } from '../../src/admin/AdminApp'
-import { CmsStudio } from '../../src/admin/cms/Studio'
-import { App } from '../../src/app/App'
-import { buildAdminStyles } from '../../src/admin/adminStyles'
-import { palette } from '../../src/booking/bookingStyles'
-import { err, ok } from '../../src/admin/types'
-import { SettingsView, type SettingsViewPort } from '../../src/admin/views/SettingsView'
-import { DeliveryStatus, type DeliveryStatusPort } from '../../src/admin/cms/DeliveryStatus'
-import { CalendarConnectButton } from '../../src/admin/calendar/CalendarConnectButton'
-import type { CalendarStatus, CalendarSyncPort } from '../../src/admin/calendar/port'
-import { useCalendarSync, type UseCalendarSync } from '../../src/admin/calendar/useCalendarSync'
+} from '../../modules/public-web/src/mybookings/domain'
+import { MyBookingsDialog } from '../../modules/public-web/src/mybookings/MyBookingsDialog'
+import type {
+  MyBookingsListParams,
+  MyBookingsPort,
+} from '../../modules/public-web/src/mybookings/port'
+import {
+  ServicesView,
+  type ServicesViewPort,
+} from '../../modules/staff-admin/src/views/ServicesView'
+import { ProfileView, type ProfileViewPort } from '../../modules/staff-admin/src/views/ProfileView'
+import {
+  BookingsView,
+  type BookingsViewPort,
+} from '../../modules/staff-admin/src/views/BookingsView'
+import type { AdminBooking, AdminResult, AdminService } from '../../modules/staff-admin/src/types'
+import { AdminShell } from '../../modules/staff-admin/src/AdminShell'
+import { AdminApp } from '../../modules/staff-admin/src/AdminApp'
+import { CmsStudio } from '../../modules/studio/src/Studio'
+import { App } from '../../modules/public-web/src/app/App'
+import { buildAdminStyles } from '../../modules/staff-admin/src/adminStyles'
+import { palette } from '../../modules/public-web/src/booking/bookingStyles'
+import { err, ok } from '../../modules/staff-admin/src/types'
+import {
+  SettingsView,
+  type SettingsViewPort,
+} from '../../modules/staff-admin/src/views/SettingsView'
+import { DeliveryStatus, type DeliveryStatusPort } from '../../modules/studio/src/DeliveryStatus'
+import { CalendarConnectButton } from '../../modules/staff-admin/src/calendar/CalendarConnectButton'
+import type { CalendarStatus, CalendarSyncPort } from '../../modules/staff-admin/src/calendar/port'
+import {
+  useCalendarSync,
+  type UseCalendarSync,
+} from '../../modules/staff-admin/src/calendar/useCalendarSync'
 
 export { h, render }
 

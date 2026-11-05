@@ -240,6 +240,15 @@ test('customer access, booking, CMS publication and HTTPS cookie contracts', asy
     ignoreHTTPSErrors: true,
     reducedMotion: 'reduce',
   })
+  let receiptEmailExchanges = 0
+  receiptContext.on('request', (request) => {
+    if (
+      request.method() === 'POST' &&
+      new URL(request.url()).pathname === '/api/customer-bookings' &&
+      ['request_access', 'exchange_access'].includes(request.postDataJSON()?.action)
+    )
+      receiptEmailExchanges++
+  })
   const receiptPages = await Promise.all([receiptContext.newPage(), receiptContext.newPage()])
   // The supported cancellation cutoff reaches seven days. A fixed 11:00 appointment
   // three dates ahead can already be inside a 72-hour cutoff in an afternoon run.
@@ -411,6 +420,52 @@ test('customer access, booking, CMS publication and HTTPS cookie contracts', asy
     'device cancellation did not persist',
   )
 
+  phase(`customer ${browserName}: device-only completed booking reviews without an email link`)
+  const remainingBooking = (await listFrom(receiptPages[0])).bookings[0]
+  assert(remainingBooking, 'missing uncancelled device booking for review')
+  // Advance only this CI fixture appointment. Production eligibility remains database time.
+  await db.query(
+    "update public.bookings set start_at=now()-interval '2 days', end_at=now()-interval '2 days'+interval '30 minutes' where id=$1",
+    [remainingBooking.id],
+  )
+  await receiptPages[0].goto(`${origin}/about`, { waitUntil: 'domcontentloaded' })
+  await receiptPages[0].getByRole('textbox', { name: /Telefonnummer/ }).fill(a.phone)
+  await receiptPages[0]
+    .getByRole('textbox', { name: 'Ditt omdöme', exact: true })
+    .fill(`Device review ${marker}`)
+  await receiptPages[0].getByRole('radio').last().click()
+  const reviewResponse = receiptPages[0].waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === '/api/customer-bookings' &&
+      response.request().postDataJSON()?.action === 'review',
+  )
+  await receiptPages[0].getByRole('button', { name: 'Lämna ett omdöme', exact: true }).click()
+  const review = await (await reviewResponse).json()
+  assert(review.ok === true, `device review rejected: ${JSON.stringify(review)}`)
+  await expect(receiptPages[0].getByText('Tack för ditt omdöme!', { exact: true })).toBeVisible()
+  assert(
+    receiptEmailExchanges === 0 &&
+      !(await receiptContext.cookies()).some(
+        (cookie) => cookie.name === '__Host-bladeblend_customer_session',
+      ),
+    'device review required or silently established email access',
+  )
+  assert(
+    !(await receiptPages[0].evaluate(() =>
+      globalThis.document.cookie.includes('bladeblend_booking_receipts'),
+    )),
+    'review exposed the HttpOnly device credential',
+  )
+  const savedReview = await db.query('select booking_id,name from public.reviews where id=$1', [
+    review.review.id,
+  ])
+  assert(
+    savedReview.rows.length === 1 &&
+      savedReview.rows[0].booking_id === remainingBooking.id &&
+      savedReview.rows[0].name === 'Customer A.',
+    'device review did not persist against its exact booking with the server-derived name',
+  )
+
   phase(`customer ${browserName}: withdrawing optional storage removes only receipt access`)
   const preferencesPage = await receiptContext.newPage()
   await preferencesPage.goto(origin, { waitUntil: 'domcontentloaded' })
@@ -552,7 +607,7 @@ test('customer access, booking, CMS publication and HTTPS cookie contracts', asy
   await showHistory(page, a)
   await context.close()
   console.log(
-    `Customer browser passed: ${browserName}, mobile/desktop, actual cookie/profile switch, blocked cookies, invalid link, rotation, concurrent first bookings, consent and device cancellation.`,
+    `Customer browser passed: ${browserName}, mobile/desktop, actual cookie/profile switch, blocked cookies, invalid link, rotation, concurrent first bookings, consent, device cancellation and device-only review.`,
   )
 
   await cleanupFixture()

@@ -11,12 +11,16 @@
 // adapters call `getAdminClient()` (the same singleton), which this file signs in once in beforeAll.
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { getAdminClient } from '../../src/admin/adminClient'
-import { readWeek, saveWeek } from '../../src/admin/adapters/schedulesAdmin'
-import { addTimeOff, deleteTimeOff, listTimeOff } from '../../src/admin/adapters/timeOffAdmin'
-import { listBookings, cancelBooking } from '../../src/admin/adapters/bookingsAdmin'
-import { setDayHours } from '../../src/admin/time'
-import type { WeekSchedule } from '../../src/admin/types'
+import { getAdminClient } from '../../modules/staff-admin/src/adminClient'
+import { readWeek, saveWeek } from '../../modules/staff-admin/src/adapters/schedulesAdmin'
+import {
+  addTimeOff,
+  deleteTimeOff,
+  listTimeOff,
+} from '../../modules/staff-admin/src/adapters/timeOffAdmin'
+import { listBookings, cancelBooking } from '../../modules/staff-admin/src/adapters/bookingsAdmin'
+import { setDayHours } from '../../modules/staff-admin/src/time'
+import type { WeekSchedule } from '../../modules/staff-admin/src/types'
 import {
   BARBER_EMAIL,
   BARBER_LINK_ID,

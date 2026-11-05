@@ -2,21 +2,22 @@ import { readFileSync } from 'node:fs'
 import { expect, test } from './fixtures.mjs'
 import { harnessOrigin } from './origins.mjs'
 
-const templates = Object.fromEntries(
-  ['/privacy', '/terms', '/contact'].map((path) => [
-    path,
-    readFileSync(new URL(`../../public${path}.html`, import.meta.url), 'utf8'),
-  ]),
-)
+const templates = {
+  '/privacy': readFileSync(new URL('../../public/privacy.html', import.meta.url), 'utf8'),
+  '/terms': readFileSync(new URL('../../public/terms.html', import.meta.url), 'utf8'),
+  '/contact': readFileSync(new URL('../../public/contact.html', import.meta.url), 'utf8'),
+}
 
 test('adding a missing Contact preserves complete owner information pages byte for byte', async ({
   page,
 }) => {
   await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html?view=cms-studio`)
   const result = await page.evaluate(async (templates) => {
-    const { emptyDocument, validateDocument } = await import('/shared/cms.ts')
-    const { validateDocumentMarkupPlacements } = await import('/shared/cms-markup.ts')
-    const { CORE_PAGE_IDS, ensureCorePages } = await import('/src/admin/cms/corePages.ts')
+    const { emptyDocument, validateDocument } =
+      await import('/packages/content-contracts/src/cms.ts')
+    const { validateDocumentMarkupPlacements } =
+      await import('/packages/content-contracts/src/cms-markup.ts')
+    const { CORE_PAGE_IDS, ensureCorePages } = await import('/modules/studio/src/corePages.ts')
     const source = Object.entries(templates).map(([path, template], index) => {
       const parsed = new globalThis.DOMParser().parseFromString(template, 'text/html')
       const css = [...parsed.querySelectorAll('style')]

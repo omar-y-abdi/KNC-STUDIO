@@ -7,7 +7,7 @@
 //
 // The live tree is read exactly where the CMS captured the stored one: the source renderer at
 // /cms-public/source, driven by the same `knc-source-context` messages and device sizes as
-// readCorePageSource (src/admin/cms/nativePages.ts). Its data comes from the stored entities in
+// readCorePageSource (modules/studio/src/nativePages.ts). Its data comes from the stored entities in
 // public-fixtures.mjs; the clock is fixed in the captured month, because the stored booking
 // calendar is September 2026 and its cells depend on the month.
 

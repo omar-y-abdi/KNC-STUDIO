@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { gunzipSync } from 'node:zlib'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { CmsPage, CmsPresentation } from '../../shared/cms'
-import worker from '../../src/worker'
+import type { CmsPage, CmsPresentation } from '../../packages/content-contracts/src/cms'
+import worker from '../../supabase/worker/index'
 
 // G23 (PR #104 final gate): what a /contact request reads. The committed revision-56 publication
 // holds no Contact page and is 1.35 MB of JSON; every request for /contact used to read and validate
@@ -41,7 +41,7 @@ const contact: CmsPage = {
                 contactSource.indexOf('</body>'),
               )
             : readFileSync(
-                new URL('../../src/admin/cms/contact.en.html', import.meta.url),
+                new URL('../../modules/studio/src/contact.en.html', import.meta.url),
                 'utf8',
               ).trim(),
         css: { light: '', dark: '' },

@@ -1,7 +1,11 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { emptyDocument, SITE_KEYS, validateDocument } from '../../shared/cms'
-import { SITE_TEXT_KEYS } from '../../src/site/siteChrome'
+import {
+  emptyDocument,
+  SITE_KEYS,
+  validateDocument,
+} from '../../packages/content-contracts/src/cms'
+import { SITE_TEXT_KEYS } from '../../modules/public-web/src/site/siteChrome'
 
 // The migration that last defines internal_cms_document is the read model the database runs.
 const DEFINITION = /create (?:or replace )?function public\.internal_cms_document\(\)/g

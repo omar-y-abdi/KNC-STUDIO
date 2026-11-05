@@ -8,7 +8,7 @@ const booking = vi.hoisted(() => ({
   renders: [] as { readonly mode: string; readonly typed: string }[],
   type: (() => undefined) as (value: string) => void,
 }))
-vi.mock('../../src/booking/BookingFlow', () => ({
+vi.mock('../../modules/public-web/src/booking/BookingFlow', () => ({
   BookingFlow: ({ mode }: { readonly mode: string }) => {
     const [typed, setTyped] = useState('')
     booking.type = setTyped
@@ -16,10 +16,12 @@ vi.mock('../../src/booking/BookingFlow', () => ({
     return null
   },
 }))
-vi.mock('../../src/about/AboutSection', () => ({ AboutSection: () => null }))
-vi.mock('../../src/mybookings/MyBookingsDialog', () => ({ MyBookingsDialog: () => null }))
+vi.mock('../../modules/public-web/src/about/AboutSection', () => ({ AboutSection: () => null }))
+vi.mock('../../modules/public-web/src/mybookings/MyBookingsDialog', () => ({
+  MyBookingsDialog: () => null,
+}))
 
-const { mountCmsRuntime } = await import('../../src/cmsRuntime')
+const { mountCmsRuntime } = await import('../../modules/public-web/src/cmsRuntime')
 
 function mountBookingIsland(cmsMode: string, osDark: boolean) {
   booking.renders.length = 0

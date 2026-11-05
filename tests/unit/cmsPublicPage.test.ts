@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import type { CmsPage } from '../../shared/cms'
-import { renderCmsPage } from '../../src/worker'
+import type { CmsPage } from '../../packages/content-contracts/src/cms'
+import { renderCmsPage } from '../../supabase/worker/index'
 
 const page: CmsPage = {
   id: '10000000-0000-4000-8000-000000000001',

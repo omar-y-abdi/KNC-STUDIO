@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { mediaUrl, type CmsAsset } from '../../shared/cms'
+import { mediaUrl, type CmsAsset } from '../../packages/content-contracts/src/cms'
 
 describe('CMS asset media URLs', () => {
   it('accepts a validated CmsAsset even though it carries metadata beyond its media reference', () => {

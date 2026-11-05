@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { colorControls, type StyleProperty } from '../../src/admin/cms/colorControls'
+import { colorControls, type StyleProperty } from '../../modules/studio/src/colorControls'
 
 // A Style Manager property as GrapesJS builds it: `view` is set once PropertyView renders it.
 const property = (

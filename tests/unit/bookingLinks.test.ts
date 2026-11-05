@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { buildLinks } from '../../src/booking/adapters/localCalendar'
-import type { Barber, Booking, ServiceItem } from '../../src/booking/domain'
-import { asBarberId } from '../../src/booking/domain'
-import type { BusinessSettings } from '../../src/site/siteChrome'
+import { buildLinks } from '../../modules/public-web/src/booking/adapters/localCalendar'
+import type { Barber, Booking, ServiceItem } from '../../modules/public-web/src/booking/domain'
+import { asBarberId } from '../../modules/public-web/src/booking/domain'
+import type { BusinessSettings } from '../../modules/public-web/src/site/siteChrome'
 
 // buildLinks is the pure, client-side calendar/map link builder used by BOTH the mock and (on a
 // successful submit) the Supabase adapter — so the confirmation modal's .ics / Google Cal / maps

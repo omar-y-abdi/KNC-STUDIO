@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, it } from 'vitest'
-import { bookingStrings, myBookingsStrings } from '../../src/i18n/index'
-import { buildBookingStyles, palette } from '../../src/booking/bookingStyles'
+import { bookingStrings, myBookingsStrings } from '../../modules/public-web/src/i18n/index'
+import { buildBookingStyles, palette } from '../../modules/public-web/src/booking/bookingStyles'
 
 const styleSheet = { cssRules: { length: 0 }, insertRule: (): void => undefined }
 const styleElement = { sheet: styleSheet }
@@ -13,8 +13,8 @@ Object.defineProperty(globalThis, 'document', {
 })
 
 const [{ DetailsDialog }, { ConfirmationDialog }] = await Promise.all([
-  import('../../src/booking/DetailsDialog'),
-  import('../../src/booking/ConfirmationDialog'),
+  import('../../modules/public-web/src/booking/DetailsDialog'),
+  import('../../modules/public-web/src/booking/ConfirmationDialog'),
 ])
 
 afterAll(() => {

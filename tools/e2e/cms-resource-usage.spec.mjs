@@ -32,7 +32,7 @@ test('cms-resource-usage', async ({ page }) => {
   )
   await page.goto(`${base}/tools/e2e/admin-harness.html`)
   await page.evaluate(async () => {
-    const { emptyDocument } = await import('/shared/cms.ts')
+    const { emptyDocument } = await import('/packages/content-contracts/src/cms.ts')
     const { mountResources } = await import('/tools/e2e/cms-resources-harness.tsx')
     mountResources(
       [
@@ -79,7 +79,7 @@ test('cms-resource-usage', async ({ page }) => {
         else super.postMessage(value, ...args)
       }
     }
-    const { emptyDocument } = await import('/shared/cms.ts')
+    const { emptyDocument } = await import('/packages/content-contracts/src/cms.ts')
     const { mountResources } = await import('/tools/e2e/cms-resources-harness.tsx')
     const document = emptyDocument()
     const html =

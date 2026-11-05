@@ -1,14 +1,12 @@
+import type { TurnstilePolicy } from '../../../packages/backend-contracts/src/turnstile.ts'
+export type { TurnstilePolicy } from '../../../packages/backend-contracts/src/turnstile.ts'
+
 export const TURNSTILE_VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify'
 
 export type TurnstileFetch = (
   input: string | URL | Request,
   init?: RequestInit,
 ) => Promise<Response>
-
-export interface TurnstilePolicy {
-  readonly action: 'booking' | 'customer_access' | 'review' | 'password_recovery'
-  readonly hostnames: readonly string[]
-}
 
 /** Hostnames come from deployment configuration, never the caller's Origin/header/body. */
 export function turnstilePolicy(

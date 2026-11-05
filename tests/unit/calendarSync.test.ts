@@ -21,19 +21,19 @@ import {
   verifyState,
   withGoogleRetry,
 } from '../../supabase/functions/_shared/calendar'
-import worker, { PublicContent } from '../../src/worker'
-import { parseCalendarStatus } from '../../src/admin/calendar/status'
+import worker, { PublicContent } from '../../supabase/worker/index'
+import { parseCalendarStatus } from '../../modules/staff-admin/src/calendar/status'
 
 const { calendarStatusRpc } = vi.hoisted(() => ({ calendarStatusRpc: vi.fn() }))
 
-vi.mock('../../src/admin/adminClient', () => ({
+vi.mock('../../modules/staff-admin/src/adminClient', () => ({
   getAdminClient: () => ({
     rpc: calendarStatusRpc,
     functions: { invoke: vi.fn() },
   }),
 }))
 
-import { supabaseCalendarSyncPort } from '../../src/admin/calendar/adapters/supabaseCalendarSync'
+import { supabaseCalendarSyncPort } from '../../modules/staff-admin/src/calendar/adapters/supabaseCalendarSync'
 
 const SECRET = 'unit-test-state-secret'
 const NOW_MS = 1_700_000_000_000

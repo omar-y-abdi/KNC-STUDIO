@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { parseServiceRow, validateManualReservationPrice } from '../../src/admin/serviceValidation'
+import {
+  parseServiceRow,
+  validateManualReservationPrice,
+} from '../../modules/staff-admin/src/serviceValidation'
 
 describe('parseServiceRow', () => {
   it('accepts a valid row and trims the name', () => {

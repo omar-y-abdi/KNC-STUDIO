@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { QueryResult } from 'pg'
 import { describe, expect, it } from 'vitest'
-import type { CmsState } from '../../shared/cms'
+import type { CmsState } from '../../packages/content-contracts/src/cms'
 import { readEnvVars, withClient } from './_helpers'
 
 // The publisher must recheck authority after its last lock wait. A request can pass the

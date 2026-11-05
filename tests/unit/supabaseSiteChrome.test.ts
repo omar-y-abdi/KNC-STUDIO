@@ -16,7 +16,7 @@ const state = vi.hoisted(() => ({
   realtimeAvailable: true,
 }))
 
-vi.mock('../../src/backend/config', () => ({
+vi.mock('../../modules/public-web/src/backend/config', () => ({
   get SUPABASE_URL() {
     return state.supabaseUrl
   },
@@ -24,7 +24,7 @@ vi.mock('../../src/backend/config', () => ({
   isBackendConfigured: () => true,
 }))
 
-vi.mock('../../src/backend/publicRealtime', () => ({
+vi.mock('../../modules/public-web/src/backend/publicRealtime', () => ({
   getPublicRealtime: () => {
     const channel = {
       on: vi.fn(
@@ -50,7 +50,7 @@ vi.mock('../../src/backend/publicRealtime', () => ({
   },
 }))
 
-import { supabaseSiteChromeAdapter } from '../../src/site/adapters/supabaseSiteChrome'
+import { supabaseSiteChromeAdapter } from '../../modules/public-web/src/site/adapters/supabaseSiteChrome'
 import { unhandledRejectionsDuring } from './helpers/unhandledRejections'
 
 const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0))

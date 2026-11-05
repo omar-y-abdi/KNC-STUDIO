@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseReview } from '../../src/about/reviewValidation'
+import { parseReview } from '../../modules/public-web/src/about/reviewValidation'
 
 describe('parseReview', () => {
   const valid = { phone: '0701234567', rating: 5 as const, text: 'Great fade, calm room.' }

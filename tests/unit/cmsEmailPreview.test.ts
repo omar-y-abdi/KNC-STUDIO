@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { EMAIL_NAMES, emptyDocument, defaultEmailDesign } from '../../shared/cms'
+import {
+  EMAIL_NAMES,
+  emptyDocument,
+  defaultEmailDesign,
+} from '../../packages/content-contracts/src/cms'
 import {
   buildEmailMessage as deliveredEmail,
   defaultEmailTemplate,
 } from '../../supabase/functions/_shared/email'
-import { buildEmailMessage } from '../../shared/email-render'
-import { emailPreviewInput, renderEmailPreview } from '../../src/admin/cms/emailPreview'
+import { buildEmailMessage } from '../../packages/content-contracts/src/email-render'
+import { emailPreviewInput, renderEmailPreview } from '../../modules/studio/src/emailPreview'
 
 describe('CMS email preview uses transactional delivery', () => {
   it('has one renderer for preview and outgoing mail', () => {

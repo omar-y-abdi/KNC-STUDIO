@@ -60,7 +60,7 @@ test('cms-interaction-latency', async ({ page, context, evidenceDir }) => {
       assert.equal(await page.locator('#cms-layers .gjs-layer').count(), 0)
     }
     const normalization = await page.evaluate(async () => {
-      const { exportNativeCanvas } = await import('/src/admin/cms/nativeCanvas.ts')
+      const { exportNativeCanvas } = await import('/modules/studio/src/nativeCanvas.ts')
       const ids = Array.from({ length: 100 }, (_, index) => `latency-${index}`)
       const original = 'color:rgb(255,0,0);font-size:16px'
       const html = `<div data-knc-native="1">${ids

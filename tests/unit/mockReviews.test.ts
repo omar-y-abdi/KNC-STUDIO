@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { mockReviewsAdapter } from '../../src/about/reviews/adapters/mockReviews'
-import type { Phone } from '../../src/booking/validation'
+import { mockReviewsAdapter } from '../../modules/public-web/src/about/reviews/adapters/mockReviews'
+import type { Phone } from '../../modules/public-web/src/booking/validation'
 describe('mockReviewsAdapter', () => {
   it('lists no testimonials because the local fallback has no published-review authority', async () => {
     const list = await mockReviewsAdapter.list()

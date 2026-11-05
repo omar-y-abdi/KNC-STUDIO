@@ -7,10 +7,14 @@
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { gunzipSync } from 'node:zlib'
-import { emptyDocument, validateCompleteDocument, validateDocumentMedia } from '../../shared/cms.ts'
-import { CMS_BUILT_ASSETS } from '../../shared/cms-built-assets.ts'
-import { validateDocumentMarkupPlacements } from '../../shared/cms-markup.ts'
-import { createSitePage } from '../../shared/site-page.ts'
+import {
+  emptyDocument,
+  validateCompleteDocument,
+  validateDocumentMedia,
+} from '../../packages/content-contracts/src/cms.ts'
+import { CMS_BUILT_ASSETS } from '../../packages/content-contracts/src/cms-built-assets.ts'
+import { validateDocumentMarkupPlacements } from '../../packages/content-contracts/src/cms-markup.ts'
+import { createSitePage } from '../../packages/content-contracts/src/site-page.ts'
 import { loadWorker, renderPublicDocument, routeWorkerDocuments } from './cms-render.mjs'
 import { expect, test } from './fixtures.mjs'
 import { harnessOrigin, publicOrigin } from './origins.mjs'
@@ -24,7 +28,7 @@ const fixture = JSON.parse(
   gunzipSync(readFileSync(new URL('./fixtures/presentation.json.gz', import.meta.url))),
 ).presentation
 
-// What the Studio's "Skapa ny sida" dialog creates with its defaults (src/admin/cms/Studio.tsx,
+// What the Studio's "Skapa ny sida" dialog creates with its defaults (modules/studio/src/Studio.tsx,
 // createPage): only the body template of createSitePage; the Worker adds the live header.
 function studioCreatedPage() {
   return createSitePage({
@@ -459,12 +463,10 @@ test.describe('owner CSS on html and body', () => {
 // at an already published CMS page. In production those aliases redirect and the destination is
 // rendered inside the built app shell, whose asset stylesheet is not a legal source stylesheet.
 test.describe('legal source preparation', () => {
-  const templates = Object.fromEntries(
-    ['privacy', 'terms'].map((kind) => [
-      `/${kind}`,
-      readFileSync(new URL(`../../public/${kind}.html`, import.meta.url), 'utf8'),
-    ]),
-  )
+  const templates = {
+    '/privacy': readFileSync(new URL('../../public/privacy.html', import.meta.url), 'utf8'),
+    '/terms': readFileSync(new URL('../../public/terms.html', import.meta.url), 'utf8'),
+  }
 
   for (const missingLayouts of [false, true]) {
     test(
@@ -514,14 +516,14 @@ test.describe('legal source preparation', () => {
         await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
         const result = await page.evaluate(
           async ({ presentation, templates, missingLayouts }) => {
-            const { emptyDocument } = await import('/shared/cms.ts')
+            const { emptyDocument } = await import('/packages/content-contracts/src/cms.ts')
             const {
               canOpenStoredPages,
               ensureCorePages,
               hasCorePageLayouts,
               needsCorePageSource,
               prepareCorePageSource,
-            } = await import('/src/admin/cms/corePages.ts')
+            } = await import('/modules/studio/src/corePages.ts')
             const document = emptyDocument()
             document.presentation = presentation
             const legal = (pages) => pages.filter(({ path }) => path in templates)
@@ -626,7 +628,7 @@ test.describe('owner stylesheet bytes in the served shell', () => {
       contactSource.indexOf('</body>'),
     ),
     en: readFileSync(
-      new URL('../../src/admin/cms/contact.en.html', import.meta.url),
+      new URL('../../modules/studio/src/contact.en.html', import.meta.url),
       'utf8',
     ).trim(),
   }

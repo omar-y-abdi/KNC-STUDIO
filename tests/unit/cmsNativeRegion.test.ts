@@ -2,13 +2,13 @@ import { h, isValidElement, render, type ComponentChildren, type VNode } from 'p
 import { act } from 'preact/test-utils'
 import type * as PreactHooks from 'preact/hooks'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { emptyPresentation } from '../../shared/cms'
+import { emptyPresentation } from '../../packages/content-contracts/src/cms'
 import {
   NativeRegion,
   type NativeInstanceOptions,
   type useNativeSurface,
-} from '../../src/cms/NativeSurface'
-import { createInstanceScope } from '../../src/cms/instanceScope'
+} from '../../modules/public-web/src/cms/NativeSurface'
+import { createInstanceScope } from '../../modules/public-web/src/cms/instanceScope'
 
 type RegionProps = Parameters<typeof NativeRegion>[0]
 type SurfaceOptions = NonNullable<Parameters<typeof useNativeSurface>[4]>

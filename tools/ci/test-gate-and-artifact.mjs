@@ -51,7 +51,7 @@ test('workflow keeps plain Bash, formatted source, strict browser reports and pr
     assert.equal(job.if, 'always()')
     const gate = job.steps.find((step) => step.run?.startsWith('node tools/ci/check-gate.mjs '))
     assert.ok(gate)
-    assert.deepEqual(gate.run.split(' ').slice(2).sort(), job.needs.toSorted())
+    assert.deepEqual(gate.run.split(' ').slice(3).sort(), job.needs.toSorted())
     for (const dependency of job.needs) assert.ok(workflow.jobs[dependency])
   }
   for (const id of ['public-browsers', 'cms', 'startup', 'database-current']) {
@@ -132,11 +132,7 @@ test('the YAML parser is a direct exact dependency matching the existing install
 test('CI documentation describes event coverage and the actual preparation owners', () => {
   const docs = readFileSync('docs/CI.md', 'utf8').replace(/\s+/g, ' ')
   assert.doesNotMatch(docs, /runs the complete graph|source identity verification and Furl setup/)
-  assert.ok(
-    docs.includes(
-      'Pull requests, pushes to `main`, and manual runs use the full Chromium and WebKit CMS matrices, each split across nine shards',
-    ),
-  )
+  assert.ok(docs.includes('Pushes to `main` and manual runs always use full verification'))
   assert.ok(docs.includes('Furl setup and regression tests belong to the quality job'))
   assert.ok(docs.includes(workflow.jobs.cms.container.image))
   assert.ok(docs.includes('UID 1001'))
@@ -169,7 +165,10 @@ test('only browser-only jobs use the matching Playwright image and skip browser 
   const install = action('ci-browsers').runs.steps
   assert.ok(install.some((step) => step.uses?.startsWith('actions/cache@')))
   assert.ok(install.some((step) => step.run?.includes('playwright install --with-deps')))
-  assert.deepEqual(workflow.jobs['public-browsers'].strategy.matrix.shard, [1, 2])
+  assert.equal(
+    workflow.jobs['public-browsers'].strategy.matrix,
+    '${{ fromJSON(needs.format.outputs.public_matrix) }}',
+  )
   assert.deepEqual(workflow.jobs.startup.strategy.matrix.engine, ['chromium', 'webkit'])
 })
 
@@ -379,4 +378,99 @@ test('shared build verification rejects corrupt, missing, extra and stale-source
   manifest.source.commit = '0'.repeat(40)
   await writeFile(join(root, 'artifact.json'), JSON.stringify(manifest))
   await assert.rejects(verifyArtifact(root), /different source/)
+})
+
+test('affected workflow binds every consumer and omission to the formatted producer', () => {
+  assert.equal(workflow.env.CI_BASE_SHA, '${{ github.event.pull_request.base.sha }}')
+  assert.equal(workflow.env.CI_HEAD_SHA, '${{ github.sha }}')
+  assert.equal(workflow.env.CI_EVENT_NAME, '${{ github.event_name }}')
+  const format = workflow.jobs.format.steps
+  const record = format.findIndex((step) => step.name === 'Record the exact tested source')
+  const derive = format.findIndex((step) => step.id === 'impact')
+  const upload = format.findIndex((step) => step.uses?.startsWith('actions/upload-artifact@'))
+  assert.ok(record >= 0 && derive > record && upload > derive)
+  assert.ok(format[upload].with.path.includes('/impact.json'))
+  const node = action('ci-node').runs.steps
+  assert.ok(
+    node.findIndex((step) => step.run === 'node tools/ci/impact-plan.mjs verify') >
+      node.findIndex((step) => step.run === 'npm ci'),
+  )
+  for (const [id, job] of Object.entries(workflow.jobs)) {
+    const checkout = job.steps.find((step) => step.uses?.startsWith('actions/checkout@'))
+    assert.equal(checkout.with['fetch-depth'], 0, id)
+    if (!['format', 'quality', 'frontend', 'database'].includes(id))
+      assert.equal(job.if, `needs.format.outputs.${id} == 'true'`, id)
+    if (id !== 'format')
+      assert.ok(
+        job.steps.some((step) => step.uses === './.github/actions/ci-node'),
+        id,
+      )
+  }
+  for (const id of ['quality', 'build', 'edge-functions', 'database-rollout'])
+    assert.ok(
+      workflow.jobs[id].steps.some(
+        (step) =>
+          step.run?.includes('verify-source .ci-source') &&
+          step.run.includes('impact-plan.mjs verify'),
+      ),
+      id,
+    )
+  for (const id of ['frontend', 'database']) {
+    assert.ok(workflow.jobs[id].needs.includes('format'))
+    const gate = workflow.jobs[id].steps.find((step) => step.run?.includes('check-gate.mjs'))
+    assert.ok(gate.run.includes('check-gate.mjs --plan '))
+  }
+  assert.deepEqual(workflow.jobs.frontend.needs, [
+    'format',
+    'quality',
+    'build',
+    'public-browsers',
+    'cms',
+    'startup',
+    'edge-functions',
+  ])
+  assert.deepEqual(workflow.jobs.database.needs, ['format', 'database-current', 'database-rollout'])
+  for (const [id, group] of [
+    ['cms', 'cms'],
+    ['public-browsers', 'public'],
+    ['startup', 'startup'],
+    ['database-current', 'customer'],
+  ]) {
+    const prefix = `node tools/ci/impact-plan.mjs browser ${group}`
+    const commands = workflow.jobs[id].steps
+      .flatMap((step) => (step.run ?? '').split('\n'))
+      .filter((command) => command.startsWith(prefix))
+    assert.equal(commands.length, 2, id)
+    assert.equal(commands[0].split(' --list --reporter=json > ')[0], commands[1], id)
+  }
+  const quality = workflow.jobs.quality.steps.map((step) => step.run ?? '').join('\n')
+  for (const command of [
+    'node tools/modules/boundaries.mjs',
+    'node --test tools/modules/test*.mjs',
+    'node tools/ci/impact-plan.mjs units',
+    'npm run lint',
+    'npm run typecheck',
+    'npm audit --omit=dev --audit-level=high',
+  ])
+    assert.ok(quality.includes(command), command)
+  const ignore = readFileSync('.gitignore', 'utf8').split('\n')
+  for (const path of ['/.ci-source/', '/.ci-build/', '/.ci-expected.json'])
+    assert.ok(ignore.includes(path))
+  assert.ok(!ignore.some((line) => /^\/?\.ci-\*/.test(line)))
+})
+
+test('affected selection does not weaken any test job timeout', () => {
+  const minutes = {
+    format: 10,
+    quality: 10,
+    build: 10,
+    'public-browsers': 15,
+    cms: 25,
+    startup: 10,
+    'edge-functions': 15,
+    'database-current': 20,
+    'database-rollout': 15,
+  }
+  for (const [id, expected] of Object.entries(minutes))
+    assert.equal(workflow.jobs[id]['timeout-minutes'], expected, id)
 })

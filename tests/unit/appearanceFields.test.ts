@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { emptyDocument, validateDocument } from '../../shared/cms'
-import { APPEARANCE_FIELDS } from '../../src/admin/cms/appearanceFields'
+import { emptyDocument, validateDocument } from '../../packages/content-contracts/src/cms'
+import { APPEARANCE_FIELDS } from '../../modules/studio/src/appearanceFields'
 import {
   HOMEPAGE_LOGO_SCALE_KEY,
   HOMEPAGE_LOGO_STYLE_KEY,
   HOMEPAGE_SCALE_KEY,
   ABOUT_SCALE_KEY,
-} from '../../src/site/siteChrome'
+} from '../../modules/public-web/src/site/siteChrome'
 
 describe('Studio appearance presets', () => {
   it('cover exactly the four presets the removed Startsida tab used to write', () => {

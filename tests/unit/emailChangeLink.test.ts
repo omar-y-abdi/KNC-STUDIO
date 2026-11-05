@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseEmailChangeToken } from '../../src/admin/emailChangeLink'
+import { parseEmailChangeToken } from '../../modules/staff-admin/src/emailChangeLink'
 
 describe('parseEmailChangeToken', () => {
   it('reads an email-change token hash from the branded callback URL', () => {

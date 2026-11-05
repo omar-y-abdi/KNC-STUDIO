@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
-import { emptyDocument } from '../../shared/cms'
-import { CmsDraft } from '../../src/admin/cms/draft'
+import { emptyDocument } from '../../packages/content-contracts/src/cms'
+import { CmsDraft } from '../../modules/studio/src/draft'
 
 it('keeps new edits and unrelated server normalization after publication', () => {
   const draft = new CmsDraft(emptyDocument(), 1, 'old')

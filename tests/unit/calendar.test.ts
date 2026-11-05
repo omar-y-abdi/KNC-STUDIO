@@ -1,23 +1,29 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
-import { BookingFlow } from '../../src/booking/BookingFlow'
-import { pad2, cap, iso, buildWeeks, isSelectableBookingDate } from '../../src/booking/calendar'
-import { stockholmWallClockDate } from '../../src/booking/stockholmTime'
+import { BookingFlow } from '../../modules/public-web/src/booking/BookingFlow'
+import {
+  pad2,
+  cap,
+  iso,
+  buildWeeks,
+  isSelectableBookingDate,
+} from '../../modules/public-web/src/booking/calendar'
+import { stockholmWallClockDate } from '../../modules/public-web/src/booking/stockholmTime'
 import { nodes, render, reset } from './helpers/fakeHooks'
 
 vi.mock('preact/hooks', () => import('./helpers/fakeHooks'))
-vi.mock('../../src/ui/Dialog', () => ({ Dialog: () => null }))
-vi.mock('../../src/ui/pseudo', () => ({ FOCUS_CLS: '', pseudoClass: () => '' }))
-vi.mock('../../src/cms/NativeSurface', () => ({
+vi.mock('../../modules/public-web/src/ui/Dialog', () => ({ Dialog: () => null }))
+vi.mock('../../modules/public-web/src/ui/pseudo', () => ({ FOCUS_CLS: '', pseudoClass: () => '' }))
+vi.mock('../../modules/public-web/src/cms/NativeSurface', () => ({
   NativeRegion: () => null,
   useNativeChild: () => (node: unknown) => node,
 }))
-vi.mock('../../src/booking/useRoster', () => ({
+vi.mock('../../modules/public-web/src/booking/useRoster', () => ({
   useRoster: () => ({
     roster: [{ barber: { id: 'owner-barber', name: 'Owner Barber', ig: '' } }],
     loading: false,
   }),
 }))
-vi.mock('../../src/booking/useServices', () => ({
+vi.mock('../../modules/public-web/src/booking/useServices', () => ({
   useServices: () => ({ services: [], loading: false }),
 }))
 

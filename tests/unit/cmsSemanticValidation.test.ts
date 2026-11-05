@@ -10,7 +10,7 @@ import {
   type CmsDocument,
   type CmsEmail,
   type MediaRef,
-} from '../../shared/cms'
+} from '../../packages/content-contracts/src/cms'
 
 const barber = (): CmsBarber => ({
   id: 'test-barber',

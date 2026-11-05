@@ -10,12 +10,12 @@ import worker, {
   renderLlmsText,
   renderPrivateMetadata,
   renderLegalMetadata,
-} from '../../src/worker'
+} from '../../supabase/worker/index'
 import {
   buildBusinessStructuredData,
   resolveBusinessSettings,
   type BusinessSettings,
-} from '../../src/site/business'
+} from '../../modules/public-web/src/site/business'
 
 const assetBodies: Readonly<Record<string, string>> = {
   '/index.html': '<main>homepage</main>',
@@ -731,4 +731,125 @@ describe('CMS legal page rendering', () => {
       expect(head.headers.get('Cache-Control')).toBe('no-store')
     },
   )
+})
+
+describe('bounded private metadata rewriting', () => {
+  it('stops metadata searches at leading matches even with a large body', () => {
+    const body = '<body>' + 'UPPERCASE BODY TEXT '.repeat(100_000) + '</body>'
+    const head =
+      '<meta property="og:url" content="old"><link rel="canonical" href="old"><meta name="robots" content="index">'
+    const started = performance.now()
+    const rendered = renderPrivateMetadata(head + body, '/login')
+    const elapsed = performance.now() - started
+    expect(rendered).toBe(
+      '<meta property="og:url" content="https://bladeblendstudio.se/login"><meta name="robots" content="noindex, nofollow">' +
+        body,
+    )
+    expect(elapsed).toBeLessThan(250)
+  })
+
+  it('leaves a long near-miss metadata tag unchanged without retrying each property', () => {
+    const source = '<meta ' + 'property="og:url" '.repeat(10_000) + '>'
+    const started = performance.now()
+    expect(renderPrivateMetadata(source, '/login')).toBe(source)
+    expect(performance.now() - started).toBeLessThan(1_000)
+  })
+})
+
+describe('metadata byte compatibility', () => {
+  it.each([
+    [
+      '<meta property="og:url" content="old">',
+      '<meta property="og:url" content="https://bladeblendstudio.se/login">',
+    ],
+    [
+      'İ <META PROPERTY="OG:URL" CONTENT="old"> tail',
+      'İ <META PROPERTY="OG:URL" CONTENT="https://bladeblendstudio.se/login"> tail',
+    ],
+    ['<meta content="old" property="og:url">', '<meta content="old" property="og:url">'],
+    ["<meta property='og:url' content='old'>", "<meta property='og:url' content='old'>"],
+    [
+      '<meta property="og:url" content="first" content="last">',
+      '<meta property="og:url" content="first" content="https://bladeblendstudio.se/login">',
+    ],
+    [
+      '<meta property="og:url" content="first"><meta property="og:url" content="second">',
+      '<meta property="og:url" content="https://bladeblendstudio.se/login"><meta property="og:url" content="second">',
+    ],
+    ['<meta property="og:url" content="old', '<meta property="og:url" content="old'],
+    [
+      '<meta property="og:url" content="old"',
+      '<meta property="og:url" content="https://bladeblendstudio.se/login"',
+    ],
+    [
+      '<meta property="og:url" content="old>tail" suffix',
+      '<meta property="og:url" content="https://bladeblendstudio.se/login" suffix',
+    ],
+    ['<link rel="canonical" href="old"> tail', ' tail'],
+    ['<link rel="canonical" href="old"', '<link rel="canonical" href="old"'],
+    [
+      '<meta name="robots" content="index, follow">',
+      '<meta name="robots" content="noindex, nofollow">',
+    ],
+  ])('preserves the existing rewrite contract for %s', (source, expected) => {
+    expect(renderPrivateMetadata(source, '/login')).toBe(expected)
+    expect(renderPrivateMetadata(source, '/unknown')).toBe(source)
+  })
+
+  it('matches the former patterns on bounded, deterministic malformed combinations', () => {
+    // Small inputs only: this oracle records byte compatibility, never runs the hostile sizes.
+    const fragments = [
+      '<meta ',
+      '<link ',
+      '>',
+      'property="og:url"',
+      'name="robots"',
+      'rel="canonical"',
+      'content="',
+      'href="',
+      '"',
+      "'",
+      'İ',
+      ' x ',
+      '<metadata ',
+      'CONTENT="',
+    ]
+    let state = 37
+    for (let sample = 0; sample < 2_000; sample++) {
+      let source = ''
+      for (let part = 0; part < 12; part++) {
+        state = (Math.imul(state, 1664525) + 1013904223) >>> 0
+        source += fragments[state % fragments.length]
+      }
+      const expected = source
+        .replace(
+          /(<meta\b[^>]*property="og:url"[^>]*content=")[^"]*(")/i,
+          (_match, open: string, close: string) =>
+            `${open}https://bladeblendstudio.se/login${close}`,
+        )
+        .replace(/<link\b[^>]*rel="canonical"[^>]*>/i, '')
+        .replace(/(<meta\b[^>]*name="robots"[^>]*content=")[^"]*(")/i, '$1noindex, nofollow$2')
+      expect(renderPrivateMetadata(source, '/login'), source).toBe(expected)
+    }
+  })
+
+  it('handles repeated unterminated tag openers without rescanning their suffixes', () => {
+    const source = '<meta <link '.repeat(30_000)
+    const started = performance.now()
+    expect(renderPrivateMetadata(source, '/login')).toBe(source)
+    expect(performance.now() - started).toBeLessThan(1_000)
+  })
+
+  it('keeps Worker route decisions linear for slash near misses', () => {
+    const path = '/login' + '/'.repeat(200_000) + 'x'
+    const started = performance.now()
+    expect(isPrivatePath(path)).toBe(false)
+    expect(isSpaPath(path)).toBe(false)
+    expect(customerAccessTokenFromPath(path)).toBeNull()
+    expect(performance.now() - started).toBeLessThan(1_000)
+    expect(isSpaPath('/')).toBe(true)
+    expect(isSpaPath('//')).toBe(false)
+    expect(isPrivatePath('/login///')).toBe(true)
+    expect(customerAccessTokenFromPath(`/${'a'.repeat(64)}///`)).toBe('a'.repeat(64))
+  })
 })

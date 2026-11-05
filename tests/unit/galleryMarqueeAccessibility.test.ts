@@ -1,11 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { GalleryMarquee, resolvePointerEnd } from '../../src/about/GalleryMarquee'
-import { PlaceholderPhoto } from '../../src/about/PlaceholderPhoto'
-import { palette } from '../../src/booking/bookingStyles'
-import { aboutStrings } from '../../src/i18n/index'
+import {
+  GalleryMarquee,
+  resolvePointerEnd,
+} from '../../modules/public-web/src/about/GalleryMarquee'
+import { PlaceholderPhoto } from '../../modules/public-web/src/about/PlaceholderPhoto'
+import { palette } from '../../modules/public-web/src/booking/bookingStyles'
+import { aboutStrings } from '../../modules/public-web/src/i18n/index'
 import { useEffect, useState } from 'preact/hooks'
-import { useGallery } from '../../src/about/gallery/useGallery'
-import { supabaseGalleryAdapter } from '../../src/about/gallery/supabaseGallery'
+import { useGallery } from '../../modules/public-web/src/about/gallery/useGallery'
+import { supabaseGalleryAdapter } from '../../modules/public-web/src/about/gallery/supabaseGallery'
 import { nodes as elements, reset, type RenderedNode } from './helpers/fakeHooks'
 
 beforeEach(reset)
@@ -103,7 +106,9 @@ describe('published gallery photos', () => {
 })
 
 const galleryDb = vi.hoisted(() => ({ from: vi.fn() }))
-vi.mock('../../src/backend/publicRest', () => ({ getPublicRest: () => galleryDb }))
+vi.mock('../../modules/public-web/src/backend/publicRest', () => ({
+  getPublicRest: () => galleryDb,
+}))
 
 describe('gallery load outcomes', () => {
   it('distinguishes an empty successful read from a failed database read', async () => {

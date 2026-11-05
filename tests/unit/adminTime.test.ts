@@ -22,14 +22,14 @@ import {
   toggleWorking,
   upcomingDates,
   weekIsValid,
-} from '../../src/admin/time'
+} from '../../modules/staff-admin/src/time'
 import type {
   DaySchedule,
   RecurringBreak,
   SlotBlock,
   TimeOff,
   WeekSchedule,
-} from '../../src/admin/types'
+} from '../../modules/staff-admin/src/types'
 
 describe('minutesToHHMM', () => {
   it('formats whole and partial hours zero-padded', () => {

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { gunzipSync } from 'node:zlib'
 import { generate, parse, walk } from 'css-tree'
-import { emptyDocument } from '../../shared/cms.ts'
+import { emptyDocument } from '../../packages/content-contracts/src/cms.ts'
 import { nativeBackend } from './cms-backend.mjs'
 import { expect, test } from './fixtures.mjs'
 import { harnessOrigin } from './origins.mjs'
@@ -14,9 +14,9 @@ test('canvas CSS trees survive import and startup yields return control to the b
   const result = await page.evaluate(async () => {
     const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
     const { connectCanvasStyles, parseCanvasSheet, parseCanvasCss, yieldCanvasTask } =
-      await import('/src/admin/cms/nativeCanvas.ts')
-    const { bindCmsRootStyles } = await import('/src/admin/cms/cmsRootStyles.ts')
-    const { validateMarkup } = await import('/shared/cms-markup.ts')
+      await import('/modules/studio/src/nativeCanvas.ts')
+    const { bindCmsRootStyles } = await import('/modules/studio/src/cmsRootStyles.ts')
+    const { validateMarkup } = await import('/packages/content-contracts/src/cms-markup.ts')
     const host = globalThis.document.createElement('div')
     globalThis.document.body.append(host)
     const editor = cmsGrapes.init({
@@ -199,8 +199,8 @@ test('canvas style imports retain layer precedence, root selectors and declarati
   const result = await page.evaluate(async () => {
     const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
     const { connectCanvasStyles, parseCanvasCss, parseCanvasSheet, readCanvasCss } =
-      await import('/src/admin/cms/nativeCanvas.ts')
-    const { validateMarkup } = await import('/shared/cms-markup.ts')
+      await import('/modules/studio/src/nativeCanvas.ts')
+    const { validateMarkup } = await import('/packages/content-contracts/src/cms-markup.ts')
     const host = globalThis.document.createElement('div')
     globalThis.document.body.append(host)
     const editor = cmsGrapes.init({
@@ -409,9 +409,9 @@ test('complex selector functions keep their ancestor constraint through producti
   const result = await page.evaluate(async () => {
     const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
     const { connectCanvasStyles, parseCanvasCss, readCanvasCss } =
-      await import('/src/admin/cms/nativeCanvas.ts')
-    const { planDesktopCardResize } = await import('/src/admin/cms/resizeStyles.ts')
-    const { validateMarkup } = await import('/shared/cms-markup.ts')
+      await import('/modules/studio/src/nativeCanvas.ts')
+    const { planDesktopCardResize } = await import('/modules/studio/src/resizeStyles.ts')
+    const { validateMarkup } = await import('/packages/content-contracts/src/cms-markup.ts')
     const host = globalThis.document.createElement('div')
     globalThis.document.body.append(host)
     const editor = cmsGrapes.init({
@@ -501,9 +501,9 @@ test('resize styles use the native cascade and survive production import without
   const result = await page.evaluate(async () => {
     const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
     const { connectCanvasStyles, readCanvasCss, parseCanvasCss } =
-      await import('/src/admin/cms/nativeCanvas.ts')
-    const { planDesktopCardResize } = await import('/src/admin/cms/resizeStyles.ts')
-    const { validateMarkup } = await import('/shared/cms-markup.ts')
+      await import('/modules/studio/src/nativeCanvas.ts')
+    const { planDesktopCardResize } = await import('/modules/studio/src/resizeStyles.ts')
+    const { validateMarkup } = await import('/packages/content-contracts/src/cms-markup.ts')
     const host = globalThis.document.createElement('div')
     globalThis.document.body.append(host)
     const editor = cmsGrapes.init({
@@ -725,8 +725,8 @@ test('resize controls use current viewport geometry before deferred selection ca
   const result = await page.evaluate(async () => {
     const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
     const { connectCanvasStyles, parseCanvasCss, readCanvasCss } =
-      await import('/src/admin/cms/nativeCanvas.ts')
-    const { connectHierarchicalResize } = await import('/src/admin/cms/hierarchicalResize.ts')
+      await import('/modules/studio/src/nativeCanvas.ts')
+    const { connectHierarchicalResize } = await import('/modules/studio/src/hierarchicalResize.ts')
     const host = globalThis.document.createElement('div')
     globalThis.document.body.append(host)
     const editor = cmsGrapes.init({
@@ -843,8 +843,8 @@ test('native dimension edits materialize inactive owner priorities before export
   const result = await page.evaluate(async () => {
     const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
     const { connectCanvasStyles, parseCanvasCss, readCanvasCss, nativeCanvas, exportNativeCanvas } =
-      await import('/src/admin/cms/nativeCanvas.ts')
-    const { planDesktopCardResize } = await import('/src/admin/cms/resizeStyles.ts')
+      await import('/modules/studio/src/nativeCanvas.ts')
+    const { planDesktopCardResize } = await import('/modules/studio/src/resizeStyles.ts')
     const host = globalThis.document.createElement('div')
     globalThis.document.body.append(host)
     const editor = cmsGrapes.init({
@@ -1014,9 +1014,9 @@ test('resize edits underlying styles while paused owner keyframes remain authori
   const result = await page.evaluate(async () => {
     const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
     const { connectCanvasStyles, readCanvasCss, parseCanvasCss, parseCanvasSheet } =
-      await import('/src/admin/cms/nativeCanvas.ts')
-    const { planDesktopCardResize } = await import('/src/admin/cms/resizeStyles.ts')
-    const { validateMarkup } = await import('/shared/cms-markup.ts')
+      await import('/modules/studio/src/nativeCanvas.ts')
+    const { planDesktopCardResize } = await import('/modules/studio/src/resizeStyles.ts')
+    const { validateMarkup } = await import('/packages/content-contracts/src/cms-markup.ts')
     const host = globalThis.document.createElement('div')
     globalThis.document.body.append(host)
     const editor = cmsGrapes.init({
@@ -1159,7 +1159,7 @@ async function openAdoptedFixture(page, context, { aboutCss = '', homeCss = '', 
   await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
   // This is the pre-E6 adoption baseline, including legal and marquee migrations.
   const adopted = await page.evaluate(async (doc) => {
-    const { normalizeDocument } = await import('/src/admin/cms/normalizeDocument.ts')
+    const { normalizeDocument } = await import('/modules/studio/src/normalizeDocument.ts')
     return normalizeDocument(doc)
   }, raw)
   const backend = await nativeBackend(context, raw)
@@ -1308,9 +1308,9 @@ test('cms-composition-roundtrip', async ({ page }) => {
   assert.equal(new URL(base).hostname, '127.0.0.1')
   await page.goto(`${base}/tools/e2e/admin-harness.html`)
   const result = await page.evaluate(async () => {
-    const { emptyDocument } = await import('/shared/cms.ts')
+    const { emptyDocument } = await import('/packages/content-contracts/src/cms.ts')
     const { composedCanvas, extractComposedAbout, stripComposedCanvas } =
-      await import('/src/admin/cms/composedCanvas.ts')
+      await import('/modules/studio/src/composedCanvas.ts')
     const shared = 'section{box-sizing:border-box}@media(min-width:769px){h2{line-height:1.3}}'
     const make = (path, html, css) => ({
       id: path,

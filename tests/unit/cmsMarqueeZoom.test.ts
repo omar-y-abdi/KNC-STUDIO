@@ -1,11 +1,15 @@
 import { generate, parse } from 'css-tree'
 import { describe, expect, it } from 'vitest'
-import { emptyDocument, type CmsDocument, type CmsPage } from '../../shared/cms'
+import {
+  emptyDocument,
+  type CmsDocument,
+  type CmsPage,
+} from '../../packages/content-contracts/src/cms'
 import {
   normalizeMarqueeCardZoom,
   normalizeMarqueeZoom,
   unresolvedMarqueeZoom,
-} from '../../src/admin/cms/normalizeDocument'
+} from '../../modules/studio/src/normalizeDocument'
 
 const ids = { group: 'strip', cards: ['card-a', 'card-b'] }
 const width = (scale: string): string => `calc((100vw - 24px) * ${scale})`

@@ -1,16 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { adminText } from '../../src/i18n/adminStrings'
+import { adminText } from '../../modules/staff-admin/src/adminStrings'
 import { mount, nodes, ref, render, reset } from './helpers/fakeHooks'
 // Resolve the mock before resetModules so it keeps this helper's shared state.
 import 'preact/hooks'
 
 vi.mock('preact/hooks', () => import('./helpers/fakeHooks'))
-vi.mock('../../src/admin/useTheme', () => ({ useTheme: () => ({ dark: false }) }))
-vi.mock('../../src/ui/pseudo', () => ({ FOCUS_CLS: '', pseudoClass: () => '' }))
+vi.mock('../../modules/staff-admin/src/useTheme', () => ({ useTheme: () => ({ dark: false }) }))
+vi.mock('../../modules/public-web/src/ui/pseudo', () => ({ FOCUS_CLS: '', pseudoClass: () => '' }))
 
 beforeEach(() => {
   vi.resetModules()
   vi.stubEnv('VITE_TURNSTILE_SITE_KEY', 'local-test-site-key')
+  vi.stubEnv('VITE_TURNSTILE_WIDGET_MODE', 'managed')
   reset()
 })
 afterEach(() => {
@@ -22,7 +23,7 @@ describe('Turnstile widget recovery', () => {
   it.each(['error-callback', 'timeout-callback', 'expired-callback'] as const)(
     'invalidates the token and notifies its parent on %s; ignores callbacks after disposal',
     async (failure) => {
-      const { Turnstile } = await import('../../src/booking/Turnstile')
+      const { Turnstile } = await import('../../modules/public-web/src/booking/Turnstile')
       const widgetRender = vi.fn<NonNullable<Window['turnstile']>['render']>(() => 'widget')
       const remove = vi.fn()
       vi.stubGlobal('window', { turnstile: { render: widgetRender, remove } })
@@ -50,48 +51,54 @@ describe('Turnstile widget recovery', () => {
     },
   )
 
-  it('reserves loading space, releases it on success or failure, and restores it for retry', async () => {
-    const { Turnstile } = await import('../../src/booking/Turnstile')
-    const widgetRender = vi.fn<NonNullable<Window['turnstile']>['render']>(() => 'widget')
-    vi.stubGlobal('window', { turnstile: { render: widgetRender, remove: vi.fn() } })
-    const onToken = vi.fn()
-    const draw = () =>
-      render(() => Turnstile({ action: 'booking', lang: 'sv', resetNonce: 0, onToken }))
-    const minimum = () =>
-      nodes(draw())
-        .map((node) => node.props['style'])
-        .find((style) => typeof style === 'object' && style !== null && 'minHeight' in style)
-    expect(minimum()).toEqual({ minHeight: '65px' })
-    ref(0, {})
-    const dispose = mount()
-    await Promise.resolve()
-    const options = widgetRender.mock.calls[0]?.[1]
-    if (!options) throw new Error('Turnstile did not render its widget')
-    options.callback('valid-token')
-    expect(minimum()).toEqual({ minHeight: '0px' })
-    options['expired-callback']()
-    expect(onToken).toHaveBeenLastCalledWith('')
-    expect(minimum()).toEqual({ minHeight: '0px' })
-    const retry = nodes(draw()).find((node) => node.type === 'button')
-    if (!retry) throw new Error('Missing retry button')
-    ;(retry.props['onClick'] as () => void)()
-    draw()
-    dispose()
-    const disposeRetry = mount()
-    await Promise.resolve()
-    expect(minimum()).toEqual({ minHeight: '65px' })
-    const retried = widgetRender.mock.calls[1]?.[1]
-    if (!retried) throw new Error('Turnstile did not retry its widget')
-    retried['error-callback']()
-    expect(minimum()).toEqual({ minHeight: '0px' })
-    disposeRetry()
-  })
+  it.each(['managed', 'non-interactive', 'invisible'])(
+    'uses the configured %s footprint through loading, success, failure and retry',
+    async (mode) => {
+      vi.stubEnv('VITE_TURNSTILE_WIDGET_MODE', mode)
+      const pendingHeight = mode === 'invisible' ? '0px' : '65px'
+      const { Turnstile } = await import('../../modules/public-web/src/booking/Turnstile')
+      const widgetRender = vi.fn<NonNullable<Window['turnstile']>['render']>(() => 'widget')
+      vi.stubGlobal('window', { turnstile: { render: widgetRender, remove: vi.fn() } })
+      const onToken = vi.fn()
+      const draw = () =>
+        render(() => Turnstile({ action: 'booking', lang: 'sv', resetNonce: 0, onToken }))
+      const minimum = () =>
+        nodes(draw())
+          .map((node) => node.props['style'])
+          .find((style) => typeof style === 'object' && style !== null && 'minHeight' in style)
+      expect(minimum()).toEqual({ minHeight: pendingHeight })
+      ref(0, {})
+      const dispose = mount()
+      await Promise.resolve()
+      const options = widgetRender.mock.calls[0]?.[1]
+      if (!options) throw new Error('Turnstile did not render its widget')
+      options.callback('valid-token')
+      expect(minimum()).toEqual({ minHeight: '0px' })
+      options['expired-callback']()
+      expect(onToken).toHaveBeenLastCalledWith('')
+      expect(minimum()).toEqual({ minHeight: '0px' })
+      const retry = nodes(draw()).find((node) => node.type === 'button')
+      if (!retry) throw new Error('Missing retry button')
+      ;(retry.props['onClick'] as () => void)()
+      draw()
+      dispose()
+      const disposeRetry = mount()
+      await Promise.resolve()
+      expect(minimum()).toEqual({ minHeight: pendingHeight })
+      const retried = widgetRender.mock.calls[1]?.[1]
+      if (!retried) throw new Error('Turnstile did not retry its widget')
+      retried['error-callback']()
+      expect(minimum()).toEqual({ minHeight: '0px' })
+      disposeRetry()
+    },
+  )
 
   it.each(['sv', 'en'] as const)(
     'offers a localized password-recovery retry that requests a fresh widget (%s)',
     async (lang) => {
-      const { Turnstile } = await import('../../src/booking/Turnstile')
-      const { ForgotPasswordForm } = await import('../../src/admin/ForgotPasswordForm')
+      const { Turnstile } = await import('../../modules/public-web/src/booking/Turnstile')
+      const { ForgotPasswordForm } =
+        await import('../../modules/staff-admin/src/ForgotPasswordForm')
       const form = () => nodes(render(() => ForgotPasswordForm({ lang, onBackToSignIn: vi.fn() })))
       const challenge = () => {
         const node = form().find((node) => Object.is(node.type, Turnstile))

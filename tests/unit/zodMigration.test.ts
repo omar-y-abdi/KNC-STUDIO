@@ -5,13 +5,13 @@ import {
   emailSendLogEntryRow,
   failedBookingEmailDeliveryRow,
   serviceRow,
-} from '../../src/admin/adminSchemas'
+} from '../../modules/staff-admin/src/adminSchemas'
 import {
   bookingReceiptResponse,
   listCustomerBookingsResponse,
   publicBusinessDiscoveryResponse,
   publicServiceRow,
-} from '../../src/backend/rpcSchemas'
+} from '../../packages/backend-contracts/src/rpcSchemas'
 import { parse, uuid } from '../../supabase/functions/_shared/http.ts'
 import { requestSchema as cmsStudio } from '../../supabase/functions/cms-studio/request.ts'
 

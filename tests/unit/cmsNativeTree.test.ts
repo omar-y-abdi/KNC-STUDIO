@@ -1,6 +1,6 @@
 import { h, createRef, type VNode } from 'preact'
 import { expect, it, vi } from 'vitest'
-import { nativeTree } from '../../src/cms/NativeSurface'
+import { nativeTree } from '../../modules/public-web/src/cms/NativeSurface'
 
 it('keeps original action handlers and refs instead of reconstructing booking behavior', () => {
   const onClick = vi.fn()

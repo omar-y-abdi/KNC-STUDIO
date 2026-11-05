@@ -1,0 +1,28 @@
+{
+  "name": "@bladeblend/studio",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    "./entry": "./src/Studio.tsx"
+  },
+  "dependencies": {
+    "@bladeblend/backend-contracts": "*",
+    "@bladeblend/content-contracts": "*",
+    "@bladeblend/public-web": "*",
+    "@bladeblend/staff-admin": "*",
+    "@supabase/supabase-js": "2.112.2",
+    "css-tree": "3.2.1",
+    "grapesjs": "0.23.8",
+    "parse5": "8.0.1",
+    "preact": "^10.29.1"
+  },
+  "scripts": {
+    "check": "node ../../tools/modules/run.mjs studio check",
+    "test": "node ../../tools/modules/run.mjs studio test",
+    "lint": "node ../../tools/modules/run.mjs studio lint",
+    "typecheck": "node ../../tools/modules/run.mjs studio typecheck",
+    "build": "node ../../tools/modules/run.mjs studio build",
+    "plan": "node ../../tools/modules/run.mjs studio plan"
+  }
+}

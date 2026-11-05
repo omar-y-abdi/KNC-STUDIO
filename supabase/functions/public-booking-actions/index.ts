@@ -333,12 +333,17 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
 
   let sessionHash: string | null = null
+  let receiptHash: string | null = null
   if (parsed.action === 'review') {
     const token = parsed.accessToken ?? customerCookie(req, CUSTOMER_SESSION_COOKIE)
     if (token !== null) sessionHash = await sha256(token.toLowerCase())
-    if (sessionHash === null) return reply(req, { ok: false, error: 'no_booking' })
-    // The review RPC checks phone + a completed booking within the verified email profile.
-    // A cookie's historical phone snapshot must not reject another number owned by that profile.
+    // Explicit bearer requests retain their existing scope and cannot fall back to a cookie.
+    const receipt =
+      parsed.accessToken === undefined ? customerCookie(req, CUSTOMER_RECEIPT_COOKIE) : null
+    if (receipt !== null) receiptHash = await sha256(receipt)
+    if (sessionHash === null && receiptHash === null)
+      return reply(req, { ok: false, error: 'no_booking' })
+    // SQL applies the list/cancel scope, phone cross-check and completed-booking requirement.
   }
 
   const limitScope = parsed.action === 'request_access' ? (parsed.email ?? '') : phone
@@ -364,8 +369,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return reply(req, { ok: true })
   }
 
-  const result = await service.rpc('create_review_with_access', {
+  const result = await service.rpc('create_review_for_browser', {
     p_session_hash: sessionHash,
+    p_receipt_hash: receiptHash,
     p_phone: phone,
     p_rating: parsed.rating,
     p_text: parsed.text,

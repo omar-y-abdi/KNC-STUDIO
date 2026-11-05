@@ -4,8 +4,8 @@ import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { CMS_OWNER_SCENARIOS } from './cms-owner-scenarios.mjs'
 import { nativeBackend } from './cms-backend.mjs'
-import { EMAIL_NAMES, defaultEmailDesign } from '../../shared/cms.ts'
-import { SITE_PAGE_CSS, renderSitePage } from '../../shared/site-page.ts'
+import { EMAIL_NAMES, defaultEmailDesign } from '../../packages/content-contracts/src/cms.ts'
+import { SITE_PAGE_CSS, renderSitePage } from '../../packages/content-contracts/src/site-page.ts'
 import { defaultEmailTemplate } from '../../supabase/functions/_shared/email.ts'
 import { test } from './fixtures.mjs'
 import { harnessOrigin } from './origins.mjs'
@@ -448,8 +448,19 @@ for (const scenario of CMS_OWNER_SCENARIOS) {
               '.cms-live-preview iframe',
             )?.contentDocument
             const root = doc?.querySelector('[data-testid="mobile-site-scroll"]')
-            const panel = root?.firstElementChild
-            return root?.scrollTop > 100 && panel?.getBoundingClientRect().height < 250
+            const panel = root?.querySelector('[data-knc-fold="panel"]')
+            const header = root?.querySelector('[data-knc-fold="controls"]')?.parentElement
+            const box = panel?.getBoundingClientRect()
+            // The full-height panel now folds through native clipping/sticky positioning.
+            // Assert its visible edge and header, not the private carrier's unchanged height.
+            return Boolean(
+              root &&
+              box &&
+              root.scrollTop >= box.height - 112 &&
+              root.scrollTop > 0 &&
+              box.bottom === 112 &&
+              header?.getBoundingClientRect().top === 0,
+            )
           })
           assert.equal(
             await mobile.locator('[data-gjs-type]').count(),
@@ -507,8 +518,8 @@ for (const scenario of CMS_OWNER_SCENARIOS) {
           assert.equal(await liveLogo.getAttribute('alt'), 'Blade & Blend Studio')
         } else if (scenario === 'legacy-preview-repair') {
           const result = await page.evaluate(async () => {
-            const { emptyDocument } = await import('/shared/cms.ts')
-            const { ensureCorePages } = await import('/src/admin/cms/corePages.ts')
+            const { emptyDocument } = await import('/packages/content-contracts/src/cms.ts')
+            const { ensureCorePages } = await import('/modules/studio/src/corePages.ts')
             const oldHtml =
               '<div data-knc-native="1"><p data-knc-source="owned">Owner text</p><div data-knc-slot="opaque"><img src="/og-image.png"></div></div>'
             const sourceHtml =

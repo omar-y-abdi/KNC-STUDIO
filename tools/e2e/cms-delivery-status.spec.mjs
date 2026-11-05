@@ -5,6 +5,8 @@ import assert from 'node:assert/strict'
 import { test } from './fixtures.mjs'
 import { harnessOrigin } from './origins.mjs'
 import { routeApi } from './route-api.mjs'
+import { documentFixture } from './builders.mjs'
+import { nativeBackend } from './cms-backend.mjs'
 
 const baseUrl = harnessOrigin.replace(/\/$/, '')
 const BACKEND = 'https://admin-harness.invalid'
@@ -72,14 +74,14 @@ function logRow({ recipient, subject, body }) {
   }
 }
 
-async function deliveryBackend(page, { jobs = [], log = [], logErrors = 0 }) {
+async function deliveryBackend(page, { jobs = [], log = [], logErrors = 0, rpcOnly = false }) {
   const rows = { jobs: jobs.map((row) => ({ ...row, status: 'failed' })), log: [...log] }
   const holds = new Map()
   const unexpected = []
   let logReads = 0
   await routeApi(page, [
     [
-      `${BACKEND}/**`,
+      rpcOnly ? `${BACKEND}/rest/v1/rpc/admin_*` : `${BACKEND}/**`,
       async (route, headers) => {
         const request = route.request()
         const path = new URL(request.url()).pathname
@@ -179,7 +181,7 @@ async function mountDeliveryStatus(page) {
   await page.goto(`${baseUrl}/tools/e2e/admin-harness.html`, { waitUntil: 'domcontentloaded' })
   await page.evaluate(async () => {
     const { h, render } = await import('/tools/e2e/admin-harness.tsx')
-    const { DeliveryStatus } = await import('/src/admin/cms/DeliveryStatus.tsx')
+    const { DeliveryStatus } = await import('/modules/studio/src/DeliveryStatus.tsx')
     const target = globalThis.document.querySelector('#root')
     render(null, target)
     render(h(DeliveryStatus, {}), target)
@@ -204,6 +206,33 @@ async function failedRows(page) {
 async function notices(page) {
   return page.locator('.cms-delivery-status > .cms-notice span').allTextContents()
 }
+
+test('Studio email navigation mounts delivery status and restores templates and page', async ({
+  page,
+  context,
+}) => {
+  const cms = await nativeBackend(context, documentFixture())
+  const delivery = await deliveryBackend(page, { jobs: [job], rpcOnly: true })
+  await page.goto(`${baseUrl}/tools/e2e/admin-harness.html?view=cms-studio`)
+  await page.evaluate(async () => {
+    ;(await import('/tools/e2e/admin-harness.tsx')).mountCmsStudioHarness()
+  })
+  await page.locator('.cms-canvas-shell').waitFor()
+  await page.getByRole('button', { name: 'Mejl', exact: true }).click()
+  const workspace = page.getByRole('region', { name: 'Mejl från din salong', exact: true })
+  await workspace.getByRole('button', { name: 'Leveransstatus', exact: true }).click()
+  await failedList(page).getByText(JOB_ROW, { exact: true }).waitFor()
+  assert.equal(await workspace.locator('.cms-delivery-status').count(), 1)
+  await workspace.getByRole('button', { name: 'Mallar', exact: true }).click()
+  await workspace.locator('.cms-delivery-status').waitFor({ state: 'detached' })
+  await workspace.getByRole('button', { name: 'Leveransstatus', exact: true }).click()
+  await failedList(page).getByText(JOB_ROW, { exact: true }).waitFor()
+  await workspace.getByRole('button', { name: 'Tillbaka till sidan', exact: true }).click()
+  await workspace.waitFor({ state: 'detached' })
+  assert.equal(await page.locator('.cms-canvas-shell').getAttribute('inert'), null)
+  assert.deepEqual(delivery.unexpected, [])
+  assert.equal(cms.writes.length, 0, 'Viewing delivery status must not publish CMS content')
+})
 
 // A failed-list read that started before a retry finished must not bring the retried job back,
 // whether the retry succeeded or found the job already handled elsewhere. `reload` presses the mail

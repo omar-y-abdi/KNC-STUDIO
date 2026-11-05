@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { emptyDocument, validateCompleteDocument } from '../../shared/cms'
-import { validateDocumentMarkupPlacements } from '../../shared/cms-markup'
-import { CMS_BUILT_ASSETS } from '../../shared/cms-built-assets'
-import { ensureCorePages } from '../../src/admin/cms/corePages'
+import { emptyDocument, validateCompleteDocument } from '../../packages/content-contracts/src/cms'
+import { validateDocumentMarkupPlacements } from '../../packages/content-contracts/src/cms-markup'
+import { CMS_BUILT_ASSETS } from '../../packages/content-contracts/src/cms-built-assets'
+import { ensureCorePages } from '../../modules/studio/src/corePages'
 
 describe('initial canonical page publication', () => {
   it('is a complete valid extension of an authoritative document with no pages', () => {

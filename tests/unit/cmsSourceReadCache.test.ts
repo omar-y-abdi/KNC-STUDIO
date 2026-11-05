@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vitest'
-import { memoizeSourceRead } from '../../src/admin/cms/sourceReadCache'
+import { memoizeSourceRead } from '../../modules/public-web/src/preview/sourceReadCache'
 
 it('coalesces pending and completed source reads but keeps languages separate', async () => {
   let resolve: (value: string) => void = () => undefined

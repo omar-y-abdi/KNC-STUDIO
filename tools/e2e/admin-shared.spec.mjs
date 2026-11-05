@@ -76,7 +76,7 @@ test('staff invitation waits for consent, sets password and rejects replay', asy
     await page.goto('/tools/e2e/admin-harness.html')
     await page.evaluate(async (token) => {
       const { h, render } = await import('/tools/e2e/admin-harness.tsx')
-      const { ResetPasswordPage } = await import('/src/admin/ResetPasswordPage.tsx')
+      const { ResetPasswordPage } = await import('/modules/staff-admin/src/ResetPasswordPage.tsx')
       globalThis.history.replaceState({}, '', `/invite#staff_invite=${token}`)
       render(
         h(ResetPasswordPage, { linkType: 'invite', onDone: () => undefined }),

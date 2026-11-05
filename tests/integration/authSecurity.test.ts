@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { describe, expect, it } from 'vitest'
-import { changeOwnPassword, setNewPassword } from '../../src/admin/auth'
-import { getAdminClient } from '../../src/admin/adminClient'
+import { changeOwnPassword, setNewPassword } from '../../modules/staff-admin/src/auth'
+import { getAdminClient } from '../../modules/staff-admin/src/adminClient'
 import { adminBackendReady, readAdminStackEnv } from './_adminHelpers'
 
 describe.skipIf(!adminBackendReady())('Auth password policy (integration)', () => {

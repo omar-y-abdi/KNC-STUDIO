@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { CmsEditorBoundary } from '../../src/admin/cms/EditorBoundary'
+import { CmsEditorBoundary } from '../../modules/studio/src/EditorBoundary'
 
 it('retains a caught canvas failure while leaving the parent workspace outside the boundary', () => {
   const boundary = new CmsEditorBoundary({ children: 'editor', contextKey: 'home' }, {})

@@ -1,6 +1,6 @@
 import type { Component } from 'grapesjs'
 import { describe, expect, it } from 'vitest'
-import { cloneComponent } from '../../src/admin/cms/clone'
+import { cloneComponent } from '../../modules/studio/src/clone'
 
 // Only the component model operations cloneComponent uses; no editor or browser is needed.
 class Model {

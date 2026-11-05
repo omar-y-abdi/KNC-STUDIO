@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { generate, ident, parse, walk, type CssNode, type Selector } from 'css-tree'
-import { extractAboutSheet, stripHomeSheet } from '../../src/admin/cms/composedCanvas'
+import { extractAboutSheet, stripHomeSheet } from '../../modules/studio/src/composedCanvas'
 
 // A Home save splits the composed canvas sheet, Home's stored sheet followed by About's, between
 // the two pages. These run the split without markup: About's section holds `about` and Home holds

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { openKeyedStore } from '../../src/admin/cms/indexedDb'
+import { openKeyedStore } from '../../modules/studio/src/indexedDb'
 
 // One connection of the fake: 'open' commits every transaction; 'closing' makes transaction()
 // throw InvalidStateError, as after close(); an error aborts every transaction with it, as Safari

@@ -41,7 +41,10 @@
     "css-tree": "3.2.1",
     "fontkit": "2.0.4",
     "embla-carousel": "8.6.0",
-    "embla-carousel-auto-scroll": "8.6.0"
+    "embla-carousel-auto-scroll": "8.6.0",
+    "@bladeblend/public-web": "*",
+    "@bladeblend/staff-admin": "*",
+    "@bladeblend/studio": "*"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20261031.1",
@@ -68,5 +71,13 @@
     "wrangler": "4.156.0",
     "@types/css-tree": "2.3.11",
     "@types/fontkit": "2.0.9"
-  }
+  },
+  "workspaces": [
+    "modules/public-web",
+    "modules/staff-admin",
+    "modules/studio",
+    "supabase",
+    "packages/content-contracts",
+    "packages/backend-contracts"
+  ]
 }

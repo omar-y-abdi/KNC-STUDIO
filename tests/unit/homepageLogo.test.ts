@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { homepageLogoFilter } from '../../src/site/HomepageLogo'
+import { homepageLogoFilter } from '../../modules/public-web/src/site/HomepageLogo'
 
 describe('homepage logo presentation', () => {
   it('applies monochrome treatment to both uploaded and shipped vector render paths', () => {

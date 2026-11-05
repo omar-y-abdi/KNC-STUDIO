@@ -8,10 +8,10 @@ import {
   mediaKey,
   type CmsDocument,
   type CmsState,
-} from '../../../shared/cms.ts'
-import { validateDocumentMarkupPlacements } from '../../../shared/cms-markup.ts'
-import { CMS_BUILT_ASSETS } from '../../../shared/cms-built-assets.ts'
-import { CMS_RELEASE } from '../../../shared/cms-release.ts'
+} from '../../../packages/content-contracts/src/cms.ts'
+import { validateDocumentMarkupPlacements } from '../../../packages/content-contracts/src/cms-markup.ts'
+import { CMS_BUILT_ASSETS } from '../../../packages/content-contracts/src/cms-built-assets.ts'
+import { CMS_RELEASE } from '../../../packages/content-contracts/src/cms-release.ts'
 import { parse } from '../_shared/http.ts'
 import { requestSchema } from './request.ts'
 

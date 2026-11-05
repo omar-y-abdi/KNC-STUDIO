@@ -1,8 +1,8 @@
 import { expect, it, vi } from 'vitest'
-import { emptyDocument } from '../../shared/cms'
-import { DEFAULT_CHROME } from '../../src/site/siteChrome'
-import { draftReadSnapshot } from '../../src/admin/cms/draftReadSnapshot'
-import type { sourceReadSnapshot } from '../../src/admin/cms/sourceReadCache'
+import { emptyDocument } from '../../packages/content-contracts/src/cms'
+import { DEFAULT_CHROME } from '../../modules/public-web/src/site/siteChrome'
+import { draftReadSnapshot } from '../../modules/public-web/src/preview/draftReadSnapshot'
+import type { sourceReadSnapshot } from '../../modules/public-web/src/preview/sourceReadCache'
 
 it('previews resource assignments from the draft while retaining live roster eligibility and rejecting writes', async () => {
   const document = emptyDocument()
@@ -58,7 +58,7 @@ it('previews resource assignments from the draft while retaining live roster eli
   )
 })
 
-import { resourceLayoutsChanged } from '../../src/admin/cms/captureResourceLayouts'
+import { resourceLayoutsChanged } from '../../modules/studio/src/captureResourceLayouts'
 it('refreshes the editable resource canvas for contact changes but not unrelated settings', () => {
   const before = emptyDocument()
   const after = structuredClone(before)

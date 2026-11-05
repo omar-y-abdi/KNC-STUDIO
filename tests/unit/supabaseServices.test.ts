@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { asBarberId } from '../../src/booking/domain'
+import { asBarberId } from '../../modules/public-web/src/booking/domain'
 import {
   servicesForBookingDate,
   type BookingCatalog,
-} from '../../src/booking/adapters/supabaseBookingCatalog'
+} from '../../modules/public-web/src/booking/adapters/supabaseBookingCatalog'
 
 const barberId = asBarberId('hassan')
 const service = { id: 'sunday-service', name: 'Sunday service', price: 350, dur: 45 }

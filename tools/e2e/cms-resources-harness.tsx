@@ -1,9 +1,9 @@
-import { CmsWorkspaceView } from '../../src/admin/cms/WorkspaceView'
+import { CmsWorkspaceView } from '../../modules/studio/src/WorkspaceView'
 // Fault-injection host for the real resource component. All network I/O is intercepted by Playwright.
 import { render } from 'preact'
-import type { CmsAsset, CmsDocument } from '../../shared/cms'
-import { CmsResources } from '../../src/admin/cms/Resources'
-import '../../src/admin/cms/studio.css'
+import type { CmsAsset, CmsDocument } from '../../packages/content-contracts/src/cms'
+import { CmsResources } from '../../modules/studio/src/Resources'
+import '../../modules/studio/src/studio.css'
 
 let documentUpdates = 0
 export const resourceDocumentUpdates = (): number => documentUpdates

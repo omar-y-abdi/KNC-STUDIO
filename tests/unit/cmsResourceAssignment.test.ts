@@ -1,11 +1,11 @@
-import { resourceTarget } from '../../shared/cms-resource-target'
+import { resourceTarget } from '../../packages/content-contracts/src/cms-resource-target'
 import { describe, expect, it } from 'vitest'
-import { emptyDocument, type CmsAsset } from '../../shared/cms'
+import { emptyDocument, type CmsAsset } from '../../packages/content-contracts/src/cms'
 import {
   assignResource,
   resourceDestination,
   matchesDestination,
-} from '../../shared/cms-resource-assignment'
+} from '../../packages/content-contracts/src/cms-resource-assignment'
 
 const image: CmsAsset = {
   id: '22222222-2222-4222-8222-222222222222',

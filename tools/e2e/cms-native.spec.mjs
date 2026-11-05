@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 
 import { nativeBackend } from './cms-backend.mjs'
-import { test } from './fixtures.mjs'
+import { expect, test } from './fixtures.mjs'
 import { harnessOrigin } from './origins.mjs'
 test.use({
   viewport: { width: 1440, height: 900 },
@@ -87,16 +87,38 @@ test('cms-native', async ({ page, context, browserName, evidenceDir }) => {
     })
     await page.locator('.cms-canvas-shell').waitFor({ timeout: 90000 })
     const sourceContract = await page.evaluate(async () => {
-      const { snapshotNative } = await import('/src/admin/cms/nativePages.ts')
+      const { snapshotNative } = await import('/modules/studio/src/nativePages.ts')
       const fixture = new globalThis.DOMParser().parseFromString(
         '<section><a href="#privacy-preferences">Privacy</a><div data-knc-slot="outer"><div id="nested" data-knc-slot="nested"><span id="caption">Name</span><input aria-labelledby="caption"></div></div></section>',
         'text/html',
       ).body.firstElementChild
+      const animated = fixture.querySelector('#caption')
+      animated.setAttribute('style', 'opacity: 0; translate: 12px 30px; scale: .2; color: red')
+      animated.setAttribute('inert', '')
+      animated.setAttribute('data-knc-brand-part', 'wordmark')
+      animated.setAttribute(
+        'data-knc-brand-baseline',
+        JSON.stringify({
+          styles: { opacity: ['.7', 'important'], translate: ['', ''], scale: ['', ''] },
+          inert: false,
+        }),
+      )
+      fixture.insertAdjacentHTML(
+        'beforeend',
+        '<svg data-knc-brand-runtime aria-hidden="true"><path d="M0,0L1,1Z" /></svg>',
+      )
       const desktop = snapshotNative(fixture, 'desktop-test')
       const mobile = snapshotNative(fixture, 'mobile-test')
       const doc = new globalThis.DOMParser().parseFromString(desktop + mobile, 'text/html')
       return {
         html: desktop + mobile,
+        capturedBrandStyle: doc.querySelector('span').getAttribute('data-knc-light'),
+        capturedBrandInert: doc.querySelector('span').hasAttribute('inert'),
+        runtimeMetadata: doc.querySelectorAll('[data-knc-brand-baseline]').length,
+        runtimePartMarkers: doc.querySelectorAll('[data-knc-brand-part]').length,
+        runtimeArtwork: doc.querySelectorAll('[data-knc-brand-runtime]').length,
+        liveArtwork: fixture.querySelectorAll('[data-knc-brand-runtime]').length,
+        liveBrandInert: animated.hasAttribute('inert'),
         nestedSlots: doc.querySelectorAll('[data-knc-slot="nested"]').length,
         privacy: doc.querySelector('a').getAttribute('href'),
         labels: [...doc.querySelectorAll('input')].map(
@@ -104,10 +126,19 @@ test('cms-native', async ({ page, context, browserName, evidenceDir }) => {
         ),
       }
     })
+    assert.match(sourceContract.capturedBrandStyle, /opacity: 0\.7 !important/)
+    assert.match(sourceContract.capturedBrandStyle, /color: red/)
+    assert.doesNotMatch(sourceContract.capturedBrandStyle, /translate|scale/)
+    assert.equal(sourceContract.capturedBrandInert, false)
+    assert.equal(sourceContract.runtimeMetadata, 0)
+    assert.equal(sourceContract.runtimePartMarkers, 0)
+    assert.equal(sourceContract.runtimeArtwork, 0, 'Decorative glyphs must not become CMS source')
+    assert.equal(sourceContract.liveArtwork, 1, 'Capture must retain the live artwork')
+    assert.equal(sourceContract.liveBrandInert, true, 'Capture must only restore the clone')
     assert.equal(sourceContract.nestedSlots, 0, 'Nested runtime identities leaked into snapshots')
     assert.equal(sourceContract.privacy, '/#privacy-preferences')
     assert.deepEqual(sourceContract.labels, ['Name', 'Name'])
-    const { validateMarkup } = await import('../../shared/cms-markup.ts')
+    const { validateMarkup } = await import('../../packages/content-contracts/src/cms-markup.ts')
     validateMarkup(
       sourceContract.html,
       '',
@@ -328,7 +359,8 @@ const leavingCases = [
   },
   {
     load: 'booking-catalog module',
-    held: (pathname) => pathname === '/src/booking/adapters/supabaseBookingCatalog.ts',
+    held: (pathname) =>
+      pathname === '/modules/public-web/src/booking/adapters/supabaseBookingCatalog.ts',
     // Live updates have their client once it opens its socket.
     otherSettled: (page) =>
       page.waitForEvent('websocket', (socket) => socket.url().includes('/realtime/v1/websocket')),
@@ -372,3 +404,71 @@ for (const { load, held, otherSettled } of leavingCases)
       `Leaving during the ${load} import raised page errors`,
     )
   })
+
+for (const path of ['/admin/cms', '/admin/cms/'])
+  test(`cms-native route chunk failure offers reload at ${path}`, async ({ page }) => {
+    let routeLoads = 0
+    await page.route('**/src/CmsRoute.tsx*', (route) => {
+      routeLoads++
+      return routeLoads === 1 ? route.abort('failed') : route.continue()
+    })
+    await page.goto(`${harnessOrigin}${path}`, { waitUntil: 'domcontentloaded' })
+    await expect(page.getByRole('alert')).toContainText('Kunde inte ladda adminpanelen.')
+    await expect(page.getByRole('button', { name: 'Ladda om', exact: true })).toBeVisible()
+    expect(routeLoads).toBe(1)
+
+    // The failed module promise is cached for this document. A genuine reload must request it
+    // again; once transport recovers, the existing unauthenticated gate leads to staff login.
+    await page.getByRole('button', { name: 'Ladda om', exact: true }).click()
+    await expect(page).toHaveURL(`${harnessOrigin}/login`)
+    await expect(page.getByRole('heading', { name: 'Logga in', exact: true })).toBeVisible()
+    expect(routeLoads).toBe(2)
+  })
+
+test('public layout loads the selected renderer before exposing mobile interaction', async ({
+  page,
+  context,
+}) => {
+  await nativeBackend(context)
+  let releaseLayout
+  const held = new Promise((resolve) => {
+    releaseLayout = resolve
+  })
+  let mobileRequests = 0
+  const pendingMobile = async (route) => {
+    mobileRequests++
+    await held
+    await route.continue()
+  }
+  await context.route('**/modules/public-web/src/app/MobileSite.tsx*', pendingMobile)
+  try {
+    await page.goto(harnessOrigin)
+    await expect(page.getByText('KNC source sv', { exact: true }).first()).toBeVisible()
+    expect(mobileRequests).toBe(0)
+    await page.setViewportSize({ width: 390, height: 844 })
+    await expect(page.getByRole('status').filter({ hasText: 'Laddar …' })).toBeVisible()
+    expect(mobileRequests).toBeGreaterThan(0)
+    await expect(page.getByTestId('mobile-site-scroll')).toHaveCount(0)
+    releaseLayout()
+    await expect(page.getByTestId('mobile-site-scroll')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Boka tid', exact: true })).toBeVisible()
+  } finally {
+    releaseLayout()
+    await context.unroute('**/modules/public-web/src/app/MobileSite.tsx*', pendingMobile)
+  }
+})
+
+test('a failed public renderer request offers a real reload', async ({ page, context }) => {
+  await nativeBackend(context)
+  await page.setViewportSize({ width: 390, height: 844 })
+  let requests = 0
+  await page.route('**/modules/public-web/src/app/MobileSite.tsx*', (route) => {
+    requests++
+    return requests === 1 ? route.abort('failed') : route.continue()
+  })
+  await page.goto(harnessOrigin)
+  await expect(page.getByRole('alert')).toContainText('Kunde inte ladda sidan.')
+  await page.getByRole('button', { name: 'Ladda om', exact: true }).click()
+  await expect(page.getByTestId('mobile-site-scroll')).toBeVisible()
+  expect(requests).toBe(2)
+})

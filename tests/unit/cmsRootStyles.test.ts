@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { generate, parse, walk } from 'css-tree'
-import { bindCmsRootStyles, canonicalizeCmsRootStyles } from '../../src/admin/cms/cmsRootStyles'
-import { syncLayout } from '../../src/admin/cms/responsiveStyles'
+import {
+  bindCmsRootStyles,
+  canonicalizeCmsRootStyles,
+} from '../../modules/studio/src/cmsRootStyles'
+import { syncLayout } from '../../modules/studio/src/responsiveStyles'
 
 describe('CMS document root styles', () => {
   it('binds an already parsed sheet in place without a generate/parse round trip', () => {

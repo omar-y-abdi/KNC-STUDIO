@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { gunzipSync } from 'node:zlib'
-import { emptyDocument } from '../../shared/cms.ts'
+import { emptyDocument } from '../../packages/content-contracts/src/cms.ts'
 import { nativeBackend } from './cms-backend.mjs'
 import { test } from './fixtures.mjs'
 import { harnessOrigin } from './origins.mjs'
@@ -16,18 +16,18 @@ for (const layered of [false, true]) {
     await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
     const result = await page.evaluate(async (layered) => {
       const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
-      const { emptyDocument } = await import('/shared/cms.ts')
-      const { validateMarkup } = await import('/shared/cms-markup.ts')
+      const { emptyDocument } = await import('/packages/content-contracts/src/cms.ts')
+      const { validateMarkup } = await import('/packages/content-contracts/src/cms-markup.ts')
       const {
         composedCanvasPasses,
         installHomeAboutPreview,
         extractComposedAbout,
         stripComposedCanvas,
-      } = await import('/src/admin/cms/composedCanvas.ts')
+      } = await import('/modules/studio/src/composedCanvas.ts')
       const { connectCanvasStyles, parseCanvasCss, readCanvasCss } =
-        await import('/src/admin/cms/nativeCanvas.ts')
+        await import('/modules/studio/src/nativeCanvas.ts')
       const { bindCmsRootStyles, canonicalizeCmsRootStyles } =
-        await import('/src/admin/cms/cmsRootStyles.ts')
+        await import('/modules/studio/src/cmsRootStyles.ts')
       const policy = {
         siteOrigin: globalThis.location.origin,
         storageOrigin: 'https://storage.example.test',
@@ -277,9 +277,9 @@ test('Home saves keep owner CSS and match the public About cascade', async ({ pa
     'html body{--home-root:1}',
   ]
   const result = await page.evaluate(async (orphans) => {
-    const { emptyDocument } = await import('/shared/cms.ts')
+    const { emptyDocument } = await import('/packages/content-contracts/src/cms.ts')
     const { composedCanvas, extractComposedAbout, stripComposedCanvas } =
-      await import('/src/admin/cms/composedCanvas.ts')
+      await import('/modules/studio/src/composedCanvas.ts')
     const homeHtml =
       '<div data-knc-native="1"><div data-knc-surface="desktop-home"><h1 id="home-heading" class="shared">Home</h1><div data-knc-slot="desktop-about"><section aria-labelledby="about-heading"></section></div></div><div data-knc-surface="mobile-home"><div data-knc-slot="mobile-about"><section aria-labelledby="about-heading"></section></div></div></div>'
     const aboutHtml =
@@ -403,14 +403,14 @@ test('Home text edits keep the red About layer on public Home', async ({ page })
   await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
   const result = await page.evaluate(async () => {
     const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
-    const { emptyDocument } = await import('/shared/cms.ts')
-    const { validateMarkup } = await import('/shared/cms-markup.ts')
+    const { emptyDocument } = await import('/packages/content-contracts/src/cms.ts')
+    const { validateMarkup } = await import('/packages/content-contracts/src/cms-markup.ts')
     const { composedCanvasPasses, extractComposedAbout, stripComposedCanvas } =
-      await import('/src/admin/cms/composedCanvas.ts')
+      await import('/modules/studio/src/composedCanvas.ts')
     const { connectCanvasStyles, parseCanvasCss, readCanvasCss } =
-      await import('/src/admin/cms/nativeCanvas.ts')
+      await import('/modules/studio/src/nativeCanvas.ts')
     const { bindCmsRootStyles, canonicalizeCmsRootStyles } =
-      await import('/src/admin/cms/cmsRootStyles.ts')
+      await import('/modules/studio/src/cmsRootStyles.ts')
     const policy = {
       siteOrigin: globalThis.location.origin,
       storageOrigin: 'https://storage.example.test',
@@ -554,9 +554,9 @@ test('Home saves keep a stored layer copy ahead of the layer before it in About'
   await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
   const blue = '@layer{.card{color:blue!important}}'
   const result = await page.evaluate(async (blue) => {
-    const { emptyDocument } = await import('/shared/cms.ts')
+    const { emptyDocument } = await import('/packages/content-contracts/src/cms.ts')
     const { composedCanvas, extractComposedAbout, stripComposedCanvas } =
-      await import('/src/admin/cms/composedCanvas.ts')
+      await import('/modules/studio/src/composedCanvas.ts')
     const homeHtml =
       '<div data-knc-native="1"><div data-knc-surface="desktop-home"><h1 id="home-heading">Home</h1><div data-knc-slot="desktop-about"><section aria-labelledby="about-heading"></section></div></div><div data-knc-surface="mobile-home"><div data-knc-slot="mobile-about"><section aria-labelledby="about-heading"></section></div></div></div>'
     const aboutHtml =
@@ -808,17 +808,19 @@ for (const {
     const sheets = { homeCss, aboutCss }
     const result = await page.evaluate(async ({ homeCss, aboutCss }) => {
       const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
-      const { emptyDocument, validateDocument } = await import('/shared/cms.ts')
-      const { validateDocumentMarkupPlacements } = await import('/shared/cms-markup.ts')
-      const { CORE_PAGE_IDS } = await import('/src/admin/cms/corePages.ts')
+      const { emptyDocument, validateDocument } =
+        await import('/packages/content-contracts/src/cms.ts')
+      const { validateDocumentMarkupPlacements } =
+        await import('/packages/content-contracts/src/cms-markup.ts')
+      const { CORE_PAGE_IDS } = await import('/modules/studio/src/corePages.ts')
       const { composedCanvasPasses, extractComposedAbout, stripComposedCanvas } =
-        await import('/src/admin/cms/composedCanvas.ts')
+        await import('/modules/studio/src/composedCanvas.ts')
       const { connectCanvasStyles, exportNativeCanvas, parseCanvasCss, readCanvasCss } =
-        await import('/src/admin/cms/nativeCanvas.ts')
+        await import('/modules/studio/src/nativeCanvas.ts')
       const { bindCmsRootStyles, canonicalizeCmsRootStyles } =
-        await import('/src/admin/cms/cmsRootStyles.ts')
-      const { syncResponsiveText } = await import('/src/admin/cms/responsiveText.ts')
-      const { syncPageLayout } = await import('/src/admin/cms/responsiveStyles.ts')
+        await import('/modules/studio/src/cmsRootStyles.ts')
+      const { syncResponsiveText } = await import('/modules/studio/src/responsiveText.ts')
+      const { syncPageLayout } = await import('/modules/studio/src/responsiveStyles.ts')
       const policy = {
         siteOrigin: globalThis.location.origin,
         storageOrigin: 'https://storage.example.test',
@@ -1224,12 +1226,14 @@ for (const {
     await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
     const result = await page.evaluate(
       async ({ homeCss, aboutCss, homeMarkup }) => {
-        const { emptyDocument, validateDocument } = await import('/shared/cms.ts')
-        const { validateDocumentMarkupPlacements } = await import('/shared/cms-markup.ts')
-        const { CORE_PAGE_IDS } = await import('/src/admin/cms/corePages.ts')
+        const { emptyDocument, validateDocument } =
+          await import('/packages/content-contracts/src/cms.ts')
+        const { validateDocumentMarkupPlacements } =
+          await import('/packages/content-contracts/src/cms-markup.ts')
+        const { CORE_PAGE_IDS } = await import('/modules/studio/src/corePages.ts')
         const { composedCanvas, extractComposedAbout, stripComposedCanvas } =
-          await import('/src/admin/cms/composedCanvas.ts')
-        const { nativeCanvas } = await import('/src/admin/cms/nativeCanvas.ts')
+          await import('/modules/studio/src/composedCanvas.ts')
+        const { nativeCanvas } = await import('/modules/studio/src/nativeCanvas.ts')
         const policy = {
           siteOrigin: globalThis.location.origin,
           storageOrigin: 'https://storage.example.test',
@@ -1527,7 +1531,7 @@ for (const { name, slot, about: aboutRules } of studioSaves) {
     await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
     // The backend holds the adopted document, so each save shows only what that save writes.
     const { stored, adopted } = await page.evaluate(async (document) => {
-      const { normalizeDocument } = await import('/src/admin/cms/normalizeDocument.ts')
+      const { normalizeDocument } = await import('/modules/studio/src/normalizeDocument.ts')
       const stored = normalizeDocument(document)
       return { stored, adopted: normalizeDocument(stored) === stored }
     }, raw)
@@ -1713,10 +1717,10 @@ for (const { name, slot, homeMarkup = '', homeCss, removed, kept, gone } of abou
     await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
     const result = await page.evaluate(
       async ({ slot, homeMarkup, homeCss, removed }) => {
-        const { emptyDocument } = await import('/shared/cms.ts')
+        const { emptyDocument } = await import('/packages/content-contracts/src/cms.ts')
         const { composedCanvas, extractComposedAbout, stripComposedCanvas } =
-          await import('/src/admin/cms/composedCanvas.ts')
-        const { nativeCanvas } = await import('/src/admin/cms/nativeCanvas.ts')
+          await import('/modules/studio/src/composedCanvas.ts')
+        const { nativeCanvas } = await import('/modules/studio/src/nativeCanvas.ts')
         const desktopSlot = slot
           ? '<div data-knc-slot="desktop-about"><section aria-labelledby="about-heading"></section></div>'
           : ''
@@ -1842,17 +1846,19 @@ for (const { name, condition, layers, shared = false } of homeConditionalLayers)
     const sheets = { homeCss: `${block}${blue}`, aboutCss: shared ? block : '' }
     const result = await page.evaluate(async ({ homeCss, aboutCss }) => {
       const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
-      const { emptyDocument, validateDocument } = await import('/shared/cms.ts')
-      const { validateDocumentMarkupPlacements } = await import('/shared/cms-markup.ts')
-      const { CORE_PAGE_IDS } = await import('/src/admin/cms/corePages.ts')
+      const { emptyDocument, validateDocument } =
+        await import('/packages/content-contracts/src/cms.ts')
+      const { validateDocumentMarkupPlacements } =
+        await import('/packages/content-contracts/src/cms-markup.ts')
+      const { CORE_PAGE_IDS } = await import('/modules/studio/src/corePages.ts')
       const { composedCanvasPasses, extractComposedAbout, stripComposedCanvas } =
-        await import('/src/admin/cms/composedCanvas.ts')
+        await import('/modules/studio/src/composedCanvas.ts')
       const { connectCanvasStyles, exportNativeCanvas, parseCanvasCss, readCanvasCss } =
-        await import('/src/admin/cms/nativeCanvas.ts')
+        await import('/modules/studio/src/nativeCanvas.ts')
       const { bindCmsRootStyles, canonicalizeCmsRootStyles } =
-        await import('/src/admin/cms/cmsRootStyles.ts')
-      const { syncResponsiveText } = await import('/src/admin/cms/responsiveText.ts')
-      const { syncPageLayout } = await import('/src/admin/cms/responsiveStyles.ts')
+        await import('/modules/studio/src/cmsRootStyles.ts')
+      const { syncResponsiveText } = await import('/modules/studio/src/responsiveText.ts')
+      const { syncPageLayout } = await import('/modules/studio/src/responsiveStyles.ts')
       const policy = {
         siteOrigin: globalThis.location.origin,
         storageOrigin: 'https://storage.example.test',
@@ -2122,7 +2128,7 @@ for (const { name, layers } of studioConditionalLayers) {
     lightSv(raw, '/').css.light += block
     await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
     const { stored, adopted } = await page.evaluate(async (document) => {
-      const { normalizeDocument } = await import('/src/admin/cms/normalizeDocument.ts')
+      const { normalizeDocument } = await import('/modules/studio/src/normalizeDocument.ts')
       const stored = normalizeDocument(document)
       return { stored, adopted: normalizeDocument(stored) === stored }
     }, raw)
@@ -2275,12 +2281,14 @@ for (const { name, owner, rule, subject } of negatedIds) {
     await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
     const result = await page.evaluate(
       async ({ document, rule }) => {
-        const { validateDocument } = await import('/shared/cms.ts')
-        const { validateDocumentMarkupPlacements } = await import('/shared/cms-markup.ts')
-        const { CMS_BUILT_ASSETS } = await import('/shared/cms-built-assets.ts')
+        const { validateDocument } = await import('/packages/content-contracts/src/cms.ts')
+        const { validateDocumentMarkupPlacements } =
+          await import('/packages/content-contracts/src/cms-markup.ts')
+        const { CMS_BUILT_ASSETS } =
+          await import('/packages/content-contracts/src/cms-built-assets.ts')
         const { composedCanvas, extractComposedAbout, stripComposedCanvas } =
-          await import('/src/admin/cms/composedCanvas.ts')
-        const { exportNativeCanvas } = await import('/src/admin/cms/nativeCanvas.ts')
+          await import('/modules/studio/src/composedCanvas.ts')
+        const { exportNativeCanvas } = await import('/modules/studio/src/nativeCanvas.ts')
         // The publication validators accept the document. They canonicalize a copy.
         const copy = globalThis.structuredClone(document)
         validateDocument(copy)
@@ -2365,10 +2373,11 @@ async function adoptedHomeFixture(page, context, sheets) {
   for (const [path, css] of Object.entries(sheets)) lightSv(raw, path).css.light += css
   await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
   const { stored, adopted } = await page.evaluate(async (document) => {
-    const { validateDocument } = await import('/shared/cms.ts')
-    const { validateDocumentMarkupPlacements } = await import('/shared/cms-markup.ts')
-    const { CMS_BUILT_ASSETS } = await import('/shared/cms-built-assets.ts')
-    const { normalizeDocument } = await import('/src/admin/cms/normalizeDocument.ts')
+    const { validateDocument } = await import('/packages/content-contracts/src/cms.ts')
+    const { validateDocumentMarkupPlacements } =
+      await import('/packages/content-contracts/src/cms-markup.ts')
+    const { CMS_BUILT_ASSETS } = await import('/packages/content-contracts/src/cms-built-assets.ts')
+    const { normalizeDocument } = await import('/modules/studio/src/normalizeDocument.ts')
     const copy = globalThis.structuredClone(document)
     validateDocument(copy)
     validateDocumentMarkupPlacements(copy, {
@@ -2977,9 +2986,9 @@ test('composed About copies keep their Home ancestor conditions in both devices'
 }) => {
   await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
   const result = await page.evaluate(async () => {
-    const { emptyDocument } = await import('/shared/cms.ts')
-    const { validateMarkup } = await import('/shared/cms-markup.ts')
-    const { composedCanvas } = await import('/src/admin/cms/composedCanvas.ts')
+    const { emptyDocument } = await import('/packages/content-contracts/src/cms.ts')
+    const { validateMarkup } = await import('/packages/content-contracts/src/cms-markup.ts')
+    const { composedCanvas } = await import('/modules/studio/src/composedCanvas.ts')
     const homeHtml =
       '<div data-knc-native="1"><div data-knc-surface="desktop-home"><h1 id="home">Home</h1><div data-knc-slot="desktop-about"><section aria-labelledby="intro"></section></div></div><div data-knc-surface="mobile-home"><div data-knc-slot="mobile-about"><section aria-labelledby="intro"></section></div></div></div>'
     const section =
@@ -3089,8 +3098,8 @@ test('Home saves extract About layers with array work linear in the layer count'
   await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
   const extract = (sizes) =>
     page.evaluate(async (sizes) => {
-      const { extractComposedAbout } = await import('/src/admin/cms/composedCanvas.ts')
-      const { validateMarkup } = await import('/shared/cms-markup.ts')
+      const { extractComposedAbout } = await import('/modules/studio/src/composedCanvas.ts')
+      const { validateMarkup } = await import('/packages/content-contracts/src/cms-markup.ts')
       const policy = {
         siteOrigin: globalThis.location.origin,
         storageOrigin: 'https://admin-harness.invalid',

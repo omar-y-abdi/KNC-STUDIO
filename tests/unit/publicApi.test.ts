@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('../../src/backend/config', () => ({
+vi.mock('../../modules/public-web/src/backend/config', () => ({
   SUPABASE_URL: 'https://example.supabase.co',
   SUPABASE_ANON_KEY: 'eyJ.test.signature',
   isBackendConfigured: () => true,
@@ -14,7 +14,7 @@ import {
   realtimeUrl,
   restUrl,
   storageObjectUrl,
-} from '../../src/backend/publicApi'
+} from '../../modules/public-web/src/backend/publicApi'
 
 const JWT_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiJ9.c2lnbmF0dXJl'
 
@@ -112,18 +112,18 @@ describe('Storage object URLs', () => {
 
 describe('without a configured backend', () => {
   afterEach(() => {
-    vi.doUnmock('../../src/backend/config')
+    vi.doUnmock('../../modules/public-web/src/backend/config')
     vi.resetModules()
   })
 
   it('refuses to build an object URL instead of inventing a project', async () => {
     vi.resetModules()
-    vi.doMock('../../src/backend/config', () => ({
+    vi.doMock('../../modules/public-web/src/backend/config', () => ({
       SUPABASE_URL: undefined,
       SUPABASE_ANON_KEY: undefined,
       isBackendConfigured: () => false,
     }))
-    const unconfigured = await import('../../src/backend/publicApi')
+    const unconfigured = await import('../../modules/public-web/src/backend/publicApi')
     expect(() => unconfigured.publicObjectUrl('gallery', 'a.webp')).toThrow(/not configured/)
   })
 })

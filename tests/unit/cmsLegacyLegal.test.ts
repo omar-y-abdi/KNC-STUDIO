@@ -2,9 +2,13 @@ import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { gunzipSync } from 'node:zlib'
 import { describe, expect, it } from 'vitest'
-import { emptyDocument, type CmsDocument, type CmsPage } from '../../shared/cms'
-import { mergeCmsDocuments } from '../../src/admin/cms/draft'
-import { LEGACY_LEGAL_CSS, upgradeLegacyLegalPages } from '../../src/admin/cms/legacyLegal'
+import {
+  emptyDocument,
+  type CmsDocument,
+  type CmsPage,
+} from '../../packages/content-contracts/src/cms'
+import { mergeCmsDocuments } from '../../modules/studio/src/draft'
+import { LEGACY_LEGAL_CSS, upgradeLegacyLegalPages } from '../../modules/studio/src/legacyLegal'
 
 // The constants are copies of git objects at c202df2. CI checks out one commit, so the copies are
 // pinned by hash: `git show c202df2:public/info.css | shasum -a 256` and, for /privacy, the text

@@ -1,21 +1,24 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { customerGateway } from '../../src/mybookings/customerGateway'
+import { customerGateway } from '../../supabase/worker/customerGateway'
 import { readStackEnv, withClient } from './_helpers'
 
 /** Node has no document origin or cookie jar. Execute the real Worker handler, then real Edge/DB. */
-export function installCustomerGatewayFetch(): () => void {
+export function installCustomerGatewayFetch(
+  initialCookies: Readonly<Record<string, string>> = {},
+): () => void {
   const env = readStackEnv()
   if (env === null) throw new Error('Local Supabase is required for customer gateway integration')
   const gatewaySecret = process.env.CUSTOMER_GATEWAY_SECRET
   if (!gatewaySecret) throw new Error('Configure the local CUSTOMER_GATEWAY_SECRET for integration')
   const actualFetch = globalThis.fetch
-  let cookie: string | null = null
+  const cookies = new Map(Object.entries(initialCookies))
   globalThis.fetch = async (input, init) => {
     if (input !== '/api/customer-bookings') return actualFetch(input, init)
     const headers = new Headers(init?.headers)
     headers.set('Origin', 'http://127.0.0.1:4173')
     headers.set('CF-Connecting-IP', '127.0.0.1')
-    if (cookie !== null) headers.set('Cookie', cookie)
+    if (cookies.size > 0)
+      headers.set('Cookie', [...cookies].map(([name, value]) => `${name}=${value}`).join('; '))
     const response = await customerGateway(
       new Request(`http://127.0.0.1:4173${input}`, { ...init, headers }),
       {
@@ -24,8 +27,11 @@ export function installCustomerGatewayFetch(): () => void {
         CUSTOMER_GATEWAY_SECRET: gatewaySecret,
       },
     )
-    const setCookie = response.headers.get('Set-Cookie')
-    if (setCookie !== null) cookie = setCookie.split(';')[0] ?? null
+    for (const setCookie of response.headers.getSetCookie()) {
+      const pair = setCookie.split(';')[0] ?? ''
+      const separator = pair.indexOf('=')
+      if (separator !== -1) cookies.set(pair.slice(0, separator), pair.slice(separator + 1))
+    }
     return response
   }
   return () => {
