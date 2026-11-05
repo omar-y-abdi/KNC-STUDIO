@@ -2,12 +2,11 @@ import { readFileSync } from 'node:fs'
 import { expect, test } from './fixtures.mjs'
 import { harnessOrigin } from './origins.mjs'
 
-const templates = Object.fromEntries(
-  ['/privacy', '/terms', '/contact'].map((path) => [
-    path,
-    readFileSync(new URL(`../../public${path}.html`, import.meta.url), 'utf8'),
-  ]),
-)
+const templates = {
+  '/privacy': readFileSync(new URL('../../public/privacy.html', import.meta.url), 'utf8'),
+  '/terms': readFileSync(new URL('../../public/terms.html', import.meta.url), 'utf8'),
+  '/contact': readFileSync(new URL('../../public/contact.html', import.meta.url), 'utf8'),
+}
 
 test('adding a missing Contact preserves complete owner information pages byte for byte', async ({
   page,

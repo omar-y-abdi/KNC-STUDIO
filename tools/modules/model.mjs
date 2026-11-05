@@ -34,6 +34,7 @@ export const deliveryCohort = {
 }
 
 export function matchesDeliveryCohort(changes, graph, inventory) {
+  if (graph.testUnsupported?.some(({ file }) => !file.startsWith('tests/unit/'))) return false
   if (changes.length !== 1 || changes[0].status !== 'M' || changes[0].path !== deliveryCohort.input)
     return false
   const consumers = [
@@ -215,6 +216,13 @@ export function unitOwnership(root, inventory, graph) {
 
 export function selectVerification(changes, graph, inventory, units, forcedReasons = []) {
   const reasons = [...forcedReasons]
+  const unknownBrowserInputs = (graph.testUnsupported ?? []).filter(
+    ({ file }) => !file.startsWith('tests/unit/'),
+  )
+  if (unknownBrowserInputs.length)
+    reasons.push(
+      `incomplete browser consumer graph: ${unknownBrowserInputs.map(({ reason }) => reason).join('; ')}; full verification required`,
+    )
   const affected = new Set()
   const explain = []
   for (const change of changes) {
@@ -224,6 +232,11 @@ export function selectVerification(changes, graph, inventory, units, forcedReaso
       reasons.push(`${status}: ${path} requires both-version ownership; using full verification`)
     if (/(?:^|\/)(?:package(?:-lock)?\.json|deno\.(?:json|lock))$/.test(path))
       reasons.push(`Package/exports/lock configuration: ${path}`)
+    if (
+      (owner && !/\.[cm]?[jt]sx?$/.test(path) && !path.startsWith('supabase/migrations/')) ||
+      /\.(?:css|html)$/i.test(path)
+    )
+      reasons.push(`Unmodeled source behavior (styles/templates/data): ${path}`)
     if (
       owner &&
       (path.includes('/src/') ||

@@ -463,12 +463,10 @@ test.describe('owner CSS on html and body', () => {
 // at an already published CMS page. In production those aliases redirect and the destination is
 // rendered inside the built app shell, whose asset stylesheet is not a legal source stylesheet.
 test.describe('legal source preparation', () => {
-  const templates = Object.fromEntries(
-    ['privacy', 'terms'].map((kind) => [
-      `/${kind}`,
-      readFileSync(new URL(`../../public/${kind}.html`, import.meta.url), 'utf8'),
-    ]),
-  )
+  const templates = {
+    '/privacy': readFileSync(new URL('../../public/privacy.html', import.meta.url), 'utf8'),
+    '/terms': readFileSync(new URL('../../public/terms.html', import.meta.url), 'utf8'),
+  }
 
   for (const missingLayouts of [false, true]) {
     test(

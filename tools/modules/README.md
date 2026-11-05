@@ -4,6 +4,8 @@
 
 The six workspaces have explicit file exports and declared dependency directions. Browser code crosses packages through bare exports; Studio cannot import the public app or source-preview implementation. Public interfaces also have consumer-specific allowlists. Deno functions and portable contracts may retain explicit relative `.ts` imports to exact exported source files in declared packages. Remote Deno imports remain the responsibility of the real Deno CI gate; import-map and lockfile changes select full verification. Test harnesses may inspect private implementation and are recorded separately from production edges.
 
+Owned and public stylesheets are parsed with the installed `css-tree` parser. CSS imports and resource URLs obey package boundaries, including escaped identifiers/function names, encoded paths, root URLs and string forms in `image-set`. Local styles and public fonts/assets resolve to real files; relative or root-URL access to another package's private styles is rejected. Opaque remote/data CSS dependencies, malformed encodings and parser fallback syntax are rejected rather than treated as complete edges. CSS/HTML and other unmodeled module source formats select full verification because their global/runtime effects are not established by the import graph.
+
 ## Plans and trust
 
 Generate the plan **after formatting**. Supply exact Git commit SHAs from trusted workflow context. Store artifacts outside the checkout or in the exact ignored CI artifact directories.
@@ -23,6 +25,8 @@ Main pushes, manual events, missing/invalid/non-ancestor bases, stale heads, add
 ## Ownership and non-import dependencies
 
 `test-ownership.json` declares every existing unit, integration, browser, SQL and orchestration test. Adding a test requires an explicit responsibility entry. Unit selection unions declared responsibility with the current transitive source imports. Filesystem/process readers, unresolved local dependencies and tests without attributable source imports remain always-on. These tests often inspect CSS, SQL, deployment or runtime source through literal strings, so import reachability alone is insufficient.
+
+Unsupported or unresolved test dependencies are retained as `testUnsupported` evidence. Any unknown browser/harness input forces a full plan, even when that consumer already exists in the base revision and only a leaf changes later. Unknown unit filesystem inputs remain always-on through unit ownership. The finite browser legal/template fixture reads use explicit literal URL maps, so their actual source files are visible without hash exceptions or guessing dynamic values.
 
 The import graph is supplemented by explicit broad contracts:
 

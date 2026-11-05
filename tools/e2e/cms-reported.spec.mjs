@@ -2004,15 +2004,16 @@ test('legal page shows the owner body colours in the canvas and to visitors', as
   }
 })
 
-const LEGACY_LEGAL_CSS = Object.fromEntries(
-  ['terms', 'privacy'].map((kind) => [
-    `/${kind}`,
-    readFileSync(
-      new URL(`../../modules/studio/src/legacy-legal-${kind}.txt`, import.meta.url),
-      'utf8',
-    ),
-  ]),
-)
+const LEGACY_LEGAL_CSS = {
+  '/terms': readFileSync(
+    new URL('../../modules/studio/src/legacy-legal-terms.txt', import.meta.url),
+    'utf8',
+  ),
+  '/privacy': readFileSync(
+    new URL('../../modules/studio/src/legacy-legal-privacy.txt', import.meta.url),
+    'utf8',
+  ),
+}
 const OWNER_CSS = '\n.owner-edit{letter-spacing:.01em}'
 
 /** The document as a draft saved before the legal upgrade held it (legacy sheets, bare <main>), with

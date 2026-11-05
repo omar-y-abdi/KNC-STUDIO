@@ -197,7 +197,10 @@ test('content format, SQL, CSS and wire contracts select all current consumers; 
     const plan = selectVerification([{ path, status: 'M' }], graph, inventory, units)
     for (const job of ['cms', 'public-browsers', 'edge-functions', 'database-current', 'startup'])
       assert.equal(plan.jobs[job].required, true, `${path}: ${job}`)
-    assert.equal(plan.jobs['database-rollout'].required, path.includes('/migrations/'))
+    assert.equal(
+      plan.jobs['database-rollout'].required,
+      path.includes('/migrations/') || path.endsWith('.css'),
+    )
   }
   assert.ok(t)
 })
@@ -366,6 +369,10 @@ test('audited delivery panel narrows browsers only while its exact callers and s
   assert.equal(plan.shards.public, 1)
   assert.equal(plan.jobs['database-current'].required, false)
   assert.ok(plan.reasons.some((reason) => reason.includes('Audited DeliveryStatus leaf')))
+  for (const { file } of graph.testUnsupported) {
+    assert.ok(file.startsWith('tests/unit/'), 'Unknown browser consumers must prevent narrowing')
+    assert.ok(plan.tests.unit.includes(file), `Unknown unit inputs stay always-on: ${file}`)
+  }
   for (const path of [
     'modules/studio/src/DomainPanels.tsx',
     'modules/studio/src/studio.css',
@@ -411,4 +418,108 @@ test('backend local commands check real Deno entrypoints and package Worker with
   assert.deepEqual(build.at(-1).args.slice(-2), ['deploy', '--dry-run'])
   assert.deepEqual(commandsFor('backend', 'lint', plan)[0].args.slice(-1), ['supabase/worker'])
   assert.deepEqual(commandsFor('backend', 'database', plan)[0].args.slice(-2), ['test', 'db'])
+})
+
+test('unknown browser consumer already in base disables a later delivery-only cohort', (t) => {
+  const f = fixture(t)
+  f.write(deliveryCohort.input, 'export const DeliveryStatus = 1')
+  f.write(deliveryCohort.consumers[0], "import './DeliveryStatus'")
+  f.write(deliveryCohort.consumers[1], "import '/modules/studio/src/DeliveryStatus.tsx'")
+  for (const path of [...deliveryCohort.cms, ...deliveryCohort.public]) {
+    f.write(
+      path,
+      path.endsWith('/cms-delivery-status.spec.mjs')
+        ? "import '/modules/studio/src/DeliveryStatus.tsx'"
+        : '',
+    )
+    f.inventory[path] = {
+      kind: path.includes('/cms-') ? 'cms' : 'public',
+      owners: ['studio'],
+      reason: 'Audited delivery fixture consumer',
+    }
+  }
+  f.write(
+    'tools/e2e/public.spec.mjs',
+    "page.evaluate(async path => import(path), '/modules/studio/src/DeliveryStatus.tsx')",
+  )
+  f.json('tools/modules/test-ownership.json', f.inventory)
+  git(f.root, ['add', '.'])
+  git(f.root, ['commit', '-qm', 'existing owned runtime consumer'])
+  const head = git(f.root, ['rev-parse', 'HEAD'])
+  f.write(deliveryCohort.input, 'export const DeliveryStatus = 2')
+  const plan = createPlan({ ...f.context, base: head, head })
+  assert.equal(plan.mode, 'full')
+  assert.ok(plan.tests.browser.public.includes('tools/e2e/public.spec.mjs'))
+  assert.ok(Object.values(plan.jobs).every((job) => job.required))
+  assert.ok(plan.reasons.some((reason) => reason.includes('incomplete browser consumer graph')))
+})
+
+test('unmodeled source formats require full verification, including Studio CSS and templates', (t) => {
+  const f = fixture(t)
+  const graph = inspectBoundaries(f.root)
+  const units = unitOwnership(f.root, f.inventory, graph)
+  for (const path of [
+    'modules/studio/src/studio.css',
+    'modules/studio/src/contact.en.html',
+    'modules/studio/src/config.json',
+    'modules/studio/src/legacy.txt',
+  ]) {
+    const plan = selectVerification([{ path, status: 'M' }], graph, f.inventory, units)
+    assert.equal(plan.mode, 'full', path)
+    assert.ok(
+      Object.values(plan.jobs).every((job) => job.required),
+      path,
+    )
+  }
+})
+
+test('CSS parser enforces private cross-module imports and encoded resource paths', (t) => {
+  const f = fixture(t)
+  f.write('modules/staff-admin/src/AdminShell.css', '.staff {color:red}')
+  for (const source of [
+    '@import "../../staff-admin/src/AdminShell.css";',
+    '@IMPORT url("../../staff-admin/src/AdminShell.css");',
+    '@import "..\\2f ..\\2f staff-admin/src/AdminShell.css";',
+    '@import "%2e%2e/%2e%2e/staff-admin/src/AdminShell.css";',
+    '@import url(/modules/staff-admin/src/AdminShell.css);',
+    '.x { background: url("../../staff-admin/src/AdminShell.css") }',
+    '.x { background: u\\72l("../../staff-admin/src/AdminShell.css") }',
+    '.x { background: image-set("../../staff-admin/src/AdminShell.css" 1x) }',
+    '@\\69mport "../../staff-admin/src/AdminShell.css";',
+  ]) {
+    f.write('modules/studio/src/studio.css', source)
+    assert.ok(
+      inspectBoundaries(f.root).errors.some((error) => error.includes('cross-package CSS')),
+      source,
+    )
+  }
+})
+
+test('CSS preserves owned styles and public fonts while rejecting opaque or malformed dependencies', (t) => {
+  const f = fixture(t)
+  f.write('public/fonts/example.woff2', 'font bytes')
+  f.write('public/tokens.css', ':root {--color: red}')
+  f.write('modules/studio/src/local.css', '.local {color: var(--color)}')
+  f.write(
+    'modules/studio/src/studio.css',
+    '@import "./local.css"; @import "../../../public/tokens.css"; @font-face {font-family: Example; src: url("/fonts/example.woff2")} .icon {filter: url(#filter)}',
+  )
+  const graph = inspectBoundaries(f.root)
+  assert.deepEqual([...graph.errors, ...graph.unsupported], [])
+  for (const target of [
+    'modules/studio/src/local.css',
+    'public/tokens.css',
+    'public/fonts/example.woff2',
+  ])
+    assert.ok(graph.edges.some(({ from, to }) => from.endsWith('/studio.css') && to === target))
+  for (const css of [
+    '@import "https://example.invalid/private.css";',
+    '@import "data:text/css,.x{}";',
+    '.x{background:url("%zz")}',
+    '@import var(--private);',
+  ]) {
+    f.write('modules/studio/src/studio.css', css)
+    const invalid = inspectBoundaries(f.root)
+    assert.ok(invalid.errors.length + invalid.unsupported.length > 0, css)
+  }
 })

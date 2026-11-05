@@ -3,6 +3,7 @@ import { dirname, extname, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
 import { builtinModules, createRequire } from 'node:module'
+import { parse as parseCss, walk as walkCss, ident as cssIdent } from 'css-tree'
 
 export const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 export const modulePaths = {
@@ -130,6 +131,51 @@ export function dependenciesOf(path, text) {
   return { dependencies, unsupported }
 }
 
+export function cssDependenciesOf(path, text) {
+  const dependencies = []
+  const unsupported = []
+  try {
+    const ast = parseCss(text, {
+      parseCustomProperty: true,
+      onParseError: (error) => unsupported.push(`${path}: CSS parser error ${error.message}`),
+    })
+    walkCss(ast, {
+      enter(node) {
+        if (node.type === 'Raw') unsupported.push(`${path}: unsupported raw CSS syntax`)
+        if (node.type === 'Function') {
+          const name = cssIdent.decode(node.name).toLowerCase()
+          // Escaped function names are represented as Function instead of Url by css-tree.
+          // String forms in image-set also fetch resources without a Url AST node.
+          if (['url', 'src'].includes(name)) {
+            const children = node.children.toArray()
+            if (children.length === 1 && children[0].type === 'String')
+              dependencies.push({ specifier: children[0].value, kind: 'CSS resource' })
+            else unsupported.push(`${path}: unsupported CSS ${name}() target`)
+          } else if (['image-set', '-webkit-image-set', 'image'].includes(name)) {
+            for (const child of node.children)
+              if (child.type === 'String')
+                dependencies.push({ specifier: child.value, kind: 'CSS resource' })
+          }
+        }
+        if (node.type === 'Atrule' && cssIdent.decode(node.name).toLowerCase() === 'import') {
+          const target = node.prelude?.children?.first
+          if (target?.type === 'String' || target?.type === 'Url')
+            dependencies.push({ specifier: target.value, kind: 'CSS import' })
+          else unsupported.push(`${path}: unsupported CSS import target`)
+        } else if (
+          node.type === 'Url' &&
+          !(this.atrule && cssIdent.decode(this.atrule.name).toLowerCase() === 'import')
+        ) {
+          dependencies.push({ specifier: node.value, kind: 'CSS resource' })
+        }
+      },
+    })
+  } catch (error) {
+    unsupported.push(`${path}: CSS parser error ${error.message}`)
+  }
+  return { dependencies, unsupported }
+}
+
 export function inspectBoundaries(root = repositoryRoot) {
   root = realpathSync(root)
   const errors = []
@@ -179,9 +225,11 @@ export function inspectBoundaries(root = repositoryRoot) {
       id === 'backend' ? [`${path}/functions`, `${path}/worker`] : [`${path}/src`],
     ),
   ]
-  const files = directories
-    .flatMap((path) => walkFiles(root, path))
-    .filter((path) => /\.(?:[cm]?[jt]sx?)$/.test(path))
+  const ownedFiles = directories.flatMap((path) => walkFiles(root, path))
+  const files = ownedFiles.filter((path) => /\.(?:[cm]?[jt]sx?)$/.test(path))
+  const styles = [...ownedFiles, ...walkFiles(root, 'public')]
+    .filter((path) => /\.css$/i.test(path))
+    .sort()
   const edges = []
   const compilerOptions = {
     moduleResolution: ts.ModuleResolutionKind.Bundler,
@@ -193,11 +241,13 @@ export function inspectBoundaries(root = repositoryRoot) {
   // Harnesses may intentionally inspect private source. Record their literal dependencies for
   // audited behavioral cohorts, without applying production package restrictions to tests.
   const testEdges = []
+  const testUnsupported = []
   for (const file of ['tools/e2e', 'tests/unit', 'tests/integration']
     .flatMap((path) => walkFiles(root, path))
     .filter((path) => /\.[cm]?[jt]sx?$/.test(path))) {
-    for (const { specifier } of dependenciesOf(file, readFileSync(resolve(root, file), 'utf8'))
-      .dependencies) {
+    const parsed = dependenciesOf(file, readFileSync(resolve(root, file), 'utf8'))
+    testUnsupported.push(...parsed.unsupported.map((reason) => ({ file, reason })))
+    for (const { specifier, kind } of parsed.dependencies) {
       const normalized = specifier.startsWith('/') ? resolve(root, specifier.slice(1)) : specifier
       const resolved = ts.resolveModuleName(
         normalized,
@@ -205,10 +255,103 @@ export function inspectBoundaries(root = repositoryRoot) {
         compilerOptions,
         ts.sys,
       ).resolvedModule
+      const literal = specifier.startsWith('/')
+        ? resolve(root, specifier.slice(1))
+        : specifier.startsWith('.')
+          ? resolve(root, dirname(file), specifier)
+          : null
       const target =
         exports.get(specifier) ??
-        (resolved ? relative(root, realpathSync(resolved.resolvedFileName)) : null)
+        (resolved
+          ? relative(root, realpathSync(resolved.resolvedFileName))
+          : literal && existsSync(literal)
+            ? relative(root, realpathSync(literal))
+            : null)
       if (target && ownerOf(target)) testEdges.push({ from: file, to: target })
+      if (
+        target === null &&
+        (specifier.startsWith('.') ||
+          specifier.startsWith('/') ||
+          specifier.startsWith('@bladeblend/'))
+      )
+        testUnsupported.push({ file, reason: `${file}: unresolved test ${kind} ${specifier}` })
+    }
+  }
+  for (const file of styles) {
+    const owner = ownerOf(file)
+    const manifest = manifests[owner] ?? rootManifest
+    const parsed = cssDependenciesOf(file, readFileSync(resolve(root, file), 'utf8'))
+    unsupported.push(...parsed.unsupported)
+    for (const { specifier, kind } of parsed.dependencies) {
+      let decoded
+      try {
+        decoded = decodeURIComponent(specifier)
+      } catch {
+        errors.push(`${file}: malformed encoded CSS target ${specifier}`)
+        continue
+      }
+      if (decoded.startsWith('#') && kind === 'CSS resource') continue
+      // Remote/data styles cannot be inspected for package imports. Do not silently accept a
+      // dependency graph that stops at an opaque URL or an unsupported URL encoding.
+      if (
+        /^[a-z][a-z\d+.-]*:/i.test(decoded) ||
+        decoded.startsWith('//') ||
+        /[\\%]/.test(decoded) ||
+        [...decoded].some((character) => character.charCodeAt(0) < 32)
+      ) {
+        errors.push(`${file}: unsupported CSS URL ${specifier}`)
+        continue
+      }
+      const path = decoded.split(/[?#]/, 1)[0]
+      const packageName = path.startsWith('@') ? path.split('/').slice(0, 2).join('/') : null
+      let target = exports.get(path)
+      if (packageName) {
+        if (!target || !manifest.dependencies?.[packageName]) {
+          errors.push(`${file}: private or undeclared CSS package import ${specifier}`)
+          continue
+        }
+      } else {
+        const absolute = path.startsWith('/')
+          ? resolve(root, 'public', path.slice(1))
+          : resolve(root, dirname(file), path)
+        const sourceAbsolute = path.startsWith('/') ? resolve(root, path.slice(1)) : absolute
+        // Root URLs normally address public assets; explicit source URLs still cannot reach
+        // another workspace's private stylesheet, even if that target also happens to exist.
+        const candidate =
+          path.startsWith('/') && ownerOf(relative(root, sourceAbsolute))
+            ? sourceAbsolute
+            : absolute
+        target = existsSync(candidate)
+          ? relative(root, realpathSync(candidate))
+          : relative(root, candidate)
+        if (ownerOf(target) !== owner && !target.startsWith('public/')) {
+          errors.push(`${file}: cross-package CSS ${specifier}`)
+          continue
+        }
+      }
+      if (
+        target.startsWith('../') ||
+        !existsSync(resolve(root, target)) ||
+        !statSync(resolve(root, target)).isFile()
+      ) {
+        errors.push(`${file}: unresolved or escaping CSS target ${specifier}`)
+        continue
+      }
+      const provider = ownerOf(target)
+      if (owner && provider && owner !== provider && !allowedDependencies[owner].includes(provider))
+        errors.push(`${file}: forbidden CSS dependency ${owner} -> ${provider}`)
+      if (
+        provider === 'public-web' &&
+        owner &&
+        owner !== provider &&
+        !publicInterfaces[owner]?.some(
+          (name) => exports.get(`@bladeblend/public-web/${name}`) === target,
+        )
+      )
+        errors.push(`${file}: public CSS interface not permitted for ${owner}`)
+      if (kind === 'CSS import' && !/\.css$/i.test(target))
+        errors.push(`${file}: unsupported CSS import source ${target}`)
+      edges.push({ from: file, to: target, kind })
     }
   }
   for (const file of files) {
@@ -314,6 +457,8 @@ export function inspectBoundaries(root = repositoryRoot) {
   }
   return {
     files: files.sort(),
+    styles,
+    testUnsupported: testUnsupported.sort((a, b) => a.reason.localeCompare(b.reason)),
     testEdges: testEdges.sort((a, b) => `${a.from}:${a.to}`.localeCompare(`${b.from}:${b.to}`)),
     edges: edges.sort((a, b) => `${a.from}:${a.to}`.localeCompare(`${b.from}:${b.to}`)),
     errors: [...new Set(errors)].sort(),
