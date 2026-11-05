@@ -1,4 +1,10 @@
 import type { CmsDocument, CmsPage } from '../../../shared/cms'
+import {
+  CORE_PAGE_PATHS,
+  CmsValidationError,
+  INFORMATION_PAGE_PATHS,
+  validateDocument,
+} from '../../../shared/cms'
 import { generate, ident, parse, walk } from 'css-tree'
 import { pageScenes } from '../../cms/Scene'
 
@@ -9,24 +15,87 @@ export const CORE_PAGE_IDS = [
   '10000000-0000-4000-8000-000000000004',
   '10000000-0000-4000-8000-000000000005',
   '10000000-0000-4000-8000-000000000006',
+  '10000000-0000-4000-8000-000000000007',
 ] as const
 
 /** Stored layouts are already editable. Missing optional scenes/motion metadata
  * are an upgrade, not a prerequisite for opening the owner's document. */
+function hasPageLayout(document: CmsDocument, path: string): boolean {
+  const page = document.presentation.pages.find((item) => item.path === path)
+  return Boolean(
+    page &&
+    ['sv', 'en'].every((lang) => {
+      const html = page.content[lang as 'sv' | 'en'].html
+      return (
+        html.trim() &&
+        (INFORMATION_PAGE_PATHS.includes(path) || html.includes('data-knc-native="1"'))
+      )
+    }),
+  )
+}
+
 export function hasCorePageLayouts(document: CmsDocument): boolean {
-  return ['/', '/about', '/booking', '/my-bookings', '/privacy', '/terms'].every((path) => {
-    const page = document.presentation.pages.find((item) => item.path === path)
-    return (
-      page &&
-      ['sv', 'en'].every((lang) => {
-        const html = page.content[lang as 'sv' | 'en'].html
-        return (
-          html.trim() &&
-          (path === '/privacy' || path === '/terms' || html.includes('data-knc-native="1"'))
-        )
-      })
-    )
-  })
+  return CORE_PAGE_PATHS.every((path) => hasPageLayout(document, path))
+}
+
+/** Pre-Contact publications already have editable layouts. Add Contact, or fill its empty
+ * historical variants, with the optional source upgrade; neither may make those stored pages
+ * depend on source availability. */
+export function canOpenStoredPages(document: CmsDocument): boolean {
+  return CORE_PAGE_PATHS.every((path) => path === '/contact' || hasPageLayout(document, path))
+}
+
+/** Publication's structural validation: validateDocument, the first step of the
+ * validateCompleteDocument cms-studio runs on every validation and publication. It holds the page
+ * budget, the byte budget, unique identities and the node budget. */
+function publishable(document: CmsDocument): boolean {
+  try {
+    validateDocument(document)
+    return true
+  } catch (error) {
+    if (error instanceof CmsValidationError) return false
+    throw error
+  }
+}
+
+/** `id`, or, when another page already holds it, the first identity after the reserved core
+ * identities that no page uses. It depends only on the identities in use, so every snapshot of
+ * one draft gives a page the same identity. */
+function freeIdentity(document: CmsDocument, id: string): string {
+  const used = new Set(document.presentation.pages.map((page) => page.id))
+  if (!used.has(id)) return id
+  for (let index = CORE_PAGE_IDS.length + 1; ; index++) {
+    const candidate = `10000000-0000-4000-8000-${index.toString(16).padStart(12, '0')}`
+    if (!used.has(candidate)) return candidate
+  }
+}
+
+const blankVariant = (page: CmsPage): boolean =>
+  Object.values(page.content).some((variant) => !variant.html.trim())
+
+/** Contact became mandatory after documents could already fill the publication budget. The
+ * least its upgrade adds is an empty Contact page: when publication would reject even that, a
+ * source capture cannot add Contact. A document publication already rejects keeps asking. */
+function contactFits(document: CmsDocument): boolean {
+  const empty = { html: '', css: { light: '', dark: '' } }
+  const contact: CmsPage = {
+    id: freeIdentity(document, CORE_PAGE_IDS[6]),
+    path: '/contact',
+    kind: 'page',
+    inMenu: false,
+    name: { sv: '', en: '' },
+    title: { sv: '', en: '' },
+    description: { sv: '', en: '' },
+    content: { sv: structuredClone(empty), en: structuredClone(empty) },
+  }
+  const candidate = {
+    ...document,
+    presentation: {
+      ...document.presentation,
+      pages: [...document.presentation.pages, contact],
+    },
+  }
+  return publishable(candidate) || !publishable(document)
 }
 
 let sourcePages: readonly CmsPage[] = []
@@ -35,10 +104,14 @@ let loading: Promise<CmsPage[]> | undefined
 /** A published complete document already contains the source layout. Capture only missing/legacy
  * templates instead of replaying every live scene on each visit to Studio. */
 export function needsCorePageSource(document: CmsDocument): boolean {
-  for (const path of ['/', '/about', '/booking', '/my-bookings', '/privacy', '/terms']) {
+  for (const path of CORE_PAGE_PATHS) {
     const page = document.presentation.pages.find((item) => item.path === path)
+    if (path === '/contact') {
+      if (page ? blankVariant(page) : contactFits(document)) return true
+      continue
+    }
     if (!page) return true
-    if (path === '/privacy' || path === '/terms') continue
+    if (INFORMATION_PAGE_PATHS.includes(path)) continue
     for (const variant of Object.values(page.content)) {
       if (!variant.html.includes('data-knc-native="1"')) return true
       const tree = new DOMParser().parseFromString(variant.html, 'text/html')
@@ -77,11 +150,10 @@ export function needsCorePageSource(document: CmsDocument): boolean {
 }
 
 /** Keep authoritative layouts available for old backups/imports even when optional
- * source capture is deferred or unavailable. Never seed unrelated authored pages. */
+ * source capture is deferred or unavailable. A fixed route is its path, whatever identity an
+ * earlier Studio gave it. Never seed unrelated authored pages, whatever identity they hold. */
 export function retainCorePageLayouts(existing: CmsDocument): void {
-  sourcePages = existing.presentation.pages.filter((page) =>
-    CORE_PAGE_IDS.includes(page.id as (typeof CORE_PAGE_IDS)[number]),
-  )
+  sourcePages = existing.presentation.pages.filter((page) => CORE_PAGE_PATHS.includes(page.path))
 }
 
 export function prepareCorePageSource(existing?: CmsDocument): Promise<void> {
@@ -158,18 +230,63 @@ function repairReadOnlyPreviews(html: string, source: string): string {
   return changed ? current.body.innerHTML : html
 }
 
-/** Missing pages may come only from the rendered production components or existing legal files. */
+/** Preserve identity for callers comparing next.document === recovered. */
+export function withCorePages(document: CmsDocument): CmsDocument {
+  return hasCorePageLayouts(document) ? document : ensureCorePages(document)
+}
+
+/** Contact content whose empty historical variants take the source's, or null when the source
+ * fills none. The owner's sheet for an empty variant, if any, follows the template's. Authored
+ * variants keep every byte. */
+function filledContent(contact: CmsPage, source: CmsPage): CmsPage['content'] | null {
+  const blank = (['sv', 'en'] as const).filter(
+    (lang) => !contact.content[lang].html.trim() && source.content[lang].html.trim(),
+  )
+  if (!blank.length) return null
+  const content = { ...contact.content }
+  for (const lang of blank) {
+    const variant = contact.content[lang]
+    const template = source.content[lang]
+    const sheet = (mode: 'light' | 'dark'): string =>
+      variant.css[mode] ? `${template.css[mode]}\n${variant.css[mode]}` : template.css[mode]
+    content[lang] = { html: template.html, css: { light: sheet('light'), dark: sheet('dark') } }
+  }
+  return content
+}
+
+/** Missing pages may come only from rendered production components or existing information files.
+ * A page whose identity another page already holds is added under a free identity. */
 export function ensureCorePages(
   document: CmsDocument,
   source: readonly CmsPage[] = sourcePages,
 ): CmsDocument {
   const next = structuredClone(document)
   const paths = new Set(next.presentation.pages.map((page) => page.path))
+  // The Contact upgrade applies only when publication would accept the result, or when it
+  // already rejects the stored document, so it never makes a publishable document unpublishable.
+  let storedPublishable: boolean | undefined
+  const admits = (): boolean => publishable(next) || !(storedPublishable ??= publishable(document))
   for (const page of source) {
     if (!paths.has(page.path)) {
-      next.presentation.pages.push(structuredClone(page))
-      paths.add(page.path)
+      next.presentation.pages.push({ ...structuredClone(page), id: freeIdentity(next, page.id) })
+      if (page.path === '/contact' && !admits()) next.presentation.pages.pop()
+      else paths.add(page.path)
     } else {
+      // Information pages are authored bodies, not native scenes. Keep their bytes intact;
+      // normalizeDocument separately handles the recognized legacy legal upgrade. Only an empty
+      // historical Contact variant takes the source, under the same publication rule.
+      if (INFORMATION_PAGE_PATHS.includes(page.path)) {
+        const contact =
+          page.path === '/contact'
+            ? next.presentation.pages.find((item) => item.path === page.path)
+            : undefined
+        const filled = contact ? filledContent(contact, page) : null
+        if (!contact || !filled) continue
+        const authored = contact.content
+        contact.content = filled
+        if (!admits()) contact.content = authored
+        continue
+      }
       const existing = next.presentation.pages.find((item) => item.path === page.path)
       if (existing)
         for (const lang of ['sv', 'en'] as const) {

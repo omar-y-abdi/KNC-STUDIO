@@ -154,17 +154,17 @@ jobs:
           retention-days: 14
   cms:
     needs: format
-    name: CMS contracts (${{ matrix.engine }}, ${{ matrix.shard }}/4)
+    name: CMS contracts (${{ matrix.engine }}, ${{ matrix.shard }}/9)
     runs-on: ubuntu-24.04
     container:
       image: mcr.microsoft.com/playwright:v1.64.1-noble
       options: --user 1001 --ipc=host
-    timeout-minutes: 20
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
         engine: [chromium, webkit]
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9]
     env:
       E2E_GROUP: cms
       AXE_PATH: node_modules/axe-core/axe.min.js
@@ -176,9 +176,9 @@ jobs:
         with:
           cache: ${{ env.CI_CACHE }}
       - name: Discover every assigned CMS case
-        run: npx playwright test --project=cms-${{ matrix.engine }} --shard=${{ matrix.shard }}/4 --list --reporter=json > .ci-expected.json
+        run: npx playwright test --project=cms-${{ matrix.engine }} --shard=${{ matrix.shard }}/9 --list --reporter=json > .ci-expected.json
       - name: Exercise the unchanged CMS domain contracts
-        run: npx playwright test --project=cms-${{ matrix.engine }} --shard=${{ matrix.shard }}/4
+        run: npx playwright test --project=cms-${{ matrix.engine }} --shard=${{ matrix.shard }}/9
       - name: Reject missing, skipped or retried outcomes and source drift
         run: |
           node tools/ci/verify-playwright-report.mjs .ci-expected.json test-results/results.json

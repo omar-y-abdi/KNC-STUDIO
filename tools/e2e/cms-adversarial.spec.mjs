@@ -405,7 +405,9 @@ test('page-path-validation', async ({ page, context }) => {
   await page.evaluate(async () =>
     (await import('/tools/e2e/admin-harness.tsx')).mountCmsStudioHarness(),
   )
-  await page.locator('.cms-canvas-shell').waitFor({ timeout: 90000 })
+  await page
+    .locator('.cms-editor-canvas[data-cms-canvas-ready="true"][aria-busy="false"]:not([inert])')
+    .waitFor({ timeout: 90000 })
   await page.getByRole('button', { name: 'Skapa ny sida', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: 'Ny sida', exact: true })
   await dialog.getByLabel('Adress', { exact: true }).fill('/bad_name')

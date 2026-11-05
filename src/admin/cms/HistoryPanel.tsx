@@ -1,8 +1,9 @@
 import type { JSX } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import type { CmsDocument, CmsLang, CmsMode, CmsRevision } from '../../../shared/cms'
-import { mediaUrl } from '../../../shared/cms'
+import { cmsFontFaceCss } from '../../../shared/cms'
 import { SUPABASE_URL } from '../../backend/config'
+import { resolveBusinessSettings } from '../../site/business'
 import { cmsApi } from './api'
 import { CmsModal } from './Modal'
 import { CmsIcon } from './Icon'
@@ -127,18 +128,17 @@ export function HistoryPanel({
           </label>
           {page ? (
             <div class="cms-history-preview">
+              {/* The revision's own business. Its document never reaches the native frame. */}
               <LivePreview
                 page={page}
                 presentation={review.document.presentation}
+                business={resolveBusinessSettings(
+                  new Map(Object.entries(review.document.settings)),
+                )}
                 lang={lang}
                 mode={mode}
                 device={device}
-                fontCss={Object.entries(review.document.presentation.fonts ?? {})
-                  .map(
-                    ([id, font]) =>
-                      `@font-face{font-family:"CMSFont-${id}";src:url("${mediaUrl(font.ref, SUPABASE_URL ?? '')}") format("woff2");font-display:swap}`,
-                  )
-                  .join('\n')}
+                fontCss={cmsFontFaceCss(review.document.presentation.fonts, SUPABASE_URL ?? '')}
                 onNavigate={setPath}
               />
             </div>

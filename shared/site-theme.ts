@@ -1,4 +1,3 @@
-import { generate, parse, walk } from 'css-tree'
 import type { CmsMode, CmsPresentation } from './cms'
 
 export const SITE_THEME_DEFAULTS = {
@@ -103,31 +102,24 @@ export function themeStyleValue(property: string, value: string, mode: CmsMode):
       mode === 'light' ? '#fff' : '#1c1c1e',
       mode === 'light' ? 'rgb(255,255,255)' : 'rgb(28,28,30)',
     )
-    add(
-      'muted',
-      'rgba(0,0,0,.6)',
-      'rgba(0,0,0,0.6)',
-      'rgba(255,255,255,.55)',
-      'rgba(255,255,255,0.55)',
-    )
+    // Only verified page-text defaults follow muted. Opposite-mode contrast colors stay literal.
+    if (property === 'color') {
+      if (mode === 'light')
+        add('muted', 'rgba(0,0,0,.6)', 'rgba(0,0,0,0.6)', 'rgba(0,0,0,.62)', 'rgba(0,0,0,0.62)')
+      else
+        add(
+          'muted',
+          'rgba(255,255,255,.55)',
+          'rgba(255,255,255,0.55)',
+          'rgba(255,255,255,.7)',
+          'rgba(255,255,255,0.7)',
+          'rgba(255,255,255,.72)',
+          'rgba(255,255,255,0.72)',
+        )
+    }
   }
   return value.replace(/#[\da-f]{3,8}\b|rgba?\([^)]*\)/gi, (color) => {
     const key = colors.get(normalize(color))
     return key ? `var(--knc-${key},${color})` : color
   })
-}
-
-export function themeDeclarations(css: string, mode: CmsMode): string {
-  const tree = parse(css, { context: 'declarationList' })
-  walk(tree, {
-    visit: 'Declaration',
-    enter(declaration) {
-      const value = parse(
-        themeStyleValue(declaration.property, generate(declaration.value), mode),
-        { context: 'value' },
-      )
-      if (value.type === 'Value') declaration.value = value
-    },
-  })
-  return generate(tree)
 }

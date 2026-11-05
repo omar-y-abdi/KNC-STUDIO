@@ -1,5 +1,11 @@
 # Maintenance recovery — 2026-10-25
 
+> **Archived handoff — routing updated 28 October 2026.**
+> Current work starts at [WIP recovery](WIP_RECOVERY_PLAN.md) and
+> [the implementation ledger](WIP_IMPLEMENTATION.md). The earlier branch, stop and verification
+> instructions below are historical receipts, including the prior archive notice. Do not replay them
+> as the current workflow.
+
 > **Historical handoff — 25 October 2026; archived 27 October 2026.**
 > The branch, agent, verification and stop instructions below belong to that earlier session.
 > They do not govern the current PR #90 replacement, whose entry point is

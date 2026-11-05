@@ -6,30 +6,31 @@ import type { JSX } from 'preact'
 import { FunctionsHttpError } from '@supabase/supabase-js'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
 import {
-  mediaUrl,
-  isPagePath,
+  cmsFontFaceCss,
+  isCreatedPagePath,
+  isMenuPage,
+  isSitePage,
   validateDocument,
   type CmsAsset,
   type CmsDocument,
   type CmsLang,
   type CmsMode,
   type CmsPage,
-  type CmsPresentation,
   type CmsRevision,
   type CmsState,
 } from '../../../shared/cms'
 import {
   ensureCorePages,
+  withCorePages,
   prepareCorePageSource,
   isInventedSite,
-  hasCorePageLayouts,
+  canOpenStoredPages,
   retainCorePageLayouts,
   needsCorePageSource,
   CORE_PAGE_IDS,
 } from './corePages'
-import { upgradeLegacyLegalPages } from './legacyLegal'
-import { CmsDraft, mergeCmsDocuments, restoreRevision } from './draft'
-import { normalizeMarqueeZoom, unresolvedMarqueeZoom } from './normalizeDocument'
+import { CmsDraft, mergeCmsDocuments, restoreRevision, serialize } from './draft'
+import { normalizeDocument, unresolvedMarqueeZoom } from './normalizeDocument'
 import { cmsApi } from './api'
 import { CmsEditor, type EditorHandle } from './Editor'
 import { CmsEditorBoundary } from './EditorBoundary'
@@ -44,10 +45,10 @@ import { BusinessPanel, EmailPanel } from './DomainPanels'
 import { cmsBackups, JournalFull, type BackupSession, type TabBackup } from './backup'
 import { SUPABASE_URL } from '../../backend/config'
 import { CmsTextarea } from './Textarea'
+import { ConfirmDialog } from '../ConfirmDialog'
 import './studio.css'
 import { pageScenes, type CmsScene } from '../../cms/Scene'
 
-const protectedIds = new Set<string>(CORE_PAGE_IDS)
 const BACKUP_FAILED =
   'Lokal backup kunde inte sparas. Utkastet finns i studion; exportera innan du lämnar.'
 const JOURNAL_FULL =
@@ -83,12 +84,16 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   const [device, setDevice] = useState<'Desktop' | 'Mobile'>(() =>
     compactWorkspace() ? 'Mobile' : 'Desktop',
   )
+  const [narrowDesktop, setNarrowDesktop] = useState(false)
   const [zoom, setZoom] = useState(80)
   const [compare, setCompare] = useState(false)
   const [locked, setLocked] = useState(false)
   const [scene, setScene] = useState<CmsScene>('default')
   useLayoutEffect(() => setScene('default'), [selectedPage])
-  const [preview, setPreview] = useState<CmsPresentation | null>(null)
+  // The locked preview's validated document, and the draft document it was validated from.
+  const [preview, setPreview] = useState<{ source: CmsDocument; document: CmsDocument } | null>(
+    null,
+  )
   const [tab, setTab] = useState<'design' | 'layers' | 'blocks'>('design')
   const [mobilePanel, setMobilePanel] = useState<CmsPanel>(null)
   const [error, setError] = useState<string | null>(null)
@@ -123,6 +128,8 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   const [newName, setNewName] = useState('Ny sida')
   const [pageQuery, setPageQuery] = useState('')
   const [newPath, setNewPath] = useState('/hemsida')
+  // The created page whose deletion waits for the owner's confirmation.
+  const [deleting, setDeleting] = useState<string | null>(null)
   const editor = useRef<EditorHandle | null>(null)
   const shell = useRef<HTMLDivElement>(null)
   const panelOpener = useRef<HTMLElement>(null)
@@ -145,12 +152,10 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       const session = await cmsBackups().catch(() => null)
       backups.current = session
       const loaded = await cmsApi.state()
-      const stored = hasCorePageLayouts(loaded.document)
+      const stored = canOpenStoredPages(loaded.document)
       if (stored) retainCorePageLayouts(loaded.document)
       else await prepareCorePageSource(loaded.document)
-      const document = upgradeLegacyLegalPages(
-        normalizeMarqueeZoom(stored ? loaded.document : ensureCorePages(loaded.document)),
-      )
+      const document = normalizeDocument(stored ? loaded.document : withCorePages(loaded.document))
       const seeded = JSON.stringify(document) !== JSON.stringify(loaded.document)
       const backup = session ? await session.own() : null
       const next = new CmsDraft(document, loaded.revision, loaded.fingerprint, loaded.document)
@@ -164,18 +169,16 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         !isInventedSite(backup.document) &&
         JSON.stringify(backup.document) !== JSON.stringify(document)
       ) {
-        const local = normalizeMarqueeZoom(
-          hasCorePageLayouts(backup.document) ? backup.document : ensureCorePages(backup.document),
-        )
+        const local = normalizeDocument(withCorePages(backup.document))
         const sameHead =
           backup.revision === loaded.revision && backup.fingerprint === loaded.fingerprint
         const merged =
           !sameHead && backup.base
-            ? mergeCmsDocuments(backup.base, local, document)
+            ? mergeCmsDocuments(backup.base, local, loaded.document)
             : { document: local, conflicts: sameHead ? [] : [{ path: '' }] }
-        // A backup written before the legal upgrade still holds the legacy sheets; upgrade the
-        // recovered result, never the merge inputs, so the server snapshot stays the base.
-        const recovered = upgradeLegacyLegalPages(normalizeMarqueeZoom(merged.document))
+        // The server snapshot stays authoritative: migrate the result so adding a core page
+        // cannot look like a concurrent server edit to the pages array.
+        const recovered = normalizeDocument(withCorePages(merged.document))
         next.change(recovered)
         if (next.document === recovered) {
           if (backup.layoutsStale) layouts.current.unknown(next.document)
@@ -246,9 +249,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         // Preparing only the baseline must not reserialize already-complete authored snapshots.
         draft.migrate(
           (document) =>
-            normalizeMarqueeZoom(
-              needsCorePageSource(document) ? ensureCorePages(document) : document,
-            ),
+            normalizeDocument(needsCorePageSource(document) ? ensureCorePages(document) : document),
           (previous, next) => layouts.current.follow(previous, next, draft.base),
         )
         setVersion((value) => value + 1)
@@ -267,10 +268,37 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     }
   }, [draft, sourceAttempt, restoring])
 
+  // A locked preview follows every change of the draft's document (Undo, Redo, Återställ, an
+  // import, a merge, a restored tab), validated as locking validates it. Until that validation
+  // answers, the preview keeps the previous validated document whole. If it fails, Studio unlocks.
+  const lockedDocument = locked ? (draft?.document ?? null) : null
+  useEffect(() => {
+    if (!lockedDocument || !preview || serialize(preview.source) === serialize(lockedDocument))
+      return
+    let stopped = false
+    void cmsApi
+      .validate(lockedDocument)
+      .then((checked) => {
+        if (!stopped) setPreview({ source: lockedDocument, document: checked.document })
+      })
+      .catch((reason: unknown) => {
+        if (stopped) return
+        setLocked(false)
+        setError(reason instanceof Error ? reason.message : 'Förhandsvisningen kunde inte öppnas.')
+      })
+    return () => {
+      stopped = true
+    }
+  }, [lockedDocument, preview])
+
   const reportBackup = (reason: unknown): void =>
     setError(reason instanceof JournalFull ? JOURNAL_FULL : BACKUP_FAILED)
   // The draft state last scheduled, so a lifecycle handler schedules only what is new.
-  const scheduled = useRef<{ document: CmsDocument; conflict: unknown } | null>(null)
+  const scheduled = useRef<{
+    document: CmsDocument
+    unedited: CmsDocument | null
+    conflict: unknown
+  } | null>(null)
   // Reads refs only: the lifecycle handlers below call it without a render in between.
   const scheduleBackup = (): void => {
     const active = currentDraft.current
@@ -278,13 +306,18 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     if (!active) return
     if (
       scheduled.current?.document === active.document &&
+      scheduled.current.unedited === active.uneditedDocument &&
       scheduled.current.conflict === conflicted
     )
       return
-    scheduled.current = { document: active.document, conflict: conflicted }
+    scheduled.current = {
+      document: active.document,
+      unedited: active.uneditedDocument,
+      conflict: conflicted,
+    }
     const base = conflicted ? (conflicted.base ?? undefined) : active.base
     backups.current?.schedule(
-      active.dirty || conflicted
+      active.hasEdits || conflicted
         ? {
             document: active.document,
             revision: active.revision,
@@ -300,7 +333,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     // A new revision (after Publicera) is new backup state even for the same document.
     scheduled.current = null
     scheduleBackup()
-  }, [draft?.document, draft?.revision, draft?.fingerprint, conflict])
+  }, [draft?.document, draft?.uneditedDocument, draft?.revision, draft?.fingerprint, conflict])
   useEffect(() => {
     // A reloaded, closed or backgrounded tab must not lose the last edits: the canvas holds them
     // for 180 ms and the backup for 500 ms. The editor hands them over synchronously; the backup
@@ -321,7 +354,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       const session = backups.current
       if (
         !editor.current?.pending() &&
-        !(session ? session.unsaved() : currentDraft.current?.dirty)
+        !(session ? session.unsaved() : currentDraft.current?.hasEdits)
       )
         return
       event.preventDefault()
@@ -459,7 +492,12 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       )
       editor.current?.flush()
       const local = { document: draft.document, stale: layoutsStale(draft) }
-      draft.acknowledge(result.document, result.revision, result.fingerprint)
+      draft.acknowledge(
+        result.document,
+        result.revision,
+        result.fingerprint,
+        normalizeDocument(result.document),
+      )
       // Edits made during the request are merged into the published document.
       layouts.current.merged(draft.document, [local, { document: result.document, stale: false }])
       setNotice(null)
@@ -473,17 +511,18 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         try {
           const remote = await cmsApi.state()
           editor.current?.flush()
-          const remoteDocument = ensureCorePages(remote.document)
-          const merged = mergeCmsDocuments(draft.base, draft.document, remoteDocument)
-          const adopted = upgradeLegacyLegalPages(normalizeMarqueeZoom(merged.document))
+          const merged = mergeCmsDocuments(draft.base, draft.document, remote.document)
+          // Upgrade after merging against the raw server head. A missing core page is a local
+          // migration, not a competing server edit to the atomic pages array.
+          const adopted = normalizeDocument(withCorePages(merged.document))
           const next = new CmsDraft(
-            upgradeLegacyLegalPages(normalizeMarqueeZoom(remoteDocument)),
+            normalizeDocument(withCorePages(remote.document)),
             remote.revision,
             remote.fingerprint,
             remote.document,
           )
-          next.amend(adopted)
-          // The provenance belongs to the replacement snapshot with the merged author edits.
+          next.change(adopted)
+          // Track the draft's actual snapshot, whether cloned or replaced by the merge.
           layouts.current.merged(next.document, [
             { document: draft.document, stale: layoutsStale(draft) },
             { document: remote.document, stale: false },
@@ -519,14 +558,11 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         conflict.remote.document,
         conflict.remote.revision,
         conflict.remote.fingerprint,
+        conflict.remote.document,
       )
       next.migrate(
         (document) =>
-          upgradeLegacyLegalPages(
-            normalizeMarqueeZoom(
-              needsCorePageSource(document) ? ensureCorePages(document) : document,
-            ),
-          ),
+          normalizeDocument(needsCorePageSource(document) ? ensureCorePages(document) : document),
         (previous, migrated) => layouts.current.follow(previous, migrated, next.base),
       )
       setDraft(next)
@@ -539,23 +575,20 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   const resolveConflict = (resolution: 'local' | 'remote'): void => {
     if (!draft || !conflict) return
     editor.current?.flush()
-    const remote = ensureCorePages(conflict.remote.document)
-    const resolved = upgradeLegacyLegalPages(
-      normalizeMarqueeZoom(
-        conflict.base
-          ? mergeCmsDocuments(conflict.base, draft.document, remote, resolution).document
-          : resolution === 'local'
-            ? draft.document
-            : remote,
-      ),
-    )
+    const remote = conflict.remote.document
+    const merged = conflict.base
+      ? mergeCmsDocuments(conflict.base, draft.document, remote, resolution).document
+      : resolution === 'local'
+        ? draft.document
+        : remote
+    const resolved = normalizeDocument(withCorePages(merged))
     layouts.current.merged(resolved, [
       { document: draft.document, stale: layoutsStale(draft) },
       { document: conflict.remote.document, stale: false },
     ])
     // Undo must reach the migrated remote, never its raw legacy zoom; the raw remote stays base.
     const next = new CmsDraft(
-      upgradeLegacyLegalPages(normalizeMarqueeZoom(remote)),
+      normalizeDocument(withCorePages(remote)),
       conflict.remote.revision,
       conflict.remote.fingerprint,
       conflict.remote.document,
@@ -666,19 +699,14 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     document.presentation.pages.find((item) => item.id === selectedPage) ??
     document.presentation.pages[0]
   if (!page) throw new Error('CMS project has no pages')
-  const fontCss = Object.entries(document.presentation.fonts ?? {})
-    .map(
-      ([id, font]) =>
-        `@font-face{font-family:"CMSFont-${id}";src:url("${mediaUrl(font.ref, SUPABASE_URL ?? '')}") format("woff2");font-display:swap}`,
-    )
-    .join('\n')
+  const fontCss = cmsFontFaceCss(document.presentation.fonts, SUPABASE_URL ?? '')
 
   const importDraft = async (file: File): Promise<void> => {
     try {
       editor.current?.flush()
       const parsed = JSON.parse(await file.text()) as unknown
       const checked = await cmsApi.validate(parsed as CmsDocument)
-      const next = upgradeLegacyLegalPages(normalizeMarqueeZoom(ensureCorePages(checked.document)))
+      const next = normalizeDocument(ensureCorePages(checked.document))
       commitDraft(next)
       // An imported file says nothing about the resource data its layouts were made for.
       if (currentDraft.current?.document === next) layouts.current.unknown(next)
@@ -694,46 +722,49 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     editor.current?.flush()
     if (newName.trim().length > 80) return setError('Namnet får vara högst 80 tecken.')
     const path = newPath.trim().replace(/\/+$/, '')
-    if (!isPagePath(path) || draft.document.presentation.pages.some((item) => item.path === path))
+    if (
+      !isCreatedPagePath(path) ||
+      draft.document.presentation.pages.some((item) => item.path === path)
+    )
       return setError('Ange en unik, giltig adress som /hemsida.')
     const id = crypto.randomUUID()
-    const heading = window.document.createElement('span')
-    heading.textContent = newName.trim() || 'Ny sida'
-    const pageBody = (language: CmsLang): string =>
-      `<main style="max-width:1120px;min-height:55vh;margin:0 auto;padding:64px 32px"><h1 style="font-size:40px;line-height:1.15;letter-spacing:-1px;margin:0 0 24px">${heading.innerHTML}</h1><p style="font-size:17px;line-height:1.7">${language === 'sv' ? 'Skriv din text här.' : 'Write your page here.'}</p></main>`
-    const created: CmsPage = {
-      id,
-      kind: 'page',
-      path,
-      inMenu: true,
-      name: { sv: newName.trim() || 'Ny sida', en: newName.trim() || 'New page' },
-      title: { sv: newName.trim() || 'Ny sida', en: newName.trim() || 'New page' },
-      description: { sv: '', en: '' },
-      content: {
-        sv: {
-          html: pageBody('sv'),
-          css: { light: '', dark: '' },
-        },
-        en: {
-          html: pageBody('en'),
-          css: { light: '', dark: '' },
-        },
-      },
+    try {
+      const created = createSitePage({
+        id,
+        path,
+        name: { sv: newName.trim() || 'Ny sida', en: newName.trim() || 'New page' },
+      })
+      const next = structuredClone(draft.document)
+      next.presentation.pages.push(created)
+      validateDocument(next)
+      commitDraft(next)
+    } catch (reason) {
+      return setError(
+        `Sidan kunde inte skapas${reason instanceof Error ? `: ${reason.message.replace(/\.$/, '')}` : ''}. Inget har ändrats; försök igen.`,
+      )
     }
-    const next = structuredClone(draft.document)
-    next.presentation.pages.push(createSitePage(next.presentation, created))
-    commitDraft(next)
     setSelectedPage(id)
     setNewName('Ny sida')
     setNewPath('/hemsida')
     setDialog(null)
     setMobilePanel(null)
   }
-  const editMeta = (key: 'name' | 'title' | 'description', value: string): void => {
-    const next = structuredClone(page)
-    next[key][lang] = value
+  const editPageMetadata = (update: (page: CmsPage) => void): void => {
+    editor.current?.flush()
+    // The flush can replace this render's page with the latest canvas body. Metadata and header
+    // changes must build on that snapshot, including when a new menu shape reloads the canvas.
+    const current = currentDraft.current?.document.presentation.pages.find(
+      (item) => item.id === page.id,
+    )
+    if (!current) return
+    const next = structuredClone(current)
+    update(next)
     replacePage(next)
   }
+  const editMeta = (key: 'name' | 'title' | 'description', value: string): void =>
+    editPageMetadata((next) => {
+      next[key][lang] = value
+    })
 
   const pageSettings = (
     <div class="cms-page-meta" inert={locked}>
@@ -756,21 +787,26 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
           onInput={(e) => editMeta('description', e.currentTarget.value)}
         />
       </label>
-      <label>
-        <span>
-          <input
-            type="checkbox"
-            checked={page.inMenu}
-            onChange={(e) => {
-              const next = structuredClone(page)
-              next.inMenu = e.currentTarget.checked
-              replacePage(next)
-            }}
-          />{' '}
-          Visa i meny
-        </span>
-      </label>
-      {!protectedIds.has(page.id) && (
+      {/* Only these pages can appear in the menu, so only they offer the choice. */}
+      {isMenuPage(page) && (
+        <label>
+          <span>
+            <input
+              type="checkbox"
+              checked={page.inMenu}
+              onChange={(e) => {
+                const checked = e.currentTarget.checked
+                editPageMetadata((next) => {
+                  next.inMenu = checked
+                })
+              }}
+            />{' '}
+            Visa i meny
+          </span>
+        </label>
+      )}
+      {/* Fixed routes are protected by path, whatever identity an earlier Studio gave them. */}
+      {isSitePage(page) && (
         <div class="cms-actions-row">
           <button
             type="button"
@@ -780,10 +816,10 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
               if (!current) return
               const copy = structuredClone(current)
               copy.id = crypto.randomUUID()
-              copy.path = `${page.path}-kopia`
+              copy.path = `${current.path}-kopia`
               while (draft.document.presentation.pages.some((item) => item.path === copy.path))
                 copy.path += '-kopia'
-              copy.name = { sv: `${page.name.sv} kopia`, en: `${page.name.en} copy` }
+              copy.name = { sv: `${current.name.sv} kopia`, en: `${current.name.en} copy` }
               const next = structuredClone(draft.document)
               next.presentation.pages.push(copy)
               commitDraft(next)
@@ -796,17 +832,32 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
             type="button"
             onClick={() => {
               editor.current?.flush()
-              const next = structuredClone(draft.document)
-              next.presentation.pages = next.presentation.pages.filter(
-                (item) => item.id !== page.id,
-              )
-              commitDraft(next)
-              setSelectedPage(CORE_PAGE_IDS[0])
+              setDeleting(page.id)
             }}
           >
             Ta bort
           </button>
         </div>
+      )}
+      {deleting === page.id && (
+        <ConfirmDialog
+          dark={mode === 'dark'}
+          title={`Ta bort ${page.name[lang] || page.path}?`}
+          body="Sidan tas bort ur utkastet och ur menyn på alla andra sidor. Den försvinner från webbplatsen när du publicerar. Du kan ångra borttagningen före publicering."
+          confirmLabel="Ta bort sidan"
+          cancelLabel="Avbryt"
+          danger
+          busy={false}
+          onClose={() => setDeleting(null)}
+          onConfirm={() => {
+            if (!isSitePage(page)) return
+            const next = structuredClone(draft.document)
+            next.presentation.pages = next.presentation.pages.filter((item) => item.id !== page.id)
+            setDeleting(null)
+            commitDraft(next)
+            setSelectedPage(CORE_PAGE_IDS[0])
+          }}
+        />
       )}
     </div>
   )
@@ -1108,15 +1159,6 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
             >
               <CmsIcon name="mail" /> Mejl
             </button>
-            <a
-              class="cms-sidebar-link"
-              href="/admin?tab=mail"
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={() => editor.current?.flush()}
-            >
-              <CmsIcon name="external" /> Leveransstatus ↗
-            </a>
             <button
               type="button"
               onClick={() => {
@@ -1145,6 +1187,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                     aria-pressed={device === value && !compare}
                     onClick={() => {
                       editor.current?.flush()
+                      setNarrowDesktop(false)
                       setDevice(value)
                     }}
                   >
@@ -1153,6 +1196,20 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                   </button>
                 ))}
               </div>
+              {device === 'Desktop' && (
+                <button
+                  type="button"
+                  aria-pressed={narrowDesktop && !locked}
+                  disabled={locked}
+                  title="Dator · 820 px"
+                  onClick={() => {
+                    editor.current?.flush()
+                    setNarrowDesktop((value) => !value)
+                  }}
+                >
+                  Smal dator
+                </button>
+              )}
               <button
                 type="button"
                 aria-pressed={compare}
@@ -1244,10 +1301,11 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                 lang={lang}
                 mode={mode}
                 device={device}
+                narrowDesktop={narrowDesktop}
                 compare={compare}
                 zoom={zoom}
                 locked={locked}
-                preview={preview}
+                preview={preview?.document ?? null}
                 presentation={document.presentation}
                 draft={document}
                 onOpenResources={(destination) => {
@@ -1321,12 +1379,10 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                     const restored = restoreRevision(old, active.document)
                     const before = active.document
                     commitDraft(
-                      upgradeLegacyLegalPages(
-                        normalizeMarqueeZoom(
-                          needsCorePageSource(restored.document)
-                            ? ensureCorePages(restored.document)
-                            : restored.document,
-                        ),
+                      normalizeDocument(
+                        needsCorePageSource(restored.document)
+                          ? ensureCorePages(restored.document)
+                          : restored.document,
                       ),
                     )
                     // The restored layouts are the old revision's, made for its resource data.
@@ -1416,7 +1472,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
           <span>Gör om</span>
         </button>
 
-        <button type="button" disabled={!draft.dirty} class="cms-revert" onClick={revertDraft}>
+        <button type="button" disabled={!draft.hasEdits} class="cms-revert" onClick={revertDraft}>
           <CmsIcon name="history" />
           <span>Återställ</span>
         </button>
@@ -1449,7 +1505,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                 setError('Utkastet ändrades medan förhandsvisningen laddades. Öppna den igen.')
                 return
               }
-              setPreview(checked.document.presentation)
+              setPreview({ source: candidate, document: checked.document })
               setLocked(true)
             } catch (reason) {
               setError(
@@ -1493,8 +1549,8 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
             <div class="cms-domain-panel">
               <h2>En ny del av webbplatsen</h2>
               <p>
-                Sidan börjar med webbplatsens logotyp, sidhuvud, sidfot och färger. Du kan sedan
-                redigera hela sidan oberoende av originalsidorna.
+                Sidan får webbplatsens sidhuvud med logotyp och meny. Sidhuvudet följer alltid
+                startsidan; du redigerar sidans innehåll under det.
               </p>
               <label>
                 Sidnamn
@@ -1526,7 +1582,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                 <button
                   class="cms-mobile-revert"
                   type="button"
-                  disabled={!draft.dirty}
+                  disabled={!draft.hasEdits}
                   onClick={() => {
                     revertDraft()
                     setDialog(null)

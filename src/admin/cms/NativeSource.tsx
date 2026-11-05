@@ -7,7 +7,7 @@ import { PreviewPorts } from '../../cms/PreviewPorts'
 import { sourceReadSnapshot } from './sourceReadCache'
 import { readOnlyHomepagePreviewPorts } from '../../cms/homepageReplicaPorts'
 import {
-  mediaUrl,
+  cmsFontFaceCss,
   validateDocument,
   validatePresentation,
   type CmsDocument,
@@ -214,12 +214,7 @@ export function NativeSource({ interactive = false }: { interactive?: boolean })
     document.title = snapshot.chrome.business.seo[context.lang].title
   }
   if (interactive && !context.presentation) return <p>Förhandsvisningen laddas…</p>
-  const fonts = Object.entries(context.presentation?.fonts ?? {})
-    .map(
-      ([id, font]) =>
-        `@font-face{font-family:"CMSFont-${id}";src:url("${mediaUrl(font.ref, SUPABASE_URL ?? '')}") format("woff2");font-display:swap}`,
-    )
-    .join('\n')
+  const fonts = cmsFontFaceCss(context.presentation?.fonts, SUPABASE_URL ?? '')
   return (
     <div
       inert={!interactive}

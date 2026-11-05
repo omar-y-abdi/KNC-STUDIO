@@ -1,4 +1,6 @@
 import type { Component, Editor } from 'grapesjs'
+import type { CmsMode } from '../../../shared/cms'
+import { planDesktopCardResize } from './resizeStyles'
 
 /** Only the repeated barber presentation participates; never names, data or callbacks. */
 export function barberScalePeers(component: Component): Component[] {
@@ -73,13 +75,14 @@ export function scaledZoom(zoom: number, before: number, requested: number): num
 /** CSS zoom participates in layout, unlike transform:scale. Keep intrinsic child
  * geometry and let the browser scale text, portraits, padding and subsequent flow.
  * The mobile strip is the exception: its cards are Embla slides and get a layout width. */
-export function connectHierarchicalResize(editor: Editor, disabled: () => boolean): () => void {
-  type Styled = NonNullable<ReturnType<Editor['getSelectedToStyle']>>
+export function connectHierarchicalResize(
+  editor: Editor,
+  disabled: () => boolean,
+  mode: () => CmsMode,
+): () => void {
   let snapshot:
     | {
         component: Component
-        model: Styled
-        style: ReturnType<Component['getStyle']>
         width: number
         height: number
         zoom: number
@@ -88,44 +91,61 @@ export function connectHierarchicalResize(editor: Editor, disabled: () => boolea
     | undefined
   let updating = false
   let frame = 0
+  let viewport: Window | null = null
   const capture = (): void => {
     if (disabled() || updating) return
     const component = editor.getSelected()
-    const model = editor.getSelectedToStyle()
     const element = component?.getEl()
-    if (!component || !model || !element || !barberScalePeers(component).length) {
+    if (!component || !element || !barberScalePeers(component).length) {
       snapshot = undefined
       return
     }
     const rect = element.getBoundingClientRect()
     const view = element.ownerDocument.defaultView
-    const rawZoom = view?.getComputedStyle(element).zoom ?? '1'
-    const zoom = (parseFloat(rawZoom) || 1) / (rawZoom.endsWith('%') ? 100 : 1)
     const cards = barberStripCards(component)
     const card = cards.includes(component) ? component : cards[0]
+    // Desktop group edits scale its cards, so repeated edits start from their current zoom.
+    const zoomElement = editor.getDevice() !== 'Mobile' && card ? card.getEl() : element
+    const rawZoom = view?.getComputedStyle(zoomElement ?? element).zoom ?? '1'
+    const zoom = (parseFloat(rawZoom) || 1) / (rawZoom.endsWith('%') ? 100 : 1)
     const cardWidth = card?.getEl()?.getBoundingClientRect().width ?? 0
     snapshot = {
       component,
-      model,
-      style: { ...model.getStyle() },
       width: rect.width,
       height: rect.height,
       zoom,
       cardScale: view && cardWidth > 0 ? cardWidth / (view.innerWidth - 24) : 1,
     }
   }
+  /** GrapesJS refreshes its style target after a zero-delay debounce. A dimension control
+   * must not write the former selection's rule while that refresh is pending. */
+  const select = (): void => {
+    capture()
+    const component = editor.getSelected()
+    if (component && snapshot?.component === component)
+      editor.StyleManager.select(editor.StyleManager.getModelToStyle(component), { component })
+  }
   const remember = (): void => {
     cancelAnimationFrame(frame)
     frame = requestAnimationFrame(capture)
   }
+  const watchViewport = (): void => {
+    viewport?.removeEventListener('resize', remember)
+    viewport = editor.Canvas.getFrameEl()?.contentWindow ?? null
+    viewport?.addEventListener('resize', remember)
+    remember()
+  }
   const change = (model: unknown, property: string): void => {
     const before = snapshot
-    if (updating || disabled() || !before || model !== before.model) return
+    if (updating || disabled() || !before || editor.getSelected() !== before.component) return
+    // An actual style change already has its target; do not retain a rule from a former device.
+    const target = editor.getSelectedToStyle()
+    if (!target || model !== target) return
     if (property !== 'width' && property !== 'height') {
       remember()
       return
     }
-    const value = String(before.model.getStyle()[property] ?? '')
+    const value = String(target.getStyle()[property] ?? '')
       .replace(/!important$/, '')
       .trim()
     // Only dimension controls in pixels participate; arbitrary CSS units keep their CSS meaning.
@@ -135,44 +155,84 @@ export function connectHierarchicalResize(editor: Editor, disabled: () => boolea
       remember()
       return
     }
-    const cards = editor.getDevice() === 'Mobile' ? barberStripCards(before.component) : []
-    const requestedScale = scaledZoom(
-      cards.length ? before.cardScale : before.zoom,
-      before[property],
-      requested,
-    )
+    const cards = barberStripCards(before.component)
+    const mobile = editor.getDevice() === 'Mobile'
+    const desktopCards = cards.length > 0 && !mobile
+    const requestedScale = desktopCards
+      ? 1
+      : scaledZoom(
+          cards.length && mobile ? before.cardScale : before.zoom,
+          before[property],
+          requested,
+        )
     // A short roster keeps its cards wide enough to loop; a frozen strip is never a valid size.
-    const scale = cards.length
-      ? Math.max(minLoopScale(cards.length), requestedScale)
-      : requestedScale
-    if (!Number.isFinite(scale) || before[property] <= 0) return
+    const scale =
+      cards.length && mobile ? Math.max(minLoopScale(cards.length), requestedScale) : requestedScale
+    if (!Number.isFinite(scale) || (!desktopCards && before[property] <= 0)) return
+    const style = { ...target.getStyle('', { withNested: true }) }
+    const previousStyle = target.previous('style')
+    if (!previousStyle || typeof previousStyle !== 'object' || Array.isArray(previousStyle))
+      throw new Error('Storlekskontrollens tidigare värden kunde inte läsas.')
+    // The new size is represented by layout zoom or card width, not a clipping height.
+    for (const axis of ['width', 'height'] as const) {
+      if (previousStyle[axis] === undefined) Reflect.deleteProperty(style, axis)
+      else style[axis] = previousStyle[axis]
+    }
     updating = true
     try {
-      const style = { ...before.model.getStyle() }
-      // The new size is represented by layout zoom or card width, not a clipping height.
-      for (const axis of ['width', 'height'] as const) {
-        if (before.style[axis] === undefined) Reflect.deleteProperty(style, axis)
-        else style[axis] = before.style[axis]
-      }
-      before.model.setStyle(style)
-      if (cards.length)
-        for (const card of cards) card.setStyle(marqueeCardStyle(card.getStyle(), scale))
+      // The dimension control has already written its proposal. Resolve every card from
+      // the previous dimensions in the DOM, before restoring or changing any model.
+      const plan = desktopCards
+        ? (() => {
+            if (!(target instanceof editor.Css.classes.CssRule))
+              throw new Error('Storlekskontrollen saknar sitt CSS-mål.')
+            return planDesktopCardResize(editor, cards, 1, {
+              target,
+              style,
+              mode: mode(),
+              measurement: { component: before.component, axis: property, requested },
+            })
+          })()
+        : undefined
+      target.setStyle(style)
+      if (plan) {
+        plan.apply()
+        editor.StyleManager.select(editor.StyleManager.getModelToStyle(before.component), {
+          component: before.component,
+        })
+      } else if (cards.length)
+        for (const card of cards) {
+          const rule = editor.Css.getIdRule(card.getId(), { state: editor.getModel().getState() })
+          const currentStyle = rule
+            ? rule.getStyle('', { withNested: true, skipResolve: true })
+            : card.getStyle()
+          card.setStyle(marqueeCardStyle(currentStyle, scale))
+        }
       else
         for (const peer of barberScalePeers(before.component))
           peer.addStyle({ zoom: String(scale) })
+    } catch (error) {
+      target.setStyle(style)
+      throw error
     } finally {
       updating = false
     }
     editor.refresh()
     remember()
   }
-  editor.on('component:selected component:resize:start', capture)
+  editor.on('component:selected', select)
+  editor.on('component:resize:start', capture)
   editor.on('styleable:change', change)
   editor.on('undo redo canvas:frame:load', remember)
+  editor.on('load canvas:frame:load', watchViewport)
+  watchViewport()
   return () => {
     cancelAnimationFrame(frame)
-    editor.off('component:selected component:resize:start', capture)
+    editor.off('component:selected', select)
+    editor.off('component:resize:start', capture)
     editor.off('styleable:change', change)
     editor.off('undo redo canvas:frame:load', remember)
+    editor.off('load canvas:frame:load', watchViewport)
+    viewport?.removeEventListener('resize', remember)
   }
 }

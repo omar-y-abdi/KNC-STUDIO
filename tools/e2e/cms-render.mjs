@@ -14,6 +14,8 @@ import { createServer } from 'vite'
 const root = fileURLToPath(new URL('../..', import.meta.url))
 const SUPABASE = 'https://admin-harness.invalid'
 const PRESENTATION_RPC = `${SUPABASE}/rest/v1/rpc/public_cms_presentation`
+const PAGE_METADATA_RPC = `${SUPABASE}/rest/v1/rpc/public_cms_page_metadata`
+const PAGE_RPC = `${SUPABASE}/rest/v1/rpc/public_cms_page`
 const DISCOVERY_RPC = `${SUPABASE}/rest/v1/rpc/public_business_discovery`
 // An owner who has not filled in the business settings: the Worker renders the default business.
 const DISCOVERY = { settings: {}, barbers: [], services: [], schedules: [] }
@@ -48,10 +50,25 @@ export async function loadWorker() {
 
 const urlOf = (input) => (input instanceof Request ? input.url : String(input))
 
+/** One page's bounded read, answered as the database answers it from the same publication
+ * (public_cms_page_metadata, public_cms_page): null when no page has the path. */
+function pageRead(url, init, presentation) {
+  const { p_path: path, p_lang: lang = 'sv' } = JSON.parse(String(init?.body))
+  const pages = Array.isArray(presentation?.pages) ? presentation.pages : []
+  const page = pages.find((item) => item.path === path)
+  if (!page) return Response.json(null)
+  return Response.json(
+    url === PAGE_RPC
+      ? { revision: 1, page, themes: presentation.themes, fonts: presentation.fonts ?? null }
+      : { revision: 1, title: page.title[lang], description: page.description[lang] },
+  )
+}
+
 function upstream(presentation, unexpected) {
-  return async (input) => {
+  return async (input, init) => {
     const url = urlOf(input)
     if (url === PRESENTATION_RPC) return Response.json({ revision: 1, presentation })
+    if (url === PAGE_METADATA_RPC || url === PAGE_RPC) return pageRead(url, init, presentation)
     if (url === DISCOVERY_RPC) return Response.json(DISCOVERY)
     unexpected.push(url)
     throw new Error(`cms-render: unexpected upstream request ${url}`)

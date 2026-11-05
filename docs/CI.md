@@ -2,7 +2,7 @@
 
 The definitive workflow is `.github/workflows/ci.yml`. Every pull request and every push to `main`
 runs all jobs. Pull requests, pushes to `main`, and manual runs use the full Chromium and WebKit
-CMS matrices, each split across four shards. The public group runs Chromium, Firefox and WebKit
+CMS matrices, each split across nine shards. The public group runs Chromium, Firefox and WebKit
 on every event. There are no path filters, scheduled substitutes, retries,
 `continue-on-error` gates, or paid runner requirements.
 
@@ -63,7 +63,7 @@ runtime. Only Studio, metadata tooling and the pooler are omitted there.
 | Static        | ESLint, TypeScript (including Playwright config), all unit tests, production dependency audit, CMS release stamp                                          |
 | Build         | Production compile/minification, real Worker dry-run, font license/artifact rejection, CSP fixture build                                                  |
 | Public/admin  | Chromium domain/race/session flows; privacy, CMS shell and delayed verification in all three engines; approved visual views and existing image CPU budget |
-| CMS           | Full Chromium and WebKit matrices on pull requests, main pushes and manual runs; four shards per engine                                                   |
+| CMS           | Full Chromium and WebKit matrices on pull requests, main pushes and manual runs; nine shards per engine                                                   |
 | Startup       | Chromium and WebKit against actual compiled routes under the existing production CSP policy                                                               |
 | Edge          | Every entrypoint checked by Deno 2.9.5 with the frozen lock                                                                                               |
 | Current DB    | All current migrations and pgTAP; serial adapter integration; actual Edge/Storage asset reuse; three real Worker/Edge/HTTPS customer engine flows         |
@@ -95,7 +95,7 @@ npm run test:e2e:startup
 npm run test:e2e:customer       # requires dedicated local Supabase + documented Function env
 ```
 
-Use native `--project`, `--grep`, and `--shard` options for scoped diagnosis. CI uses four CMS shards
+Use native `--project`, `--grep`, and `--shard` options for scoped diagnosis. CI uses nine CMS shards
 per engine and two public shards. Each runner uses one browser worker so latency/CPU assertions do
 not compete with another local test. Failure in one matrix member does not cancel unrelated members.
 

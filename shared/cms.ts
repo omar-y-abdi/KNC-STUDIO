@@ -23,6 +23,16 @@ export const CMS_HTML_LIMIT = 100_000
 // Native captures include bounded identities and light/dark source styles.
 // The complete document remains limited to 2 MiB.
 export const CMS_NATIVE_HTML_LIMIT = 500_000
+/** Core information bodies share the deployed tokens and document layout. */
+export const INFORMATION_PAGE_PATHS: readonly string[] = ['/privacy', '/terms', '/contact']
+/** Fixed site routes, distinct from owner-created pages. */
+export const CORE_PAGE_PATHS: readonly string[] = [
+  '/',
+  '/about',
+  '/booking',
+  '/my-bookings',
+  ...INFORMATION_PAGE_PATHS,
+]
 export type Localized = Record<CmsLang, string>
 export interface MediaPlacement {
   placement: string
@@ -197,7 +207,8 @@ export interface CmsPublication {
   document: CmsDocument
 }
 
-const SITE_KEYS = [
+/** The site copy CMS publication owns; internal_cms_document reads exactly these keys. */
+export const SITE_KEYS = [
   'kicker',
   'hours',
   'yourDetails',
@@ -311,10 +322,18 @@ const NODE_ID = /^[a-zA-Z][a-zA-Z0-9_.:-]{0,127}$/
 const RESERVED =
   /^(?:admin|api|auth|login|reset|invite|assets|icons|fonts|storage|cms-media|cms-public|google-calendar|cdn-cgi)(?:\/|$)/i
 
+// PostgreSQL char_length counts code points, while a string's length counts UTF-16 units. Limits
+// count code points, so a value the database column accepted is never longer here.
+function characters(value: string): number {
+  return value.length - (value.match(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g)?.length ?? 0)
+}
 function text(value: unknown, path: string, max = 2000, min = 0): string {
-  if (typeof value !== 'string' || value.length < min || value.length > max || value.includes('\0'))
-    fail(path, min === 0 ? `Ange högst ${max} tecken.` : `Ange ${min}–${max} tecken.`)
-  return value
+  if (typeof value === 'string' && !value.includes('\0')) {
+    // Code points never exceed UTF-16 units and are at least half of them: count only near a limit.
+    const size = value.length > max || value.length < 2 * min ? characters(value) : value.length
+    if (size >= min && size <= max) return value
+  }
+  fail(path, min === 0 ? `Ange högst ${max} tecken.` : `Ange ${min}–${max} tecken.`)
 }
 function sqlBtrim(value: string): string {
   return value.replace(/^ +| +$/g, '')
@@ -322,7 +341,8 @@ function sqlBtrim(value: string): string {
 function validateSetting(key: string, value: unknown): void {
   const path = `settings.${key}`,
     raw = text(value, path, 500),
-    normalized = sqlBtrim(raw)
+    normalized = sqlBtrim(raw),
+    size = characters(normalized)
   switch (key) {
     case 'homepage_scale':
     case 'about_scale':
@@ -345,11 +365,11 @@ function validateSetting(key: string, value: unknown): void {
     case 'business_name':
     case 'business_street':
     case 'business_city':
-      if (normalized.length < 1 || normalized.length > 160) fail(path, 'Ange 1–160 tecken.')
+      if (size < 1 || size > 160) fail(path, 'Ange 1–160 tecken.')
       return
     case 'business_legal_name':
       if (
-        normalized.length > 160 ||
+        size > 160 ||
         [...normalized].some((char) => {
           const code = char.codePointAt(0) ?? 0
           return code <= 0x1f || (code >= 0x7f && code <= 0x9f)
@@ -366,7 +386,7 @@ function validateSetting(key: string, value: unknown): void {
         fail(path, 'Ange en giltig e-postadress.')
       return
     case 'business_phone_display':
-      if (normalized.length > 80) fail(path, 'Ange högst 80 tecken.')
+      if (size > 80) fail(path, 'Ange högst 80 tecken.')
       return
     case 'business_phone_tel': {
       const phone = normalized.replace(/[\s().-]/g, '')
@@ -385,11 +405,11 @@ function validateSetting(key: string, value: unknown): void {
       return
     case 'seo_title_sv':
     case 'seo_title_en':
-      if (normalized.length < 1 || normalized.length > 120) fail(path, 'Ange 1–120 tecken.')
+      if (size < 1 || size > 120) fail(path, 'Ange 1–120 tecken.')
       return
     case 'seo_description_sv':
     case 'seo_description_en':
-      if (normalized.length < 1 || normalized.length > 500) fail(path, 'Ange 1–500 tecken.')
+      if (size < 1 || size > 500) fail(path, 'Ange 1–500 tecken.')
       return
   }
 }
@@ -430,6 +450,16 @@ export function isPagePath(path: string): boolean {
     !['/privacy', '/terms', '/404', '/index'].includes(path)
   )
 }
+/** The wire schema accepts core pages too; Studio may create only additional routes. */
+export function isCreatedPagePath(path: string): boolean {
+  return isPagePath(path) && !CORE_PAGE_PATHS.includes(path)
+}
+
+export const isSitePage = (page: Pick<CmsPage, 'kind' | 'path'>): boolean =>
+  page.kind === 'page' && isCreatedPagePath(page.path)
+/** A page the site menu may list when it is shown in the menu: a created page, or Contact. */
+export const isMenuPage = (page: Pick<CmsPage, 'kind' | 'path'>): boolean =>
+  isSitePage(page) || (page.kind === 'page' && page.path === '/contact')
 function validCssValue(value: string): boolean {
   return (
     value.length <= 160 &&
@@ -574,7 +604,8 @@ export function validatePresentation(value: unknown): asserts value is CmsPresen
       page['layout'] !== undefined &&
       (page['layout'] !== 'independent' ||
         page['kind'] !== 'page' ||
-        ['/', '/about', '/booking', '/my-bookings', '/privacy', '/terms'].includes(path))
+        // Existing authored contact pages may already carry independent-layout metadata.
+        (CORE_PAGE_PATHS.includes(path) && path !== '/contact'))
     )
       fail('page.layout', 'Independent layouts are only allowed on authored pages')
     paths.push(path)
@@ -709,22 +740,7 @@ export function validateDocument(value: unknown): asserts value is CmsDocument {
     text(email['cta_label'], 'email.cta_label', 80, 1)
     if (email['section_title'] !== null) text(email['section_title'], 'email.section_title', 120, 1)
     if (email['contact_lead'] !== null) text(email['contact_lead'], 'email.contact_lead', 240, 1)
-    for (const key of [
-      'subject',
-      'preheader',
-      'title',
-      'intro',
-      'section_title',
-      'note',
-      'cta_label',
-      'contact_lead',
-    ]) {
-      const value = email[key]
-      if (typeof value !== 'string') continue
-      for (const variable of emailVariables(value))
-        if (!EMAIL_VARIABLES[template].has(variable))
-          fail(`email.${template}.${key}`, `Okänd platshållare {${variable}}.`)
-    }
+    // Placeholders are judged against the stored copy in validateCompleteDocument.
     if (email['design'] !== null) validateEmailDesign(email['design'])
   }
   unique(emailIds, 'emails')
@@ -751,17 +767,21 @@ export function validateCompleteDocument(
     if (!Object.hasOwn(document.settings, key))
       fail(`settings.${key}`, 'Required setting is missing')
 
-  const emailIds = new Map(
-    document.emails.map((email) => [`${email.template}:${email.lang}`, email]),
+  const emailIds = new Set(document.emails.map((email) => `${email.template}:${email.lang}`))
+  const stored = new Map(
+    authoritative.emails.map((email) => [`${email.template}:${email.lang}`, email]),
   )
-  for (const email of authoritative.emails) {
-    const key = `${email.template}:${email.lang}`
-    const path = `emails.${email.template}.${email.lang}`
-    const draft = emailIds.get(key)
-    if (!draft) {
-      fail(path, 'Required email variant is missing')
-      continue
-    }
+  for (const email of authoritative.emails)
+    if (!emailIds.has(`${email.template}:${email.lang}`))
+      fail(`emails.${email.template}.${email.lang}`, 'Required email variant is missing')
+
+  // The retired mail editor stored any text, so a stored field may hold a placeholder the template
+  // does not support. It may stay in that field until the owner removes it; anywhere else an
+  // unknown placeholder is new and rejected. Supported placeholders a stored field uses must remain.
+  for (const draft of document.emails) {
+    const path = `emails.${draft.template}.${draft.lang}`
+    const email = stored.get(`${draft.template}:${draft.lang}`)
+    const supported = EMAIL_VARIABLES[draft.template]
     for (const field of [
       'subject',
       'preheader',
@@ -772,13 +792,15 @@ export function validateCompleteDocument(
       'cta_label',
       'contact_lead',
     ] as const) {
-      const before = email[field]
+      const before = email?.[field]
       const after = draft[field]
-      if (typeof before !== 'string') continue
-      const required = emailVariables(before)
+      const kept = typeof before === 'string' ? emailVariables(before) : new Set<string>()
       const present = typeof after === 'string' ? emailVariables(after) : new Set<string>()
-      for (const variable of required)
-        if (!present.has(variable))
+      for (const variable of present)
+        if (!supported.has(variable) && !kept.has(variable))
+          fail(`${path}.${field}`, `Okänd platshållare {${variable}}.`)
+      for (const variable of kept)
+        if (supported.has(variable) && !present.has(variable))
           fail(`${path}.${field}`, `Platshållaren {${variable}} måste finnas kvar.`)
     }
   }
@@ -787,6 +809,14 @@ export function mediaUrl(ref: MediaRef, supabaseUrl: string): string {
   const media = { bucket: ref.bucket, path: ref.path }
   if (!validMediaRef(media)) throw new CmsValidationError('media', 'Invalid reference')
   return `${supabaseUrl.replace(/\/$/, '')}/storage/v1/object/public/${media.bucket}/${media.path.split('/').map(encodeURIComponent).join('/')}`
+}
+export function cmsFontFaceCss(fonts: CmsPresentation['fonts'], baseUrl: string): string {
+  return Object.entries(fonts ?? {})
+    .map(
+      ([id, font]) =>
+        `@font-face{font-family:"CMSFont-${id}";src:url("${mediaUrl(font.ref, baseUrl)}") format("woff2");font-display:swap}`,
+    )
+    .join('\n')
 }
 export function mediaKey(ref: MediaRef): string {
   return `${ref.bucket}/${ref.path}`

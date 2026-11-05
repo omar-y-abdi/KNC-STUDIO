@@ -1,4 +1,10 @@
 import { barberScalePeers } from './hierarchicalResize'
+import {
+  ANY_BUSINESS_SLOT,
+  businessSlots,
+  CANCELLATION_SLOT_IDS,
+  isSlotElement,
+} from '../../site/businessSlots'
 import type { Component } from 'grapesjs'
 
 const controls = new Set(['input', 'select', 'textarea', 'option', 'form', 'label', 'fieldset'])
@@ -27,11 +33,11 @@ const protectedIds = new Set([
   'knc-about-runtime',
   'knc-booking-runtime',
   'knc-my-bookings-runtime',
-  'legal-business-details-sv',
-  'legal-business-details-en',
-  'cancellation-policy-sv',
-  'cancellation-policy-en',
 ])
+const cancellationSlotIds: readonly string[] = CANCELLATION_SLOT_IDS
+// The page each canvas shows, keyed by its wrapper. It stays outside the model,
+// so exported HTML and project data never carry it.
+const canvasPaths = new WeakMap<Component, string>()
 
 // The marquee code moves these nodes or measures them; the individual transform
 // properties are transforms too. The gallery loop math also owns its tile sizes.
@@ -209,6 +215,87 @@ export const styleSectors = [
   },
 ]
 
+/** Records the page a canvas shows. Studio sets it on every page apply, before configuring. */
+export function setCanvasPagePath(wrapper: Component, path: string): void {
+  canvasPaths.set(wrapper, path)
+}
+
+/** The page of the canvas holding this component, or undefined when no canvas recorded its root. */
+function canvasPath(component: Component): string | undefined {
+  let root = component
+  let parent = root.parent()
+  while (parent) {
+    root = parent
+    parent = root.parent()
+  }
+  return canvasPaths.get(root)
+}
+
+/** A slot the Worker fills on every request for the page this canvas shows, from the same
+ * definitions (src/site/businessSlots.ts), so the lock and the fill cannot drift apart. On /contact
+ * these are the heading, details, hours, name and city, with or without the Contact marker; on
+ * /privacy and /terms the business details, the cancellation window and the name, controller and
+ * contact spans. Every other page serves the same markup as authored and keeps it editable. This
+ * runs for every component on load, so it reads the raw attributes, and only a component naming
+ * some slot walks to its canvas root; getAttributes also resolves styles and ids. */
+function isBusinessSlot(component: Component): boolean {
+  const attrs = component.get('attributes') ?? {}
+  if (!isSlotElement(ANY_BUSINESS_SLOT, attrs)) return false
+  const slots = businessSlots(canvasPath(component))
+  return slots !== undefined && isSlotElement(slots, attrs)
+}
+
+/** Filled by the Worker: the component or one of its ancestors is a slot of its page. */
+export function isServerOwned(component: Component): boolean {
+  let current: Component | undefined = component
+  while (current) {
+    if (isBusinessSlot(current)) return true
+    current = current.parent()
+  }
+  return false
+}
+
+/** Where the owner sets what the Worker puts into this server-owned component. */
+export function slotSource(component: Component): string {
+  let current: Component | undefined = component
+  while (current) {
+    const id = String(current.get('attributes')?.['id'] ?? '')
+    if (cancellationSlotIds.includes(id) && isBusinessSlot(current))
+      return 'Avbokningsfrist under Inställningar'
+    current = current.parent()
+  }
+  return canvasPath(component) === '/contact'
+    ? 'Företag & SEO och bokningsschemat'
+    : 'Företag & SEO'
+}
+
+/** Styling of its own, which the Worker drops when it regenerates the slot holding the component:
+ * an id, a class, or a rule on its id, where GrapesJS also keeps an inline style. */
+function ownStyling(component: Component): boolean {
+  return (
+    component.get('attributes')?.['id'] !== undefined ||
+    component.getClasses().length > 0 ||
+    component.em.Css.getComponentRules(component).length > 0
+  )
+}
+
+/** The Worker fills a slot with plain markup, so styling stored inside it reaches only Studio. Such
+ * content is rebuilt without ids, classes or styles; removing the old components drops their id
+ * rules, as any removal does. Studio configures a canvas before its checkpoint, so this is no owner
+ * edit and leaves no undo step. */
+function plainSlotContent(slot: Component): void {
+  if (!slot.findFirstType(ownStyling)) return
+  const attributes = (_: Component, attrs: Record<string, unknown>): Record<string, unknown> =>
+    Object.fromEntries(
+      Object.entries(attrs).filter(([name]) => !['id', 'class', 'style'].includes(name)),
+    )
+  const html = slot
+    .components()
+    .map((child: Component) => child.toHTML({ attributes }))
+    .join('')
+  slot.em.UndoManager.skip(() => slot.components(html))
+}
+
 export function isProtected(component: Component): boolean {
   let current: Component | undefined = component
   while (current) {
@@ -216,6 +303,7 @@ export function isProtected(component: Component): boolean {
     if (
       protectedIds.has(String(attrs['id'] ?? '')) ||
       attrs['data-knc-slot'] ||
+      isBusinessSlot(current) ||
       (current === component && attrs['data-knc-required'] === 'true')
     )
       return true
@@ -237,6 +325,7 @@ export function isReadOnlyPreview(component: Component): boolean {
 }
 
 export function configureComponent(component: Component, options: { silent?: boolean } = {}): void {
+  if (isBusinessSlot(component)) plainSlotContent(component)
   const tag = String(component.get('tagName') ?? '').toLowerCase()
   const attrs = component.getAttributes()
   const compositionBoundary =
@@ -244,6 +333,11 @@ export function configureComponent(component: Component, options: { silent?: boo
     Boolean(component.parent()?.getAttributes()['data-editor-about-slot'])
   const protectedComponent = isProtected(component) || compositionBoundary
   const readOnly = isReadOnlyPreview(component)
+  // Every server-owned component is protected, so the others skip this second ancestor walk.
+  const serverOwned = protectedComponent && isServerOwned(component)
+  // The Worker regenerates everything inside a slot, so nothing there takes styling of its own.
+  const parent = component.parent()
+  const slotContent = serverOwned && parent !== undefined && isServerOwned(parent)
   const role = runtimeOwnedRole(attrs, component.parent()?.getAttributes())
   // The model search also works for text nodes and components not yet mounted in the canvas.
   const retainedChildren = component.findFirstType((child) => {
@@ -251,14 +345,20 @@ export function configureComponent(component: Component, options: { silent?: boo
     return Boolean(
       attributes['data-knc-slot'] ||
       attributes['data-knc-required'] === 'true' ||
-      protectedIds.has(String(attributes['id'] ?? '')),
+      protectedIds.has(String(attributes['id'] ?? '')) ||
+      isBusinessSlot(child),
     )
   })
+  // A paragraph holding a slot would drop rich-text edits on its span, which the Worker overwrites.
+  const holdsSlot = retainedChildren && isBusinessSlot(retainedChildren)
   component.set(
     {
-      // An unstylable array overrides stylable:false in GrapesJS; never set it on previews.
+      // An unstylable array overrides stylable:false in GrapesJS; never set it on previews or
+      // slot content.
       ...(readOnly ? { editable: false, stylable: false } : {}),
-      ...(!readOnly && role ? { unstylable: [...role.denied] } : {}),
+      ...(serverOwned || holdsSlot ? { editable: false } : {}),
+      ...(slotContent ? { stylable: false } : {}),
+      ...(!readOnly && !slotContent && role ? { unstylable: [...role.denied] } : {}),
       // GrapesJS hides inner SVG nodes by default, including the actual logo lettering.
       ...(!readOnly && component.is('svg-in')
         ? { selectable: true, hoverable: true, layerable: true, highlightable: true }
@@ -283,7 +383,7 @@ export function configureComponent(component: Component, options: { silent?: boo
     },
     options,
   )
-  if (readOnly) component.setTraits([])
+  if (readOnly || serverOwned) component.setTraits([])
   // The image inspector already owns the accessible alt-text field. Keep one
   // editor for that attribute instead of exposing a second, unsynchronized trait.
   else if (tag === 'img') component.removeTrait('alt')

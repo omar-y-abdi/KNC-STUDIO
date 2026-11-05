@@ -1,8 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
 import {
-  buildEmailMessage,
   loadEmailBusiness,
   loadEmailTemplate,
+  prepareEmail,
   sendViaResend,
 } from '../_shared/email.ts'
 import { verifyTurnstile, turnstilePolicy } from '../_shared/turnstile.ts'
@@ -66,11 +66,16 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const copy = await loadEmailTemplate(service, 'auth_recovery', lang)
     const business = await loadEmailBusiness(service)
     const link = `https://bladeblendstudio.se/reset?token_hash=${encodeURIComponent(generated.data.properties.hashed_token)}&type=recovery`
-    const message = buildEmailMessage({ to: email, lang, copy, ctaHref: link, business })
+    const message = prepareEmail(
+      'auth_recovery',
+      { to: email, lang, copy, ctaHref: link, business },
+      null,
+    )
     await sendViaResend(
       message,
       resendKey,
       `auth-recovery/${generated.data.properties.hashed_token.slice(0, 48)}`,
+      service,
     )
   } catch (error) {
     console.error('send-recovery-email:', error instanceof Error ? error.message : 'unknown error')

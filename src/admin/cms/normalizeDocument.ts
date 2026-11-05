@@ -1,6 +1,9 @@
 import { generate, ident, parse, walk, type CssNode, type Rule } from 'css-tree'
 import type { CmsDocument } from '../../../shared/cms'
+import { repairDesktopCss } from '../../../shared/cms-device-css'
+import { dropDocumentChrome } from '../../../shared/site-page'
 import { marqueeCardWidth } from './hierarchicalResize'
+import { upgradeLegacyLegalPages } from './legacyLegal'
 
 /** The mobile barber strip in one stored About variant: the Embla container and its slides. */
 export interface MarqueeIds {
@@ -250,4 +253,35 @@ export function unresolvedMarqueeZoom(
     }
   }
   return [...values]
+}
+
+/** Repair stored Desktop breakpoints without changing the server or history snapshot. */
+function normalizeDesktopCss(document: CmsDocument): CmsDocument {
+  const pages = document.presentation.pages.map((page) => {
+    const content = { ...page.content }
+    for (const lang of ['sv', 'en'] as const) {
+      const variant = page.content[lang]
+      const light = repairDesktopCss(variant.css.light)
+      const dark = repairDesktopCss(variant.css.dark)
+      if (light !== variant.css.light || dark !== variant.css.dark)
+        content[lang] = { ...variant, css: { light, dark } }
+    }
+    return content.sv === page.content.sv && content.en === page.content.en
+      ? page
+      : { ...page, content }
+  })
+  return pages.every((page, index) => page === document.presentation.pages[index])
+    ? document
+    : { ...document, presentation: { ...document.presentation, pages } }
+}
+
+/** The one adoption step every document the Studio takes in passes (load, the source upgrade,
+ * backups, conflict merges and resolution, revert, history restore, import): legacy strip zoom
+ * becomes card width, legacy legal sheets give way to the token base, created pages drop frozen
+ * chrome, and legacy Desktop breakpoints are repaired before the canvas or next publication.
+ * Identity when nothing changes; stored history originals stay untouched. */
+export function normalizeDocument(document: CmsDocument): CmsDocument {
+  return normalizeDesktopCss(
+    dropDocumentChrome(upgradeLegacyLegalPages(normalizeMarqueeZoom(document))),
+  )
 }

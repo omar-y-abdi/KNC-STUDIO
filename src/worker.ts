@@ -1,4 +1,5 @@
 import { modeCss } from '../shared/cms-mode-css'
+import { inertStyleText } from '../shared/cms-style-text'
 import { preferredRepresentation, varyAccept } from './site/accept'
 import {
   escapeMarkdown,
@@ -6,18 +7,31 @@ import {
   renderPublicMarkdown,
   type InformationPage,
 } from './site/agentContent'
+import {
+  contactDefaults,
+  escapeAttribute,
+  escapeElementText,
+  renderContactFragment,
+  renderContactPage,
+} from './site/contactPage'
+import { renderLegalFragment, renderLegalPage } from './site/legalPage'
 import { repairDesktopCss } from '../shared/cms-device-css'
-import { siteThemeCss, themeDeclarations } from '../shared/site-theme'
+import { siteThemeCss } from '../shared/site-theme'
+import { themeDeclarations } from '../shared/site-theme-declarations'
 import { WorkerEntrypoint } from 'cloudflare:workers'
 import {
-  isIndependentPage,
+  SITE_PAGE_CSS,
+  isLiveSitePage,
   isSitePage,
-  renderIndependentSitePage,
   renderSitePage,
+  type SiteContact,
 } from '../shared/site-page'
 import { parse as parseHtml, parseFragment, serialize, type DefaultTreeAdapterMap } from 'parse5'
 import {
-  isPagePath,
+  cmsFontFaceCss,
+  emptyPresentation,
+  isCreatedPagePath,
+  INFORMATION_PAGE_PATHS,
   validatePresentation,
   type CmsLang,
   type CmsMode,
@@ -100,12 +114,10 @@ export function isSpaPath(pathname: string): boolean {
   return path === '/' || isPrivatePath(path)
 }
 
-const LEGAL_PAGE_PATHS: readonly string[] = ['/privacy', '/terms']
-
-/** Paths the published presentation can hold a page for: created pages and the two legal pages.
+/** Paths the published presentation can hold a page for: created and core information pages.
  * Files, probes and unknown routes never read the presentation. */
 export function isCmsPagePath(pathname: string): boolean {
-  return isPagePath(pathname) || LEGAL_PAGE_PATHS.includes(pathname)
+  return isCreatedPagePath(pathname) || INFORMATION_PAGE_PATHS.includes(pathname)
 }
 
 function isNoIndexPath(pathname: string): boolean {
@@ -147,10 +159,10 @@ async function serveAsset(
   return env.ASSETS.fetch(assetRequest(request, pathname, dynamic))
 }
 
-/** Base sheets of the legal pages, in cascade order before their stored CSS (STY-7). */
+/** Base sheets of information pages, in cascade order before their stored CSS. */
 const LEGAL_BASE_SHEETS = ['/tokens.css', '/info.css'] as const
 
-/** The deployed tokens and document layout; stored legal CSS only adds page rules and overrides. */
+/** The deployed tokens and document layout; stored CSS only adds page rules and overrides. */
 async function legalBaseCss(request: Request, env: Env): Promise<string> {
   const sheets = await Promise.all(
     LEGAL_BASE_SHEETS.map(async (path) => {
@@ -160,6 +172,14 @@ async function legalBaseCss(request: Request, env: Env): Promise<string> {
     }),
   )
   return sheets.join('\n')
+}
+
+/** A created page's base: the deployed tokens, then the live header and root surface. */
+async function sitePageBaseCss(request: Request, env: Env): Promise<string> {
+  const response = await serveAsset(request, env, '/tokens.css', true)
+  if (!response.ok)
+    throw new Error(`Site page base stylesheet /tokens.css answered ${response.status}`)
+  return `${await response.text()}\n${SITE_PAGE_CSS}`
 }
 
 export interface BusinessDiscovery {
@@ -270,6 +290,56 @@ async function loadPublicCms(env: Env): Promise<PublicCmsPresentation | null> {
   }
 }
 
+/** One published page with the themes and fonts it renders with (public_cms_page), validated as
+ * the whole publication is: placed in an otherwise empty presentation. Null serves the static
+ * file, as a failed publication read always has. */
+async function loadPublicCmsPage(env: Env, path: string): Promise<PublicCmsPresentation | null> {
+  const response = await publicCmsResponse(env, 'public_cms_page', { p_path: path })
+  // PostgREST answers 404 (PGRST202) for a function the database does not have yet: a Worker
+  // deployed before the migration reads the whole publication, as it did before.
+  if (response?.status === 404) return loadPublicCms(env)
+  if (!response?.ok) return null
+  const wire: unknown = await response.json().catch(() => null)
+  if (!wire || typeof wire !== 'object' || !('page' in wire) || !('themes' in wire)) return null
+  return publicCmsFromWire({
+    revision: 'revision' in wire ? wire.revision : null,
+    presentation: {
+      ...emptyPresentation(),
+      themes: wire.themes,
+      pages: [wire.page],
+      // A publication without uploaded fonts has no fonts key; SQL returns that as null.
+      ...('fonts' in wire && wire.fonts !== null ? { fonts: wire.fonts } : {}),
+    },
+  })
+}
+
+/** A published CMS page as its response needs it: HEAD needs only to know that it exists. */
+type PublishedCmsPage =
+  | { readonly read: 'exists' }
+  | { readonly read: 'page'; readonly cms: PublicCmsPresentation; readonly page: CmsPage }
+
+/** The published page at `path`; null when the static file answers. /contact reads only what its
+ * response needs: the page's metadata, then for GET the page with its themes and fonts. Every other
+ * path reads the whole publication, which its render needs (the site menu lists the pages). */
+async function publishedCmsPage(
+  env: Env,
+  path: string,
+  lang: CmsLang,
+  method: 'GET' | 'HEAD',
+): Promise<PublishedCmsPage | null> {
+  if (path === '/contact') {
+    if ((await nativeMetadata(env, path, lang)) === null) return null
+    if (method === 'HEAD') return { read: 'exists' }
+    const cms = await loadPublicCmsPage(env, path)
+    const page = cms?.presentation.pages.find((item) => item.path === path)
+    return cms && page ? { read: 'page', cms, page } : null
+  }
+  const cms = await loadPublicCms(env)
+  const page = cms?.presentation.pages.find((item) => item.path === path)
+  if (!cms || !page) return null
+  return method === 'HEAD' ? { read: 'exists' } : { read: 'page', cms, page }
+}
+
 function discoveryFromWire(value: unknown): BusinessDiscovery | null {
   const parsed = publicBusinessDiscoveryResponse.safeParse(value)
   if (!parsed.success) return null
@@ -313,18 +383,6 @@ async function loadDiscovery(env: Env): Promise<BusinessDiscovery | null> {
   } catch {
     return null
   }
-}
-
-function escapeAttribute(value: string): string {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('"', '&quot;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-}
-
-function escapeElementText(value: string): string {
-  return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
 }
 
 function tagBounds(
@@ -383,18 +441,6 @@ function withDescription(html: string, description: string): string {
   )
 }
 
-function cmsFontCss(presentation: CmsPresentation, storageOrigin: string): string {
-  return Object.entries(presentation.fonts ?? {})
-    .map(([id, font]) => {
-      const url = `${storageOrigin.replace(/\/$/, '')}/storage/v1/object/public/${font.ref.bucket}/${font.ref.path
-        .split('/')
-        .map(encodeURIComponent)
-        .join('/')}`
-      return `@font-face{font-family:"CMSFont-${id}";src:url("${url}") format("woff2");font-display:swap}`
-    })
-    .join('\n')
-}
-
 /** `?mode` pins a colour scheme; without a valid one the page follows the visitor's OS scheme. */
 function requestedCmsMode(value: string | null): CmsMode | null {
   return value === 'light' || value === 'dark' ? value : null
@@ -413,27 +459,164 @@ const COLOR_SCHEMES: readonly CmsMode[] = ['light', 'dark']
 const CMS_RESET = '<style id="cms-reset">html,body{background:none}</style>'
 const RUNTIME_ISLAND = /\bid="knc-(?:about|booking|my-bookings)-runtime"/
 const COLOR_SCHEME_META = /(<meta\b[^>]*\bname="color-scheme"[^>]*\bcontent=")[^"]*(")/i
+const LANGUAGE_ACTION = 'cms-site-action-language'
+const THEME_ACTION = 'cms-site-action-theme'
+
+/** A frozen page's stored markup with its header's language and theme actions pointed at this
+ * response, as main's Worker pointed them on every response: the language action at the other
+ * language in `mode`, the theme action at the other mode (dark when `mode` is null and the response
+ * follows the OS; CMS_THEME_SCRIPT then retargets a tagged one in the browser). An action is found
+ * by its class or, without one, by the label main gave it. Those href values change, each in its
+ * own quotes, and a theme action found by its label also regains its `cms-site-action-theme` class
+ * so CMS_THEME_SCRIPT can retarget it in the browser; a language action found by its label stays
+ * untagged, its rewritten href already at the other language. Every other stored byte stays. */
+function withFrozenActionLinks(
+  html: string,
+  path: string,
+  lang: CmsLang,
+  mode: CmsMode | null,
+): string {
+  type Node = DefaultTreeAdapterMap['node']
+  type Element = DefaultTreeAdapterMap['element']
+  const attr = (node: Element, name: string): string =>
+    node.attrs.find((item) => item.name === name)?.value ?? ''
+  const hasClass = (node: Element, name: string): boolean =>
+    attr(node, 'class').split(/\s+/).includes(name)
+  const elements = (node: Node): Element[] =>
+    'childNodes' in node
+      ? node.childNodes.filter((child): child is Element => 'tagName' in child)
+      : []
+  const find = (node: Node): Element | undefined => {
+    if ('tagName' in node && node.tagName === 'header' && attr(node, 'id') === 'cms-site-header')
+      return node
+    for (const child of elements(node)) {
+      const found = find(child)
+      if (found) return found
+    }
+    return undefined
+  }
+  const replacements: { readonly start: number; readonly end: number; readonly text: string }[] = []
+  const update = (node: Element): void => {
+    if (node.tagName === 'a') {
+      const label = attr(node, 'aria-label')
+      const taggedLanguage = hasClass(node, LANGUAGE_ACTION)
+      const taggedTheme = hasClass(node, THEME_ACTION)
+      const languageToggle =
+        taggedLanguage ||
+        (!taggedTheme &&
+          (label === 'Byt språk till engelska' || label === 'Switch language to Swedish'))
+      const themeToggle =
+        !taggedLanguage &&
+        (taggedTheme || label === 'Växla ljust/mörkt' || label === 'Toggle light/dark')
+      if ((languageToggle || themeToggle) && attr(node, 'href')) {
+        let url: URL
+        try {
+          url = new URL(attr(node, 'href'), 'https://site.invalid')
+        } catch {
+          return
+        }
+        if (url.origin !== 'https://site.invalid' || url.pathname !== path) return
+        url.searchParams.set('lang', languageToggle ? (lang === 'sv' ? 'en' : 'sv') : lang)
+        if (themeToggle) url.searchParams.set('mode', mode === 'dark' ? 'light' : 'dark')
+        else if (mode) url.searchParams.set('mode', mode)
+        else url.searchParams.delete('mode')
+        const href = `${url.pathname}${url.search}${url.hash}`
+        for (const item of node.attrs) {
+          // An element the parser re-created from an earlier tag has no location of its own; it
+          // is re-created from the rewritten tag the same way.
+          const location =
+            item.name === 'href' && item.value !== href
+              ? node.sourceCodeLocation?.attrs?.[
+                  item.prefix ? `${item.prefix}:${item.name}` : item.name
+                ]
+              : undefined
+          if (!location) continue
+          const source = html.slice(location.startOffset, location.endOffset)
+          const head = /^[^=]*=[\t\n\f\r ]*/.exec(source)?.[0] ?? `${source}=`
+          const quote = source.charAt(head.length) === "'" ? "'" : '"'
+          const value = href
+            .replaceAll('&', '&amp;')
+            .replaceAll(quote, quote === '"' ? '&quot;' : '&#39;')
+          replacements.push({
+            start: location.startOffset,
+            end: location.endOffset,
+            text: `${head}${quote}${value}${quote}`,
+          })
+        }
+        // Restore the theme action's class so CMS_THEME_SCRIPT (a.cms-site-action-theme) can
+        // retarget it from auto-dark; the language action needs none, its href is already correct.
+        if (themeToggle && !taggedTheme) {
+          const classLocation = node.sourceCodeLocation?.attrs?.['class']
+          const quote = classLocation ? html.charAt(classLocation.endOffset - 1) : ''
+          if (classLocation && (quote === '"' || quote === "'")) {
+            // Add the token inside the quoted class value, before its closing quote.
+            replacements.push({
+              start: classLocation.endOffset - 1,
+              end: classLocation.endOffset - 1,
+              text: ` ${THEME_ACTION}`,
+            })
+          } else if (!classLocation && node.sourceCodeLocation?.startTag) {
+            // No class attribute: add one just after the `<a` tag name.
+            const at = node.sourceCodeLocation.startTag.startOffset + 1 + node.tagName.length
+            replacements.push({ start: at, end: at, text: ` class="${THEME_ACTION}"` })
+          }
+        }
+      }
+    }
+    for (const child of elements(node)) update(child)
+  }
+  // The frozen header opens the page, so parse only up to the first `</header>`: the whole page at
+  // the 100 000 character cap costs most of the 10ms CPU budget. A header closed by its own end tag
+  // inside that prefix is final, with the same offsets, since both parses start at 0. A `</header>`
+  // in an attribute value or a comment cuts the prefix early and leaves the header open; then the
+  // whole markup is parsed.
+  const cut = html.indexOf('</header>')
+  const sliced =
+    cut < 0
+      ? undefined
+      : find(
+          parseFragment(html.slice(0, cut + '</header>'.length), { sourceCodeLocationInfo: true }),
+        )
+  const header = sliced?.sourceCodeLocation?.endTag
+    ? sliced
+    : find(parseFragment(html, { sourceCodeLocationInfo: true }))
+  if (header) update(header)
+  return replacements
+    .sort((left, right) => right.start - left.start)
+    .reduce(
+      (result, { start, end, text }) => result.slice(0, start) + text + result.slice(end),
+      html,
+    )
+}
 
 function planCmsRender(
   page: CmsPage,
   lang: CmsLang,
   requested: CmsMode | null,
+  contact: SiteContact,
   presentation?: CmsPresentation,
 ): CmsRender {
   const native = page.content[lang].html.includes('data-knc-native="1"')
-  if (!presentation || !isSitePage(page)) {
-    const variant = page.content[lang]
-    return native
-      ? { markup: 'native', mode: requested ?? 'light', variant }
-      : { markup: 'authored', mode: requested ?? 'auto', variant }
-  }
-  if (requested === null && !native && isIndependentPage(page))
-    return { markup: 'authored', mode: 'auto', variant: renderIndependentSitePage(page, lang) }
-  // A derived site layout inlines one mode's styles into its markup, so it cannot follow the OS.
-  const mode = requested ?? 'light'
-  const site = renderSitePage(presentation, page, lang, mode)
-  const variant = { html: site.html, css: { light: site.css, dark: site.css } }
-  return native ? { markup: 'native', mode, variant } : { markup: 'authored', mode, variant }
+  // A created page's live header has one markup for both schemes, so it can follow the OS. A page
+  // still holding a frozen header copy is served as stored, as before the live header, except for
+  // the hrefs of its language and theme actions, which follow the response's language and mode.
+  const variant =
+    presentation && isLiveSitePage(page)
+      ? renderSitePage(presentation, page, lang, requested, contact)
+      : presentation && isSitePage(page)
+        ? {
+            ...page.content[lang],
+            html: withFrozenActionLinks(
+              page.content[lang].html,
+              page.path,
+              lang,
+              native ? (requested ?? 'light') : requested,
+            ),
+          }
+        : page.content[lang]
+  return native
+    ? { markup: 'native', mode: requested ?? 'light', variant }
+    : { markup: 'authored', mode: requested ?? 'auto', variant }
 }
 
 const sheetSchemes = (mode: RenderedMode): readonly CmsMode[] =>
@@ -448,7 +631,7 @@ function pageSheets(variant: PageVariant, mode: RenderedMode): string {
   return sheetSchemes(mode)
     .map(
       (scheme) =>
-        `<style id="cms-page-${scheme}"${schemeMedia(mode, scheme)}>${modeCss(repairDesktopCss(variant.css[scheme]), scheme)}</style>`,
+        `<style id="cms-page-${scheme}"${schemeMedia(mode, scheme)}>${inertStyleText(modeCss(repairDesktopCss(variant.css[scheme]), scheme))}</style>`,
     )
     .join('')
 }
@@ -462,75 +645,150 @@ function themeSheets(mode: RenderedMode, presentation?: CmsPresentation): string
   ).join('')
 }
 
-function withColorScheme(html: string, mode: RenderedMode): string {
-  const scheme = mode === 'auto' ? 'light dark' : mode
-  return COLOR_SCHEME_META.test(html)
-    ? html.replace(COLOR_SCHEME_META, `$1${scheme}$2`)
-    : html.replace('</head>', `<meta name="color-scheme" content="${scheme}"></head>`)
-}
-
-function beforeBodyEnd(html: string, snippet: string): string {
-  const end = html.lastIndexOf('</body>')
-  return end < 0 ? `${html}${snippet}` : `${html.slice(0, end)}${snippet}${html.slice(end)}`
-}
-
 interface ShellAssetRange {
   readonly start: number
   readonly end: number
   readonly playfairOnly: boolean
+  readonly iconHref: string | null
+}
+
+interface ShellRoot {
+  readonly tagStart: number
+  /** The content between the start and end tags. */
+  readonly contentStart: number
+  readonly contentEnd: number
+}
+
+/** Source offsets in the trusted build shell. Generated and owner bytes are placed at these
+ * offsets, never at a position found by searching text that already holds owner bytes: a
+ * stylesheet selector or a page title can name `id="root"`. */
+interface ShellLayout {
+  readonly html: string
+  /** Boot assets in source order, each with the whitespace that follows it. */
+  readonly assets: readonly ShellAssetRange[]
+  /** Where the shell's `</head>` starts; null when the shell has none. */
+  readonly headEnd: number | null
+  /** The shell's #root, inside its body; null when the shell has none. */
+  readonly root: ShellRoot | null
+  /** Where the shell's `</body>` starts, or the end of the shell. */
+  readonly bodyEnd: number
 }
 
 // Cache only offsets for the last trusted build shell, never expanded CMS markup or a parse tree.
-let shellAssetPlan:
-  { readonly html: string; readonly ranges: readonly ShellAssetRange[] } | undefined
+let shellLayoutCache: ShellLayout | undefined
 
-/** Remove boot assets from the trusted shell, retaining every other source byte. This is not a
- * sanitizer: authored content still passes the independent CMS validation boundary. */
-function withoutShellBootAssets(html: string, keepPlayfair: boolean): string {
-  if (shellAssetPlan?.html !== html) {
-    const ranges: ShellAssetRange[] = []
-    const visit = (node: DefaultTreeAdapterMap['node']): void => {
-      if ('tagName' in node && node.namespaceURI === 'http://www.w3.org/1999/xhtml') {
-        const attr = (name: string): string =>
-          node.attrs.find((item) => item.name === name)?.value ?? ''
-        const rel = attr('rel')
-          .toLowerCase()
-          .split(/[\t\n\f\r ]+/)
-        const moduleScript = node.tagName === 'script' && attr('type').toLowerCase() === 'module'
-        const modulePreload = node.tagName === 'link' && rel.includes('modulepreload')
-        const playfairPreload =
-          node.tagName === 'link' &&
-          rel.includes('preload') &&
-          attr('href').toLowerCase().startsWith('/fonts/playfairdisplay-')
-        const location = node.sourceCodeLocation
-        if ((moduleScript || modulePreload || playfairPreload) && location) {
-          let end = location.endOffset
-          // Match the existing Vite-shell behavior: removed tags own following whitespace.
-          while (end < html.length && /\s/.test(html.charAt(end))) end++
-          ranges.push({
-            start: location.startOffset,
-            end,
-            playfairOnly: !moduleScript && !modulePreload,
-          })
-        }
+function shellLayout(html: string): ShellLayout {
+  if (shellLayoutCache?.html === html) return shellLayoutCache
+  const assets: ShellAssetRange[] = []
+  const headEnds: number[] = []
+  const bodyEnds: number[] = []
+  const roots: ShellRoot[] = []
+  const visit = (node: DefaultTreeAdapterMap['node']): void => {
+    if ('tagName' in node && node.namespaceURI === 'http://www.w3.org/1999/xhtml') {
+      const attr = (name: string): string =>
+        node.attrs.find((item) => item.name === name)?.value ?? ''
+      const rel = attr('rel')
+        .toLowerCase()
+        .split(/[\t\n\f\r ]+/)
+      const moduleScript = node.tagName === 'script' && attr('type').toLowerCase() === 'module'
+      const modulePreload = node.tagName === 'link' && rel.includes('modulepreload')
+      const playfairPreload =
+        node.tagName === 'link' &&
+        rel.includes('preload') &&
+        attr('href').toLowerCase().startsWith('/fonts/playfairdisplay-')
+      const iconHref =
+        node.tagName === 'link' && rel.includes('preload') && attr('href').startsWith('/icons/')
+          ? attr('href')
+          : null
+      const location = node.sourceCodeLocation
+      if (node.tagName === 'head' && location?.endTag) headEnds.push(location.endTag.startOffset)
+      if (node.tagName === 'body' && location?.endTag) bodyEnds.push(location.endTag.startOffset)
+      if (attr('id') === 'root' && location?.startTag && location.endTag)
+        roots.push({
+          tagStart: location.startTag.startOffset,
+          contentStart: location.startTag.endOffset,
+          contentEnd: location.endTag.startOffset,
+        })
+      if ((moduleScript || modulePreload || playfairPreload || iconHref) && location) {
+        let end = location.endOffset
+        // Match the existing Vite-shell behavior: removed tags own following whitespace.
+        while (end < html.length && /\s/.test(html.charAt(end))) end++
+        assets.push({
+          start: location.startOffset,
+          end,
+          playfairOnly: playfairPreload && !moduleScript && !modulePreload,
+          iconHref,
+        })
       }
-      if ('childNodes' in node) node.childNodes.forEach(visit)
     }
-    visit(parseHtml(html, { sourceCodeLocationInfo: true }))
-    ranges.sort((left, right) => right.start - left.start)
-    shellAssetPlan = { html, ranges }
+    if ('childNodes' in node) node.childNodes.forEach(visit)
   }
-  let result = html
-  for (const { start, end, playfairOnly } of shellAssetPlan.ranges) {
-    if (playfairOnly && keepPlayfair) continue
-    result = result.slice(0, start) + result.slice(end)
-  }
-  return result
+  visit(parseHtml(html, { sourceCodeLocationInfo: true }))
+  assets.sort((left, right) => left.start - right.start)
+  const headEnd = headEnds[0] ?? null
+  const bodyEnd = bodyEnds[0] ?? html.length
+  // The fills in renderCmsPage rely on head end, root and body end being in source order.
+  const root =
+    roots.find((item) => item.tagStart >= (headEnd ?? 0) && item.contentEnd <= bodyEnd) ?? null
+  shellLayoutCache = { html, assets, headEnd, root, bodyEnd }
+  return shellLayoutCache
 }
 
-/** Authored pages carry their own theme logic, whether or not they include a runtime island. */
-function authoredDocument(html: string, mode: RenderedMode): string {
-  return beforeBodyEnd(withColorScheme(html, mode), `<script>${CMS_THEME_SCRIPT}</script>`)
+/** The boot assets an island-free authored page drops: the app entry and its module preloads, the
+ * Playfair preloads unless the page's styles use Playfair, and the icon preloads it never
+ * references. This is not a sanitizer: authored content still passes the independent CMS
+ * validation boundary. */
+function droppedBootAssets(
+  layout: ShellLayout,
+  styles: string,
+  markup: string,
+): readonly ShellAssetRange[] {
+  return layout.assets.filter(
+    ({ playfairOnly, iconHref }) =>
+      !(playfairOnly && /Playfair/i.test(styles)) &&
+      !(iconHref && (markup.includes(iconHref) || styles.includes(iconHref))),
+  )
+}
+
+/** The shell's bytes from `from` to `to`, without the dropped ranges (in source order). */
+function shellSlice(
+  html: string,
+  from: number,
+  to: number,
+  dropped: readonly ShellAssetRange[],
+): string {
+  let result = ''
+  let at = from
+  for (const { start, end } of dropped) {
+    if (end <= at || start >= to) continue
+    result += html.slice(at, start)
+    at = Math.min(end, to)
+  }
+  return result + html.slice(at, to)
+}
+
+/** A source range of the shell and what the served page holds there instead. */
+interface ShellFill {
+  readonly start: number
+  readonly end: number
+  readonly fill: (source: string) => string
+}
+
+/** The served page: the trusted shell without the dropped boot assets, each fill (in source order)
+ * replacing its range. Generated and owner bytes enter only as fill values, so no later step
+ * searches text that holds them and no replacement pattern reads a dollar sign in them. */
+function assembleShell(
+  html: string,
+  dropped: readonly ShellAssetRange[],
+  fills: readonly ShellFill[],
+): string {
+  let result = ''
+  let at = 0
+  for (const { start, end, fill } of fills) {
+    result += shellSlice(html, at, start, dropped) + fill(shellSlice(html, start, end, dropped))
+    at = end
+  }
+  return result + shellSlice(html, at, html.length, dropped)
 }
 
 export function renderCmsPage(
@@ -542,42 +800,25 @@ export function renderCmsPage(
   fontCss = '',
   presentation?: CmsPresentation,
   baseCss = '',
+  contact: SiteContact = DEFAULT_BUSINESS,
+  /** Företag & SEO, when it could be read: its name and structured data fill the head. */
+  discovery: BusinessDiscovery | null = null,
 ): string {
-  const plan = planCmsRender(page, lang, requested, presentation)
+  const plan = planCmsRender(page, lang, requested, contact, presentation)
   const variant = plan.variant
+  const authored = plan.markup === 'authored'
   const styles =
     `<style id="cms-fonts">${fontCss}</style>` +
     (baseCss ? `<style id="cms-base">${baseCss}</style>` : '') +
     pageSheets(variant, plan.mode) +
     themeSheets(plan.mode, presentation)
+  const layout = shellLayout(html)
   // Select from the original shell before injecting page-dependent styles or markup, so the
   // parser work is bounded by the build shell and reused across authored pages/modes.
-  const shell =
-    plan.markup === 'authored' && !RUNTIME_ISLAND.test(variant.html)
-      ? withoutShellBootAssets(html, /Playfair/i.test(styles))
-      : html
-  let rendered = shell.replace(/<html\b[^>]*lang=(['"])[^'"]*\1/i, `<html lang="${lang}"`)
-  rendered = replaceElementText(rendered, 'business-title', page.title[lang])
-  rendered = replaceMetaContent(rendered, 'business-og-title', page.title[lang])
-  rendered = replaceMetaContent(rendered, 'business-twitter-title', page.title[lang])
-  rendered = withDescription(rendered, page.description[lang])
-  rendered = rendered.replace(
-    /(<meta\b[^>]*property="og:locale"[^>]*content=")[^"]*(")/i,
-    `$1${lang === 'en' ? 'en_US' : 'sv_SE'}$2`,
-  )
-  rendered = rendered.replace(
-    /(<meta\b[^>]*property="og:locale:alternate"[^>]*content=")[^"]*(")/i,
-    `$1${lang === 'en' ? 'sv_SE' : 'en_US'}$2`,
-  )
-  rendered = rendered.replace(
-    /(<link\b[^>]*rel="canonical"[^>]*href=")[^"]*(")/i,
-    `$1${escapeAttribute(canonicalUrl)}$2`,
-  )
-  // The shell's pre-paint grey must not survive under authored CSS (the two-tone /terms page).
-  rendered = rendered.replace(
-    '</head>',
-    `${plan.markup === 'authored' ? CMS_RESET : ''}${styles}</head>`,
-  )
+  const dropped =
+    authored && !RUNTIME_ISLAND.test(variant.html)
+      ? droppedBootAssets(layout, styles, variant.html)
+      : []
   let markup = variant.html
   if (plan.markup === 'native') {
     const mode = plan.mode
@@ -636,17 +877,89 @@ export function renderCmsPage(
     restoreSource(fragment)
     markup = serialize(fragment)
   }
-  rendered = replaceElementContent(rendered, 'root', markup)
-  const bounds = tagBounds(rendered, 'root')
-  if (bounds !== null) {
-    const opening = rendered.slice(bounds.start, bounds.end + 1)
-    const marked = opening.replace(
-      /\s*>$/,
-      ` data-cms-public="1" data-cms-mode="${plan.mode}" data-cms-page-id="${escapeAttribute(page.id)}">`,
+  const { headEnd, root, bodyEnd } = layout
+  // The metadata is edited in the shell's own bytes, before the first fill that places page bytes.
+  const headCut = headEnd ?? root?.tagStart ?? bodyEnd
+  const scheme = plan.mode === 'auto' ? 'light dark' : plan.mode
+  const shellScheme = COLOR_SCHEME_META.test(shellSlice(html, 0, headCut, dropped))
+  const fills: ShellFill[] = [
+    {
+      start: 0,
+      end: headCut,
+      fill: (head) => {
+        let rendered = head.replace(/<html\b[^>]*lang=(['"])[^'"]*\1/i, `<html lang="${lang}"`)
+        if (discovery !== null) {
+          rendered = replaceMetaContent(rendered, 'business-og-site-name', discovery.business.name)
+          rendered = replaceMetaContent(rendered, 'business-og-image-alt', discovery.business.name)
+          rendered = replaceJsonScript(
+            rendered,
+            'business-json-ld',
+            buildBusinessStructuredData(discovery.business, discovery.facts, SITE_URL),
+          )
+        }
+        rendered = replaceMetaContent(rendered, 'business-og-title', page.title[lang])
+        rendered = replaceMetaContent(rendered, 'business-twitter-title', page.title[lang])
+        rendered = withDescription(rendered, page.description[lang])
+        rendered = rendered.replace(
+          /(<meta\b[^>]*property="og:locale"[^>]*content=")[^"]*(")/i,
+          `$1${lang === 'en' ? 'en_US' : 'sv_SE'}$2`,
+        )
+        rendered = rendered.replace(
+          /(<meta\b[^>]*property="og:locale:alternate"[^>]*content=")[^"]*(")/i,
+          `$1${lang === 'en' ? 'sv_SE' : 'en_US'}$2`,
+        )
+        rendered = rendered.replace(
+          /(<link\b[^>]*rel="canonical"[^>]*href=")[^"]*(")/i,
+          (_match, open: string, close: string) =>
+            `${open}${escapeAttribute(canonicalUrl)}${close}`,
+        )
+        // og:url shares the page's canonical identity; the index shell carries the homepage's.
+        rendered = rendered.replace(
+          /(<meta\b[^>]*property="og:url"[^>]*content=")[^"]*(")/i,
+          (_match, open: string, close: string) =>
+            `${open}${escapeAttribute(canonicalUrl)}${close}`,
+        )
+        // Last: the title keeps quotes, so an owner title can name the ids looked up above.
+        rendered = replaceElementText(rendered, 'business-title', page.title[lang])
+        return authored && shellScheme
+          ? rendered.replace(COLOR_SCHEME_META, `$1${scheme}$2`)
+          : rendered
+      },
+    },
+  ]
+  // The shell's pre-paint grey must not survive under authored CSS (the two-tone /terms page). A
+  // shell without a colour-scheme meta gets one after the styles, where it always went.
+  if (headEnd !== null)
+    fills.push({
+      start: headEnd,
+      end: headEnd,
+      fill: () =>
+        (authored ? CMS_RESET : '') +
+        styles +
+        (authored && !shellScheme ? `<meta name="color-scheme" content="${scheme}">` : ''),
+    })
+  if (root !== null)
+    fills.push(
+      {
+        start: root.tagStart,
+        end: root.contentStart,
+        fill: (tag) =>
+          tag.replace(
+            /\s*>$/,
+            () =>
+              ` data-cms-public="1" data-cms-mode="${plan.mode}" data-cms-page-id="${escapeAttribute(page.id)}">`,
+          ),
+      },
+      { start: root.contentStart, end: root.contentEnd, fill: () => markup },
     )
-    rendered = `${rendered.slice(0, bounds.start)}${marked}${rendered.slice(bounds.end + 1)}`
-  }
-  return plan.markup === 'native' ? rendered : authoredDocument(rendered, plan.mode)
+  // Authored pages carry their own theme logic, whether or not they include a runtime island.
+  if (authored)
+    fills.push({
+      start: bodyEnd,
+      end: bodyEnd,
+      fill: () => `<script>${CMS_THEME_SCRIPT}</script>`,
+    })
+  return assembleShell(html, dropped, fills)
 }
 
 export function renderHomepageMetadata(
@@ -657,68 +970,60 @@ export function renderHomepageMetadata(
   const { business, facts } = discovery
   const seo = business.seo.sv
   const structured = buildBusinessStructuredData(business, facts, SITE_URL)
-  let rendered = replaceElementText(html, 'business-title', seo.title)
-  rendered = replaceMetaContent(rendered, 'business-description', seo.description)
-  rendered = replaceMetaContent(rendered, 'business-og-site-name', business.name)
-  rendered = replaceMetaContent(rendered, 'business-og-title', seo.title)
-  rendered = replaceMetaContent(rendered, 'business-og-description', seo.description)
-  rendered = replaceMetaContent(rendered, 'business-og-image-alt', business.name)
-  rendered = replaceMetaContent(rendered, 'business-twitter-title', seo.title)
-  rendered = replaceMetaContent(rendered, 'business-twitter-description', seo.description)
-  rendered = replaceJsonScript(rendered, 'business-json-ld', structured)
-  if (informationPath !== null) {
-    return replaceElementContent(rendered, 'root', renderPublicFallback(business, informationPath))
+  const metadata = (head: string): string => {
+    let rendered = replaceMetaContent(head, 'business-description', seo.description)
+    rendered = replaceMetaContent(rendered, 'business-og-site-name', business.name)
+    rendered = replaceMetaContent(rendered, 'business-og-title', seo.title)
+    rendered = replaceMetaContent(rendered, 'business-og-description', seo.description)
+    rendered = replaceMetaContent(rendered, 'business-og-image-alt', business.name)
+    rendered = replaceMetaContent(rendered, 'business-twitter-title', seo.title)
+    rendered = replaceMetaContent(rendered, 'business-twitter-description', seo.description)
+    rendered = replaceJsonScript(rendered, 'business-json-ld', structured)
+    // Last: the title keeps quotes, so an SEO title can name the ids looked up above.
+    return replaceElementText(rendered, 'business-title', seo.title)
   }
-  // Keep a readable fallback for genuinely disabled scripting. With scripting enabled, the
-  // browser suppresses this subtree while the app bundle loads, so stale fallback content cannot
-  // flash before the published presentation is ready.
-  return replaceElementContent(
-    rendered,
-    'root',
-    `<noscript><main><h1>${escapeElementText(business.name)}</h1><p>${escapeElementText(seo.description)}</p>` +
-      `<p>${escapeElementText(formatBusinessAddress(business))}</p>` +
-      `<p><a href="mailto:${escapeAttribute(business.email)}">${escapeElementText(business.email)}</a></p>` +
-      '<p>Aktivera JavaScript för att välja behandling och boka tid online.</p>' +
-      '<nav aria-label="Information"><a href="/privacy">Integritet och cookies</a> · <a href="/terms">Bokningsvillkor</a></nav></main></noscript>',
+  // The root is located in the trusted shell, before the owner's SEO title is in it.
+  const { root } = shellLayout(html)
+  if (root === null) return metadata(html)
+  const fallback =
+    informationPath !== null
+      ? renderPublicFallback(business, informationPath)
+      : // Keep a readable fallback for genuinely disabled scripting. With scripting enabled, the
+        // browser suppresses this subtree while the app bundle loads, so stale fallback content
+        // cannot flash before the published presentation is ready.
+        `<noscript><main><h1>${escapeElementText(business.name)}</h1><p>${escapeElementText(seo.description)}</p>` +
+        `<p>${escapeElementText(formatBusinessAddress(business))}</p>` +
+        `<p><a href="mailto:${escapeAttribute(business.email)}">${escapeElementText(business.email)}</a></p>` +
+        '<p>Aktivera JavaScript för att välja behandling och boka tid online.</p>' +
+        '<nav aria-label="Information"><a href="/privacy">Integritet och cookies</a> · <a href="/terms">Bokningsvillkor</a></nav></main></noscript>'
+  return assembleShell(
+    html,
+    [],
+    [
+      { start: 0, end: root.tagStart, fill: metadata },
+      { start: root.contentStart, end: root.contentEnd, fill: () => fallback },
+    ],
   )
 }
 
-export function renderContactMetadata(html: string, business: BusinessSettings): string {
-  const title = 'Kontakta ' + business.name + ' – barbershop i ' + business.city
-  let rendered = replaceElementText(html, 'contact-meta-title', title)
-  rendered = replaceMetaContent(
-    rendered,
-    'contact-description',
-    'Officiell kontakt, adress och bokningsinformation för ' +
-      business.name +
-      ' i ' +
-      business.city +
-      '.',
-  )
-  rendered = replaceElementText(rendered, 'contact-title', 'Kontakta ' + business.name)
-  rendered = rendered.replaceAll(
-    /<span data-business-name\s*>[^<]*<\/span\s*>/g,
-    () => '<span data-business-name>' + escapeElementText(business.name) + '</span>',
-  )
-  const phone = business.phoneTel
-    ? '<dt>Telefon</dt><dd><a href="tel:' +
-      escapeAttribute(business.phoneTel) +
-      '">' +
-      escapeElementText(business.phoneDisplay) +
-      '</a></dd>'
-    : ''
-  const email =
-    '<dt>E-post</dt><dd><a href="mailto:' +
-    escapeAttribute(business.email) +
-    '">' +
-    escapeElementText(business.email) +
-    '</a></dd>'
-  const address =
-    '<dt>Besöksadress</dt><dd>' + escapeElementText(formatBusinessAddress(business)) + '</dd>'
-  return replaceElementContent(
-    rendered,
-    'contact-details',
-    '<dl>' + address + phone + email + '</dl>',
+/** The fallback owns its head metadata; only its body passes through the fragment parser. */
+export function renderContactMetadata(
+  html: string,
+  business: BusinessSettings,
+  facts: BusinessDiscoveryFacts = EMPTY_BUSINESS_FACTS,
+): string {
+  const defaults = contactDefaults(business, 'sv')
+  let rendered = replaceElementText(html, 'contact-meta-title', defaults.title)
+  rendered = replaceMetaContent(rendered, 'contact-description', defaults.description)
+  const opening = /<body\b[^>]*>/i.exec(rendered)
+  const end = rendered.lastIndexOf('</body>')
+  if (!opening || end < opening.index + opening[0].length)
+    throw new Error('Contact fallback is missing its body')
+  const start = opening.index + opening[0].length
+  return (
+    rendered.slice(0, start) +
+    renderContactFragment(rendered.slice(start, end), business, 'sv', facts) +
+    rendered.slice(end)
   )
 }
 
@@ -739,7 +1044,7 @@ export function renderPrivateMetadata(html: string, pathname: string): string {
   const route = pathname.startsWith('/admin') ? '/admin' : withoutTrailingSlash(pathname)
   rendered = rendered.replace(
     /(<meta\b[^>]*property="og:url"[^>]*content=")[^"]*(")/i,
-    `$1${SITE_URL}${route}$2`,
+    (_match, open: string, close: string) => `${open}${SITE_URL}${route}${close}`,
   )
   rendered = replaceMetaContent(
     rendered,
@@ -770,53 +1075,17 @@ export function renderLegalMetadata(
       ? `Bokning, priser, avbokning och kontakt hos ${business.name}.`
       : `Så hanterar ${business.name} bokningsuppgifter, cookies, e-post och kalenderkoppling.`,
   )
-  rendered = rendered.replaceAll(
-    /<span data-business-name\s*>[^<]*<\/span\s*>/g,
-    () => `<span data-business-name>${escapeElementText(business.name)}</span>`,
+  // Only the body is parsed and filled as on a CMS legal page; the head is never reserialised.
+  const opening = /<body\b[^>]*>/i.exec(rendered)
+  const end = rendered.lastIndexOf('</body>')
+  if (!opening || end < opening.index + opening[0].length)
+    return renderLegalFragment(rendered, business)
+  const start = opening.index + opening[0].length
+  return (
+    rendered.slice(0, start) +
+    renderLegalFragment(rendered.slice(start, end), business) +
+    rendered.slice(end)
   )
-  rendered = rendered.replaceAll(
-    /<span data-business-controller="(sv|en)"\s*>[^<]*<\/span\s*>/g,
-    (_match, lang: string) =>
-      `<span data-business-controller="${lang}">${escapeElementText(business.legalName || business.name)}</span>`,
-  )
-  const contact =
-    business.email === ''
-      ? '<a href="/">Kontakt / Contact</a>'
-      : `<a href="mailto:${escapeAttribute(business.email)}">${escapeElementText(business.email)}</a>`
-  rendered = rendered.replaceAll(
-    /<span data-business-contact\s*>[\s\S]*?<\/span\s*>/g,
-    () => `<span data-business-contact>${contact}</span>`,
-  )
-  for (const lang of ['sv', 'en'] as const) {
-    const rows: readonly (readonly [string, string])[] = [
-      [lang === 'sv' ? 'Salong' : 'Salon', business.name],
-      [lang === 'sv' ? 'Juridiskt företagsnamn' : 'Legal business name', business.legalName],
-      [lang === 'sv' ? 'Organisationsnummer' : 'Registration number', business.organizationNumber],
-      [lang === 'sv' ? 'Adress' : 'Address', formatBusinessAddress(business)],
-      [lang === 'sv' ? 'E-post' : 'Email', business.email],
-      [lang === 'sv' ? 'Telefon' : 'Phone', business.phoneDisplay],
-    ]
-    const details = rows
-      .filter(([, value]) => value !== '')
-      .map(
-        ([label, value]) =>
-          `<dt>${escapeElementText(label)}</dt><dd>${escapeElementText(value)}</dd>`,
-      )
-      .join('')
-    rendered = replaceElementContent(
-      rendered,
-      `legal-business-details-${lang}`,
-      `<dl>${details}</dl>`,
-    )
-    rendered = replaceElementText(
-      rendered,
-      `cancellation-policy-${lang}`,
-      lang === 'sv'
-        ? `Avboka senast ${business.cancellationPolicyHours} timmar före den bokade tiden.`
-        : `Cancel at least ${business.cancellationPolicyHours} hours before your appointment.`,
-    )
-  }
-  return rendered
 }
 
 function priceRange(facts: BusinessDiscoveryFacts): string | null {
@@ -1051,9 +1320,12 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
     }
   }
 
+  // A native route with trailing slashes is the slashless route, as the app normalises it.
   if (
     pathname !== cleanPathname &&
-    (isSpaPath(cleanPathname) || Object.hasOwn(PUBLIC_FILE_ALIASES, cleanPathname))
+    (isSpaPath(cleanPathname) ||
+      NATIVE_PUBLIC_PATHS.includes(cleanPathname) ||
+      Object.hasOwn(PUBLIC_FILE_ALIASES, cleanPathname))
   ) {
     return redirectTo(url, cleanPathname)
   }
@@ -1087,10 +1359,11 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
         pathname === '/' && !metadata.title.toLowerCase().includes('barbershop')
           ? business.name + ' – Barbershop i ' + business.city + ' | ' + metadata.title
           : metadata.title
-      body = replaceElementText(body, 'business-title', metadataTitle)
       for (const id of ['business-og-title', 'business-twitter-title'])
         body = replaceMetaContent(body, id, metadataTitle)
       body = withDescription(body, metadata.description)
+      // Last: the title keeps quotes, so a page title can name the ids looked up above.
+      body = replaceElementText(body, 'business-title', metadataTitle)
     }
     // The booking view paints the panel surface on phones too; the shell pre-paints it (index.html).
     const view = pathname === '/booking' ? ' data-knc-view="booking"' : ''
@@ -1129,75 +1402,85 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
   const dynamicLegal =
     (pathname === '/terms' || pathname === '/privacy') &&
     (request.method === 'GET' || request.method === 'HEAD')
-  // A legal page renders the business whether the CMS holds it or the static file answers, so
+  const dynamicContact =
+    pathname === '/contact' && (request.method === 'GET' || request.method === 'HEAD')
+  // Information pages render the business whether the CMS holds them or the static file answers, so
   // discovery is read while the CMS lookup runs, not after it. HEAD never reads it.
-  const legalDiscovery = dynamicLegal && request.method === 'GET' ? loadDiscovery(env) : null
+  const informationDiscovery =
+    (dynamicLegal || dynamicContact) && request.method === 'GET' ? loadDiscovery(env) : null
   if (
     (request.method === 'GET' || request.method === 'HEAD') &&
     isCmsPagePath(cleanPathname) &&
     !isPrivatePath(pathname) &&
-    !['/google-calendar', '/contact'].includes(pathname)
+    pathname !== '/google-calendar'
   ) {
-    const cms = await loadPublicCms(env)
-    const cmsPage = cms?.presentation.pages.find((page) => page.path === cleanPathname)
-    if (cmsPage) {
-      const legalPage = cmsPage.path === '/privacy' || cmsPage.path === '/terms'
+    const lang: CmsLang = url.searchParams.get('lang') === 'en' ? 'en' : 'sv'
+    const published = await publishedCmsPage(
+      env,
+      cleanPathname,
+      lang,
+      request.method === 'HEAD' ? 'HEAD' : 'GET',
+    )
+    if (published !== null) {
+      const informationPage = INFORMATION_PAGE_PATHS.includes(cleanPathname)
       const [index, discovery, baseCss] = await Promise.all([
         serveAsset(request, env, '/index.html', true),
-        request.method === 'HEAD' ? null : (legalDiscovery ?? loadDiscovery(env)),
-        legalPage && request.method !== 'HEAD' ? legalBaseCss(request, env) : '',
+        published.read === 'exists' ? null : (informationDiscovery ?? loadDiscovery(env)),
+        published.read === 'exists'
+          ? ''
+          : informationPage
+            ? legalBaseCss(request, env)
+            : isLiveSitePage(published.page)
+              ? sitePageBaseCss(request, env)
+              : '',
       ])
-      const lang: CmsLang = url.searchParams.get('lang') === 'en' ? 'en' : 'sv'
-      const mode = requestedCmsMode(url.searchParams.get('mode'))
-      const canonicalUrl = `${SITE_URL}${cmsPage.path === '/' ? '/' : cmsPage.path}`
       const headers = new Headers(index.headers)
       headers.delete('Content-Length')
       headers.delete('ETag')
       headers.delete('Last-Modified')
       headers.set('Cache-Control', 'no-store')
-      let body = renderCmsPage(
+      if (informationPath !== null) {
+        varyAccept(headers)
+        headers.set('Link', '</llms.txt>; rel="describedby"')
+      }
+      // HEAD answers with the page's status and headers; nothing is rendered for a body it drops.
+      if (published.read === 'exists') return new Response(null, { status: index.status, headers })
+      const { cms, page: cmsPage } = published
+      const mode = requestedCmsMode(url.searchParams.get('mode'))
+      const canonicalUrl = `${SITE_URL}${cmsPage.path === '/' ? '/' : cmsPage.path}`
+      // Fill only the authored fragment. The SPA shell must never be parsed or reserialised here.
+      const page =
+        cmsPage.path === '/contact'
+          ? renderContactPage(
+              cmsPage,
+              lang,
+              discovery?.business ?? DEFAULT_BUSINESS,
+              discovery?.facts ?? EMPTY_BUSINESS_FACTS,
+            )
+          : (cmsPage.path === '/privacy' || cmsPage.path === '/terms') && discovery
+            ? renderLegalPage(cmsPage, lang, discovery.business)
+            : cmsPage
+      const body = renderCmsPage(
         await index.text(),
-        cmsPage,
+        page,
         lang,
         mode,
         canonicalUrl,
-        cms ? cmsFontCss(cms.presentation, env.SUPABASE_URL ?? '') : '',
-        cms?.presentation,
+        cmsFontFaceCss(cms.presentation.fonts, env.SUPABASE_URL ?? ''),
+        cms.presentation,
         baseCss,
+        discovery?.business ?? DEFAULT_BUSINESS,
+        discovery,
       )
-      if (discovery) {
-        const structured = buildBusinessStructuredData(
-          discovery.business,
-          discovery.facts,
-          SITE_URL,
-        )
-        body = replaceMetaContent(body, 'business-og-site-name', discovery.business.name)
-        body = replaceMetaContent(body, 'business-og-image-alt', discovery.business.name)
-        body = replaceJsonScript(body, 'business-json-ld', structured)
-      }
-      if (cms && cmsPage.content[lang].html.includes('data-knc-native="1"')) {
-        const state = JSON.stringify(cms.presentation).replaceAll('<', '\\u003c')
-        body = body.replace(
-          '</head>',
-          `<script type="application/json" id="cms-native-state">${state}</script></head>`,
-        )
-      }
-      if (cmsPage.path === '/privacy' || cmsPage.path === '/terms')
-        body = renderLegalMetadata(body, cmsPage.path, discovery?.business ?? null)
-      return new Response(request.method === 'HEAD' ? null : body, {
-        status: index.status,
-        headers,
-      })
+      return new Response(body, { status: index.status, headers })
     }
   }
 
   const assetPath = pathname === '/' ? '/index.html' : (PUBLIC_FILE_ALIASES[pathname] ?? pathname)
-  const dynamicContact =
-    pathname === '/contact' && (request.method === 'GET' || request.method === 'HEAD')
   const asset = await serveAsset(request, env, assetPath, dynamicLegal || dynamicContact)
   if (asset.status !== 404) {
     if (dynamicContact) {
-      const discovery = request.method === 'HEAD' ? null : await loadDiscovery(env)
+      const discovery = await informationDiscovery
       const headers = new Headers(asset.headers)
       for (const key of ['Content-Length', 'ETag', 'Last-Modified']) headers.delete(key)
       headers.set('Content-Type', 'text/html; charset=utf-8')
@@ -1207,12 +1490,16 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
       return new Response(
         request.method === 'HEAD'
           ? null
-          : renderContactMetadata(await asset.text(), discovery?.business ?? DEFAULT_BUSINESS),
+          : renderContactMetadata(
+              await asset.text(),
+              discovery?.business ?? DEFAULT_BUSINESS,
+              discovery?.facts ?? EMPTY_BUSINESS_FACTS,
+            ),
         { status: asset.status, headers },
       )
     }
     if (dynamicLegal) {
-      const discovery = await legalDiscovery
+      const discovery = await informationDiscovery
       const headers = new Headers(asset.headers)
       headers.delete('Content-Length')
       headers.delete('ETag')

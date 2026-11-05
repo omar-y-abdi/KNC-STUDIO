@@ -1,8 +1,24 @@
 import { describe, expect, it } from 'vitest'
-import { emptyDocument, validateDocument, documentMedia } from '../../shared/cms'
+import { cmsFontFaceCss, emptyDocument, validateDocument, documentMedia } from '../../shared/cms'
 
 const id = '10000000-0000-4000-8000-000000000001'
 describe('uploaded font publication contract', () => {
+  it('emits the exact legacy font-face bytes in registry order', () => {
+    const fonts = {
+      [id]: { ref: { bucket: 'cms-library' as const, path: 'fonts/first.woff2' }, name: 'First' },
+      '20000000-0000-4000-8000-000000000002': {
+        ref: { bucket: 'cms-library' as const, path: 'fonts/second-font.woff2' },
+        name: 'Second',
+      },
+    }
+    const expected =
+      '@font-face{font-family:"CMSFont-10000000-0000-4000-8000-000000000001";src:url("https://fixture.invalid/storage/v1/object/public/cms-library/fonts/first.woff2") format("woff2");font-display:swap}\n' +
+      '@font-face{font-family:"CMSFont-20000000-0000-4000-8000-000000000002";src:url("https://fixture.invalid/storage/v1/object/public/cms-library/fonts/second-font.woff2") format("woff2");font-display:swap}'
+    expect(cmsFontFaceCss(fonts, 'https://fixture.invalid/')).toBe(expected)
+    expect(cmsFontFaceCss(fonts, 'https://fixture.invalid')).toBe(expected)
+    expect(cmsFontFaceCss({}, '')).toBe('')
+    expect(cmsFontFaceCss(undefined, '')).toBe('')
+  })
   it('accepts a registered font definition and retains it as a publication resource', () => {
     const document = emptyDocument()
     Object.assign(document.presentation, {

@@ -2,7 +2,10 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { gunzipSync } from 'node:zlib'
-import { emptyDocument } from '../../shared/cms.ts'
+import { emptyDocument, validateDocument } from '../../shared/cms.ts'
+import { CMS_BUILT_ASSETS } from '../../shared/cms-built-assets.ts'
+import { validateDocumentMarkupPlacements } from '../../shared/cms-markup.ts'
+import { createSitePage } from '../../shared/site-page.ts'
 import { nativeBackend } from './cms-backend.mjs'
 import { attachTabState } from './cms-tab-state.mjs'
 import { expect, test } from './fixtures.mjs'
@@ -86,14 +89,17 @@ const editCanvas = (page, text) =>
 
 // From here the page clock moves only when the test resumes it, so the editor's 180 ms and the
 // backup's 500 ms timers cannot fire: only the lifecycle handlers can save the edit.
-const pauseClock = async (page) =>
-  page.clock.pauseAt((await page.evaluate(() => Date.now())) + 2_000)
+const pauseClock = async (page) => {
+  await page
+    .locator('.cms-editor-canvas[data-cms-about-preview-ready="true"]')
+    .waitFor({ state: 'attached', timeout: 90000 })
+  await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 2_000)
+}
 
 const nameField = (page) => page.getByRole('textbox', { name: 'Namn', exact: true })
 
-// The production capture holds legacy legal pages and marquee zoom, which the studio adopts on load
-// into an unpublished draft (cms-marquee-zoom.spec.mjs); "Fortsätt här" waits for a clean draft.
-// Publishing the adopted head first makes the next tab start clean, as after a real rollout.
+// These lifecycle cases begin from an explicitly published head so later assertions isolate
+// the owner edit or recovered draft from the initial migration.
 const publishAdopted = async (page) => {
   await page.getByRole('button', { name: 'Publicera', exact: true }).click()
   await expect(page.locator('.cms-status')).toHaveText(/^Publicerad/, { timeout: 45000 })
@@ -259,6 +265,159 @@ test('cms-lifecycle an immediate Studio exit preserves a trusted pending canvas 
   await page.frameLocator('.gjs-frame').first().getByText(text, { exact: true }).first().waitFor()
 })
 
+test('cms-lifecycle normalization is publishable but only owner edits prompt and become offers', async ({
+  page,
+  context,
+}) => {
+  const document = await productionDocument()
+  const legacy = createSitePage({
+    id: '10000000-0000-4000-8000-000000000099',
+    path: '/pristine',
+    name: { sv: 'Äldre sida', en: 'Legacy page' },
+  })
+  legacy.layout = 'independent'
+  document.presentation.pages.push(legacy)
+  await nativeBackend(context, document)
+  await page.clock.install()
+  await openStudio(page)
+  await expect(page.locator('.cms-status')).toHaveText('Opublicerade ändringar')
+  await expect(page.getByRole('button', { name: 'Publicera', exact: true })).toBeEnabled()
+  await expect(page.locator('.cms-revert')).toBeDisabled()
+  // Let the backup debounce elapse, then freeze it for the immediate owner edit below.
+  await pauseClock(page)
+  const asksToLeave = (tab) =>
+    tab.evaluate(() => {
+      const leaving = new Event('beforeunload', { cancelable: true })
+      globalThis.dispatchEvent(leaving)
+      return leaving.defaultPrevented
+    })
+  assert.equal(await asksToLeave(page), false)
+  assert.deepEqual(await storedDrafts(page), [])
+  await page.close()
+  await context.clock.resume()
+
+  const edited = await context.newPage()
+  await openStudio(edited)
+  await expect(edited.getByRole('button', { name: 'Visa utkast', exact: true })).toHaveCount(0)
+  await expect(edited.getByText(/Ett lokalt utkast från .* återställdes\./)).toHaveCount(0)
+  await pauseClock(edited)
+  const name = 'Äkta ägarändring'
+  await nameField(edited).fill(name)
+  await expect(edited.locator('.cms-revert')).toBeEnabled()
+  assert.equal(await asksToLeave(edited), true)
+  // Asking to leave saves nothing; the edit reaches IndexedDB through the backup's 500 ms debounce.
+  await edited.clock.runFor(600)
+  await expect.poll(() => storedDrafts(edited)).toEqual([name])
+  await edited.close()
+  await context.clock.resume()
+
+  // This head still needs normalization; its own migration must not block recovery.
+  const recovery = await context.newPage()
+  await openStudio(recovery)
+  await recovery.getByRole('button', { name: 'Visa utkast', exact: true }).click()
+  const offers = recovery.getByRole('region', { name: 'Utkast från stängda flikar', exact: true })
+  const blocked = recovery.getByText(
+    'Publicera eller återställ ändringarna i den här fliken innan du fortsätter med ett annat utkast. Vill du behålla en kopia, välj Export och sedan Återställ.',
+    { exact: true },
+  )
+  const resume = offers.getByRole('button', { name: 'Fortsätt här', exact: true })
+  await expect(offers.getByRole('listitem')).toHaveCount(1)
+  await expect(blocked).toHaveCount(0)
+  await expect(resume).toBeEnabled()
+  await expect(recovery.locator('.cms-mobile-revert')).toBeDisabled()
+  const closeBackup = () =>
+    recovery
+      .getByRole('dialog', { name: 'Utkast & backup', exact: true })
+      .getByRole('button', { name: 'Stäng panel', exact: true })
+      .click()
+  await closeBackup()
+  await nameField(recovery).fill('Ändring i den här fliken')
+  await recovery.getByRole('button', { name: /Utkast & backup/ }).click()
+  await expect(blocked).toBeVisible()
+  await expect(resume).toBeDisabled()
+  await expect(recovery.locator('.cms-mobile-revert')).toBeEnabled()
+  await closeBackup()
+  await recovery.locator('.cms-revert').click()
+  await expect(recovery.locator('.cms-status')).toHaveText('Opublicerade ändringar')
+  await expect(recovery.locator('.cms-revert')).toBeDisabled()
+  await recovery.getByRole('button', { name: 'Visa utkast', exact: true }).click()
+  await expect(resume).toBeEnabled()
+  await resume.click()
+  await expect(nameField(recovery)).toHaveValue(name)
+})
+
+// G16: accepted owner sheets that only mention the old Desktop width hold no legacy ID-rule
+// breakpoint, so no adoption path may rewrite them.
+const DESKTOP_WIDTH_SHEETS = {
+  sv: '/* Owner comment */\n@media (max-width: 1440px) {\n  .price {\n    color: red;\n  }\n}\n',
+  en: ".note::after {\n  content: 'max-width: 1440px';\n}\n",
+}
+
+test('cms-lifecycle ordinary Desktop-width Contact CSS opens as published and survives publication', async ({
+  page,
+  context,
+}) => {
+  const backend = await nativeBackend(context)
+  await openStudio(page)
+  await publishAdopted(page)
+  const status = page.locator('.cms-status')
+  // Control: the published head reopens as published.
+  await openStudio(page)
+  await expect(status).toHaveText('Publicerad · rev 2')
+  const contactOf = (document) =>
+    document.presentation.pages.find(({ path }) => path === '/contact')
+  for (const lang of ['sv', 'en'])
+    contactOf(backend.document).content[lang].css = {
+      light: DESKTOP_WIDTH_SHEETS[lang],
+      dark: DESKTOP_WIDTH_SHEETS[lang],
+    }
+  validateDocument(backend.document)
+  validateDocumentMarkupPlacements(backend.document, {
+    siteOrigin: new URL(harnessOrigin).origin,
+    storageOrigin: 'https://admin-harness.invalid',
+    builtAssets: CMS_BUILT_ASSETS,
+  })
+  const owner = globalThis.structuredClone(contactOf(backend.document).content)
+  await openStudio(page)
+  assert.equal(
+    await page.evaluate(
+      async (document) =>
+        (await import('/src/admin/cms/corePages.ts')).needsCorePageSource(document),
+      backend.document,
+    ),
+    false,
+    'The head needs no source upgrade',
+  )
+  await expect(status).toHaveText('Publicerad · rev 2')
+  await expect(page.getByRole('button', { name: 'Publicera', exact: true })).toBeDisabled()
+  // An unrelated owner edit publishes the Contact sheets as stored.
+  await nameField(page).fill('Startsida med ägarens Kontakt-CSS')
+  await publishAdopted(page)
+  await expect(status).toHaveText('Publicerad · rev 3')
+  assert.deepEqual(contactOf(backend.document).content, owner, 'publication')
+  // An imported copy of the published head keeps them as well.
+  const copy = globalThis.structuredClone(backend.document)
+  copy.presentation.pages[0].name.sv = 'Importerad startsida'
+  await page.getByRole('button', { name: /Utkast & backup/ }).click()
+  await page.locator('input[type="file"][accept="application/json,.json"]').setInputFiles({
+    name: 'kontakt-css.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(copy)),
+  })
+  await page
+    .getByText('JSON-utkastet importerades och är ännu inte publicerat.', { exact: true })
+    .waitFor()
+  await page
+    .getByRole('dialog', { name: 'Utkast & backup', exact: true })
+    .getByRole('button', { name: 'Stäng panel', exact: true })
+    .click()
+  await publishAdopted(page)
+  await expect(status).toHaveText('Publicerad · rev 4')
+  assert.deepEqual(contactOf(backend.document).content, owner, 'import')
+  await openStudio(page)
+  await expect(status).toHaveText('Publicerad · rev 4')
+})
+
 test('cms-lifecycle closed tabs keep their drafts until the owner acts', async ({ context }) => {
   await nativeBackend(context)
   // Publish the seeded site first, so every tab starts from a clean draft.
@@ -395,7 +554,6 @@ test('cms-lifecycle a canvas edit reaches IndexedDB when the tab is hidden, then
   await nativeBackend(context, await productionDocument())
   await page.clock.install()
   await openStudio(page)
-  await publishAdopted(page)
   await pauseClock(page)
   const text = 'Ändrad i canvas innan fliken doldes'
   await editCanvas(page, text)
@@ -708,21 +866,37 @@ test('cms-lifecycle a pending source upgrade cannot overwrite a recovered draft'
 test('cms-lifecycle a 409 merge keeps layouts stale that an edit during publication left', async ({
   page,
   context,
-}) => {
+}, testInfo) => {
   const delay = { operation: 'publish', started: gate(), done: gate() }
   const initial = await productionDocument()
   initial.settings.business_name = 'Salongen'
   // A site has every settings key: the server changes a value during the request, never adds a key
   // (publication requires every key the server holds).
   initial.settings.business_legal_name = 'Salongen AB'
+  assert.equal(
+    initial.presentation.pages.some((item) => item.path === '/contact'),
+    false,
+  )
   const backend = await nativeBackend(context, initial, [], undefined, { delay })
   await openStudio(page)
+  // The stored Home is usable before optional capture adds Contact to the actual draft.
+  await page.getByRole('button', { name: 'Kontakt', exact: true }).waitFor({
+    timeout: testInfo.timeout,
+  })
   await page.getByRole('button', { name: /Företag & SEO/ }).click()
   const name = page.getByLabel('Visningsnamn', { exact: true })
   await name.fill('Tillfälligt namn')
   const publish = page.getByRole('button', { name: 'Publicera', exact: true })
+  const publication = page.waitForRequest(
+    (request) =>
+      new URL(request.url()).pathname.endsWith('/functions/v1/cms-studio') &&
+      request.method() === 'POST' &&
+      request.postDataJSON()?.operation === 'publish',
+  )
   await publish.click()
   await delay.started.promise
+  const submitted = (await publication).postDataJSON().document
+  assert.equal(submitted.presentation.pages.filter((item) => item.path === '/contact').length, 1)
   await name.fill('Salongen')
   backend.document.settings.business_legal_name = 'Serverns AB'
   const source = '**/cms-public/source?preview=1'
@@ -734,9 +908,289 @@ test('cms-lifecycle a 409 merge keeps layouts stale that an edit during publicat
       { exact: true },
     )
     .waitFor({ timeout: 45000 })
+  await expect(page.getByLabel('Juridiskt namn', { exact: true })).toHaveValue('Serverns AB')
+  await expect(page.getByRole('button', { name: 'Kontakt', exact: true })).toHaveCount(1)
   await publish.click()
   await page
     .getByText(/^Inget publicerades: startsidan och Om oss kunde inte uppdateras/)
     .waitFor({ timeout: 45000 })
   assert.equal(backend.writes.filter((write) => write === 'publish').length, 0)
+})
+
+// In Studio only an editor's first canvas load yields between its work steps (yieldCanvasTask).
+// Once armed, this holds the next yield: the browser's own yield (a timer where it has none) still
+// resolves, and only the load's continuation waits for release.
+const holdCanvasYield = (page) =>
+  page.addInitScript(() => {
+    const native = globalThis.scheduler
+    const pass = native?.yield
+      ? () => native.yield()
+      : () => new Promise((resolve) => globalThis.setTimeout(resolve, 0))
+    let armed = false
+    let calls = 0
+    let held = 0
+    let release
+    globalThis.__canvasYield = {
+      arm: () => {
+        armed = true
+      },
+      calls: () => calls,
+      held: () => held,
+      release: () => release?.(),
+    }
+    Object.defineProperty(globalThis, 'scheduler', {
+      configurable: true,
+      value: {
+        yield: async () => {
+          calls++
+          const hold = armed
+          armed = false
+          await pass()
+          if (!hold) return
+          const continued = new Promise((resolve) => {
+            release = resolve
+          })
+          held++
+          await continued
+        },
+      },
+    })
+  })
+
+// Studio with its first canvas load held after the first work step, before any component exists.
+const openStudioHeld = async (page) => {
+  await holdCanvasYield(page)
+  await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html?view=cms-studio`)
+  await page.evaluate(() => globalThis.__canvasYield.arm())
+  await page.evaluate(async () =>
+    (await import('/tools/e2e/admin-harness.tsx')).mountCmsStudioHarness(),
+  )
+  await page.waitForFunction(() => globalThis.__canvasYield.held() === 1, undefined, {
+    timeout: 90000,
+  })
+  await expect(page.locator('.cms-editor-canvas')).toHaveAttribute('aria-busy', 'true')
+}
+
+// The block picker's text blocks in the actual editor's model, and whether anything is selected.
+// The model, not the frame: a first load can run before the frame shows any component.
+const insertedBlocks = (page) =>
+  page.evaluate(async () => {
+    const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+    const editor = cmsGrapes.editors.at(-1)
+    if (!editor) throw new Error('Actual GrapesJS instance missing')
+    return {
+      blocks: editor.getWrapper().toHTML().split('Skriv texten här.').length - 1,
+      selected: Boolean(editor.getSelected()),
+    }
+  })
+
+// A trusted click at the control's centre without Playwright's actionability checks: a control
+// that is unavailable must swallow it as it would a user's click, not time the test out.
+const realClick = async (page, locator) => {
+  await locator.scrollIntoViewIfNeeded()
+  const box = await locator.boundingBox()
+  if (!box) throw new Error('The control is not rendered')
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
+}
+
+// One task later: Preact has rendered what the last input changed.
+const nextTask = (page) =>
+  page.evaluate(() => new Promise((resolve) => globalThis.setTimeout(resolve, 0)))
+
+// The owner's two real ways to add a text block: a mouse click on it, then Enter on it. A picker
+// that is not shown offers neither.
+const tryTextBlock = async (page) => {
+  const block = page.getByRole('button', { name: 'Lägg till text', exact: true })
+  if (!(await block.isVisible())) return
+  await realClick(page, block)
+  await block.focus()
+  await page.keyboard.press('Enter')
+  await nextTask(page)
+}
+
+const NO_BLOCK = { blocks: 0, selected: false }
+
+test('cms-lifecycle the first canvas load accepts no block insertion before it is done', async ({
+  page,
+  context,
+}) => {
+  await nativeBackend(context)
+  await openStudioHeld(page)
+  // The picker is closed when Studio opens, so the owner opens it during the load. Whether or not
+  // the tab answers then, no block may be accepted and then replaced by the load.
+  await realClick(page, page.getByRole('tab', { name: 'Lägg till', exact: true }))
+  await nextTask(page)
+  await tryTextBlock(page)
+  const during = await insertedBlocks(page)
+  await page.evaluate(() => globalThis.__canvasYield.release())
+  const canvas = page.locator('.cms-editor-canvas')
+  await expect(canvas).toHaveAttribute('data-cms-canvas-ready', 'true', { timeout: 90000 })
+  expect({ during, after: await insertedBlocks(page) }).toEqual({
+    during: NO_BLOCK,
+    after: NO_BLOCK,
+  })
+  const frame = page.frameLocator('.gjs-frame').first()
+  await frame.locator('[data-knc-surface="desktop-home"]').waitFor()
+  await expect(page.locator('.cms-revert')).toBeDisabled()
+
+  // After the load an insertion is accepted, and Undo and Redo follow that action alone.
+  await page.getByRole('button', { name: 'Skapa ny sida', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: 'Ny sida', exact: true })
+  await dialog.getByLabel('Sidnamn', { exact: true }).fill('Efter laddningen')
+  await dialog.getByLabel('Adress', { exact: true }).fill('/efter-laddningen')
+  await dialog.getByRole('button', { name: 'Skapa sida', exact: true }).click()
+  await frame.getByRole('heading', { name: 'Efter laddningen', exact: true }).waitFor()
+  await page.getByRole('tab', { name: 'Lägg till', exact: true }).click()
+  await page.getByRole('button', { name: 'Lägg till text', exact: true }).click()
+  const added = frame.getByText('Skriv texten här.', { exact: true })
+  await expect(added).toHaveCount(1)
+  await expect.poll(() => draftHolds(page, 'Skriv texten här.')).toBe(true)
+  await page.getByRole('button', { name: 'Ångra', exact: true }).click()
+  await expect(added).toHaveCount(0)
+  await expect(frame.getByRole('heading', { name: 'Efter laddningen', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Gör om', exact: true }).click()
+  await expect(added).toHaveCount(1)
+})
+
+test('cms-lifecycle a recovered draft accepts no block insertion while its canvas loads', async ({
+  context,
+}) => {
+  await nativeBackend(context)
+  const first = await context.newPage()
+  await openStudio(first)
+  await publishAdopted(first)
+  const name = 'Utkastet som återställs medan canvasen laddar'
+  await nameField(first).fill(name)
+  await expect.poll(() => storedDrafts(first)).toEqual([name])
+  await first.close()
+
+  const page = await context.newPage()
+  await holdCanvasYield(page)
+  await openStudio(page)
+  // The owner keeps the block picker open; recovery mounts a new editor, which loads under it.
+  await page.getByRole('tab', { name: 'Lägg till', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Lägg till text', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Visa utkast', exact: true }).click()
+  const offers = page.getByRole('region', { name: 'Utkast från stängda flikar', exact: true })
+  await page.evaluate(() => globalThis.__canvasYield.arm())
+  await offers.getByRole('button', { name: 'Fortsätt här', exact: true }).click()
+  await page.waitForFunction(() => globalThis.__canvasYield.held() === 1, undefined, {
+    timeout: 90000,
+  })
+  const canvas = page.locator('.cms-editor-canvas')
+  await expect(canvas).toHaveAttribute('aria-busy', 'true')
+  await tryTextBlock(page)
+  const during = await insertedBlocks(page)
+  await page.evaluate(() => globalThis.__canvasYield.release())
+  await expect(canvas).toHaveAttribute('data-cms-canvas-ready', 'true', { timeout: 90000 })
+  expect({ during, after: await insertedBlocks(page) }).toEqual({
+    during: NO_BLOCK,
+    after: NO_BLOCK,
+  })
+  await page.getByRole('tab', { name: 'Design', exact: true }).click()
+  await expect(nameField(page)).toHaveValue(name)
+})
+
+// Whether setComponents has installed the page in the actual editor's model.
+const pageInstalled = (page) =>
+  page.evaluate(async () => {
+    const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+    return cmsGrapes.editors.at(-1).getWrapper().components().length > 0
+  })
+
+// What the actual editor has selected: nothing, its wrapper (the page body), or another component.
+const selection = (page) =>
+  page.evaluate(async () => {
+    const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+    const editor = cmsGrapes.editors.at(-1)
+    const selected = editor.getSelected()
+    if (!selected) return null
+    return selected === editor.getWrapper() ? 'wrapper' : selected.getName()
+  })
+
+test('cms-lifecycle a layer click selects nothing while a recovered draft loads, and selects after it', async ({
+  context,
+}) => {
+  await nativeBackend(context)
+  const first = await context.newPage()
+  await openStudio(first)
+  await publishAdopted(first)
+  const name = 'Utkastet som återställs med lagren öppna'
+  await nameField(first).fill(name)
+  await expect.poll(() => storedDrafts(first)).toEqual([name])
+  await first.close()
+
+  const page = await context.newPage()
+  await holdCanvasYield(page)
+  await openStudio(page)
+  // The owner keeps Lager open; recovery mounts a new editor, which loads under it.
+  const layersTab = page.getByRole('tab', { name: 'Lager', exact: true })
+  await layersTab.click()
+  // The root row of the layer tree, the page body: until a layer is opened, the only one shown.
+  const root = page.locator('#cms-layers > .gjs-layer > .gjs-layer-item')
+  await expect(root).toBeVisible()
+  await page.getByRole('button', { name: 'Visa utkast', exact: true }).click()
+  const offers = page.getByRole('region', { name: 'Utkast från stängda flikar', exact: true })
+  await page.evaluate(() => globalThis.__canvasYield.arm())
+  await offers.getByRole('button', { name: 'Fortsätt här', exact: true }).click()
+  // Advance the held load one work step at a time until setComponents has installed the page,
+  // then keep it held there.
+  let held = 1
+  await page.waitForFunction(() => globalThis.__canvasYield.held() === 1, undefined, {
+    timeout: 90000,
+  })
+  while (!(await pageInstalled(page))) {
+    await page.evaluate(() => {
+      globalThis.__canvasYield.arm()
+      globalThis.__canvasYield.release()
+    })
+    held++
+    await page.waitForFunction((count) => globalThis.__canvasYield.held() === count, held, {
+      timeout: 90000,
+    })
+  }
+  const canvas = page.locator('.cms-editor-canvas')
+  await expect(canvas).toHaveAttribute('aria-busy', 'true')
+  await expect(layersTab).toHaveAttribute('aria-selected', 'true')
+  await expect(root).toBeVisible()
+  await realClick(page, root)
+  await nextTask(page)
+  const during = await selection(page)
+  await page.evaluate(() => globalThis.__canvasYield.release())
+  await expect(canvas).toHaveAttribute('data-cms-canvas-ready', 'true', { timeout: 90000 })
+  // The render that ends the load also makes the layers available again.
+  await expect(canvas).toHaveAttribute('aria-busy', 'false')
+  const after = await selection(page)
+  await realClick(page, root)
+  expect({ during, after, clicked: await selection(page) }).toEqual({
+    during: null,
+    after: null,
+    clicked: 'wrapper',
+  })
+  await expect(
+    page.locator('.cms-page-list').getByRole('button', { name, exact: true }),
+  ).toBeVisible()
+})
+
+test('cms-lifecycle a page opened during the first canvas load replaces it, and that load stops', async ({
+  page,
+  context,
+}) => {
+  await nativeBackend(context)
+  await openStudioHeld(page)
+  const frame = page.frameLocator('.gjs-frame').first()
+  const canvas = page.locator('.cms-editor-canvas')
+  await page.getByRole('button', { name: 'Integritetspolicy', exact: true }).click()
+  await frame.getByRole('heading', { name: 'Integritetspolicy', exact: true }).waitFor()
+  await expect(canvas).toHaveAttribute('aria-busy', 'false')
+  const calls = await page.evaluate(() => globalThis.__canvasYield.calls())
+  await page.evaluate(() => globalThis.__canvasYield.release())
+  await nextTask(page)
+  // The released Startsida load ends at once: no further work step, nothing in the chosen canvas.
+  expect(await page.evaluate(() => globalThis.__canvasYield.calls())).toBe(calls)
+  await expect(frame.locator('[data-knc-surface]')).toHaveCount(0)
+  await expect(frame.getByRole('heading', { name: 'Integritetspolicy', exact: true })).toBeVisible()
+  await expect(page.locator('.cms-revert')).toBeDisabled()
+  await page.getByRole('button', { name: 'Startsida', exact: true }).click()
+  await frame.locator('[data-knc-surface="desktop-home"]').waitFor({ timeout: 90000 })
 })

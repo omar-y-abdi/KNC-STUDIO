@@ -1,11 +1,96 @@
 import { parse, walk, generate } from 'css-tree'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { gunzipSync } from 'node:zlib'
+import { parseFragment } from 'parse5'
 import { nativeBackend } from './cms-backend.mjs'
 import { test, expect } from './fixtures.mjs'
 import { harnessOrigin } from './origins.mjs'
 test.use({
   viewport: { width: 1440, height: 900 },
   contextOptions: { reducedMotion: 'reduce' },
+})
+
+test('cms-responsive: stored muted colors keep computed values and respect theme mode', async ({
+  page,
+}) => {
+  const fixture = JSON.parse(
+    gunzipSync(
+      readFileSync(new URL('./fixtures/presentation.json.gz', import.meta.url)),
+    ).toString(),
+  ).presentation
+  const samples = []
+  for (const page of fixture.pages)
+    for (const lang of ['sv', 'en']) {
+      const visit = (node) => {
+        for (const mode of ['light', 'dark']) {
+          const css = node.attrs?.find((attr) => attr.name === `data-knc-${mode}`)?.value
+          if (css) samples.push({ lang, mode, css })
+        }
+        node.childNodes?.forEach(visit)
+      }
+      visit(parseFragment(page.content[lang].html))
+    }
+  await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
+  const result = await page.evaluate(async (samples) => {
+    const { themeStyleValue } = await import('/shared/site-theme.ts')
+    const literals = new Set([
+      'rgba(0, 0, 0, 0.6)',
+      'rgba(0, 0, 0, 0.62)',
+      'rgba(255, 255, 255, 0.55)',
+      'rgba(255, 255, 255, 0.7)',
+      'rgba(255, 255, 255, 0.72)',
+    ])
+    const checked = []
+    const host = globalThis.document.createElement('div')
+    globalThis.document.body.append(host)
+    try {
+      for (const { lang, mode: sourceMode, css } of samples) {
+        const raw = globalThis.document.createElement('span')
+        raw.style.cssText = css
+        const color = raw.style.color
+        if (!literals.has(color)) continue
+        // Render the touched stored declaration alone: no fixture media request is possible.
+        raw.style.cssText = ''
+        raw.style.color = color
+        for (const mode of ['light', 'dark']) {
+          const aliased = globalThis.document.createElement('span')
+          aliased.style.color = themeStyleValue('color', color, mode)
+          host.append(raw, aliased)
+          const before = globalThis.getComputedStyle(raw).color
+          const after = globalThis.getComputedStyle(aliased).color
+          aliased.style.setProperty('--knc-muted', '#123456')
+          const overridden = globalThis.getComputedStyle(aliased).color
+          const followsMuted =
+            mode === 'light' ? color.startsWith('rgba(0,') : color.startsWith('rgba(255,')
+          checked.push({ lang, sourceMode, mode, color, before, after, overridden, followsMuted })
+          raw.remove()
+          aliased.remove()
+        }
+      }
+    } finally {
+      host.remove()
+    }
+    return checked
+  }, samples)
+  assert.deepEqual(
+    new Set(result.map((item) => item.color)),
+    new Set([
+      'rgba(0, 0, 0, 0.6)',
+      'rgba(0, 0, 0, 0.62)',
+      'rgba(255, 255, 255, 0.55)',
+      'rgba(255, 255, 255, 0.7)',
+      'rgba(255, 255, 255, 0.72)',
+    ]),
+  )
+  for (const { lang, sourceMode, mode, color, before, after, overridden, followsMuted } of result) {
+    assert.equal(after, before, `${lang}/${mode}: ${color} retains its computed value`)
+    assert.equal(
+      overridden,
+      followsMuted ? 'rgb(18, 52, 86)' : before,
+      `${lang}/${sourceMode} rendered in ${mode}: ${color} follows muted only in its own mode`,
+    )
+  }
 })
 test('cms-responsive', async ({ page, context, browserName }) => {
   const name = browserName

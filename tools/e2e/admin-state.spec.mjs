@@ -2,10 +2,12 @@ import { test } from './fixtures.mjs'
 import {
   verifyNavigation,
   verifyDelayedRestore,
-  verifyPresentationDraft,
   verifyAdminSession,
   verifyMutationReentry,
-  verifyInitialHydration,
+  verifyDeliveryStatus,
+  verifyDeliveryReloadRace,
+  verifyDeliveryCopyRace,
+  verifySettingsCancellation,
   verifyContactOwnership,
   verifyDelayedCatalog,
   verifyBookingTerms,
@@ -16,7 +18,6 @@ test.use({ viewport: { width: 1280, height: 900 }, actionTimeout: 10000 })
 const cases = [
   ['navigation', verifyNavigation],
   ['delayed restore', verifyDelayedRestore],
-  ['presentation draft', verifyPresentationDraft],
   ...[
     'focus',
     'poll',
@@ -36,9 +37,27 @@ const cases = [
     ['remount ' + kind, (page) => verifyMutationReentry(page, kind, 'remount')],
     ['target ' + kind, (page) => verifyMutationReentry(page, kind, 'target', true)],
   ]),
-  ...['site', 'gallery'].flatMap((kind) => [
-    ['hydrate ' + kind, (page) => verifyInitialHydration(page, kind)],
-    ['dirty hydrate ' + kind, (page) => verifyInitialHydration(page, kind, true)],
+  ['delivery status', verifyDeliveryStatus],
+  ...['retry', 'port'].flatMap((trigger) =>
+    ['page', 'error'].map((stale) => [
+      `delivery reload race ${trigger} ${stale}`,
+      (page) => verifyDeliveryReloadRace(page, trigger, stale),
+    ]),
+  ),
+  // An error, unlike a page, leaves a notice that the reload does not clear.
+  [
+    'delivery reload race retry-window error',
+    (page) => verifyDeliveryReloadRace(page, 'retry-window', 'error'),
+  ],
+  ...['reopen', 'reopen-pending', 'other', 'closed'].flatMap((next) =>
+    ['error', 'copy'].map((late) => [
+      `delivery copy race ${next} ${late}`,
+      (page) => verifyDeliveryCopyRace(page, next, late),
+    ]),
+  ),
+  ...['owner', 'barber', 'load-failure', 'revisit-during-save'].map((scenario) => [
+    'settings cancellation ' + scenario,
+    (page) => verifySettingsCancellation(page, scenario),
   ]),
   ...['booking', 'review'].map((kind) => [
     'contact ownership ' + kind,
