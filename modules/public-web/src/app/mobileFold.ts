@@ -36,27 +36,42 @@ export function mobileLayoutViewportHeight(root: HTMLElement): number {
 export function primeMobileFold(root: HTMLElement, change: (active: boolean) => void): () => void {
   let touching = false
   let startY = 0
-  const prime = (): void => change(true)
+  let armed = false
+  const prime = (): void => {
+    change(true)
+    disarm()
+  }
   const rest = (): void => {
-    if (!touching && root.scrollTop <= 0) change(false)
+    if (!touching && root.scrollTop <= 0) {
+      arm()
+      change(false)
+    }
   }
   const move = (event: TouchEvent): void => {
     const touch = event.touches[0]
-    if (event.defaultPrevented || !touch || event.touches.length !== 1) return
+    if (!touching || event.defaultPrevented || !touch || event.touches.length !== 1) return
     if (touch.clientY < startY || root.scrollTop > 0) {
       prime()
-      // Only the first movement waits for main-thread setup. The browser owns the pan.
-      root.removeEventListener('touchmove', move)
     }
+  }
+  // Register before touchstart: the compositor chooses the gesture's blocking region then.
+  // After priming, the ongoing native pan has no blocking move listener.
+  const arm = (): void => {
+    if (armed) return
+    root.addEventListener('touchmove', move, { passive: false })
+    armed = true
+  }
+  const disarm = (): void => {
+    if (!armed) return
+    root.removeEventListener('touchmove', move)
+    armed = false
   }
   const start = (event: TouchEvent): void => {
     touching = true
     startY = event.touches[0]?.clientY ?? 0
-    root.addEventListener('touchmove', move, { passive: false })
   }
   const end = (): void => {
     touching = false
-    root.removeEventListener('touchmove', move)
     rest()
   }
   const wheel = (event: WheelEvent): void => {
@@ -89,7 +104,7 @@ export function primeMobileFold(root: HTMLElement, change: (active: boolean) => 
   rest()
   return () => {
     root.removeEventListener('touchstart', start)
-    root.removeEventListener('touchmove', move)
+    disarm()
     root.removeEventListener('touchend', end)
     root.removeEventListener('touchcancel', end)
     root.removeEventListener('wheel', wheel)

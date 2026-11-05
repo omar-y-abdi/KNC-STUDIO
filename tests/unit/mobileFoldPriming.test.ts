@@ -59,6 +59,27 @@ describe('native mobile fold priming', () => {
     expect(change).not.toHaveBeenCalled()
   })
 
+  it('registers the blocking first move before touchstart and re-arms only at idle zero', () => {
+    const root = new FoldRoot()
+    const add = vi.spyOn(root, 'addEventListener')
+    const remove = vi.spyOn(root, 'removeEventListener')
+    const dispose = install(root, vi.fn())
+    const moves = () => add.mock.calls.filter(([name]) => name === 'touchmove')
+    expect(moves()).toEqual([['touchmove', expect.any(Function), { passive: false }]])
+    root.dispatchEvent(touch('touchstart', 300))
+    expect(moves()).toHaveLength(1)
+    root.dispatchEvent(touch('touchmove', 200))
+    expect(remove).toHaveBeenCalledWith('touchmove', moves()[0]?.[1])
+    root.scrollTop = 200
+    root.dispatchEvent(touch('touchend', 200))
+    expect(moves()).toHaveLength(1)
+    root.scrollTop = 0
+    root.dispatchEvent(event('scroll'))
+    root.dispatchEvent(event('scroll'))
+    expect(moves()).toHaveLength(2)
+    dispose()
+  })
+
   it('keeps the native carrier through a reversal at zero until the active gesture ends', () => {
     const root = new FoldRoot()
     const change = vi.fn()
