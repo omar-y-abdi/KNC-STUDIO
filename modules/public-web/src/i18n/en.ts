@@ -119,17 +119,20 @@ export const aboutEn: AboutStrings = {
   reviewPhone: 'Phone number',
   reviewPhonePh: '07X XXX XX XX',
   reviewPhoneHint:
-    'Enter the number you booked with. Your name is taken from the booking and shown as first name + initial.',
+    'Use the number from your booking. Reviews require verified email access and a completed visit. Your name is shown as first name + initial.',
   reviewRating: 'Rating',
   reviewText: 'Your review',
   reviewTextPh: 'Tell us about your visit …',
   reviewSubmit: 'Leave a review',
+  reviewVerifyBooking: 'Verify booking by email',
+  reviewVerifyHint:
+    'You can verify before writing. If you have a draft, open the email link in another tab and return here.',
   reviewThanks: 'Thanks for your review!',
   reviewErrPhone: 'Invalid phone number',
   reviewErrText: 'Please write something about your visit',
   reviewErrRating: 'Please choose a rating',
   reviewErrNoBooking:
-    'We found no completed booking for that number. You can leave a review after your visit.',
+    'We could not verify a completed booking that you have not reviewed yet. Open the secure link in your booking email and check the phone number.',
   reviewErrInvalid: 'The review could not be validated. Check your details and try again.',
   reviewErrChallenge: 'Verification failed. Reload the check and try again.',
   reviewErrRateLimited: 'Too many attempts. Wait a moment before trying again.',

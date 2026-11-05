@@ -57,6 +57,7 @@ export interface MobileSiteProps {
   readonly openCancel: () => void
   /** Open the "Mina bokningar" (my-appointments) popup. */
   readonly openMyBookings: () => void
+  readonly onVerifyBooking?: () => void
   /** Owner-set font-size preset for the homepage editable text (opening hours / address). */
   readonly homepageScale: SizePreset
   /** Owner-managed logo replacement, bounded scale, and image treatment. */
@@ -485,6 +486,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
         ) : (
           <AboutSection
             mobile
+            {...(props.onVerifyBooking ? { onVerifyBooking: props.onVerifyBooking } : {})}
             mode={props.mode}
             lang={props.lang}
             fontScale={props.aboutScale}

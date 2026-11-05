@@ -48,6 +48,8 @@ export interface MyBookingsDialogProps {
   readonly accessError?: 'invalid' | 'cookies_disabled' | 'system'
   readonly onProfile?: (profile: CustomerProfile | undefined) => void
   readonly emailLinkCode?: string | null
+  /** Explicit verification starts at email lookup even when a device receipt can list bookings. */
+  readonly verifyEmail?: boolean
 }
 
 export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
@@ -55,17 +57,20 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
     port: props.port,
     token: props.accessToken,
     error: props.accessError,
+    verifyEmail: props.verifyEmail,
     key: 0,
   })
   if (
     owner.current.port !== props.port ||
     owner.current.token !== props.accessToken ||
-    owner.current.error !== props.accessError
+    owner.current.error !== props.accessError ||
+    owner.current.verifyEmail !== props.verifyEmail
   ) {
     owner.current = {
       port: props.port,
       token: props.accessToken,
       error: props.accessError,
+      verifyEmail: props.verifyEmail,
       key: owner.current.key + 1,
     }
   }
@@ -85,7 +90,9 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
   const red = systemRed(dark)
   const port: MyBookingsPort = props.port ?? defaultMyBookingsPort
 
-  const [step, setStep] = useState<Step>(props.accessError === undefined ? 'loading' : 'lookup')
+  const [step, setStep] = useState<Step>(
+    props.verifyEmail || props.accessError !== undefined ? 'lookup' : 'loading',
+  )
   const [email, setEmail] = useState<string>('')
   const [emailError, setEmailError] = useState<boolean>(false)
   const initialErrors = {
@@ -199,10 +206,10 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
     if (props.accessToken !== undefined) {
       setAccessToken(props.accessToken)
       void loadBookings(props.accessToken)
-    } else if (props.accessError === undefined) {
+    } else if (props.accessError === undefined && !props.verifyEmail) {
       void loadBookings('', true)
     }
-  }, [props.accessToken])
+  }, [props.accessToken, props.verifyEmail])
 
   async function requestAccess(): Promise<void> {
     const owner = lifetime.current

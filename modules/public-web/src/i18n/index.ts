@@ -117,7 +117,7 @@ export interface AboutStrings {
   /** Customer-cuts gallery. */
   cutsTitle: string
   cutsAlt: string
-  /** Reviews block + form. The reviewer proves a finished booking by phone; the displayed name is
+  /** Reviews require verified email access to a finished booking; phone is a scope cross-check. The name is
    * derived server-side from that booking ("Förnamn E."), so the form asks for the phone, not a name. */
   reviewsTitle: string
   reviewsLoading: string
@@ -131,11 +131,13 @@ export interface AboutStrings {
   reviewText: string
   reviewTextPh: string
   reviewSubmit: string
+  reviewVerifyBooking: string
+  reviewVerifyHint: string
   reviewThanks: string
   reviewErrPhone: string
   reviewErrText: string
   reviewErrRating: string
-  /** Shown when the phone has no finished, not-yet-reviewed confirmed booking. */
+  /** Missing verified scope or no eligible finished, not-yet-reviewed booking in that scope. */
   reviewErrNoBooking: string
   reviewErrInvalid: string
   reviewErrChallenge: string

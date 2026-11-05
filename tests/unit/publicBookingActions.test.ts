@@ -47,13 +47,21 @@ describe('public booking action gateway client', () => {
     expect(parseWith(customerBookingCancelResponse, { ok: true }).ok).toBe(true)
   })
 
-  it('forwards protected action payloads unchanged', async () => {
-    const payload = {
-      action: 'request_access' as const,
+  it.each([
+    {
+      action: 'request_access',
       email: 'customer@example.com',
-      lang: 'sv' as const,
+      lang: 'sv',
       turnstileToken: 'challenge-token',
-    }
+    },
+    {
+      action: 'review',
+      phone: '0701234567',
+      rating: 5,
+      text: 'Fixture review.',
+      turnstileToken: 'challenge-token',
+    },
+  ] as const)('forwards $action unchanged with same-origin cookie credentials', async (payload) => {
     const fetch = vi
       .fn()
       .mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }))

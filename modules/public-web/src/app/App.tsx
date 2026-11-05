@@ -161,6 +161,7 @@ export function App({
   const [bookingAccess, setBookingAccess] = useState<{
     readonly token?: string
     readonly error?: 'invalid' | 'cookies_disabled' | 'system'
+    readonly verifyEmail?: boolean
   }>({})
   // Source inspection must not consume credentials or mutate the owner's customer session.
   const [initialAccess] = useState(() =>
@@ -440,13 +441,15 @@ export function App({
       })
     })
   }
-  const openMyBookings = (): void => {
+  const openCustomerBookings = (verifyEmail: boolean): void => {
     accessSequence.current++
     preloadMyBookingsDialog()
-    setBookingAccess({})
+    setBookingAccess(verifyEmail ? { verifyEmail: true } : {})
     setEmailLinkCode(undefined)
     setState({ myBookingsOpen: true })
   }
+  const openMyBookings = (): void => openCustomerBookings(false)
+  const openReviewVerification = (): void => openCustomerBookings(true)
   const closeMyBookings = (): void => {
     accessSequence.current++
     setBookingAccess({})
@@ -579,6 +582,7 @@ export function App({
         onClose={closeMyBookings}
         {...(bookingAccess.token === undefined ? {} : { accessToken: bookingAccess.token })}
         {...(bookingAccess.error === undefined ? {} : { accessError: bookingAccess.error })}
+        {...(bookingAccess.verifyEmail ? { verifyEmail: true } : {})}
         {...(emailLinkCode === undefined ? {} : { emailLinkCode })}
         onProfile={(profile) => {
           setCustomerProfile(profile)
@@ -616,6 +620,7 @@ export function App({
           scrollMobToHero={scrollMobToHero}
           openCancel={openMyBookings}
           openMyBookings={openMyBookings}
+          onVerifyBooking={openReviewVerification}
           homepageScale={chrome.homepageScale}
           homepageLogo={chrome.homepageLogo}
           aboutScale={chrome.aboutScale}
@@ -654,6 +659,7 @@ export function App({
         findUsStyle={findUsStyle}
         openCancel={openMyBookings}
         openMyBookings={openMyBookings}
+        onVerifyBooking={openReviewVerification}
         homepageScale={chrome.homepageScale}
         homepageLogo={chrome.homepageLogo}
         aboutScale={chrome.aboutScale}

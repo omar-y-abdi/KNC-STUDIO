@@ -1,8 +1,8 @@
 // Boundary validation for the review form (plain functions + Result shape, mirroring
 // booking/validation.ts). The phone parser is reused from the booking validation (same branded
 // `Phone`, Swedish-mobile rule); the review text and rating get their own checks here. Per-field
-// flags drive the same red-border + note UI. The phone is the review gate — a finished booking is
-// proven by it.
+// flags drive the same red-border + note UI. Phone validation is not authorization: the server
+// requires verified email access to an eligible finished booking and cross-checks the phone.
 
 import { parsePhone, type ValidationResult } from '../booking/validation'
 import type { Rating, ValidReview } from './reviews/domain'

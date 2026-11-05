@@ -15,7 +15,7 @@ import type { ReviewsPort } from '../port'
 
 const SUBMIT_ERROR_MESSAGE = 'Kunde inte skicka recensionen. Försök igen.'
 const NO_BOOKING_MESSAGE =
-  'Öppna först den säkra länken under Mina bokningar och använd samma telefonnummer som bokningen.'
+  'Verifiera bokningens e-poståtkomst via Mina bokningar. Omdömen kräver en avslutad, ännu inte recenserad bokning med samma telefonnummer.'
 const INVALID_MESSAGE = 'Recensionen kunde inte valideras.'
 const CHALLENGE_MESSAGE = 'Verifieringen misslyckades. Försök igen.'
 const RATE_LIMITED_MESSAGE = 'För många försök. Vänta en stund och försök igen.'

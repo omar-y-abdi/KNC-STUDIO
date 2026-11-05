@@ -53,6 +53,7 @@ export interface DesktopSiteProps extends ShellProps {
   readonly openCancel: () => void
   /** Open the "Mina bokningar" (my-appointments) popup. */
   readonly openMyBookings: () => void
+  readonly onVerifyBooking?: () => void
   /** Owner-set font-size preset for the homepage editable text (kicker / hours / address). */
   readonly homepageScale: SizePreset
   /** Owner-managed logo replacement, bounded scale, and image treatment. */
@@ -463,6 +464,7 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
         </div>
         {!booking ? (
           <AboutSection
+            {...(props.onVerifyBooking ? { onVerifyBooking: props.onVerifyBooking } : {})}
             mode={props.mode}
             lang={props.lang}
             {...(props.initialContact === undefined

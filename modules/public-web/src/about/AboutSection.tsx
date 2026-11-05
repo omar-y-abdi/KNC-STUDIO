@@ -44,6 +44,8 @@ type Mode = 'light' | 'dark'
 export const ABOUT_SECTION_ID = 'om-oss'
 
 export interface AboutSectionProps {
+  /** Request verified email access without replacing this section's in-memory review draft. */
+  readonly onVerifyBooking?: () => void
   readonly onManagePrivacy?: () => void
   readonly mode: Mode
   readonly lang: Lang
@@ -191,7 +193,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
   }, [dataActive, port])
 
   // Review form state — raw draft + per-field errors + a transient thank-you flag + a submit-level
-  // error (the phone gate `no_booking`, or a generic invalid/transport failure).
+  // error (missing verified scope or eligible booking, or an invalid/transport failure).
   const [draft, setDraft] = useState<ReviewDraft>(emptyReviewDraft)
   const typedPhone = useRef(false)
   useEffect(() => {
@@ -679,6 +681,39 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
         <div style={formCardStyle}>
           <span style={{ fontFamily: "'Inter Variable'", fontWeight: 600, fontSize: '16px' }}>
             {tx.reviewSubmit}
+            {props.onVerifyBooking ? (
+              <span style={{ display: 'block', marginTop: '10px', fontWeight: 400 }}>
+                <button
+                  type="button"
+                  onClick={props.onVerifyBooking}
+                  class={FOCUS_CLS}
+                  style={{
+                    border: 0,
+                    padding: 0,
+                    background: 'transparent',
+                    color: c.text,
+                    font: 'inherit',
+                    fontSize: '13px',
+                    textDecoration: 'underline',
+                    textUnderlineOffset: '3px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {tx.reviewVerifyBooking}
+                </button>
+                <span
+                  style={{
+                    display: 'block',
+                    marginTop: '6px',
+                    fontSize: '12px',
+                    lineHeight: 1.5,
+                    opacity: 0.7,
+                  }}
+                >
+                  {tx.reviewVerifyHint}
+                </span>
+              </span>
+            ) : null}
           </span>
 
           <label style={fieldColStyle}>
