@@ -1050,7 +1050,8 @@ export function CmsEditor(props: Props): JSX.Element {
     // A frame load replaces the document, so the sheet is written again into each new head.
     const apply = (): void => {
       const frame = editor.Canvas.getDocument()
-      if (!frame) return
+      // During frame replacement the document can exist before its head. The load event retries.
+      if (!frame?.head) return
       let style = frame.getElementById('cms-uploaded-fonts') as HTMLStyleElement | null
       if (!style) {
         style = frame.createElement('style')
@@ -1077,7 +1078,7 @@ export function CmsEditor(props: Props): JSX.Element {
     // base is applied again once GrapesJS has rendered the new head (before `load:head` it is empty).
     const apply = (): void => {
       const frame = editor.Canvas.getDocument()
-      if (!frame) return
+      if (!frame?.head) return
       frame.documentElement.style.colorScheme = base.scheme
       const siteStyle = frame.querySelector('style[data-cms-site-base]')
       if (!sitePage) siteStyle?.remove()

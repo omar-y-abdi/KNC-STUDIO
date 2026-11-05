@@ -1194,3 +1194,43 @@ test('cms-lifecycle a page opened during the first canvas load replaces it, and 
   await page.getByRole('button', { name: 'Startsida', exact: true }).click()
   await frame.locator('[data-knc-surface="desktop-home"]').waitFor({ timeout: 90000 })
 })
+
+test('cms-lifecycle canvas styles wait for a replacement frame head and restore after it loads', async ({
+  page,
+  context,
+}) => {
+  await nativeBackend(context)
+  await openStudio(page)
+  await page.getByRole('button', { name: 'Integritetspolicy', exact: true }).click()
+  await page
+    .frameLocator('.gjs-frame')
+    .first()
+    .getByRole('heading', { name: 'Integritetspolicy', exact: true })
+    .waitFor()
+  await expect(page.locator('.cms-editor-canvas')).toHaveAttribute('data-cms-canvas-ready', 'true')
+  const result = await page.evaluate(async () => {
+    const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+    const editor = cmsGrapes.editors.at(-1)
+    const document = editor.Canvas.getDocument()
+    const head = document.head
+    // A replacing iframe document can exist without a head. Both stylesheet subscribers must
+    // leave it alone, then apply to the new head when GrapesJS announces its completion.
+    head.remove()
+    try {
+      editor.trigger('canvas:frame:load:head')
+    } finally {
+      document.documentElement.prepend(head)
+    }
+    head.querySelector('#cms-uploaded-fonts')?.remove()
+    head.querySelectorAll('link[data-cms-legal-base]').forEach((link) => link.remove())
+    editor.trigger('canvas:frame:load:head')
+    return {
+      fonts: head.querySelectorAll('#cms-uploaded-fonts').length,
+      scheme: document.documentElement.style.colorScheme,
+      links: [...head.querySelectorAll('link[data-cms-legal-base]')].map((link) =>
+        link.getAttribute('href'),
+      ),
+    }
+  })
+  expect(result).toEqual({ fonts: 1, scheme: 'light', links: ['/tokens.css', '/info.css'] })
+})

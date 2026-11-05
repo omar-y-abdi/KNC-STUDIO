@@ -29,3 +29,25 @@ Apply `20261105074335_device_booking_contact_prefill.sql` before deploying the f
 - Consent regressions include withdrawal/re-enable, reads begun while storage is off, reads during pending server revocation and delayed verified-profile hydration. A device-specific epoch protects optional hints without cancelling verified identity or email-link access.
 - TypeScript, ESLint, Prettier, production build and public bundle budget are required before handoff. The complete Worker → Edge → PostgreSQL customer flow has additional assertions in `customer.spec.mjs`; its execution belongs to the isolated CI customer stack.
 - Physical iPhone Safari toolbar/notch tint, native pinch gestures and a physical iOS keyboard were not tested. Browser tests establish metadata, document colors, scrolling and geometry; they are not a claim about all native Safari chrome behavior.
+
+## CI follow-up
+
+The first PR #173 run (`41995598888`, head `809160b`) exposed a canvas recovery race: the
+iframe document existed before its head, and the font stylesheet effect called
+`head.appendChild`, replacing the editor with its error boundary. Both frame stylesheet
+subscribers now wait for a head; their existing `canvas:frame:load:head` subscription applies the
+styles when the new document is ready. The browser regression exposes a headless frame to the
+real subscribers, then checks font styles, legal-page stylesheets and the color scheme after
+restoration. The original implementation reproduced the same `appendChild` error locally.
+
+The stored-page pixel differences were intentional: profile-link underlines, the collapsed
+verification widget releasing its 65 px reservation (including the review form), and the mobile
+barber carousel geometry. The 16 affected Linux baselines come from that run's reviewed actual
+screenshots; matching local baselines are regenerated with the test backend. Snapshot tolerances,
+retry counts and test timeouts remain unchanged.
+
+Follow-up verification: the six focused lifecycle cases passed across Chromium and WebKit;
+all 27 stored visual cases passed again with snapshot updates disabled. TypeScript, focused
+ESLint and Prettier checks passed. The public preview was built against `admin-harness.invalid`;
+the network guard blocked an initial attempt to use the older production-configured local build,
+which was replaced before collecting the new baseline evidence.
