@@ -86,8 +86,9 @@ password-setup session remains subject to normal Auth expiry.
 The global Supabase email OTP expiry stays at 3,600 seconds, including password recovery and email
 changes. Previously sent Supabase invitation links retain their existing behavior.
 
-Deploy this change in order: compatible frontend, migration
-`20261105023501_nonexpiring_staff_invitations.sql`, `redeem-staff-invite`, then
+Deploy this change in order: compatible frontend, migrations
+`20261105023501_nonexpiring_staff_invitations.sql` and
+`20261105025834_restrict_staff_invitation_table_privileges.sql`, `redeem-staff-invite`, then
 `admin-create-barber`. The migration also updates both invitation-language notes to say the link
 can only be used once. Send new staff invitations only after the entire rollout is verified.
 

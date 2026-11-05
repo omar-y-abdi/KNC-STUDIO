@@ -1,5 +1,5 @@
 begin;
-select plan(14);
+select plan(15);
 insert into public.barbers (id, name) values ('durable-invite-test', 'Invitation Test');
 insert into auth.users (id, email) values
   ('75000000-0000-0000-0000-000000000001', 'invite@example.invalid');
@@ -13,6 +13,7 @@ select ok(not has_table_privilege('authenticated','public.staff_invitations','IN
 select ok(not has_function_privilege('anon','public.consume_staff_invitation(text)','EXECUTE'), 'anonymous cannot consume hashes directly');
 select ok(not has_function_privilege('authenticated','public.consume_staff_invitation(text)','EXECUTE'), 'staff cannot consume hashes directly');
 select ok(has_function_privilege('service_role','public.consume_staff_invitation(text)','EXECUTE'), 'only trusted exchange can claim');
+select ok(not has_table_privilege('service_role','public.staff_invitations','TRUNCATE,REFERENCES,TRIGGER'), 'server cannot truncate or mutate invitation table structure');
 select is(public.consume_staff_invitation(repeat('b',64)), null::uuid, 'wrong token is rejected');
 select is(public.consume_staff_invitation(repeat('a',64)), '75000000-0000-0000-0000-000000000001'::uuid, 'decades-old invitation still works');
 select is(public.consume_staff_invitation(repeat('a',64)), null::uuid, 'second use is rejected');
