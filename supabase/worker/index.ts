@@ -441,16 +441,16 @@ function replaceShellMetadata(
   attribute: 'content' | 'href',
   value: string | null,
 ): string {
-  // ASCII folding preserves offsets even when owner text contains characters such as U+0130.
-  const folded = html.replace(/[A-Z]/g, (letter) => letter.toLowerCase())
   const opening = tag === 'meta' ? /<meta\b/ : /<link\b/
   const valueOpening = `${attribute}="`
   const lastQuote = html.lastIndexOf('"')
   let start = 0
   while (start < html.length) {
-    const closing = folded.indexOf('>', start)
+    const closing = html.indexOf('>', start)
     const end = closing < 0 ? html.length : closing
-    const region = folded.slice(start, end)
+    // Fold only the current region, so a leading match never scans an uppercase body. ASCII
+    // folding preserves offsets even when owner text contains characters such as U+0130.
+    const region = html.slice(start, end).replace(/[A-Z]/g, (letter) => letter.toLowerCase())
     const match = opening.exec(region)
     if (match !== null) {
       const markerAt = region.indexOf(marker, match.index + match[0].length)

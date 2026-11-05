@@ -734,6 +734,20 @@ describe('CMS legal page rendering', () => {
 })
 
 describe('bounded private metadata rewriting', () => {
+  it('stops metadata searches at leading matches even with a large body', () => {
+    const body = '<body>' + 'UPPERCASE BODY TEXT '.repeat(100_000) + '</body>'
+    const head =
+      '<meta property="og:url" content="old"><link rel="canonical" href="old"><meta name="robots" content="index">'
+    const started = performance.now()
+    const rendered = renderPrivateMetadata(head + body, '/login')
+    const elapsed = performance.now() - started
+    expect(rendered).toBe(
+      '<meta property="og:url" content="https://bladeblendstudio.se/login"><meta name="robots" content="noindex, nofollow">' +
+        body,
+    )
+    expect(elapsed).toBeLessThan(250)
+  })
+
   it('leaves a long near-miss metadata tag unchanged without retrying each property', () => {
     const source = '<meta ' + 'property="og:url" '.repeat(10_000) + '>'
     const started = performance.now()
