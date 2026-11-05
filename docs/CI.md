@@ -50,7 +50,8 @@ The Edge job runs from `supabase/functions`, using its own `deno.json` and froze
 `nodeModulesDir: none`. Deno resolves npm packages from its cache using locked versions and
 integrities, independently of the root npm tree. Every entrypoint must pass and an empty selection
 fails. Supabase serve/deploy instead resolve bare imports through each function's own `deno.json`;
-the Edge contract checks every reachable local module, including `shared/`, against that map.
+the Edge contract checks every reachable local module, including `packages/content-contracts/src`
+and `packages/backend-contracts/src`, against that map.
 
 `@playwright/test` owns projects, browser reuse, isolated contexts/pages, fixture teardown, test
 scheduling, timeouts, server readiness/shutdown, failure screenshots and traces. Product behavior
@@ -124,8 +125,8 @@ default 0; CI sets none and is unchanged). Keep concurrent offsets at least 20 a
 and 200: offsets 1, 15 or 16 apart make one run's port another run's port. Locally
 `reuseExistingServer` is on, so two runs with the same offset do not fail; the second silently tests
 the first worktree's code. `BASE_URL`, `PUBLIC_BASE_URL` and `CMS_STARTUP_URL` still override the
-origins the tests visit. Vite's dependency cache lives in `.vite-cache` inside each worktree because
-every worktree's `node_modules` is one shared install. The customer group keeps its own ports and
+origins the tests visit. Vite's dependency cache lives in `.vite-cache` inside each worktree,
+preserving cache isolation even when worktrees share a dependency installation. The customer group keeps its own ports and
 the shared local Supabase stack, so it cannot run in parallel.
 
 Each shard records its discovered plan before running. `verify-playwright-report.mjs` compares the
@@ -137,6 +138,13 @@ duplicate, skipped, flaky, interrupted, unexpected failures or retried outcomes 
 source identity check detects tracked changes by browser tests. JSON/HTML reports, timings, failure traces,
 screenshots and domain evidence are retained as per-shard GitHub artifacts. Uploads naming a hidden
 `.ci-*` plan explicitly enable `include-hidden-files` so the discovered plan is retained too.
+
+The always-on quality tests independently list all unsharded native browser projects and
+compare their discovered file union with declared ownership for each of the four browser groups.
+An owned file excluded by `testMatch`, an empty browser spec, or a file assigned to the wrong group
+fails this check even if every discovered case passes. The union preserves deliberate per-engine
+exclusions, including Chromium-only CMS specs. Native Vitest file discovery must also exactly
+match unit ownership, so changing metadata cannot silently drop a unit file.
 
 `tools/ci/test-*.mjs` exercises actual formatter replay/errors, the protected gate executable,
 artifact corruption/staleness, native fixture failure/timeout/focused tests/empty selection, shard

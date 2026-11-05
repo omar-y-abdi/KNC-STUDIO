@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { readdirSync, readFileSync } from 'node:fs'
+import { cpSync, mkdirSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
 import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
@@ -17,6 +17,11 @@ import {
   unitOwnership,
 } from '../modules/model.mjs'
 import { planOutputs } from './impact-plan.mjs'
+import {
+  discoverBrowserFiles,
+  discoverUnitFiles,
+  verifyOwnedFiles,
+} from './verify-test-inventory.mjs'
 
 const cli = resolve('node_modules/playwright/cli.js')
 const runner = pathToFileURL(resolve('node_modules/@playwright/test/index.mjs')).href
@@ -189,4 +194,70 @@ test('affected DeliveryStatus native shard union preserves exactly the selected 
       assert.deepEqual(actual, expected, `${group}: missing or unselected cases`)
     }
   }
+})
+
+async function nativeInventoryFixture(t) {
+  const root = await mkdtemp(join(tmpdir(), 'knc-native-inventory-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  mkdirSync(join(root, 'tools/e2e'), { recursive: true })
+  mkdirSync(join(root, 'tests/unit'), { recursive: true })
+  for (const file of ['playwright.config.ts', 'vitest.config.ts', 'tools/e2e/origins.mjs'])
+    cpSync(file, join(root, file))
+  symlinkSync(resolve('node_modules'), join(root, 'node_modules'))
+  const spec = (name, content = `import {test} from '@playwright/test'; test('${name}',()=>{});`) =>
+    writeFileSync(join(root, `tools/e2e/${name}.spec.mjs`), content)
+  for (const name of ['admin-state', 'cms-fixture', 'cms-startup', 'customer']) spec(name)
+  writeFileSync(
+    join(root, 'tests/unit/example.test.ts'),
+    "import {test} from 'vitest'; test('example',()=>{});",
+  )
+  return { root, spec }
+}
+
+test('native inventory rejects an owned public spec excluded by project testMatch', async (t) => {
+  const { root, spec } = await nativeInventoryFixture(t)
+  spec('new-public-contract')
+  const inventory = {
+    'tools/e2e/admin-state.spec.mjs': { kind: 'public' },
+    'tools/e2e/new-public-contract.spec.mjs': { kind: 'public' },
+  }
+  const discovered = discoverBrowserFiles(root, 'public')
+  assert.deepEqual(discovered, ['tools/e2e/admin-state.spec.mjs'])
+  assert.throws(() => verifyOwnedFiles(inventory, 'public', discovered), /public.*ownership/)
+})
+
+test('native inventory rejects an owned empty browser spec', async (t) => {
+  const { root, spec } = await nativeInventoryFixture(t)
+  spec('cms-empty', 'export {}\n')
+  const browser = {
+    'tools/e2e/cms-fixture.spec.mjs': { kind: 'cms' },
+    'tools/e2e/cms-empty.spec.mjs': { kind: 'cms' },
+  }
+  assert.throws(
+    () => verifyOwnedFiles(browser, 'cms', discoverBrowserFiles(root, 'cms')),
+    /cms.*ownership/,
+  )
+})
+
+test('native inventory rejects a unit file assigned another kind', async (t) => {
+  const { root } = await nativeInventoryFixture(t)
+  writeFileSync(
+    join(root, 'tests/unit/retained.test.ts'),
+    "import {test} from 'vitest'; test('retained',()=>{});",
+  )
+  const units = {
+    'tests/unit/example.test.ts': { kind: 'orchestration' },
+    'tests/unit/retained.test.ts': { kind: 'unit' },
+  }
+  const discovered = discoverUnitFiles(root)
+  assert.deepEqual(discovered, ['tests/unit/example.test.ts', 'tests/unit/retained.test.ts'])
+  assert.throws(() => verifyOwnedFiles(units, 'unit', discovered), /unit.*ownership/)
+})
+
+test('every owned browser and unit file is independently discovered by its native runner', () => {
+  const { inventory, errors } = loadInventory(process.cwd())
+  assert.deepEqual(errors, [])
+  for (const group of ['cms', 'public', 'startup', 'customer'])
+    verifyOwnedFiles(inventory, group, discoverBrowserFiles(process.cwd(), group))
+  verifyOwnedFiles(inventory, 'unit', discoverUnitFiles(process.cwd()))
 })
