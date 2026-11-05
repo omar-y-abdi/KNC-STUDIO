@@ -2382,6 +2382,11 @@
     "owners": ["public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Public rendering, staff behavior and visual contracts"
   },
+  "tools/e2e/review-recovery.spec.mjs": {
+    "kind": "public",
+    "owners": ["public-web"],
+    "reason": "Public review authorization recovery, retained draft, and verified customer access"
+  },
   "tools/e2e/style-contract.spec.mjs": {
     "kind": "public",
     "owners": ["public-web", "staff-admin", "content-contracts", "backend-contracts"],

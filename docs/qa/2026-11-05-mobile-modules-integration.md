@@ -1,10 +1,10 @@
 # Mobile runtime integration into module workspaces
 
-This checkpoint integrates frozen mobile commits `68bd7fbcd1ad7c2b1b7140d61e46c23437f39316`
+The initial checkpoint integrates frozen mobile commits `68bd7fbcd1ad7c2b1b7140d61e46c23437f39316`
 and `e484e7d2348e8e7a779cafa0d5d02974234be7b4` onto module head
 `9087de0587dae97e589135a8a68286e0b385b4d6` in branch `fix/mobile-runtime-followup`.
-It adds no product behavior beyond those two mobile commits. Later mobile fixes and final
-runtime qualification are separate checkpoints. The two original mobile QA documents describe
+That checkpoint adds no product behavior beyond those two mobile commits. Later mobile fixes
+and final runtime qualification are separate checkpoints, recorded below when integrated. The two original mobile QA documents describe
 runs against the original source layout, not browser runs against this integrated checkout.
 
 ## Conflict resolution and ownership
@@ -24,7 +24,7 @@ runs against the original source layout, not browser runs against this integrate
   belong to public-web; the CMS capture/canvas spec belongs to public-web, Studio and
   content-contracts. Discovery and assertions are preserved.
 
-Source comparison with the frozen mobile head found identical `MobileSite.tsx`, `mobileFold.ts`,
+Source comparison at the initial checkpoint with the frozen mobile head found identical `MobileSite.tsx`, `mobileFold.ts`,
 and widget-mode implementation bytes. `App.tsx`, `Turnstile.tsx`, and `canvasBehavior.ts` differ
 only in module import specifiers.
 
@@ -53,3 +53,60 @@ Fresh `npm ci` completed in this worktree; no dependencies or lockfile were chan
 No production build, browser execution, Worker packaging, deployment, migration, push or PR
 creation. Browser discovery proves selection/import loading only. Final browser/runtime
 qualification waits for the coordinated mobile follow-ups and available CPU capacity.
+
+## Exact source-to-integration commit mapping
+
+The accumulated integration branch is the candidate for existing PR #174. It is not a separate
+PR; root will publish only after the complete package's independent qualification.
+
+| Frozen original commit                     | Ported integration commit                  | Scope                                                    |
+| ------------------------------------------ | ------------------------------------------ | -------------------------------------------------------- |
+| `68bd7fbcd1ad7c2b1b7140d61e46c23437f39316` | `8b986f9fa05e0237b87d460713754fecf472ec6c` | Initial verification layout and mobile viewport geometry |
+| `e484e7d2348e8e7a779cafa0d5d02974234be7b4` | `5c6d9b815871e480206f6eb720d07a24e15cb132` | Reversible mobile booking hero scrolling                 |
+| `80542272d49dfb92af02b191bf2fce73861550f9` | `6cab1035b80e52bdf3d765d9c60feadf965edbed` | Review authorization recovery                            |
+
+`91632a2a5bfa71d84980a13a75ae5322027ea425` completes the initial two-commit integration's
+CMS harness paths, test ownership and recorded checks. Subsequent qualification/ownership
+commits do not add product behavior.
+
+## Review authorization recovery checkpoint
+
+Ported `8054227` directly onto the clean `91632a2` candidate. Git resolved the existing module
+renames without conflicts. The new `review-recovery.spec.mjs` is byte-identical to the frozen
+original and needs no URL/import translation; its public-web ownership is explicit. The
+public booking action unit test differs only in imported/mock module paths, preserving its
+same-origin review-credentials assertion. No SQL, storage or policy files changed.
+
+Comparison against `8054227` found these nine production files byte-identical:
+
+- `modules/public-web/src/about/AboutSection.tsx`
+- `modules/public-web/src/about/reviewValidation.ts`
+- `modules/public-web/src/about/reviews/domain.ts`
+- `modules/public-web/src/app/DesktopSite.tsx`
+- `modules/public-web/src/app/MobileSite.tsx`
+- `modules/public-web/src/i18n/en.ts`
+- `modules/public-web/src/i18n/index.ts`
+- `modules/public-web/src/i18n/sv.ts`
+- `modules/public-web/src/mybookings/MyBookingsDialog.tsx`
+
+The remaining two changed production files differ only in imports: `App.tsx` uses the explicit
+`../site/adapters/index` path; `supabaseReviews.ts` imports RPC schemas from
+`@bladeblend/backend-contracts/rpcSchemas`, with formatter-required wrapping. UI copy,
+retained-draft behavior, verification-session handling, and adapter behavior are unchanged
+from the frozen original.
+
+Executed on the integrated review checkpoint:
+
+- Module boundaries: 310 source files, 1,113 resolved local edges.
+- `npm run typecheck`: passed.
+- Focused units (`publicBookingActions`, `reviewGatewayContract`, `reviewValidation`,
+  `publicClientBoundary`, `publicAdapterRequests`, `publicCustomerInputSemantics`,
+  `performanceLifecycle`, `cmsRuntimeMode`): eight files, 55 tests passed.
+- CMS release stamp check: passed without changes.
+- Test inventory: no errors; the new review-recovery spec belongs to public-web.
+- Native Playwright discovery: nine review-recovery cases across Chromium, Firefox and WebKit.
+- Scoped ESLint/Prettier checks: passed.
+
+No build, browser execution, push or deployment was performed for this checkpoint. The source
+QA document's browser/production observations remain the original author's evidence, not new
+execution evidence from this integration worktree.
