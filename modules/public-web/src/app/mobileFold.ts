@@ -345,7 +345,9 @@ export function paintMobileBrand(
   paintOpacity(brand, vector ? 1 : motion.brand)
   mark.style.translate = '0px 0px'
   mark.style.scale = '1'
-  paintOpacity(mark, vector ? 1 : motion.banner)
+  // The wrapper's initial zero is motion state from MobileSite, not authored opacity.
+  // Glyph/SVG presentation remains author-owned; never cache this wrapper as its baseline.
+  mark.style.opacity = vector ? '1' : String(motion.banner)
 
   if (vector) {
     rememberBrandBaseline(source, ['overflow'])
@@ -375,7 +377,7 @@ export function paintMobileBrand(
         opacityBaseline(hero).computed *
         opacityBaseline(brand).computed *
         opacityBaseline(source).computed
-      const compactOpacity = opacityBaseline(mark).computed * opacityBaseline(target).computed
+      const compactOpacity = opacityBaseline(target).computed
       layer.svg.style.opacity = String(mix(originalOpacity, compactOpacity))
       for (const [node, metrics, box] of [
         [layer.sourceWord, sourceWord, sourceWordBounds],
