@@ -2274,16 +2274,6 @@
     "owners": ["content-contracts", "public-web", "studio"],
     "reason": "Public booking capture, markup validation, and Studio canvas scroll parity"
   },
-  "tools/e2e/cms-mobile-scroll-carrier.chromium.spec.mjs": {
-    "kind": "cms",
-    "owners": ["content-contracts", "public-web", "studio"],
-    "reason": "Native mobile scroll paint geometry across source and stored CMS presentation"
-  },
-  "tools/e2e/cms-mobile-scroll-edges.chromium.spec.mjs": {
-    "kind": "cms",
-    "owners": ["content-contracts", "public-web", "studio"],
-    "reason": "Native mobile scroll edge painting across stored CMS presentation and viewport changes"
-  },
   "tools/e2e/cms-mobile.spec.mjs": {
     "kind": "cms",
     "owners": ["studio", "public-web", "staff-admin", "content-contracts", "backend-contracts"],

@@ -181,6 +181,33 @@ export function restoreMobileBrandSnapshot(root: Element): void {
   }
 }
 
+const opacityBaselines = new WeakMap<
+  HTMLElement | SVGElement,
+  { value: string; priority: string; computed: number }
+>()
+
+function opacityBaseline(element: HTMLElement | SVGElement) {
+  let baseline = opacityBaselines.get(element)
+  if (!baseline) {
+    baseline = {
+      value: element.style.getPropertyValue('opacity'),
+      priority: element.style.getPropertyPriority('opacity'),
+      computed: Number(element.ownerDocument.defaultView?.getComputedStyle(element).opacity ?? 1),
+    }
+    opacityBaselines.set(element, baseline)
+  }
+  return baseline
+}
+
+/** Multiply the author's opacity during motion, restoring the original cascade at rest. */
+function paintOpacity(element: HTMLElement | SVGElement, factor: number): void {
+  const baseline = opacityBaseline(element)
+  if (factor === 1) {
+    if (baseline.value) element.style.setProperty('opacity', baseline.value, baseline.priority)
+    else element.style.removeProperty('opacity')
+  } else element.style.setProperty('opacity', String(baseline.computed * factor), 'important')
+}
+
 interface BrandLayer {
   vector: NonNullable<MobileBrandGeometry['vector']>
   svg: SVGSVGElement
@@ -315,10 +342,10 @@ export function paintMobileBrand(
   rememberBrandBaseline(mark, ['translate', 'scale', 'opacity'])
   brand.style.translate = vector && !reduced ? `0px ${collapse}px` : '0px 0px'
   brand.style.scale = '1'
-  brand.style.opacity = vector ? '1' : String(motion.brand)
+  paintOpacity(brand, vector ? 1 : motion.brand)
   mark.style.translate = '0px 0px'
   mark.style.scale = '1'
-  mark.style.opacity = vector ? '1' : String(motion.banner)
+  paintOpacity(mark, vector ? 1 : motion.banner)
 
   if (vector) {
     rememberBrandBaseline(source, ['overflow'])
@@ -339,10 +366,17 @@ export function paintMobileBrand(
     const layer = brandLayer(root, geometry)
     rememberBrandBaseline(word, ['opacity'])
     rememberBrandBaseline(finalWord, ['opacity'])
-    word.style.opacity = reduced ? String(motion.brand) : '0'
-    finalWord.style.opacity = reduced ? String(motion.banner) : '0'
+    const atRest = collapse === 0
+    paintOpacity(word, atRest ? 1 : reduced ? motion.brand : 0)
+    paintOpacity(finalWord, reduced ? motion.banner : 0)
     if (layer) {
-      layer.svg.style.display = reduced ? 'none' : ''
+      layer.svg.style.display = reduced || atRest ? 'none' : ''
+      const originalOpacity =
+        opacityBaseline(hero).computed *
+        opacityBaseline(brand).computed *
+        opacityBaseline(source).computed
+      const compactOpacity = opacityBaseline(mark).computed * opacityBaseline(target).computed
+      layer.svg.style.opacity = String(mix(originalOpacity, compactOpacity))
       for (const [node, metrics, box] of [
         [layer.sourceWord, sourceWord, sourceWordBounds],
         [layer.targetWord, targetWord, targetWordBounds],
@@ -353,18 +387,26 @@ export function paintMobileBrand(
         const y = baseline - metrics.y * sy
         node.style.transform = `matrix(${sx},0,0,${sy},${x},${y})`
       }
-      layer.sourceWord.style.opacity = String(motion.brand)
-      layer.targetWord.style.opacity = String(motion.banner)
+      layer.sourceWord.style.opacity = String(opacityBaseline(word).computed * motion.brand)
+      layer.targetWord.style.opacity = String(opacityBaseline(finalWord).computed * motion.banner)
+      const targetEmblem = vector.emblem.find((node) => node.localName === 'text')
+      const targetOpacity = targetEmblem ? opacityBaseline(targetEmblem).computed : 1
+      for (const index of [0, 1, 2] as const) {
+        const original = vector.monogram[[0, 2, 1][index] ?? index]
+        const originalOpacity = original ? opacityBaseline(original).computed : 1
+        layer.paths[index].style.opacity = String(
+          originalOpacity + (targetOpacity - originalOpacity) * motion.form,
+        )
+      }
       if (!reduced) paintMonogram(geometry, layer.paths, motion.travel, motion.form)
     }
     for (const node of vector.monogram) {
       rememberBrandBaseline(node, ['opacity'])
-      node.style.opacity = reduced ? String(motion.brand) : '0'
+      paintOpacity(node, atRest ? 1 : reduced ? motion.brand : 0)
     }
     for (const node of vector.emblem) {
       rememberBrandBaseline(node, ['opacity'])
-      node.style.opacity =
-        node.localName === 'line' ? String(motion.rules) : reduced ? String(motion.banner) : '0'
+      paintOpacity(node, node.localName === 'line' ? motion.rules : reduced ? motion.banner : 0)
     }
     for (const node of source.children) {
       if (
@@ -374,7 +416,7 @@ export function paintMobileBrand(
       )
         continue
       rememberBrandBaseline(node as SVGElement, ['opacity', 'transform'])
-      ;(node as SVGElement).style.opacity = String(motion.actions)
+      paintOpacity(node as SVGElement, motion.actions)
       // Keep supporting text below the moving wordmark while it gradually fades.
       ;(node as SVGElement).style.transform = reduced
         ? 'none'
@@ -383,13 +425,13 @@ export function paintMobileBrand(
   }
   if (phone) {
     rememberBrandBaseline(phone, ['opacity'], true)
-    phone.style.opacity = String(motion.phone)
+    paintOpacity(phone, motion.phone)
     phone.inert = motion.phone === 0
   }
   const fade = (element: HTMLElement): void => {
     rememberBrandBaseline(element, ['opacity', 'translate'], true)
     element.style.translate = vector && !reduced ? `0px ${collapse + detailsShift}px` : '0px 0px'
-    element.style.opacity = String(motion.actions)
+    paintOpacity(element, motion.actions)
     element.inert = motion.actions === 0
   }
   // display:contents HeroLinks needs its rendered children faded individually.

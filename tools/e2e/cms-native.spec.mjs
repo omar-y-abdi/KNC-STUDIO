@@ -424,3 +424,48 @@ for (const path of ['/admin/cms', '/admin/cms/'])
     await expect(page.getByRole('heading', { name: 'Logga in', exact: true })).toBeVisible()
     expect(routeLoads).toBe(2)
   })
+
+test('public layout loads the selected renderer before exposing mobile interaction', async ({ page, context }) => {
+  await nativeBackend(context)
+  let releaseLayout
+  const held = new Promise((resolve) => {
+    releaseLayout = resolve
+  })
+  let mobileRequests = 0
+  const pendingMobile = async (route) => {
+    mobileRequests++
+    await held
+    await route.continue()
+  }
+  await context.route('**/modules/public-web/src/app/MobileSite.tsx*', pendingMobile)
+  try {
+    await page.goto(harnessOrigin)
+    await expect(page.getByText('KNC source sv', { exact: true }).first()).toBeVisible()
+    expect(mobileRequests).toBe(0)
+    await page.setViewportSize({ width: 390, height: 844 })
+    await expect(page.getByRole('status').filter({ hasText: 'Laddar …' })).toBeVisible()
+    expect(mobileRequests).toBeGreaterThan(0)
+    await expect(page.getByTestId('mobile-site-scroll')).toHaveCount(0)
+    releaseLayout()
+    await expect(page.getByTestId('mobile-site-scroll')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Boka tid', exact: true })).toBeVisible()
+  } finally {
+    releaseLayout()
+    await context.unroute('**/modules/public-web/src/app/MobileSite.tsx*', pendingMobile)
+  }
+})
+
+test('a failed public renderer request offers a real reload', async ({ page, context }) => {
+  await nativeBackend(context)
+  await page.setViewportSize({ width: 390, height: 844 })
+  let requests = 0
+  await page.route('**/modules/public-web/src/app/MobileSite.tsx*', (route) => {
+    requests++
+    return requests === 1 ? route.abort('failed') : route.continue()
+  })
+  await page.goto(harnessOrigin)
+  await expect(page.getByRole('alert')).toContainText('Kunde inte ladda sidan.')
+  await page.getByRole('button', { name: 'Ladda om', exact: true }).click()
+  await expect(page.getByTestId('mobile-site-scroll')).toBeVisible()
+  expect(requests).toBe(2)
+})

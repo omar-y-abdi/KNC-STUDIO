@@ -78,3 +78,11 @@ The current [Supabase function guidance](https://supabase.com/docs/guides/databa
 explicit execution grants and a constrained `search_path` for privileged functions. The
 [Supabase changelog](https://supabase.com/changelog) records the CLI v3 target/confirmation changes;
 these do not authorize hosted changes or alter this repository's pinned CLI version.
+
+## Read-only production preflight, 2026-11-05
+
+Authenticated CLI inspection confirmed the linked KNC STUDIO project is `soktgawvexeumqvtyhda`.
+Comparing its remote migration history with this branch found exactly one pending migration:
+`20261105182545_device_booking_reviews.sql`. The earlier contact-prefill migration
+`20261105074335` is already recorded remotely. No remote migration versions are missing locally.
+This was a read-only inspection; no migration or Function deployment was performed.

@@ -34,8 +34,7 @@ import { defaultSiteChromePort } from '../site/adapters/index'
 import type { SiteChromePort } from '../site/port'
 
 const sourceChromePort: SiteChromePort = { load: (lang) => defaultSiteChromePort.load(lang) }
-import { DesktopSite } from './DesktopSite'
-import { MobileSite } from './MobileSite'
+import { DesktopSite, MobileSite, preloadSiteLayout } from './siteLayouts'
 import type { Mode, View } from './shared'
 import { MOBILE_MQ, chromeIcon, mobBtnBg, mobMuted, shellPalette } from './shared'
 
@@ -158,6 +157,20 @@ export function App({
     )
   }, [preview?.mode, preview?.lang, preview?.view, preview?.myBookings])
   const [isMobile, setIsMobile] = useState<boolean>(() => window.matchMedia(MOBILE_MQ).matches)
+  const [readyLayout, setReadyLayout] = useState<boolean | null>(null)
+  const layoutReady = readyLayout === isMobile
+  useEffect(() => {
+    let active = true
+    void preloadSiteLayout(isMobile).then(
+      () => {
+        if (active) setReadyLayout(isMobile)
+      },
+      () => undefined, // LazySurface owns the visible load-error/retry state.
+    )
+    return () => {
+      active = false
+    }
+  }, [isMobile])
   const [bookingAccess, setBookingAccess] = useState<{
     readonly token?: string
     readonly error?: 'invalid' | 'cookies_disabled' | 'system'
@@ -333,7 +346,7 @@ export function App({
     preview ? (preview.chromePort ?? sourceChromePort) : undefined,
   )
   useEffect(() => {
-    if (metadataReady)
+    if (metadataReady && layoutReady)
       preview?.onReady({
         mode: state.mode,
         lang,
@@ -342,7 +355,7 @@ export function App({
         mobile: isMobile,
         chrome,
       })
-  }, [metadataReady, chrome, state, isMobile, preview?.onReady])
+  }, [metadataReady, layoutReady, chrome, state, isMobile, preview?.onReady])
   const [initialStructuredData] = useState<string | null>(
     () => document.querySelector<HTMLScriptElement>('#business-json-ld')?.textContent ?? null,
   )
@@ -388,7 +401,7 @@ export function App({
     }
     const top = background(header, topBar)
     paintViewport(isMobile && !inSection ? top : background(surface, pageBg), top, state.mode)
-  }, [pageBg, topBar, isMobile, inSection, state.mode, cmsPresentation])
+  }, [pageBg, topBar, isMobile, inSection, state.mode, cmsPresentation, layoutReady])
 
   const langMini = (on: boolean): JSX.CSSProperties => ({
     border: 'none',
@@ -593,36 +606,43 @@ export function App({
   if (isMobile) {
     return (
       <>
-        <MobileSite
-          privacy={privacy}
-          onManagePrivacy={openPrivacy}
-          mode={state.mode}
-          lang={lang}
-          tx={tx}
-          {...(customerProfile === undefined ? {} : { initialContact: customerProfile })}
-          {...(deviceBookingContact === undefined
-            ? {}
-            : { initialBookingContact: deviceBookingContact })}
-          onBookingComplete={() => setBookingRefresh((value) => value + 1)}
-          dark={dark}
-          c={c}
-          view={view}
-          mobMutedColor={mobMutedColor}
-          mobBtnBgColor={mobBtnBgColor}
-          business={business}
-          chromeIconStyle={chromeIconStyle}
-          themeToggle={themeToggle}
-          langToggle={langToggle}
-          openMobBooking={openMobBooking}
-          scrollToAbout={scrollToAbout}
-          scrollMobToHero={scrollMobToHero}
-          openCancel={openMyBookings}
-          openMyBookings={openMyBookings}
-          homepageScale={chrome.homepageScale}
-          homepageLogo={chrome.homepageLogo}
-          aboutScale={chrome.aboutScale}
-          bookingPopupText={bookingPopupText}
-        />
+        <LazySurface
+          loadingLabel={lang === 'sv' ? 'Laddar …' : 'Loading …'}
+          errorLabel={lang === 'sv' ? 'Kunde inte ladda sidan.' : 'Unable to load the page.'}
+          retryLabel={tx.lazyReload}
+          minHeight="100dvh"
+        >
+          <MobileSite
+            privacy={privacy}
+            onManagePrivacy={openPrivacy}
+            mode={state.mode}
+            lang={lang}
+            tx={tx}
+            {...(customerProfile === undefined ? {} : { initialContact: customerProfile })}
+            {...(deviceBookingContact === undefined
+              ? {}
+              : { initialBookingContact: deviceBookingContact })}
+            onBookingComplete={() => setBookingRefresh((value) => value + 1)}
+            dark={dark}
+            c={c}
+            view={view}
+            mobMutedColor={mobMutedColor}
+            mobBtnBgColor={mobBtnBgColor}
+            business={business}
+            chromeIconStyle={chromeIconStyle}
+            themeToggle={themeToggle}
+            langToggle={langToggle}
+            openMobBooking={openMobBooking}
+            scrollToAbout={scrollToAbout}
+            scrollMobToHero={scrollMobToHero}
+            openCancel={openMyBookings}
+            openMyBookings={openMyBookings}
+            homepageScale={chrome.homepageScale}
+            homepageLogo={chrome.homepageLogo}
+            aboutScale={chrome.aboutScale}
+            bookingPopupText={bookingPopupText}
+          />
+        </LazySurface>
         {myBookingsDialog}
         {(!preview || preview.interactive) && (
           <PrivacyBanner lang={lang} dark={dark} controls={privacy} />
@@ -633,34 +653,41 @@ export function App({
 
   return (
     <>
-      <DesktopSite
-        privacy={privacy}
-        onManagePrivacy={openPrivacy}
-        mode={state.mode}
-        lang={lang}
-        dark={dark}
-        c={c}
-        business={business}
-        themeToggle={themeToggle}
-        langToggle={langToggle}
-        chromeIconStyle={chromeIconStyle}
-        tx={tx}
-        {...(customerProfile === undefined ? {} : { initialContact: customerProfile })}
-        {...(deviceBookingContact === undefined
-          ? {}
-          : { initialBookingContact: deviceBookingContact })}
-        onBookingComplete={() => setBookingRefresh((value) => value + 1)}
-        view={view}
-        toggleDeskBooking={toggleDeskBooking}
-        scrollToAbout={scrollToAbout}
-        findUsStyle={findUsStyle}
-        openCancel={openMyBookings}
-        openMyBookings={openMyBookings}
-        homepageScale={chrome.homepageScale}
-        homepageLogo={chrome.homepageLogo}
-        aboutScale={chrome.aboutScale}
-        bookingPopupText={bookingPopupText}
-      />
+      <LazySurface
+        loadingLabel={lang === 'sv' ? 'Laddar …' : 'Loading …'}
+        errorLabel={lang === 'sv' ? 'Kunde inte ladda sidan.' : 'Unable to load the page.'}
+        retryLabel={tx.lazyReload}
+        minHeight="100dvh"
+      >
+        <DesktopSite
+          privacy={privacy}
+          onManagePrivacy={openPrivacy}
+          mode={state.mode}
+          lang={lang}
+          dark={dark}
+          c={c}
+          business={business}
+          themeToggle={themeToggle}
+          langToggle={langToggle}
+          chromeIconStyle={chromeIconStyle}
+          tx={tx}
+          {...(customerProfile === undefined ? {} : { initialContact: customerProfile })}
+          {...(deviceBookingContact === undefined
+            ? {}
+            : { initialBookingContact: deviceBookingContact })}
+          onBookingComplete={() => setBookingRefresh((value) => value + 1)}
+          view={view}
+          toggleDeskBooking={toggleDeskBooking}
+          scrollToAbout={scrollToAbout}
+          findUsStyle={findUsStyle}
+          openCancel={openMyBookings}
+          openMyBookings={openMyBookings}
+          homepageScale={chrome.homepageScale}
+          homepageLogo={chrome.homepageLogo}
+          aboutScale={chrome.aboutScale}
+          bookingPopupText={bookingPopupText}
+        />
+      </LazySurface>
       {myBookingsDialog}
       {(!preview || preview.interactive) && (
         <PrivacyBanner lang={lang} dark={dark} controls={privacy} />

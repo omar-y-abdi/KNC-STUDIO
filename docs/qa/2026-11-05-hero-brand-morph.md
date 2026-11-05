@@ -60,3 +60,24 @@ on TypeScript DOM overload errors; CMS publishing rejected a private glyph marke
 not have been persisted. The follow-up replaces non-null assertions with typed glyph tuples,
 uses DOM appendChild, and strips the marker in capture without relaxing markup validation.
 The approved shape coordinates and animation behavior are unchanged.
+
+## Approved follow-up qualification
+
+The next hosted run (`42103454710`, `bd65445`) passed lint/type checks, units, CodeQL and the
+CMS publication groups that had rejected the private marker. Production compilation succeeded,
+but public boot reached 122.0 kB against the unchanged 115 kB limit. Mobile and desktop layouts
+now load as separate renderer modules; a mobile layout includes all morph code before becoming
+interactive. App preview readiness and viewport metadata wait for that selected renderer.
+Controlled browser cases cover a held mobile-module response and a failed request followed by reload.
+
+The real customer suite also caught an authored ampersand-opacity rule being overwritten at home
+rest. Source glyphs now retain their original opacity cascade at rest; animation opacity multiplies
+the author's values, including in the runtime layer, instead of replacing them with opaque values.
+The existing first-paint test retains its exact 0.18 assertion.
+
+Following the user's explicit instruction after manual acceptance, the nine newly introduced
+Chromium paint-diagnostic cases were retired. Their stationary-phone premise contradicts the
+approved phone fade/return, and their Linux synthetic-touch input was already proven unreliable.
+No pre-existing main-branch tests, security checks, budgets, accounting or retries were weakened.
+Booking-scroll, keyboard, viewport, source/canvas, first-paint and customer/browser coverage remain.
+The retired diagnostic implementation remains available in Git history at `bd65445`.
