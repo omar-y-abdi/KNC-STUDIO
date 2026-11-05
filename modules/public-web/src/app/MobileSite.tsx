@@ -1,9 +1,10 @@
 import { useNativeSurface } from '../cms/NativeSurface'
-import { mobileFold, mobileLayoutViewportHeight } from './mobileFold'
+import { mobileFold, mobileLayoutViewportHeight, primeMobileFold } from './mobileFold'
+import { mobileFoldLayout } from './mobileFoldLayout'
 // Mobile (M3) layout — folding panel (hero <-> compact header) + booking below.
 //
 // Invariants:
-//  - folding panel: scrolling changes its height from PANEL_FULL to PANEL_COMPACT in either section;
+//  - native sticky bounds reduce the visible panel from PANEL_FULL to PANEL_COMPACT in either section;
 //    scrolling back up restores the hero without discarding the active booking selection.
 //  - the brand cross-fades between the centered hero lockup (home flow) and the compact CornerMark
 //    (absolute top-left, fades in when a section opens) — two elements, not one sliding element.
@@ -85,6 +86,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
   const [fold, setFold] = useState(() => ({ collapse: 0, viewportHeight: window.innerHeight }))
   const { collapse, viewportHeight } = fold
   const scrollFrame = useRef<number | null>(null)
+  const [scrolling, setScrolling] = useState(false)
   const compactPanel = collapse > 0
   const syncCollapse = (): void => {
     const root = scrollRoot.current
@@ -130,23 +132,32 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
       }
     }
   }, [inSection, privacyOpen])
+  useLayoutEffect(() => {
+    const root = scrollRoot.current
+    if (root === null || privacyOpen) return
+    return primeMobileFold(root, setScrolling)
+  }, [privacyOpen])
+  const navigate = (action: () => void): void => {
+    if (!privacyOpen) setScrolling(true)
+    action()
+  }
   const chromeIcon = props.chromeIconStyle
   const phoneShift = compactPanel ? '24px' : '0px'
   // Muted, theme-aware colour for the underlined hero links (sits on the panel surface).
   const heroLinkColor = dark ? 'rgba(255,255,255,.72)' : 'rgba(0,0,0,.6)'
   const motion = mobileFold(collapse, viewportHeight)
-  const pinnedPanel = motion.pinned
+  const pinnedPanel = privacyOpen ? motion.pinned : scrolling || collapse > 0
   const heroOpacity = motion.opacity
 
   const foldingPanelStyle: StyleWithVars = {
     position: 'relative',
     display: 'flex',
     flexDirection: 'column',
-    overflow: 'hidden',
+    overflow: 'clip',
     background: dark ? '#242427' : '#f4f3f0',
     color: c.text,
     borderRadius: compactPanel ? '0 0 28px 28px' : '0',
-    height: `calc(${PANEL_FULL} - ${collapse}px)`,
+    height: PANEL_FULL,
     transition: reduceMotion ? 'none' : 'border-radius .3s ease',
     '--mob-text': c.text,
     '--mob-muted': mobMutedColor,
@@ -261,7 +272,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     scrollMarginTop: PANEL_COMPACT,
   }
 
-  return useNativeSurface(
+  const surface = useNativeSurface(
     <div
       style={{
         position: 'relative',
@@ -283,10 +294,8 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
         data-knc-fold="panel"
         style={{
           ...foldingPanelStyle,
-          // A viewport-sized sticky hero makes Safari retain its first sampled edge colors.
-          // Translate during the fold to preserve the same coordinates; pin only the short header.
-          position: pinnedPanel ? 'sticky' : 'relative',
-          transform: !pinnedPanel && collapse > 0 ? `translateY(${collapse}px)` : undefined,
+          // Private carriers own native pinning; this remains the visual flex panel.
+          position: 'relative',
           top: 0,
           zIndex: 10,
         }}
@@ -367,7 +376,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
             />
           </h1>
           <button
-            onClick={props.openMobBooking}
+            onClick={() => navigate(props.openMobBooking)}
             onPointerDown={preloadBookingFlow}
             onFocus={preloadBookingFlow}
             style={heroBtnDarkStyle}
@@ -386,7 +395,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
             aboutLabel={tx.aboutLink}
             cancelLabel={tx.cancelLink}
             color={heroLinkColor}
-            onOpenAbout={props.scrollToAbout}
+            onOpenAbout={() => navigate(props.scrollToAbout)}
             onOpenCancel={props.openCancel}
             marginTop="16px"
           />
@@ -459,9 +468,9 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
         </div>
       </div>
 
-      {/* Keep panel + spacer at one viewport tall. At max collapse the section begins below the
-          compact top panel, while reverse scrolling recreates the hero without a mode switch. */}
-      <div data-knc-fold="spacer" aria-hidden="true" style={{ height: collapse + 'px' }} />
+      {/* Keep the original spacer identity for published CMS trees. Native sticky geometry now
+          preserves the full hero in normal flow, so no scroll-dependent spacer is needed. */}
+      <div data-knc-fold="spacer" aria-hidden="true" style={{ height: '0px' }} />
       <div data-knc-fold="body" style={m3BodyStyle}>
         {inSection ? (
           <LazySurface
@@ -504,4 +513,5 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     props.lang,
     props.mode,
   )
+  return mobileFoldLayout(surface, pinnedPanel)
 }

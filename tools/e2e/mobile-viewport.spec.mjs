@@ -33,9 +33,11 @@ test.describe('mobile viewport chrome', () => {
                 `[data-knc-surface="mobile-${view}"]`,
               )
               if (!surface) return null
-              const top = globalThis.getComputedStyle(surface.firstElementChild).backgroundColor
+              const top = globalThis.getComputedStyle(
+                surface.querySelector('[data-knc-fold="panel"]'),
+              ).backgroundColor
               const page = globalThis.getComputedStyle(
-                view === 'home' ? surface.firstElementChild : surface,
+                view === 'home' ? surface.querySelector('[data-knc-fold="panel"]') : surface,
               ).backgroundColor
               const metas = [...globalThis.document.querySelectorAll('meta[name="theme-color"]')]
               return {
@@ -394,8 +396,11 @@ for (const stored of [false, true])
             globalThis.innerWidth / 2,
             bottom ? globalThis.innerHeight - 4 : 4,
           )
+          let color = 'rgba(0, 0, 0, 0)'
           while (element) {
             const style = globalThis.getComputedStyle(element)
+            if (color === 'rgba(0, 0, 0, 0)' && style.backgroundColor !== 'rgba(0, 0, 0, 0)')
+              color = style.backgroundColor
             if (style.backdropFilter && style.backdropFilter !== 'none') return { backdrop: true }
             if (['fixed', 'sticky'].includes(style.position) && Number(style.opacity) > 0) {
               const box = element.getBoundingClientRect()
@@ -410,7 +415,7 @@ for (const stored of [false, true])
               if (width !== 'smaller' && height !== 'larger')
                 return {
                   viewportSized: width === 'similar' && height === 'similar',
-                  color: style.backgroundColor,
+                  color,
                 }
             }
             element = element.parentElement
@@ -419,14 +424,17 @@ for (const stored of [false, true])
         }
         return { top: sample(false), bottom: sample(true) }
       })
-    const assertTheme = async (color, pinned = false) => {
-      await expect
-        .poll(edges)
-        .toEqual({ top: pinned ? { viewportSized: false, color } : null, bottom: null })
+    const assertTheme = async (color, pinned = false, bottomCandidate = false) => {
+      await expect.poll(edges).toEqual({
+        top: pinned ? { viewportSized: false, color } : null,
+        bottom: bottomCandidate ? { viewportSized: true, color } : null,
+      })
       await expect
         .poll(() =>
           page.locator('[data-knc-fold="panel"]').evaluate((panel) => {
-            const style = globalThis.getComputedStyle(panel.firstElementChild)
+            const style = globalThis.getComputedStyle(
+              panel.querySelector('[data-knc-fold="controls"]').parentElement,
+            )
             return { position: style.position, top: style.top, bottom: style.bottom }
           }),
         )
@@ -440,8 +448,7 @@ for (const stored of [false, true])
       const frames = []
       for (let i = 0; i < 5; i++) {
         await new Promise(globalThis.requestAnimationFrame)
-        const header =
-          globalThis.document.querySelector('[data-knc-fold="panel"]').firstElementChild
+        const header = globalThis.document.querySelector('[data-knc-fold="controls"]').parentElement
         frames.push({
           scroll: root.scrollTop,
           header: globalThis.getComputedStyle(header).backgroundColor,
@@ -465,6 +472,23 @@ for (const stored of [false, true])
         theme: stored ? 'rgb(244, 243, 240)' : '#f4f3f0',
       })
     await assertTheme('rgb(244, 243, 240)')
+    const noCarriers = () =>
+      page
+        .locator('[data-knc-fold="carrier"],[data-knc-fold="header-carrier"]')
+        .evaluateAll((nodes) =>
+          nodes.every(
+            (node) =>
+              globalThis.getComputedStyle(node).display === 'contents' &&
+              node.getClientRects().length === 0,
+          ),
+        )
+    expect(await noCarriers()).toBe(true)
+    await toggle.focus()
+    await toggle.press('Space')
+    await assertTheme('rgb(36, 36, 39)')
+    expect(await noCarriers()).toBe(true)
+    await toggle.click()
+    await assertTheme('rgb(244, 243, 240)')
     const scroll = page.getByTestId('mobile-site-scroll')
     for (const amount of [1, 100, 500, 732, 900, 0]) {
       await scroll.evaluate((element, amount) => {
@@ -479,7 +503,11 @@ for (const stored of [false, true])
             const box = panel.getBoundingClientRect()
             return {
               top: Math.round(box.top),
-              headerTop: Math.round(panel.firstElementChild.getBoundingClientRect().top),
+              headerTop: Math.round(
+                panel
+                  .querySelector('[data-knc-fold="controls"]')
+                  .parentElement.getBoundingClientRect().top,
+              ),
               height: Math.round(box.height),
               spacerBottom: Math.round(spacer.getBoundingClientRect().bottom),
               scroll: root.scrollTop,
@@ -487,14 +515,15 @@ for (const stored of [false, true])
           }),
         )
         .toEqual({
-          top: 0,
+          top: amount === 0 ? 0 : -Math.min(amount, 732),
           headerTop: 0,
-          height: Math.max(112, 844 - amount),
+          height: 844,
           spacerBottom: 844 - amount,
           scroll: amount,
         })
-      await assertTheme('rgb(244, 243, 240)', amount >= 732)
+      await assertTheme('rgb(244, 243, 240)', amount > 0, amount > 0 && amount <= 4)
     }
+    expect(await noCarriers()).toBe(true)
     await page.getByRole('button', { name: 'Boka tid', exact: true }).click()
     await toggle.click()
     await assertTheme('rgb(36, 36, 39)', true)
@@ -516,7 +545,10 @@ for (const stored of [false, true])
       .poll(() =>
         page.locator('[data-knc-fold="panel"]').evaluate((panel) => ({
           top: Math.round(panel.getBoundingClientRect().top),
-          headerTop: Math.round(panel.firstElementChild.getBoundingClientRect().top),
+          headerTop: Math.round(
+            panel.querySelector('[data-knc-fold="controls"]').parentElement.getBoundingClientRect()
+              .top,
+          ),
           height: Math.round(panel.getBoundingClientRect().height),
         })),
       )
@@ -556,14 +588,23 @@ for (const stored of [false, true])
         let fullscreen = 0
         book.click()
         const inspect = () => {
-          const panel = globalThis.document.querySelector('[data-knc-fold="panel"]')
-          const height = panel.getBoundingClientRect().height
-          if (
-            globalThis.getComputedStyle(panel).position === 'sticky' &&
-            height >= (globalThis.innerHeight - 8) * 0.9 &&
-            height < (globalThis.innerHeight - 8) * 1.05
-          )
-            fullscreen++
+          // Inspect the first candidate at each actual edge, as WebKit does. The full-height
+          // outer carrier is behind the compact header during booking and has no renderer at rest.
+          for (const y of [4, globalThis.innerHeight - 4]) {
+            let node = globalThis.document.elementFromPoint(globalThis.innerWidth / 2, y)
+            while (node) {
+              if (['sticky', 'fixed'].includes(globalThis.getComputedStyle(node).position)) {
+                const height = node.getBoundingClientRect().height
+                if (
+                  height >= (globalThis.innerHeight - 8) * 0.9 &&
+                  height < (globalThis.innerHeight - 8) * 1.05
+                )
+                  fullscreen++
+                break
+              }
+              node = node.parentElement
+            }
+          }
           if (++frames < 20) globalThis.requestAnimationFrame(inspect)
           else resolve(fullscreen)
         }

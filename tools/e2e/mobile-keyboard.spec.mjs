@@ -21,7 +21,11 @@ for (const field of ['phone', 'review'])
     await input.scrollIntoViewIfNeeded()
     await input.fill(field === 'phone' ? '0701234567' : 'Ett testomdöme')
     const panel = page.locator('[data-knc-fold="panel"]')
-    await expect.poll(() => panel.evaluate((element) => element.offsetHeight)).toBe(112)
+    await expect
+      .poll(() => panel.evaluate((element) => element.getBoundingClientRect().bottom))
+      .toBe(112)
+    const header = page.locator('[data-knc-fold="controls"]')
+    const headerBefore = await header.boundingBox()
     const before = await page
       .getByTestId('mobile-site-scroll')
       .evaluate((element) => ({ height: element.clientHeight, scroll: element.scrollTop }))
@@ -72,16 +76,21 @@ for (const field of ['phone', 'review'])
       expect(
         await page.getByTestId('mobile-site-scroll').evaluate((element) => element.clientHeight),
       ).toBe(before.height)
-      expect(await panel.evaluate((element) => element.offsetHeight)).toBe(112)
+      expect(await panel.evaluate((element) => element.getBoundingClientRect().bottom)).toBe(112)
+      expect((await header.boundingBox()).y).toBe(headerBefore.y)
       await expect(input).toBeFocused()
     }
     await page.evaluate(() => globalThis.restoreKeyboardViewport())
-    await expect.poll(() => panel.evaluate((element) => element.offsetHeight)).toBe(112)
+    await expect
+      .poll(() => panel.evaluate((element) => element.getBoundingClientRect().bottom))
+      .toBe(112)
     await expect(input).toHaveValue(field === 'phone' ? '0701234567' : 'Ett testomdöme')
     // Real layout-viewport changes still update the fold, unlike the independent keyboard model.
     await page.setViewportSize({ width: 667, height: 390 })
     await page.setViewportSize({ width: 390, height: 667 })
     await input.scrollIntoViewIfNeeded()
-    await expect.poll(() => panel.evaluate((element) => element.offsetHeight)).toBe(112)
+    await expect
+      .poll(() => panel.evaluate((element) => element.getBoundingClientRect().bottom))
+      .toBe(112)
     await expect(input).toHaveValue(field === 'phone' ? '0701234567' : 'Ett testomdöme')
   })

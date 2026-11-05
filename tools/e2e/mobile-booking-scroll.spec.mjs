@@ -32,7 +32,7 @@ for (const stored of [false, true]) {
     })
     await expect
       .poll(() =>
-        page.locator('[data-knc-fold="panel"]').evaluate((p) => p.getBoundingClientRect().height),
+        page.locator('[data-knc-fold="panel"]').evaluate((p) => p.getBoundingClientRect().bottom),
       )
       .toBe(844)
     await expect(book).toBeVisible()
@@ -55,7 +55,11 @@ for (const stored of [false, true]) {
       root.scrollTop = 0
     })
     await expect
-      .poll(() => page.locator('[data-knc-fold="panel"]').evaluate((panel) => panel.offsetHeight))
+      .poll(() =>
+        page
+          .locator('[data-knc-fold="panel"]')
+          .evaluate((panel) => panel.getBoundingClientRect().bottom),
+      )
       .toBe(844)
   })
 }

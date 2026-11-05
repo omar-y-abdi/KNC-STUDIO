@@ -1690,6 +1690,11 @@
     "owners": ["public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
+  "tests/unit/mobileFoldPriming.test.ts": {
+    "kind": "unit",
+    "owners": ["public-web", "studio"],
+    "reason": "Shared public mobile-layout gesture priming and canvas cleanup contract"
+  },
   "tests/unit/mockMyBookings.test.ts": {
     "kind": "unit",
     "owners": ["public-web"],
@@ -2234,6 +2239,16 @@
     "kind": "cms",
     "owners": ["content-contracts", "public-web", "studio"],
     "reason": "Public booking capture, markup validation, and Studio canvas scroll parity"
+  },
+  "tools/e2e/cms-mobile-scroll-carrier.chromium.spec.mjs": {
+    "kind": "cms",
+    "owners": ["content-contracts", "public-web", "studio"],
+    "reason": "Native mobile scroll paint geometry across source and stored CMS presentation"
+  },
+  "tools/e2e/cms-mobile-scroll-edges.chromium.spec.mjs": {
+    "kind": "cms",
+    "owners": ["content-contracts", "public-web", "studio"],
+    "reason": "Native mobile scroll edge painting across stored CMS presentation and viewport changes"
   },
   "tools/e2e/cms-mobile.spec.mjs": {
     "kind": "cms",

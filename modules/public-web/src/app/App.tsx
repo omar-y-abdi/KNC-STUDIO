@@ -379,7 +379,9 @@ export function App({
     const surface = document.querySelector(
       `[data-knc-surface="${isMobile ? 'mobile' : 'desktop'}-${inSection ? 'booking' : 'home'}"]`,
     )
-    const header = surface?.firstElementChild
+    const header = isMobile
+      ? surface?.querySelector('[data-knc-fold="panel"]')
+      : surface?.firstElementChild
     const background = (element: Element | null | undefined, fallback: string): string => {
       if (!element) return fallback
       const value = getComputedStyle(element).backgroundColor
