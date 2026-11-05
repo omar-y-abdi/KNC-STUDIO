@@ -37,30 +37,32 @@ describe('shared mobile hero motion', () => {
 })
 
 describe('reversible mobile branding', () => {
-  it('moves both complete assets together while their crossfade overlaps', () => {
+  it('settles the banner before controls return and keeps one source wordmark until arrival', () => {
     const height = 844
     const limit = height - 112
     expect(mobileBrandMotion(0, height)).toEqual({
-      actions: 1, brand: 1, banner: 0, travel: 0,
+      actions: 1, controls: 1, brand: 1, banner: 0, travel: 0, settled: false,
     })
-    expect(mobileBrandMotion(limit * 0.3, height).actions).toBeGreaterThan(0)
-    expect(mobileBrandMotion(limit * 0.55, height).actions).toBe(0)
-    const halfway = mobileBrandMotion(limit * 0.5, height)
-    expect(halfway.travel).toBe(0.5)
-    expect(halfway.brand).toBeGreaterThan(0)
-    expect(halfway.banner).toBeGreaterThan(0)
-    expect(halfway.brand + halfway.banner).toBe(1)
+    expect(mobileBrandMotion(limit * 0.12, height).controls).toBe(0)
+    expect(mobileBrandMotion(limit * 0.25, height).actions).toBe(0)
+    const crossing = mobileBrandMotion(limit * 0.7, height)
+    expect(crossing.brand).toBeGreaterThan(0)
+    expect(crossing.banner).toBeGreaterThan(0)
+    expect(crossing.brand + crossing.banner).toBe(1)
+    expect(crossing.controls).toBe(0)
+    expect(crossing.settled).toBe(false)
+    expect(mobileBrandMotion(limit * 0.86, height)).toEqual({
+      actions: 0, controls: 0, brand: 0, banner: 1, travel: 1, settled: true,
+    })
+    expect(mobileBrandMotion(limit * 0.95, height).controls).toBeGreaterThan(0)
     expect(mobileBrandMotion(limit, height)).toEqual({
-      actions: 0, brand: 0, banner: 1, travel: 1,
+      actions: 0, controls: 1, brand: 0, banner: 1, travel: 1, settled: true,
     })
-    expect(mobileBrandMotion(limit * 0.5, height)).toEqual(halfway)
+    expect(mobileBrandMotion(limit * 0.7, height)).toEqual(crossing)
   })
 
-  it('uses the same overlapping fade without decorative travel for reduced motion', () => {
+  it('keeps the same fade and control sequence without decorative travel for reduced motion', () => {
     const ordinary = mobileBrandMotion(400, 844)
-    const reduced = mobileBrandMotion(400, 844, true)
-    expect(reduced).toEqual({ ...ordinary, travel: 0 })
-    expect(reduced.brand).toBeGreaterThan(0)
-    expect(reduced.banner).toBeGreaterThan(0)
+    expect(mobileBrandMotion(400, 844, true)).toEqual({ ...ordinary, travel: 0 })
   })
 })

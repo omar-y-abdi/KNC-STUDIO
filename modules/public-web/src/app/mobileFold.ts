@@ -105,12 +105,14 @@ export function mobileBrandMotion(collapse: number, viewportHeight: number, redu
     const t = Math.min(1, Math.max(0, (progress - start) / (end - start)))
     return t * t * (3 - 2 * t)
   }
-  const banner = phase(0.35, 0.9)
+  const banner = phase(0.55, 0.85)
   return {
-    actions: 1 - phase(0, 0.55),
+    actions: 1 - phase(0, 0.25),
+    controls: 1 - phase(0, 0.12) + phase(0.9, 1),
     brand: 1 - banner,
     banner,
-    travel: reduced ? 0 : phase(0, 1),
+    travel: reduced ? 0 : phase(0, 0.85),
+    settled: progress >= 0.85,
   }
 }
 
@@ -118,7 +120,11 @@ const brandBaselineAttribute = 'data-knc-brand-baseline'
 
 /** Capture runs in another iframe realm, so keep the original values on the painted node.
  * Only these decorative properties are restored; unrelated owner styling stays untouched. */
-function rememberBrandBaseline(element: HTMLElement, properties: string[], inert = false): void {
+function rememberBrandBaseline(
+  element: HTMLElement | SVGElement,
+  properties: string[],
+  inert = false,
+): void {
   if (element.hasAttribute(brandBaselineAttribute)) return
   element.setAttribute(
     brandBaselineAttribute,
@@ -144,7 +150,16 @@ export function restoreMobileBrandSnapshot(root: Element): void {
       inert?: boolean
     }
     const style = (element as HTMLElement).style
-    for (const property of ['translate', 'scale', 'opacity']) {
+    for (const property of [
+      'translate',
+      'scale',
+      'opacity',
+      'transform',
+      'font-size',
+      'font-weight',
+      'letter-spacing',
+      'overflow',
+    ]) {
       const original = baseline.styles[property]
       if (!original) continue
       if (original[0]) style.setProperty(property, original[0], original[1])
@@ -155,8 +170,108 @@ export function restoreMobileBrandSnapshot(root: Element): void {
   }
 }
 
+/** Decompose only the known vector lockup. Uploaded images use the intact-image fallback. */
+function paintVectorBrand(
+  source: SVGSVGElement,
+  target: SVGSVGElement,
+  sourceLeft: number,
+  sourceTop: number,
+  sourceUnit: number,
+  targetLeft: number,
+  targetTop: number,
+  targetUnit: number,
+  motion: ReturnType<typeof mobileBrandMotion>,
+  reduced: boolean,
+): boolean {
+  const word = source.querySelector<SVGTextElement>(
+    '[data-knc-brand-part="wordmark"],text[x="230"][y="216"]',
+  )
+  const finalWord = target.querySelector<SVGTextElement>(
+    '[data-knc-brand-part="wordmark"],text[x="70"][y="32"]',
+  )
+  const monogram = [
+    ...source.querySelectorAll<SVGGraphicsElement>(
+      '[data-knc-brand-part="monogram"],text[y="150"],text[y="156"]',
+    ),
+  ]
+  const emblem = [
+    ...target.querySelectorAll<SVGGraphicsElement>(
+      '[data-knc-brand-part="monogram"],line,text[x="29"]',
+    ),
+  ]
+  if (!word || !finalWord || !monogram.length || !emblem.length) return false
+  rememberBrandBaseline(source, ['overflow'])
+  rememberBrandBaseline(target, ['overflow'])
+  source.style.overflow = 'visible'
+  target.style.overflow = 'visible'
+  const number = (node: Element, name: string): number => Number(node.getAttribute(name))
+  const finalX =
+    targetLeft + (number(finalWord, 'x') + finalWord.getComputedTextLength() / 2) * targetUnit
+  const finalY = targetTop + number(finalWord, 'y') * targetUnit
+  const sourceX = sourceLeft + number(word, 'x') * sourceUnit
+  const sourceY = sourceTop + number(word, 'y') * sourceUnit
+  rememberBrandBaseline(word, [
+    'transform', 'opacity', 'font-size', 'font-weight', 'letter-spacing',
+  ])
+  const mix = (start: number, end: number): number => start + (end - start) * motion.travel
+  word.style.transform = `translate(${((finalX - sourceX) * motion.travel) / sourceUnit}px, ${((finalY - sourceY) * motion.travel) / sourceUnit}px)`
+  word.style.fontSize = `${mix(number(word, 'font-size'), (number(finalWord, 'font-size') * targetUnit) / sourceUnit)}px`
+  word.style.fontWeight = String(mix(number(word, 'font-weight'), number(finalWord, 'font-weight')))
+  word.style.letterSpacing = `${mix(number(word, 'letter-spacing'), (number(finalWord, 'letter-spacing') * targetUnit) / sourceUnit)}px`
+  // Exactly one wordmark: the static destination replaces the source only at the matched pose.
+  word.style.opacity = motion.settled ? '0' : '1'
+  rememberBrandBaseline(finalWord, ['opacity'])
+  finalWord.style.opacity = motion.settled ? '1' : '0'
+  const bounds = (nodes: SVGGraphicsElement[]) => {
+    const boxes = nodes.map((node) => node.getBBox())
+    const x = Math.min(...boxes.map((box) => box.x))
+    const y = Math.min(...boxes.map((box) => box.y))
+    return {
+      x,
+      y,
+      width: Math.max(...boxes.map((box) => box.x + box.width)) - x,
+      height: Math.max(...boxes.map((box) => box.y + box.height)) - y,
+    }
+  }
+  const from = bounds(monogram)
+  const to = bounds(emblem)
+  const fromX = from.x + from.width / 2
+  const fromY = from.y + from.height / 2
+  const toX = (targetLeft + (to.x + to.width / 2) * targetUnit - sourceLeft) / sourceUnit
+  const toY = (targetTop + (to.y + to.height / 2) * targetUnit - sourceTop) / sourceUnit
+  const finalScale =
+    (Math.min(to.width / from.width, to.height / from.height) * targetUnit) / sourceUnit
+  const scale = mix(1, finalScale)
+  for (const node of monogram) {
+    rememberBrandBaseline(node, ['transform', 'opacity'])
+    node.style.transform = `matrix(${scale},0,0,${scale},${mix(fromX, toX) - fromX * scale},${mix(fromY, toY) - fromY * scale})`
+    node.style.opacity = String(motion.brand)
+  }
+  const emblemScale = reduced ? 1 : scale / finalScale
+  const emblemX = reduced
+    ? to.x + to.width / 2
+    : (sourceLeft + mix(fromX, toX) * sourceUnit - targetLeft) / targetUnit
+  const emblemY = reduced
+    ? to.y + to.height / 2
+    : (sourceTop + mix(fromY, toY) * sourceUnit - targetTop) / targetUnit
+  for (const node of emblem) {
+    rememberBrandBaseline(node, ['transform', 'opacity'])
+    node.style.transform = `matrix(${emblemScale},0,0,${emblemScale},${emblemX - (to.x + to.width / 2) * emblemScale},${emblemY - (to.y + to.height / 2) * emblemScale})`
+    node.style.opacity = String(motion.banner)
+  }
+  for (const node of source.children) {
+    if (node === word || monogram.includes(node as SVGGraphicsElement)) continue
+    const detail = node as SVGElement
+    rememberBrandBaseline(detail, ['opacity'])
+    detail.style.opacity = String(motion.actions)
+  }
+  // Fade-only mode keeps both marks at their original positions and never travels the glyphs.
+  if (reduced) word.style.opacity = String(motion.brand)
+  return true
+}
+
 /** Measure layout offsets, never the transformed brand's client rect: reverse scrolling must not
- * accumulate its own previous transform. The original SVG or owner image remains untouched.
+ * accumulate its own previous transform. Existing nodes and owner image bytes stay intact.
  */
 export function paintMobileBrand(
   root: HTMLElement,
@@ -181,29 +296,37 @@ export function paintMobileBrand(
   const compactHeight = Number.parseFloat(compactStyle.height)
   const compactWidth = Number.parseFloat(compactStyle.width)
   if (!(assetWidth > 0 && assetHeight > 0 && compactHeight > 0 && compactWidth > 0)) return
-  const centerX = brand.offsetLeft + brand.offsetWidth / 2
-  const centerY = brand.offsetTop + assetHeight / 2
-  const anchorX = mark.offsetLeft + compactWidth / 2
-  const anchorY = mark.offsetTop + compactHeight / 2
-  // Both complete assets share one moving center and width. Their differing aspect ratios
-  // blend through opacity rather than shrinking the lockup to just the corner emblem.
-  const frameX = centerX + (anchorX - centerX) * motion.travel
-  const frameY = centerY + (anchorY - centerY) * motion.travel
-  const frameWidth = assetWidth + (compactWidth - assetWidth) * motion.travel
-  const brandScale = reduced ? 1 : frameWidth / assetWidth
-  const markScale = reduced ? 1 : frameWidth / compactWidth
-  const brandX = reduced ? 0 : frameX - centerX
-  const brandY = reduced ? 0 : collapse + frameY - centerY + (assetHeight / 2) * (1 - brandScale)
-  const markX = reduced ? 0 : frameX - anchorX
-  const markY = reduced ? 0 : frameY - anchorY + (compactHeight / 2) * (1 - markScale)
   rememberBrandBaseline(brand, ['translate', 'scale', 'opacity'])
   rememberBrandBaseline(mark, ['translate', 'scale', 'opacity'])
-  brand.style.translate = `${brandX}px ${brandY}px`
-  brand.style.scale = String(brandScale)
-  brand.style.opacity = String(motion.brand)
-  mark.style.translate = `${markX}px ${markY}px`
-  mark.style.scale = String(markScale)
-  mark.style.opacity = String(motion.banner)
+  const vector =
+    asset.localName === 'svg' &&
+    asset.getAttribute('viewBox') === '0 0 460 330' &&
+    compact.localName === 'svg' &&
+    compact.getAttribute('viewBox') === '0 0 322 48' &&
+    paintVectorBrand(
+      asset as SVGSVGElement,
+      compact as SVGSVGElement,
+      brand.offsetLeft + (brand.offsetWidth - assetWidth) / 2,
+      brand.offsetTop,
+      assetWidth / 460,
+      mark.offsetLeft,
+      mark.offsetTop,
+      compactWidth / 322,
+      motion,
+      reduced,
+    )
+  brand.style.translate = vector && !reduced ? `0px ${collapse}px` : '0px 0px'
+  brand.style.scale = '1'
+  brand.style.opacity = vector ? '1' : String(motion.brand)
+  mark.style.translate = '0px 0px'
+  mark.style.scale = '1'
+  mark.style.opacity = vector ? '1' : String(motion.banner)
+  const controls = root.querySelector<HTMLElement>('[data-knc-fold="controls"]')
+  if (controls) {
+    rememberBrandBaseline(controls, ['opacity'], true)
+    controls.style.opacity = String(motion.controls)
+    controls.inert = motion.controls === 0
+  }
   const fade = (element: HTMLElement): void => {
     rememberBrandBaseline(element, ['opacity'], true)
     if (win.getComputedStyle(element).display === 'contents') {

@@ -188,7 +188,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     height: 'auto',
     display: 'block',
   }
-  // Both existing brand assets share one moving frame during their crossfade.
+  // The compact banner receives the moving wordmark and emblem before controls return.
   // It remains decorative and never takes pointer input from the controls beneath it.
   const headerMarkStyle: JSX.CSSProperties = {
     position: 'absolute',
