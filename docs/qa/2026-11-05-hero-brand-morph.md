@@ -112,3 +112,8 @@ without a visible layout-loading status. Booking/dialog-specific loading boundar
 existing CMS presentation gate retain their established behavior. Hero motion is unchanged.
 
 Verification for this withdrawal runs in GitHub Actions; no local automated suites or builds run.
+
+Run `42119610488` built the restored eager homepage successfully and measured 122.3 kB gzip.
+The owner explicitly approved changing the boot budget from 115 to 123 kB to finish this
+withdrawal without another change to the website's startup behavior. Boundary checks retain
+both accepted and rejected sizes around the new limit.

@@ -6,10 +6,10 @@ import { join } from 'node:path'
 import { gzipSync } from 'node:zlib'
 import { parse } from 'parse5'
 
-// Measured 109.3 kB gzip on 2026-10-24 with the tracked .env (Embla and zod off the entry). The
-// budget keeps about 5 kB of room above that, so a small addition to the boot path does not fail
-// CI; lower it when boot code leaves, css-tree being the next.
-const BUDGET_KB = 115
+// Measured 122.3 kB gzip in GitHub run 42119610488 with the approved hero animation and
+// synchronous site layouts. The owner explicitly approved 123 kB when withdrawing the
+// unrequested homepage loading screen. Keep the initial homepage directly renderable.
+const BUDGET_KB = 123
 
 const [dist = 'dist', budgetArg] = process.argv.slice(2)
 const budgetKb = budgetArg === undefined ? BUDGET_KB : Number(budgetArg)
