@@ -118,8 +118,29 @@ export function themeStyleValue(property: string, value: string, mode: CmsMode):
         )
     }
   }
-  return value.replace(/#[\da-f]{3,8}\b|rgba?\([^)]*\)/gi, (color) => {
+  // Keep the original token grammar, but never retry a missing ')' at every RGB opener.
+  // Closed RGB consumes everything through the first ')', including nested/malformed colors;
+  // after an unmatched opener, later hex colors still remain eligible for replacement.
+  const tokens = /#[\da-f]{3,8}\b|rgba?\(/gi
+  let missingRgbEnd = false
+  let copied = 0
+  let result = ''
+  for (let match = tokens.exec(value); match !== null; match = tokens.exec(value)) {
+    let color = match[0]
+    if (color[0] !== '#') {
+      if (missingRgbEnd) continue
+      const end = value.indexOf(')', tokens.lastIndex)
+      if (end < 0) {
+        missingRgbEnd = true
+        continue
+      }
+      tokens.lastIndex = end + 1
+      color = value.slice(match.index, tokens.lastIndex)
+    }
     const key = colors.get(normalize(color))
-    return key ? `var(--knc-${key},${color})` : color
-  })
+    if (!key) continue
+    result += value.slice(copied, match.index) + `var(--knc-${key},${color})`
+    copied = tokens.lastIndex
+  }
+  return result + value.slice(copied)
 }

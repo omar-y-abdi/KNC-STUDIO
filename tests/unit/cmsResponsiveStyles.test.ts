@@ -1448,3 +1448,69 @@ describe('site theme defaults and owner overrides', () => {
     expect(siteThemeCss(p, 'dark')).not.toContain('--knc-background')
   })
 })
+
+describe('bounded theme color matching', () => {
+  it.each([
+    ['xRGB(255, 255, 255)', 'xvar(--knc-accentText,RGB(255, 255, 255))'],
+    ['rgb(#fff rgb(255,255,255)) #fff', 'rgb(#fff rgb(255,255,255)) var(--knc-accentText,#fff)'],
+    ['rgb( #fff', 'rgb( var(--knc-accentText,#fff)'],
+    [
+      '#fff_ #fffé #fffffffff #FFF!',
+      '#fff_ var(--knc-accentText,#fff)é #fffffffff var(--knc-accentText,#FFF)!',
+    ],
+    ['rgba( #fff)rgb(255,255,255)', 'rgba( #fff)var(--knc-accentText,rgb(255,255,255))'],
+  ])('preserves existing token boundaries in %s', (source, expected) => {
+    expect(themeStyleValue('color', source, 'light')).toBe(expected)
+  })
+
+  it('matches the former regex on bounded malformed combinations', () => {
+    const colors = new Map([
+      ['#1c1c1e', 'text'],
+      ['rgb(28,28,30)', 'text'],
+      ['#fff', 'accentText'],
+      ['#ffffff', 'accentText'],
+      ['rgb(255,255,255)', 'accentText'],
+      ['rgba(0,0,0,.6)', 'muted'],
+    ])
+    const fragments = [
+      'rgb(',
+      'RGBA(',
+      ')',
+      '#fff',
+      '#ffffff',
+      '#1c1c1e',
+      '#fff_',
+      '#fffé',
+      '#fffffffff',
+      'rgb(28,28,30)',
+      'RGB(255, 255, 255)',
+      'rgba(0,0,0,.6)',
+      'x',
+      ' ',
+      '\n',
+    ]
+    let state = 37
+    for (let sample = 0; sample < 2_000; sample++) {
+      let source = ''
+      for (let part = 0; part < 12; part++) {
+        state = (Math.imul(state, 1664525) + 1013904223) >>> 0
+        source += fragments[state % fragments.length]
+      }
+      // The vulnerable oracle runs only these small inputs, never the hostile-size regression.
+      const expected = source.replace(/#[\da-f]{3,8}\b|rgba?\([^)]*\)/gi, (color) => {
+        const key = colors.get(color.toLowerCase().replace(/\s/g, ''))
+        return key ? `var(--knc-${key},${color})` : color
+      })
+      expect(themeStyleValue('color', source, 'light'), source).toBe(expected)
+    }
+  })
+
+  it('keeps hex matching after long unterminated RGB input without rescanning the suffix', () => {
+    const prefix = 'rgb('.repeat(20_000)
+    const started = performance.now()
+    expect(themeStyleValue('color', prefix + '#fff', 'light')).toBe(
+      prefix + 'var(--knc-accentText,#fff)',
+    )
+    expect(performance.now() - started).toBeLessThan(500)
+  })
+})
