@@ -69,6 +69,31 @@ where id = '<delivery id>' and status = 'failed';
 
 ## Rollout order
 
+### Staff invitations without an expiry
+
+Staff invitations issued by `admin-create-barber` use a random 256-bit enrollment capability in
+the URL fragment (`/invite#staff_invite=…`). Only its SHA-256 digest is retained in
+`staff_invitations`. There is no time-based expiry. The recipient's explicit **Open invitation**
+click consumes the capability atomically through `redeem-staff-invite`, then obtains a fresh,
+short-lived Supabase invite token for the existing password-setup screen. Opening the page or an
+email scanner's GET does not consume it. The code cannot be reused, cannot enroll an activated or
+disabled account, and is revoked when staff access is disabled, the profile is reassigned/deleted,
+or the owner sends a replacement. If the exchange fails before Supabase confirms the email, the
+owner can send a replacement. After email confirmation, an interrupted password setup requires
+password recovery instead: the existing account cannot be invited again. An already opened
+password-setup session remains subject to normal Auth expiry.
+
+The global Supabase email OTP expiry stays at 3,600 seconds, including password recovery and email
+changes. Previously sent Supabase invitation links retain their existing behavior.
+
+Deploy this change in order: compatible frontend, migrations
+`20261105023501_nonexpiring_staff_invitations.sql` and
+`20261105025834_restrict_staff_invitation_table_privileges.sql`, `redeem-staff-invite`, then
+`admin-create-barber`. The migration also updates both invitation-language notes to say the link
+can only be used once. Send new staff invitations only after the entire rollout is verified.
+
+### Delivery log rollout
+
 1. Migrations `20261028100000_email_send_log.sql` and `20261028101000_email_send_log_deleted_booking.sql`, ordered after the shipped `20261027173553` migration. `admin_list_failed_booking_email_deliveries` only gains keys (`customer_name`, `customer_email`, `customer_phone`, `booking_start_at`, `barber_name`, `barber_email`, `sent_kinds`); the deployed frontend ignores unknown keys.
 2. Edge Functions `send-confirmation`, `send-recovery-email`, `send-email-change`, `admin-create-barber` and `external-cleanup`. They call `internal_record_email_send`, so the migrations must be applied first. Before that, sends retain their provider outcome but each attempted log write reports `email send log write failed`.
 3. The frontend with Leveransstatus.

@@ -296,6 +296,28 @@ export async function verifyRecoveryTokenHash(tokenHash: string): Promise<AdminR
 }
 
 /** Verify a branded staff invite token and establish its short-lived password-setup session. */
+export async function redeemStaffInvitation(token: string): Promise<AdminResult<void>> {
+  try {
+    const { data, error } = await getAdminAuthClient().functions.invoke('redeem-staff-invite', {
+      body: { token },
+    })
+    if (
+      error !== null ||
+      typeof data !== 'object' ||
+      data === null ||
+      data.ok !== true ||
+      typeof data.token_hash !== 'string' ||
+      data.token_hash.length === 0
+    ) {
+      return err('auth', RECOVERY_LINK_INVALID)
+    }
+    return verifyInviteTokenHash(data.token_hash)
+  } catch {
+    return err('network', NETWORK_ERROR)
+  }
+}
+
+/** Compatibility for invitations sent before durable enrollment was introduced. */
 export async function verifyInviteTokenHash(tokenHash: string): Promise<AdminResult<void>> {
   try {
     const { error } = await getAdminClient().auth.verifyOtp({

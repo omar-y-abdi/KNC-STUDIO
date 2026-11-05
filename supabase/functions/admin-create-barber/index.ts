@@ -4,9 +4,9 @@
 //   { email, barber_id, lang }; this function:
 //   1. validates that the caller holds an owner JWT (fail-closed),
 //   2. validates the body (email shape + barber_id exists in public.barbers),
-//   3. generates a single-use Supabase invite link via service-role (or refreshes an expired invite),
+//   3. provisions or refreshes an unconfirmed Supabase user via service-role,
 //   4. links a new invited user to the barber profile,
-//   5. sends the branded, owner-editable invitation through Resend, and
+//   5. stores a non-expiring one-use enrollment digest and sends its capability through Resend, and
 //   6. returns { ok:true } (no credentials or invite token in the response).
 //
 // AUTH GATE (fail-closed): the caller's JWT is validated via auth.getUser() — never decoded-
@@ -32,6 +32,7 @@ import {
 } from '../_shared/email.ts'
 import { corsHeaders, corsJson as json, parse } from '../_shared/http.ts'
 import { requestSchema } from './request.ts'
+import { hashStaffInvitationToken, newStaffInvitationToken } from '../_shared/staffInvitation.ts'
 
 // --- HTTP handler -----------------------------------------------------------------------------
 
@@ -199,10 +200,20 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
 
   try {
-    const tokenHash = generated.data.properties.hashed_token
+    const invitationToken = newStaffInvitationToken()
+    const tokenHash = await hashStaffInvitationToken(invitationToken)
+    const stored = await service.from('staff_invitations').upsert(
+      {
+        user_id: newUserId,
+        token_hash: tokenHash,
+        created_at: new Date().toISOString(),
+      },
+      { onConflict: 'user_id' },
+    )
+    if (stored.error) throw new Error('Could not persist staff invitation')
     const copy = await loadEmailTemplate(service, 'auth_invite', lang)
     const business = await loadEmailBusiness(service)
-    const link = `https://bladeblendstudio.se/invite?token_hash=${encodeURIComponent(tokenHash)}&type=invite`
+    const link = `https://bladeblendstudio.se/invite#staff_invite=${invitationToken}`
     const message = prepareEmail(
       'auth_invite',
       { to: email, lang, copy, ctaHref: link, business },
