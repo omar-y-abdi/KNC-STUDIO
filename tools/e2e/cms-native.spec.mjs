@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 
 import { nativeBackend } from './cms-backend.mjs'
-import { test } from './fixtures.mjs'
+import { expect, test } from './fixtures.mjs'
 import { harnessOrigin } from './origins.mjs'
 test.use({
   viewport: { width: 1440, height: 900 },
@@ -372,4 +372,24 @@ for (const { load, held, otherSettled } of leavingCases)
       [],
       `Leaving during the ${load} import raised page errors`,
     )
+  })
+
+for (const path of ['/admin/cms', '/admin/cms/'])
+  test(`cms-native route chunk failure offers reload at ${path}`, async ({ page }) => {
+    let routeLoads = 0
+    await page.route('**/src/CmsRoute.tsx*', (route) => {
+      routeLoads++
+      return routeLoads === 1 ? route.abort('failed') : route.continue()
+    })
+    await page.goto(`${harnessOrigin}${path}`, { waitUntil: 'domcontentloaded' })
+    await expect(page.getByRole('alert')).toContainText('Kunde inte ladda adminpanelen.')
+    await expect(page.getByRole('button', { name: 'Ladda om', exact: true })).toBeVisible()
+    expect(routeLoads).toBe(1)
+
+    // The failed module promise is cached for this document. A genuine reload must request it
+    // again; once transport recovers, the existing unauthenticated gate leads to staff login.
+    await page.getByRole('button', { name: 'Ladda om', exact: true }).click()
+    await expect(page).toHaveURL(`${harnessOrigin}/login`)
+    await expect(page.getByRole('heading', { name: 'Logga in', exact: true })).toBeVisible()
+    expect(routeLoads).toBe(2)
   })

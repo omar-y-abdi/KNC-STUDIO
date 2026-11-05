@@ -9,7 +9,7 @@ const CmsStudio = lazy(() =>
   import('@bladeblend/studio/entry').then((module) => ({ default: module.CmsStudio })),
 )
 
-function OwnerStudio(): JSX.Element {
+export function CmsRoute(): JSX.Element {
   const [, navigate] = useLocation()
   const { gate, error } = useAdminSession(navigate)
   useEffect(() => {
@@ -32,19 +32,6 @@ function OwnerStudio(): JSX.Element {
       minHeight="100vh"
     >
       <CmsStudio onExit={() => navigate('/admin', { replace: false })} />
-    </LazySurface>
-  )
-}
-
-export function CmsRoute(): JSX.Element {
-  return (
-    <LazySurface
-      loadingLabel="Laddar adminpanelen …"
-      errorLabel="Kunde inte ladda adminpanelen."
-      retryLabel="Ladda om"
-      minHeight="100vh"
-    >
-      <OwnerStudio />
     </LazySurface>
   )
 }

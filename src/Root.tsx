@@ -24,6 +24,7 @@ import { useEffect } from 'preact/hooks'
 import { privatePageTitle } from '@bladeblend/public-web/route-metadata'
 import { App } from '@bladeblend/public-web/app'
 import { NotFound } from '@bladeblend/public-web/not-found'
+import { LazySurface } from '@bladeblend/public-web/lazy-surface'
 
 // One dynamic import for the whole admin surface (login + panel share this chunk).
 const AdminEntry = lazy(() => import('@bladeblend/staff-admin/entry'))
@@ -32,6 +33,20 @@ const CmsRoute = lazy(() => import('./CmsRoute').then((module) => ({ default: mo
 /** Lightweight fallback while the admin chunk loads (no admin code; the shared status look). */
 function AdminFallback(): JSX.Element {
   return <div class="bb-status bb-muted">Laddar …</div>
+}
+
+/** This boundary must load before CmsRoute so it can recover a failed route-module request. */
+function CmsEntry(): JSX.Element {
+  return (
+    <LazySurface
+      loadingLabel="Laddar adminpanelen …"
+      errorLabel="Kunde inte ladda adminpanelen."
+      retryLabel="Ladda om"
+      minHeight="100vh"
+    >
+      <CmsRoute />
+    </LazySurface>
+  )
 }
 
 export function Root(): JSX.Element {
@@ -87,16 +102,8 @@ export function Root(): JSX.Element {
         {/* Match BOTH the bare `/admin` and any subpath. wouter's `:rest*` matches `/admin/...` and
             `/admin/` but NOT bare `/admin`, so the explicit `/admin` route is required (otherwise a
             post-login navigate('/admin') falls through to the catch-all and redirects home). */}
-        <Route path="/admin/cms/">
-          <Suspense fallback={<AdminFallback />}>
-            <CmsRoute />
-          </Suspense>
-        </Route>
-        <Route path="/admin/cms">
-          <Suspense fallback={<AdminFallback />}>
-            <CmsRoute />
-          </Suspense>
-        </Route>
+        <Route path="/admin/cms/" component={CmsEntry} />
+        <Route path="/admin/cms" component={CmsEntry} />
         <Route path="/admin">
           <Suspense fallback={<AdminFallback />}>
             <AdminEntry />
