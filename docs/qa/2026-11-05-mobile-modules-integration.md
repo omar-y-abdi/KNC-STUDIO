@@ -65,6 +65,9 @@ PR; root will publish only after the complete package's independent qualificatio
 | `e484e7d2348e8e7a779cafa0d5d02974234be7b4` | `5c6d9b815871e480206f6eb720d07a24e15cb132` | Reversible mobile booking hero scrolling                 |
 | `80542272d49dfb92af02b191bf2fce73861550f9` | `6cab1035b80e52bdf3d765d9c60feadf965edbed` | Review authorization recovery                            |
 
+Smoothing source `e3ba2d8b6596b9e56c4ed07a4e257250e5a06352` maps to integration commit
+`b39a21bf80762c1082c753f2c2c9f8575cbc2929`.
+
 `91632a2a5bfa71d84980a13a75ae5322027ea425` completes the initial two-commit integration's
 CMS harness paths, test ownership and recorded checks. Subsequent qualification/ownership
 commits do not add product behavior.
@@ -110,3 +113,35 @@ Executed on the integrated review checkpoint:
 No build, browser execution, push or deployment was performed for this checkpoint. The source
 QA document's browser/production observations remain the original author's evidence, not new
 execution evidence from this integration worktree.
+
+## Native scroll smoothing checkpoint
+
+Ported frozen `e3ba2d8` onto `cd2274e`. Resolved only module-location/import conflicts:
+`mobileFoldLayout.tsx` is private public-web app implementation; Studio consumes
+`primeMobileFold` through the existing `mobile-layout` export. No new package interface was
+added. The expanded CMS booking-scroll assertions remain intact with translated contract
+imports and Studio harness URLs. The new priming unit and two Chromium paint specs have
+explicit public-web/Studio/content-contract ownership as appropriate.
+
+Compared directly with the frozen source: `MobileSite.tsx`, `mobileFold.ts`,
+`mobileFoldLayout.tsx`, both new Chromium paint specs, `mobile-booking-scroll.spec.mjs`, and
+`mobile-keyboard.spec.mjs` are byte-identical. `App.tsx` and `canvasBehavior.ts` differ only in
+imports; unit/public-viewport/CMS-booking specs differ only in import/harness paths and related
+formatting. `nativePages.ts` retains the already-integrated preview protocol constants and
+Worker-path comment: `PUBLIC_PREVIEW_PATH` remains `/cms-public/source`, and
+`PREVIEW_MESSAGE.context` remains `knc-source-context`. Its only new implementation change is
+exactly the source commit's carrier removal before capture.
+
+Executed on this integrated checkpoint:
+
+- Module boundaries: 311 source files, 1,115 resolved local edges; inventory has no errors.
+- `npm run typecheck`: passed.
+- `mobileFoldPriming`, `mobileFold`, `performanceLifecycle`: three unit files, nine tests passed.
+- CMS release check and scoped ESLint/Prettier: passed.
+- Native CMS discovery: 11 cases in three files, including all nine new Chromium paint cases
+  and the existing booking-scroll case in both Chromium and WebKit.
+- Native public discovery: 36 cases in the three modified mobile browser specs.
+
+No broad suite, build, browser execution or push was run here. Root owns final integrated
+qualification and publication to PR #174. The original smoothing QA document is retained
+unchanged as source-author evidence, not represented as a run against the integrated head.
