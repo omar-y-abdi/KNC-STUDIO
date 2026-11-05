@@ -40,3 +40,8 @@ coverage
 # Local Worker bindings/secrets
 .dev.vars
 .dev.vars.*
+
+# Verified CI source/build artifacts and native discovery output
+/.ci-source/
+/.ci-build/
+/.ci-expected.json

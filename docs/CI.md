@@ -1,21 +1,38 @@
 # CI architecture and verification
 
-The definitive workflow is `.github/workflows/ci.yml`. Every pull request and every push to `main`
-runs all jobs. Pull requests, pushes to `main`, and manual runs use the full Chromium and WebKit
-CMS matrices, each split across nine shards. The public group runs Chromium, Firefox and WebKit
-on every event. There are no path filters, scheduled substitutes, retries,
-`continue-on-error` gates, or paid runner requirements.
+The definitive workflow is `.github/workflows/ci.yml`. Pushes to `main` and manual runs always use full verification.
+Pull requests derive an affected-module plan from the exact base commit and the formatted checkout
+(the GitHub merge commit), including transitive source imports and explicitly owned tests. Unknown
+paths, unsupported imports, incomplete ownership, invalid comparison context or untracked inputs
+conservatively select full verification. Shared content contracts reach public, Studio and backend;
+booking SQL reaches customer and staff acceptance. No path-filtered workflow can bypass the gates.
 
-The protected contexts keep their existing names: **Frontend and browser**, **Edge Functions**,
-and **Database and integration**. The frontend context now also requires every CMS and production
-startup shard. The database context requires both current-schema acceptance
-and historical rollout compatibility. Gate executables reject missing, skipped, cancelled and failed
-dependencies.
+The format job records the tested source, then creates and rederives `impact.json` before exporting
+job decisions and matrices. Consumers fetch complete commit history, replay that same format patch,
+install frozen dependencies and rederive the plan against workflow-provided base/head/event values.
+The plan's own context cannot authorize itself. Only the exact root CI artifact paths are ignored;
+untracked source inputs force full coverage. Tests are followed by source and plan checks.
+
+The protected contexts retain **Frontend and browser**, **Edge Functions**, and **Database and
+integration**. Both aggregates always run and validate the source artifact, plan and exact dependency
+set. Selected jobs must succeed. A skipped job is accepted only when the rederived plan explicitly
+omits it; failed, cancelled, unknown and missing results always fail. Frontend also checks the Edge
+job, so skipping Edge cannot evade omission validation. Missing or stale artifacts fail closed.
+Formatting, broad static checks, module boundaries and CI regression contracts always run.
+
+Full CMS verification uses both Chromium and WebKit across nine shards per engine; full public
+verification uses two shards and includes Chromium, Firefox and WebKit. Affected plans may select
+fewer explicitly owned specs and proven shard counts. A sole DeliveryStatus panel edit, with its
+audited importer set unchanged, retains delivery races, real Studio navigation, owner/workspace
+contracts, public CMS shell and startup coverage using one nonempty CMS shard per engine and one
+public shard. Additional callers, shared inputs or other edits invalidate that narrow cohort. Discovery and execution receive the same
+literal spec filters, project and shard through `tools/ci/impact-plan.mjs`; empty execution is fatal.
+There are no retries, `continue-on-error` gates, scheduled substitutes or paid runner requirements.
 
 ## Modules and seams
 
 The source preparation module (`.github/actions/ci-node`) owns frozen npm installation, replay of the
-shared format patch and source identity verification. Container preparation checks UID 1001 and
+shared format patch, source identity verification and trusted impact-plan verification. Container preparation checks UID 1001 and
 write access before caches, artifact downloads and `npm ci`; npm cache paths come from shell
 variables inside the container. Furl setup and regression tests belong to the quality job. Workflow
 commands use plain Bash. The format job produces a patch that consumers replay, so formatting does
@@ -42,8 +59,9 @@ CMS validation, real local Worker/Edge transport, HTTP-only cookies and database
 explicit. Additional contexts model distinct customer sessions and motion settings; fixtures own
 their final teardown.
 
-The build module produces one production build for public/visual checks and one fixture build for
-production CSP checks. Different environment contracts require those two builds. Consumers verify
+The build module produces the production build for packaging and a fixture build for public,
+visual and startup CSP checks. Both browser artifact directories contain that same harness build,
+which embeds the fake Supabase origin. Different environment contracts require those two builds. Consumers verify
 both source identity and every artifact file hash. Source identity combines the commit with a Git
 tree of tracked working content, using a temporary index; it does not hash patch text or include
 untracked downloads such as `.ci-source` and `.ci-build`. Worker dry-run packages the production build
@@ -60,10 +78,10 @@ runtime. Only Studio, metadata tooling and the pooler are omitted there.
 | Gate          | Native coverage / checks                                                                                                                                  |
 | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Source        | Auto-format, format check, patch replay and exact source verification                                                                                     |
-| Static        | ESLint, TypeScript (including Playwright config), all unit tests, production dependency audit, CMS release stamp                                          |
+| Static        | ESLint, TypeScript (including Playwright config), selected exact unit files, boundary/CI contracts, production dependency audit, CMS release stamp        |
 | Build         | Production compile/minification, real Worker dry-run, font license/artifact rejection, CSP fixture build                                                  |
 | Public/admin  | Chromium domain/race/session flows; privacy, CMS shell and delayed verification in all three engines; approved visual views and existing image CPU budget |
-| CMS           | Full Chromium and WebKit matrices on pull requests, main pushes and manual runs; nine shards per engine                                                   |
+| CMS           | Selected CMS specs in both engines; full plans retain nine shards per engine                                                                              |
 | Startup       | Chromium and WebKit against actual compiled routes under the existing production CSP policy                                                               |
 | Edge          | Every entrypoint checked by Deno 2.9.5 with the frozen lock                                                                                               |
 | Current DB    | All current migrations and pgTAP; serial adapter integration; actual Edge/Storage asset reuse; three real Worker/Edge/HTTPS customer engine flows         |
@@ -95,8 +113,8 @@ npm run test:e2e:startup
 npm run test:e2e:customer       # requires dedicated local Supabase + documented Function env
 ```
 
-Use native `--project`, `--grep`, and `--shard` options for scoped diagnosis. CI uses nine CMS shards
-per engine and two public shards. Each runner uses one browser worker so latency/CPU assertions do
+Use native `--project`, `--grep`, and `--shard` options for scoped diagnosis. Full CI plans use nine CMS shards
+per engine and two public shards; affected plans export their verified matrices. Each runner uses one browser worker so latency/CPU assertions do
 not compete with another local test. Failure in one matrix member does not cancel unrelated members.
 
 Several worktrees can run Playwright at the same time if each one has its own `E2E_PORT_OFFSET`, for

@@ -41,3 +41,7 @@ runs:
     - name: Install frozen dependencies
       shell: bash
       run: npm ci
+    - name: Verify the affected plan against trusted workflow context
+      if: inputs.formatted == 'true'
+      shell: bash
+      run: node tools/ci/impact-plan.mjs verify

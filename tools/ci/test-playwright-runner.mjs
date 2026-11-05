@@ -8,6 +8,16 @@ import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import test from 'node:test'
 
+import { browserArguments } from '../modules/run.mjs'
+import { inspectBoundaries } from '../modules/boundaries.mjs'
+import {
+  deliveryCohort,
+  loadInventory,
+  selectVerification,
+  unitOwnership,
+} from '../modules/model.mjs'
+import { planOutputs } from './impact-plan.mjs'
+
 const cli = resolve('node_modules/playwright/cli.js')
 const runner = pathToFileURL(resolve('node_modules/@playwright/test/index.mjs')).href
 test('native runner makes fixture failure, timeout, focused tests and empty selection fatal', async (t) => {
@@ -49,7 +59,7 @@ test('native runner makes fixture failure, timeout, focused tests and empty sele
   assert.match(focused.stdout + focused.stderr, /forbidOnly/)
 })
 
-test('native CMS shards cover every case exactly once for all events', () => {
+test('native full CMS shards cover every case exactly once with selected literal filters', () => {
   // `specs` collects each listed case's project, file (relative to testDir) and spec identity.
   const list = (args, specs = []) => {
     const result = spawnSync(
@@ -71,6 +81,8 @@ test('native CMS shards cover every case exactly once for all events', () => {
       for (const child of suite.suites ?? []) visit(child)
     }
     for (const suite of report.suites) visit(suite)
+    if (args.some((arg) => arg.startsWith('--shard=')))
+      assert.ok(cases.length > 0, 'Empty selected shard')
     return cases.sort()
   }
   const specs = []
@@ -91,20 +103,20 @@ test('native CMS shards cover every case exactly once for all events', () => {
   const { load } = createRequire(import.meta.url)('js-yaml')
   const workflow = load(readFileSync('.github/workflows/ci.yml', 'utf8'))
   const cms = workflow.jobs.cms
-  assert.deepEqual(cms.strategy.matrix, {
-    engine: ['chromium', 'webkit'],
-    shard: [1, 2, 3, 4, 5, 6, 7, 8, 9],
-  })
-  const steps = cms.steps.filter((step) => step.run?.startsWith('npx playwright test '))
+  assert.equal(cms.strategy.matrix, '${{ fromJSON(needs.format.outputs.cms_matrix) }}')
+  const steps = cms.steps.filter((step) =>
+    step.run?.startsWith('node tools/ci/impact-plan.mjs browser cms '),
+  )
   assert.equal(steps.length, 2)
   const args =
-    'npx playwright test --project=cms-${{ matrix.engine }} --shard=${{ matrix.shard }}/9'
-  assert.equal(steps[0].name, 'Discover every assigned CMS case')
+    'node tools/ci/impact-plan.mjs browser cms --project=cms-${{ matrix.engine }} --shard=${{ matrix.shard }}/${{ needs.format.outputs.cms_shards }}'
   assert.equal(steps[0].run, `${args} --list --reporter=json > .ci-expected.json`)
-  assert.equal(steps[1].name, 'Exercise the unchanged CMS domain contracts')
   assert.equal(steps[1].run, args)
-  // The workflow uses the full native selection for both engines on every event.
-  for (const engine of cms.strategy.matrix.engine) {
+  const matrix = JSON.parse(planOutputs({ jobs: {}, shards: { cms: 9, public: 2 } }).cms_matrix)
+  assert.deepEqual(matrix, { engine: ['chromium', 'webkit'], shard: [1, 2, 3, 4, 5, 6, 7, 8, 9] })
+  const paths = [...new Set(chromium.map((spec) => `tools/e2e/${spec.file}`))].sort()
+  const filters = browserArguments(paths).slice(2)
+  for (const engine of matrix.engine) {
     const project = `cms-${engine}`
     const selected = specs
       .filter((spec) => spec.project === project)
@@ -112,8 +124,8 @@ test('native CMS shards cover every case exactly once for all events', () => {
       .sort()
     assert.ok(selected.length > 0)
     const assignedSpecs = []
-    const assigned = cms.strategy.matrix.shard.flatMap((shard) =>
-      list([`--project=${project}`, `--shard=${shard}/9`], assignedSpecs),
+    const assigned = matrix.shard.flatMap((shard) =>
+      list([...filters, `--project=${project}`, `--shard=${shard}/9`], assignedSpecs),
     )
     assert.equal(new Set(assigned).size, assigned.length, `${project}: duplicate cases`)
     assert.deepEqual(
@@ -121,5 +133,60 @@ test('native CMS shards cover every case exactly once for all events', () => {
       selected,
       `${project}: missing or unexpected cases`,
     )
+  }
+})
+
+test('affected DeliveryStatus native shard union preserves exactly the selected CMS and public cases', () => {
+  const graph = inspectBoundaries(process.cwd())
+  const { inventory, errors } = loadInventory(process.cwd())
+  assert.deepEqual(errors, [])
+  const plan = selectVerification(
+    [{ path: deliveryCohort.input, status: 'M' }],
+    graph,
+    inventory,
+    unitOwnership(process.cwd(), inventory, graph),
+  )
+  assert.equal(plan.mode, 'affected')
+  assert.deepEqual(plan.tests.browser.cms, deliveryCohort.cms)
+  assert.deepEqual(plan.tests.browser.public, deliveryCohort.public)
+  const list = (group, paths, extra) => {
+    const result = spawnSync(
+      process.execPath,
+      browserArguments(paths, [...extra, '--list', '--reporter=json']),
+      {
+        env: { ...process.env, E2E_GROUP: group },
+        encoding: 'utf8',
+        timeout: 30000,
+      },
+    )
+    assert.equal(result.status, 0, result.stderr)
+    const cases = []
+    const visit = (suite) => {
+      for (const spec of suite.specs ?? [])
+        for (const row of spec.tests ?? []) cases.push(`${spec.id}/${row.projectName}`)
+      for (const child of suite.suites ?? []) visit(child)
+    }
+    for (const suite of JSON.parse(result.stdout).suites) visit(suite)
+    assert.ok(cases.length > 0, `${group}: empty native selection`)
+    return cases.sort()
+  }
+  for (const [group, projects] of [
+    ['cms', ['cms-chromium', 'cms-webkit']],
+    ['public', [null]],
+  ]) {
+    const paths = plan.tests.browser[group]
+    const matrix = JSON.parse(planOutputs(plan)[`${group}_matrix`])
+    assert.equal(matrix.shard.length, plan.shards[group])
+    for (const project of projects) {
+      const extra = project ? [`--project=${project}`] : []
+      const expected = list(group, paths, extra)
+      const actual = matrix.shard
+        .flatMap((shard) =>
+          list(group, paths, [...extra, `--shard=${shard}/${plan.shards[group]}`]),
+        )
+        .sort()
+      assert.equal(new Set(actual).size, actual.length, `${group}: duplicate selected cases`)
+      assert.deepEqual(actual, expected, `${group}: missing or unselected cases`)
+    }
   }
 })
