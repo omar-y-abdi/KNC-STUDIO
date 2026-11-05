@@ -2007,7 +2007,10 @@ test('legal page shows the owner body colours in the canvas and to visitors', as
 const LEGACY_LEGAL_CSS = Object.fromEntries(
   ['terms', 'privacy'].map((kind) => [
     `/${kind}`,
-    readFileSync(new URL(`../../src/admin/cms/legacy-legal-${kind}.txt`, import.meta.url), 'utf8'),
+    readFileSync(
+      new URL(`../../modules/studio/src/legacy-legal-${kind}.txt`, import.meta.url),
+      'utf8',
+    ),
   ]),
 )
 const OWNER_CSS = '\n.owner-edit{letter-spacing:.01em}'
