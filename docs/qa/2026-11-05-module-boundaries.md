@@ -125,6 +125,7 @@ that production has been updated. No database migration was added by the module 
 Current-schema integration, historical rollout and the full browser matrix remain required for
 the refactor PR because manifests, source layout and CI configuration changed.
 
-This report concerns modularization. The separately reported live mobile first-paint, Safari tint
-and keyboard/fold behavior are being handled on their own branch from `main`; they are not claimed
-fixed by this refactor.
+This report qualifies modularization at the checkpoints named above. Mobile customer fixes are
+now included in the same PR and qualified separately in
+`docs/qa/2026-11-05-combined-pr174.md` and its linked reports. Module verification alone does not
+establish those mobile behaviors.
