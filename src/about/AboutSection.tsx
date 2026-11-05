@@ -23,6 +23,7 @@ import { useRoster } from '../booking/useRoster'
 import type { BarbersPort } from '../booking/barbersPort'
 import { PlaceholderPhoto } from './PlaceholderPhoto'
 import { useBarberMarquee } from './useBarberMarquee'
+import { barberSocialLinks } from './barberSocialLinks'
 import { GalleryMarquee } from './GalleryMarquee'
 import { StarDisplay, StarRating } from './StarRating'
 import type { Rating, Review, ReviewDraft, ReviewError } from './reviews/domain'
@@ -395,7 +396,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
     boxShadow: '0 0 0 3px ' + (dark ? 'rgba(255,69,58,.28)' : 'rgba(255,59,48,.28)'),
   }
 
-  return useNativeSurface(
+  const surface = useNativeSurface(
     <section
       ref={sectionRef}
       id={ABOUT_SECTION_ID}
@@ -502,10 +503,10 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
                           : 'auto auto',
                         flex: '0 0 calc(100vw - 24px)',
                         width: 'calc(100vw - 24px)',
-                        margin: roster.length > 1 ? '0 24px' : '0 12px',
+                        margin: roster.length > 1 ? '0 16px' : '0 12px',
                         boxSizing: 'border-box',
                         minWidth: 0,
-                        scale: active ? '1.025' : '1',
+                        scale: active ? '1.02' : '1',
                         borderColor: active ? c.text : c.line,
                         boxShadow: active
                           ? '0 5px 20px rgba(0,0,0,.12)'
@@ -552,6 +553,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
                 >
                   <span style={{ fontWeight: 600, fontSize: '16px' }}>{b.name}</span>
                   <span
+                    data-barber-social="instagram"
                     aria-hidden={props.mobile ? !active : undefined}
                     style={{
                       fontSize: '12.5px',
@@ -565,6 +567,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
                   </span>
                   {copy ? (
                     <span
+                      data-barber-social="bio"
                       aria-hidden={props.mobile ? !active : undefined}
                       style={{
                         fontSize: '11px',
@@ -583,6 +586,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
                 </div>
                 {copy ? (
                   <p
+                    data-barber-social="bio"
                     aria-hidden={props.mobile ? !active : undefined}
                     style={{
                       fontSize: '13.5px',
@@ -819,4 +823,5 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
     props.lang,
     props.mode,
   )
+  return nativeSource ? surface : barberSocialLinks(surface)
 }

@@ -90,7 +90,7 @@ export const privacyEn: PrivacyStrings = {
   save: 'Save choices',
   functionalTitle: 'Optional storage',
   functionalLead:
-    'Keeps access on this device to new bookings made here. Earlier bookings require your email link.',
+    'Keeps access to new bookings on this device and prefills contact details from your latest booking here. Earlier bookings require your email link.',
   necessary:
     'After a valid email link, a necessary secure session cookie keeps you signed in. Without cookies, My appointments cannot sign you in automatically.',
   manage: 'Privacy',

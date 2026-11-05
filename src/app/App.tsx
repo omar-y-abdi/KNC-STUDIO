@@ -28,7 +28,7 @@ import { PrivacyBanner } from '../site/PrivacyBanner'
 import { readStoragePreferences, subscribeStoragePreferences } from '../site/storageConsent'
 import { invokePublicBookingAction } from '../backend/publicBookingActions'
 import { withCustomerDeviceLock } from '../mybookings/customerDeviceLock'
-import type { CustomerProfile } from '../mybookings/domain'
+import type { BookingContact, CustomerProfile } from '../mybookings/domain'
 import { previewCustomerPort } from '../cms/PreviewPorts'
 import { defaultSiteChromePort } from '../site/adapters'
 import type { SiteChromePort } from '../site/port'
@@ -168,15 +168,28 @@ export function App({
   )
   const [emailLinkCode, setEmailLinkCode] = useState<string | null | undefined>(undefined)
   const accessSequence = useRef(0)
+  const contactSequence = useRef(0)
+  const deviceContactEpoch = useRef(0)
   const [customerProfile, setCustomerProfile] = useState<CustomerProfile | undefined>(undefined)
+  const [deviceBookingContact, setDeviceBookingContact] = useState<BookingContact | undefined>(
+    undefined,
+  )
+  const [bookingRefresh, setBookingRefresh] = useState(0)
   useEffect(() => {
     if (preview) return
     const clearOptionalAccess = (): void => {
       if (readStoragePreferences()?.functional === false) {
+        // Invalidate device hints even if consent is enabled again before their replies arrive.
+        deviceContactEpoch.current++
+        setDeviceBookingContact(undefined)
         // Queue behind any in-flight booking, so its late receipt cannot undo a withdrawn choice.
-        void withCustomerDeviceLock(() =>
-          invokePublicBookingAction({ action: 'forget_device' }),
-        ).catch(() => undefined)
+        void withCustomerDeviceLock(() => invokePublicBookingAction({ action: 'forget_device' }))
+          .catch(() => undefined)
+          .finally(() => {
+            // A re-enabled tab can start another read while revocation is still queued.
+            deviceContactEpoch.current++
+            setDeviceBookingContact(undefined)
+          })
       }
     }
     clearOptionalAccess()
@@ -207,6 +220,7 @@ export function App({
       const current = (): boolean => active && sequence === accessSequence.current
       if (link.emailLinkCode !== undefined) {
         setCustomerProfile(undefined)
+        setDeviceBookingContact(undefined)
         setBookingAccess({})
         setEmailLinkCode(link.emailLinkCode)
         preloadMyBookingsDialog()
@@ -215,16 +229,30 @@ export function App({
       }
       if (link.code === null) {
         if (restoreProfile) {
+          const contactRead = ++contactSequence.current
+          const deviceRead = deviceContactEpoch.current
+          const allowDeviceContact = readStoragePreferences()?.functional === true
           void defaultMyBookingsPort
             .list({ accessToken: '', lang: 'sv' })
             .then((result) => {
-              if (current() && result.ok) setCustomerProfile(result.profile)
+              if (current() && contactRead === contactSequence.current && result.ok) {
+                setCustomerProfile(result.profile)
+                setDeviceBookingContact(
+                  allowDeviceContact &&
+                    deviceRead === deviceContactEpoch.current &&
+                    result.authority === 'device' &&
+                    readStoragePreferences()?.functional === true
+                    ? result.bookingContact
+                    : undefined,
+                )
+              }
             })
             .catch(() => undefined)
         }
         return
       }
       setCustomerProfile(undefined)
+      setDeviceBookingContact(undefined)
       setEmailLinkCode(undefined)
       if (link.direct) {
         setBookingAccess({ token: link.code })
@@ -255,6 +283,46 @@ export function App({
       window.removeEventListener('hashchange', onHashChange)
     }
   }, [])
+
+  useEffect(() => {
+    if (preview || state.view !== 'booking' || state.myBookingsOpen) return
+    let active = true
+    const refresh = (): void => {
+      const accessRead = accessSequence.current
+      const sequence = ++contactSequence.current
+      const deviceRead = deviceContactEpoch.current
+      const allowDeviceContact = readStoragePreferences()?.functional === true
+      // Revalidate returning tabs before showing a receipt revoked elsewhere.
+      setDeviceBookingContact(undefined)
+      void defaultMyBookingsPort
+        .list({ accessToken: '', lang: 'sv' })
+        .then((result) => {
+          if (
+            !active ||
+            sequence !== contactSequence.current ||
+            accessRead !== accessSequence.current
+          )
+            return
+          setCustomerProfile(result.ok ? result.profile : undefined)
+          setDeviceBookingContact(
+            result.ok &&
+              allowDeviceContact &&
+              deviceRead === deviceContactEpoch.current &&
+              result.authority === 'device' &&
+              readStoragePreferences()?.functional === true
+              ? result.bookingContact
+              : undefined,
+          )
+        })
+        .catch(() => undefined)
+    }
+    refresh()
+    window.addEventListener('focus', refresh)
+    return () => {
+      active = false
+      window.removeEventListener('focus', refresh)
+    }
+  }, [state.view, state.myBookingsOpen, bookingRefresh])
 
   const dark = state.mode === 'dark'
   const lang = state.lang
@@ -510,7 +578,10 @@ export function App({
         {...(bookingAccess.token === undefined ? {} : { accessToken: bookingAccess.token })}
         {...(bookingAccess.error === undefined ? {} : { accessError: bookingAccess.error })}
         {...(emailLinkCode === undefined ? {} : { emailLinkCode })}
-        onProfile={setCustomerProfile}
+        onProfile={(profile) => {
+          setCustomerProfile(profile)
+          setDeviceBookingContact(undefined)
+        }}
       />
     </LazySurface>
   ) : null
@@ -525,6 +596,10 @@ export function App({
           lang={lang}
           tx={tx}
           {...(customerProfile === undefined ? {} : { initialContact: customerProfile })}
+          {...(deviceBookingContact === undefined
+            ? {}
+            : { initialBookingContact: deviceBookingContact })}
+          onBookingComplete={() => setBookingRefresh((value) => value + 1)}
           dark={dark}
           c={c}
           view={view}
@@ -567,6 +642,10 @@ export function App({
         chromeIconStyle={chromeIconStyle}
         tx={tx}
         {...(customerProfile === undefined ? {} : { initialContact: customerProfile })}
+        {...(deviceBookingContact === undefined
+          ? {}
+          : { initialBookingContact: deviceBookingContact })}
+        onBookingComplete={() => setBookingRefresh((value) => value + 1)}
         view={view}
         toggleDeskBooking={toggleDeskBooking}
         scrollToAbout={scrollToAbout}

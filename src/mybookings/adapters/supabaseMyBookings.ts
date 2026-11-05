@@ -131,7 +131,14 @@ export const supabaseMyBookingsAdapter: MyBookingsPort = {
         })
       }
       if (parsed.value.authority === 'device') {
-        return { ok: true, authority: 'device', bookings: splitByTime(bookings, new Date()) }
+        return {
+          ok: true,
+          authority: 'device',
+          bookings: splitByTime(bookings, new Date()),
+          ...(parsed.value.booking_contact === undefined
+            ? {}
+            : { bookingContact: parsed.value.booking_contact }),
+        }
       }
       return {
         ok: true,

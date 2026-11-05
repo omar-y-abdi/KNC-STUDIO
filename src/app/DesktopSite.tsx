@@ -21,7 +21,7 @@ import type { ServicesPort } from '../booking/servicesPort'
 import type { ReviewsPort } from '../about/reviews/port'
 import type { AboutContentPort } from '../about/content/port'
 import type { GalleryPort } from '../about/gallery/port'
-import type { CustomerProfile } from '../mybookings/domain'
+import type { BookingContact, CustomerProfile } from '../mybookings/domain'
 import {
   scalePx,
   type HomepageLogo as HomepageLogoConfig,
@@ -65,6 +65,8 @@ export interface DesktopSiteProps extends ShellProps {
   /** Embedded replicas scroll inside this host instead of the browser window. */
   readonly scrollRootRef?: RefObject<HTMLDivElement>
   readonly initialContact?: CustomerProfile
+  readonly initialBookingContact?: BookingContact
+  readonly onBookingComplete?: () => void
   readonly privacy?: PrivacyControls
   readonly onManagePrivacy?: () => void
 }
@@ -440,9 +442,12 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
                     popupText={props.bookingPopupText}
                     business={business}
                     showDirections={business.mapsHref !== ''}
-                    {...(props.initialContact === undefined
+                    {...((props.initialContact ?? props.initialBookingContact) === undefined
                       ? {}
-                      : { initialContact: props.initialContact })}
+                      : { initialContact: props.initialContact ?? props.initialBookingContact })}
+                    {...(props.onBookingComplete
+                      ? { onBookingComplete: props.onBookingComplete }
+                      : {})}
                     {...(props.previewPorts === undefined
                       ? {}
                       : {

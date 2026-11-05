@@ -34,7 +34,7 @@ import type { ServicesPort } from './servicesPort'
 import { useRoster } from './useRoster'
 import { parseContact } from './validation'
 import type { FieldErrors } from './validation'
-import type { CustomerProfile } from '../mybookings/domain'
+import type { BookingContact } from '../mybookings/domain'
 import { buildBookingStyles, makeNavBtn, palette } from './bookingStyles'
 import { Turnstile, turnstileConfigured } from './Turnstile'
 import { DetailsDialog } from './DetailsDialog'
@@ -65,7 +65,8 @@ export interface BookingFlowProps {
   readonly popupText?: BookingPopupText
   /** Current owner-managed business identity used by confirmation calendar/map links. */
   readonly business?: BusinessSettings
-  readonly initialContact?: CustomerProfile
+  readonly initialContact?: BookingContact
+  readonly onBookingComplete?: () => void
   /** The initial roster has resolved, including a truthful empty/error state. */
   readonly onRosterReady?: () => void
 }
@@ -489,10 +490,16 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   const gcalHref = result?.ok === true ? result.links.gcalHref : '#'
   const mapsHref = result?.ok === true ? result.links.mapsHref : business.mapsHref
 
-  // Confirmation sentence — owner-editable template with live contact values inserted.
+  // Confirmation describes the submitted booking, even while next-booking hints refresh.
+  // CMS confirmation scenes have no submit result and retain their example draft contact.
+  const confirmedContact = result?.ok === true ? result.booking : f
   let confirmSentLine = ''
   if (selDate !== null && S.time && S.service) {
-    confirmSentLine = t.confirmSent.split('{phone}').join(f.phone).split('{email}').join(f.email)
+    confirmSentLine = t.confirmSent
+      .split('{phone}')
+      .join(confirmedContact.phone)
+      .split('{email}')
+      .join(confirmedContact.email)
   }
 
   const s = buildBookingStyles(c, dark, bookDisabled)
@@ -569,6 +576,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
         setSubmitError(submitResult.error.message)
         return
       }
+      props.onBookingComplete?.()
       setResult(submitResult)
       setFieldErrors(NO_FIELD_ERRORS)
       setSubmitError(null)

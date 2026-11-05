@@ -6,6 +6,13 @@ export function paintViewport(pageBg: string, themeColor: string, scheme?: 'ligh
   if (scheme) {
     document.documentElement.style.colorScheme = scheme
     document.body.style.colorScheme = scheme
+    let schemeMeta = document.querySelector('meta[name="color-scheme"]')
+    if (schemeMeta === null) {
+      schemeMeta = document.createElement('meta')
+      schemeMeta.setAttribute('name', 'color-scheme')
+      document.head.appendChild(schemeMeta)
+    }
+    schemeMeta.setAttribute('content', scheme)
   }
   document.documentElement.style.background = pageBg
   document.body.style.background = pageBg
@@ -15,7 +22,10 @@ export function paintViewport(pageBg: string, themeColor: string, scheme?: 'ligh
     meta.setAttribute('name', 'theme-color')
     document.head.appendChild(meta)
   }
-  // Once the app selects a mode, override every system-preference variant as well.
+  // The OS-specific bootstrap tags are only for the first paint. Once a visitor chooses a
+  // theme, expose one unconditional color so browser chrome does not retain an OS variant.
+  meta.removeAttribute('media')
+  meta.setAttribute('content', themeColor)
   for (const item of document.querySelectorAll('meta[name="theme-color"]'))
-    item.setAttribute('content', themeColor)
+    if (item !== meta) item.remove()
 }

@@ -268,6 +268,12 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
 
   const onPointerDown = (e: JSX.TargetedPointerEvent<HTMLDivElement>): void => {
     if (dragging.current || !e.isPrimary || e.button !== 0) return
+    // A pointer selects in place; native focus can scroll a clipped photo into view before our
+    // focus handler runs. Suppress that default action, while touch-action still permits pan-y.
+    // Keyboard focus keeps its separate reveal behavior.
+    e.preventDefault()
+    keyboardFocus.current = false
+    pausedRef.current = props.paused
     dragging.current = true
     pointerId.current = e.pointerId
     moved.current = false

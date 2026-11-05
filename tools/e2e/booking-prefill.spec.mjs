@@ -1,0 +1,423 @@
+import { test, expect } from './fixtures.mjs'
+import { harnessOrigin } from './origins.mjs'
+import { installPublicBackend } from './public-fixtures.mjs'
+
+const contact = { name: 'Returning Customer', phone: '0701234567', email: 'returning@example.test' }
+const receiptProof = 'a'.repeat(64)
+const bookingId = '76000000-0000-4000-8000-000000000001'
+const row = {
+  id: bookingId,
+  barber_id: 'e2e-barber-1',
+  barber_name: 'Fixture Barber 1',
+  service_name: 'Fixture haircut',
+  price: 400,
+  duration_min: 30,
+  start_at: '2099-01-01T10:00:00Z',
+}
+
+async function setup(context, { consent = true, remembered = false } = {}) {
+  await installPublicBackend(context)
+  await context.addCookies([
+    {
+      name: 'bladeblend_storage_preferences',
+      value: consent ? 'functional' : 'essential',
+      url: harnessOrigin,
+    },
+  ])
+  const state = {
+    contact: remembered ? contact : undefined,
+    hold: null,
+    listCalls: 0,
+    submitCalls: 0,
+  }
+  await context.route('**/rest/v1/rpc/available_slots_for_service', (route) =>
+    route.fulfill({ headers: { 'access-control-allow-origin': '*' }, json: ['10:00', '11:00'] }),
+  )
+  await context.route('**/api/customer-bookings', async (route) => {
+    const action = route.request().postDataJSON().action
+    if (action === 'forget_device') {
+      state.contact = undefined
+      return route.fulfill({ json: { ok: true } })
+    }
+    expect(action).toBe('list')
+    state.listCalls++
+    const snapshot = state.contact
+    if (state.hold) await state.hold
+    return route.fulfill({
+      json:
+        state.listOverride ??
+        (snapshot
+          ? {
+              ok: true,
+              authority: 'device',
+              session_proof: receiptProof,
+              receipt_proof: receiptProof,
+              bookings: [row],
+              booking_contact: snapshot,
+            }
+          : { ok: false, error: 'access_denied' }),
+    })
+  })
+  await context.route('**/api/bookings', (route) => {
+    const body = route.request().postDataJSON()
+    state.submitCalls++
+    if (body.rememberBookings)
+      state.contact = {
+        name: body.booking.customerName,
+        phone: body.booking.phone,
+        email: body.booking.email,
+      }
+    return route.fulfill({
+      json: {
+        ok: true,
+        booking: { id: bookingId },
+        ...(body.rememberBookings ? { receipt_proof: receiptProof } : {}),
+      },
+    })
+  })
+  return state
+}
+
+async function details(page, open = true) {
+  if (open) await page.getByRole('button', { name: 'Boka tid', exact: true }).first().click()
+  await page.getByTestId('booking-barber-option').first().click()
+  await page
+    .getByRole('button', { name: /^\S+ \d+ \S+ \d{4}$/ })
+    .and(page.locator(':not([disabled])'))
+    .first()
+    .click()
+  await page.getByTestId('booking-service-option').first().click()
+  await page.getByRole('button', { name: '10:00', exact: true }).click()
+  return page.getByRole('dialog').locator('input:not([type="hidden"])')
+}
+async function values(fields, expected) {
+  for (const [index, value] of Object.values(expected).entries())
+    await expect(fields.nth(index)).toHaveValue(value)
+}
+
+for (const width of [390, 1280]) {
+  test(`booking contact returns after submission and reload (${width})`, async ({
+    page,
+    context,
+  }) => {
+    await page.setViewportSize({ width, height: 844 })
+    const state = await setup(context)
+    await page.goto(harnessOrigin)
+    let fields = await details(page)
+    await values(fields, { name: '', phone: '', email: '' })
+    for (const [index, value] of Object.values(contact).entries())
+      await fields.nth(index).fill(value)
+    await page.getByRole('dialog').getByRole('button', { name: 'Boka tid', exact: true }).click()
+    await page.getByRole('button', { name: 'Boka en ny tid', exact: true }).click()
+    fields = await details(page, false)
+    await values(fields, contact)
+    expect(state.submitCalls).toBe(1)
+    await page.reload()
+    await values(await details(page), contact)
+    expect(
+      await page.evaluate(() => [globalThis.localStorage.length, globalThis.sessionStorage.length]),
+    ).toEqual([0, 0])
+  })
+}
+
+test('late device hydration preserves edits; withdrawal clears only untouched hints and ignores the pending response', async ({
+  page,
+  context,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  const state = await setup(context, { remembered: true })
+  let release
+  state.hold = new Promise((resolve) => {
+    release = resolve
+  })
+  await page.goto(harnessOrigin)
+  const fields = await details(page)
+  await fields.nth(0).fill('My edit')
+  release()
+  state.hold = null
+  await values(fields, { ...contact, name: 'My edit' })
+  // Focus revalidates the shared receipt. Withdrawal during that request must win.
+  state.hold = new Promise((resolve) => {
+    release = resolve
+  })
+  const calls = state.listCalls
+  await page.evaluate(() => globalThis.dispatchEvent(new globalThis.Event('focus')))
+  await expect.poll(() => state.listCalls).toBeGreaterThan(calls)
+  await page.evaluate(async () =>
+    (await import('/src/site/storageConsent.ts')).saveStoragePreferences({ functional: false }),
+  )
+  release()
+  state.hold = null
+  await values(fields, { name: 'My edit', phone: '', email: '' })
+  await page.reload()
+  await values(await details(page), { name: '', phone: '', email: '' })
+})
+
+test('rejected optional storage never prefills device hints', async ({ page, context }) => {
+  const state = await setup(context, { consent: false, remembered: true })
+  await page.goto(harnessOrigin)
+  await values(await details(page), { name: '', phone: '', email: '' })
+  expect(state.contact).toBeUndefined()
+})
+
+test('receipt revocation clears untouched hints when the booking tab regains focus', async ({
+  page,
+  context,
+}) => {
+  const state = await setup(context, { remembered: true })
+  await page.goto(harnessOrigin)
+  const fields = await details(page)
+  await values(fields, contact)
+  await fields.nth(0).fill('Keep this edit')
+  state.contact = undefined
+  await page.evaluate(() => globalThis.dispatchEvent(new globalThis.Event('focus')))
+  await values(fields, { name: 'Keep this edit', phone: '', email: '' })
+})
+
+test('mailbox-link selection clears the prior device hint before its list resolves', async ({
+  page,
+  context,
+}) => {
+  const state = await setup(context, { remembered: true })
+  await page.goto(harnessOrigin)
+  const fields = await details(page)
+  await values(fields, contact)
+  let release
+  state.hold = new Promise((resolve) => {
+    release = resolve
+  })
+  await page.evaluate(() => {
+    globalThis.location.hash = `email_link=${'b'.repeat(64)}`
+  })
+  // Details stays mounted beneath the customer dialog; even hidden fields must lose old hints.
+  await expect(page.locator('input[type="tel"]')).toHaveValue('')
+  const listed = page.waitForResponse(
+    (response) =>
+      response.url().endsWith('/api/customer-bookings') &&
+      response.request().postDataJSON()?.action === 'list',
+  )
+  release()
+  await listed
+})
+
+test('focus revalidation does not cancel an in-flight email-link exchange or replace its verified profile', async ({
+  page,
+  context,
+}) => {
+  const state = await setup(context, { remembered: true })
+  await page.goto(harnessOrigin)
+  const fields = await details(page)
+  await values(fields, contact)
+  let release
+  const gate = new Promise((resolve) => {
+    release = resolve
+  })
+  let exchanging = false
+  await context.route('**/api/customer-bookings', async (route) => {
+    if (route.request().postDataJSON().action !== 'exchange_access') return route.fallback()
+    exchanging = true
+    await gate
+    return route.fulfill({ json: { ok: true, session_proof: receiptProof } })
+  })
+  await page.evaluate(() => {
+    globalThis.location.hash = `booking_access=${'b'.repeat(64)}`
+  })
+  await expect.poll(() => exchanging).toBe(true)
+  await page.evaluate(() => globalThis.dispatchEvent(new globalThis.Event('focus')))
+  const verified = { name: 'Verified Other', phone: '0709999999', email: 'other@example.test' }
+  state.listOverride = {
+    ok: true,
+    authority: 'verified',
+    session_proof: receiptProof,
+    ...verified,
+    bookings: [],
+  }
+  release()
+  await expect(page.getByRole('dialog', { name: 'Mina bokningar' })).toBeVisible()
+  await expect(page.locator('input[type="tel"]')).toHaveValue(verified.phone)
+})
+
+test('confirmation retains submitted contact while the next-booking refresh is pending or denied', async ({
+  page,
+  context,
+}) => {
+  const state = await setup(context, { remembered: true })
+  await page.goto(harnessOrigin)
+  await values(await details(page), contact)
+  let release
+  const gate = new Promise((resolve) => {
+    release = resolve
+  })
+  let afterSubmitReads = 0
+  await context.route('**/api/customer-bookings', async (route) => {
+    if (route.request().postDataJSON().action !== 'list' || state.submitCalls === 0)
+      return route.fallback()
+    afterSubmitReads++
+    // The adapter first proves its receipt; the following read hydrates the next booking.
+    if (afterSubmitReads === 1) return route.fallback()
+    await gate
+    return route.fulfill({ json: { ok: false, error: 'access_denied' } })
+  })
+  await page.getByRole('dialog').getByRole('button', { name: 'Boka tid', exact: true }).click()
+  await expect.poll(() => afterSubmitReads).toBeGreaterThan(1)
+  const confirmation = page.getByRole('dialog')
+  const refreshed = page.waitForResponse(
+    (response) =>
+      response.url().endsWith('/api/customer-bookings') &&
+      response.request().postDataJSON()?.action === 'list',
+  )
+  try {
+    await expect(confirmation).toContainText(
+      `En bokningsbekräftelse har skickats till ${contact.email}.`,
+    )
+  } finally {
+    release()
+  }
+  await refreshed
+  await page.evaluate(
+    () =>
+      new Promise((resolve) =>
+        globalThis.requestAnimationFrame(() => globalThis.requestAnimationFrame(resolve)),
+      ),
+  )
+  await expect(confirmation).toContainText(
+    `En bokningsbekräftelse har skickats till ${contact.email}.`,
+  )
+})
+
+test('withdrawing and re-enabling storage cannot resurrect a revoked in-flight receipt hint', async ({
+  page,
+  context,
+}) => {
+  const state = await setup(context, { remembered: true })
+  await page.goto(harnessOrigin)
+  const fields = await details(page)
+  await values(fields, contact)
+  let release
+  state.hold = new Promise((resolve) => {
+    release = resolve
+  })
+  const reads = state.listCalls
+  await page.evaluate(() => globalThis.dispatchEvent(new globalThis.Event('focus')))
+  await expect.poll(() => state.listCalls).toBeGreaterThan(reads)
+  await page.evaluate(async () =>
+    (await import('/src/site/storageConsent.ts')).saveStoragePreferences({ functional: false }),
+  )
+  // The server revocation completes before consent is enabled again; only the old response has PII.
+  await expect.poll(() => state.contact).toBeUndefined()
+  await page.evaluate(async () =>
+    (await import('/src/site/storageConsent.ts')).saveStoragePreferences({ functional: true }),
+  )
+  const listed = page.waitForResponse(
+    (response) =>
+      response.url().endsWith('/api/customer-bookings') &&
+      response.request().postDataJSON()?.action === 'list',
+  )
+  release()
+  state.hold = null
+  await listed
+  await page.evaluate(
+    () =>
+      new Promise((resolve) =>
+        globalThis.requestAnimationFrame(() => globalThis.requestAnimationFrame(resolve)),
+      ),
+  )
+  await values(fields, { name: '', phone: '', email: '' })
+})
+
+for (const { refreshDuringRevocation, verified } of [
+  { refreshDuringRevocation: false, verified: false },
+  { refreshDuringRevocation: true, verified: false },
+  { refreshDuringRevocation: false, verified: true },
+])
+  test(`reads during optional-storage revocation preserve authority (fresh refresh: ${refreshDuringRevocation}, verified: ${verified})`, async ({
+    page,
+    context,
+  }) => {
+    const state = await setup(context, { consent: false, remembered: true })
+    if (verified)
+      state.listOverride = {
+        ok: true,
+        authority: 'verified',
+        session_proof: receiptProof,
+        ...contact,
+        bookings: [],
+      }
+    let releaseList
+    state.hold = new Promise((resolve) => {
+      releaseList = resolve
+    })
+    let releaseForget
+    const forgetting = new Promise((resolve) => {
+      releaseForget = resolve
+    })
+    let forgetStarted = false
+    let listedResponses = 0
+    page.on('response', (response) => {
+      if (
+        response.url().endsWith('/api/customer-bookings') &&
+        response.request().postDataJSON()?.action === 'list'
+      )
+        listedResponses++
+    })
+    await context.route('**/api/customer-bookings', async (route) => {
+      if (route.request().postDataJSON().action !== 'forget_device') return route.fallback()
+      forgetStarted = true
+      await forgetting
+      state.contact = undefined
+      return route.fulfill({ json: { ok: true } })
+    })
+    await page.goto(harnessOrigin)
+    const fields = await details(page)
+    await expect.poll(() => forgetStarted).toBe(true)
+    await expect.poll(() => state.listCalls).toBeGreaterThanOrEqual(2)
+    if (!verified)
+      await page.evaluate(async () =>
+        (await import('/src/site/storageConsent.ts')).saveStoragePreferences({ functional: true }),
+      )
+    if (refreshDuringRevocation) {
+      const reads = state.listCalls
+      await page.evaluate(() => globalThis.dispatchEvent(new globalThis.Event('focus')))
+      await expect.poll(() => state.listCalls).toBeGreaterThan(reads)
+    }
+    if (refreshDuringRevocation || verified) {
+      const revoked = page.waitForResponse(
+        (response) =>
+          response.url().endsWith('/api/customer-bookings') &&
+          response.request().postDataJSON()?.action === 'forget_device',
+      )
+      releaseForget()
+      await revoked
+    }
+    releaseList()
+    state.hold = null
+    await expect.poll(() => listedResponses).toBe(state.listCalls)
+    await page.evaluate(
+      () =>
+        new Promise((resolve) =>
+          globalThis.requestAnimationFrame(() => globalThis.requestAnimationFrame(resolve)),
+        ),
+    )
+    try {
+      await values(fields, verified ? contact : { name: '', phone: '', email: '' })
+    } finally {
+      releaseForget()
+    }
+    await expect.poll(() => state.contact).toBeUndefined()
+  })
+
+test('verified profile hydration remains available with optional storage off', async ({
+  page,
+  context,
+}) => {
+  const state = await setup(context, { consent: false })
+  state.listOverride = {
+    ok: true,
+    authority: 'verified',
+    session_proof: receiptProof,
+    ...contact,
+    bookings: [],
+  }
+  await page.goto(harnessOrigin)
+  await values(await details(page), contact)
+})

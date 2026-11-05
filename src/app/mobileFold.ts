@@ -6,6 +6,7 @@ export function mobileFold(
 ): {
   collapse: number
   compact: boolean
+  pinned: boolean
   opacity: number
 } {
   const limit = Math.max(0, viewportHeight - 112)
@@ -14,6 +15,7 @@ export function mobileFold(
   return {
     collapse,
     compact: collapse > 0,
+    pinned: collapse === limit,
     opacity: Math.max(0, 1 - collapse / Math.max(1, limit * 0.45)),
   }
 }

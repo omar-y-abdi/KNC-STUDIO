@@ -6,12 +6,12 @@ import { test } from './fixtures.mjs'
 import { harnessOrigin } from './origins.mjs'
 
 const strip = '[data-knc-fold="barber-marquee"]'
-// Neighbouring cards keep 24 px margins each.
-const GAP = 48
+// Neighbouring cards keep 16 px margins each.
+const GAP = 32
 // Beside a visible card of the usual widths at most two such gaps fit.
 const MAX_BLANK = 2 * GAP
 // Whole-pixel seam tolerance. Whole-pixel edges derive only 0.505 px (loopSeam), which no run has
-// measured and one frame of AutoScroll lag (0.18 px) would exceed, so the derived bound only
+// measured and one frame of AutoScroll lag (0.25 px) would exceed, so the derived bound only
 // loosens this where the geometry demands it, as for 256.2 px or 179.34 px cards.
 const SEAM = 1
 
@@ -201,7 +201,7 @@ test('mobile barber strip: narrow 10vw cards spread by space-between still loop'
   const probe = await measureStrip(newContext, css, 4)
   await writeFile(`${evidenceDir}/barber-strip-space-between.json`, JSON.stringify(probe, null, 2))
   assert.ok(probe.looping, 'Embla dropped loop')
-  // The floor stops at 98 px, so three of the regular 48 px gaps fit in the viewport at once: bound
+  // The floor stops at 109 px, so three of the regular 32 px gaps fit in the viewport at once: bound
   // the widest single hole by one gap, which a loop seam opening up would exceed.
   assert.ok(
     probe.maxHole <= GAP + probe.seam,
@@ -223,7 +223,7 @@ test('mobile barber strip: an owner min-width transition does not hold back the 
   await writeFile(`${evidenceDir}/barber-strip-transition.json`, JSON.stringify(probe, null, 2))
   assert.ok(!probe.native, 'The strip fell back to native scrolling')
   assert.ok(probe.looping, 'Embla dropped loop')
-  // The 98 px floor leaves three regular gaps in the viewport, as in the space-between case.
+  // The 109 px floor leaves three regular gaps in the viewport, as in the space-between case.
   assert.ok(
     probe.maxHole <= GAP + probe.seam,
     `A ${probe.maxHole} px hole opened in the strip (seam ${probe.seam} px)`,

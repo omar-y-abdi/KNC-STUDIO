@@ -66,6 +66,60 @@ test('gallery touch selects the photo under the finger without moving its row', 
   await expect.poll(() => shift(row)).toBeLessThan(paused - 4)
 })
 
+for (const input of ['touch', 'mouse']) {
+  for (const rowIndex of [0, 1]) {
+    test(`gallery ${input} on clipped edges preserves row ${rowIndex} position`, async ({
+      newContext,
+    }) => {
+      const { page } = await mount(newContext, { reducedMotion: 'reduce' })
+      const row = page.locator(rowSelector).nth(rowIndex)
+      const bounds = await row.boundingBox()
+      assert.ok(bounds)
+      const y = bounds.y + bounds.height / 2
+      // Put logical photos across both clipped edges using the actual drag handler.
+      await page.mouse.move(bounds.x + 200, y)
+      await page.mouse.down()
+      await page.mouse.move(bounds.x + 120, y, { steps: 8 })
+      await page.mouse.up()
+      for (const x of [bounds.x + bounds.width - 6, bounds.x + 6, bounds.x + 190]) {
+        const before = await row.evaluate(
+          (element, point) => {
+            const tile = globalThis.document
+              .elementFromPoint(point.x, point.y)
+              ?.closest('[data-tile-key]')
+            if (!tile) throw new Error('No edge photo under pointer')
+            return {
+              key: tile.getAttribute('data-tile-key'),
+              x: element.firstElementChild.getBoundingClientRect().left,
+              focused: globalThis.document.activeElement?.getAttribute('data-tile-key'),
+            }
+          },
+          { x, y },
+        )
+        if (input === 'touch') await page.touchscreen.tap(x, y)
+        else await page.mouse.click(x, y)
+        await frames(page)
+        const after = await row.evaluate((element) => ({
+          x: element.firstElementChild.getBoundingClientRect().left,
+          scroll: element.scrollLeft,
+          focused: globalThis.document.activeElement?.getAttribute('data-tile-key'),
+          selected: [...element.querySelectorAll('[data-tile-key]')]
+            .filter((tile) => tile.style.transform === 'scale(1.08)')
+            .map((tile) => tile.getAttribute('data-tile-key')),
+        }))
+        assert.equal(after.x, before.x, `Native focus shifted the strip at x=${x}`)
+        assert.equal(after.scroll, 0, 'Pointer focus scrolled the clipping container')
+        assert.equal(after.focused, before.focused, 'Pointer selection must not focus a photo')
+        assert.deepEqual(
+          after.selected,
+          [before.key],
+          'The photo under the pointer was not highlighted',
+        )
+      }
+    })
+  }
+}
+
 test('gallery waits for cold images before starting either direction', async ({ newContext }) => {
   let release
   const gate = new Promise((resolve) => {

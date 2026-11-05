@@ -83,7 +83,7 @@ export function Turnstile(props: TurnstileProps): JSX.Element | null {
   const containerRef = useRef<HTMLDivElement>(null)
   const onTokenRef = useRef(props.onToken)
   const onErrorRef = useRef(props.onError)
-  const [failed, setFailed] = useState(false)
+  const [status, setStatus] = useState<'pending' | 'ready' | 'failed'>('pending')
   const [retry, setRetry] = useState(0)
   useEffect(() => {
     onTokenRef.current = props.onToken
@@ -94,13 +94,13 @@ export function Turnstile(props: TurnstileProps): JSX.Element | null {
 
   useEffect(() => {
     onTokenRef.current('')
-    setFailed(false)
+    setStatus('pending')
     if (SITE_KEY === undefined) return
     let cancelled = false
     let widget: string | undefined
     const notifyError = (): void => {
       if (cancelled) return
-      setFailed(true)
+      setStatus('failed')
       onTokenRef.current('')
       onErrorRef.current?.()
     }
@@ -119,7 +119,7 @@ export function Turnstile(props: TurnstileProps): JSX.Element | null {
           language: lang,
           callback: (token) => {
             if (cancelled) return
-            setFailed(false)
+            setStatus('ready')
             onTokenRef.current(token)
           },
           'expired-callback': notifyError,
@@ -137,9 +137,10 @@ export function Turnstile(props: TurnstileProps): JSX.Element | null {
   if (SITE_KEY === undefined) return null
   return (
     <div style={{ marginTop: '4px' }}>
-      {/* The default normal widget is 65px tall; late loading must not move dialog controls. */}
-      <div ref={containerRef} style={{ minHeight: '65px' }} />
-      {failed && props.onError === undefined ? (
+      {/* Reserve the normal widget's height while loading. After success/failure, the provider's
+          visible widget sizes itself; an invisible widget or load error must not leave a blank gap. */}
+      <div ref={containerRef} style={{ minHeight: status === 'pending' ? '65px' : '0px' }} />
+      {status === 'failed' && props.onError === undefined ? (
         <div role="alert" style={{ fontSize: '12px', lineHeight: 1.5, margin: '8px 0' }}>
           <span>
             {lang === 'sv'

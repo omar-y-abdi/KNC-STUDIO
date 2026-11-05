@@ -24,10 +24,14 @@ export interface MyBookings {
   readonly past: readonly MyBooking[]
 }
 
-export interface CustomerProfile {
+/** Unverified form hint; never use it to authorize customer actions. */
+export interface BookingContact {
   readonly name: string
   readonly phone: string
   readonly email: string
+}
+
+export interface CustomerProfile extends BookingContact {
   readonly emails?: readonly string[]
   readonly phones?: readonly string[]
 }
@@ -54,6 +58,7 @@ export type MyBookingsResult =
       readonly authority: 'device'
       readonly bookings: MyBookings
       readonly profile?: never
+      readonly bookingContact?: BookingContact
     }
   | { readonly ok: false; readonly error: 'access_denied' | 'cookies_disabled' | 'system' }
 

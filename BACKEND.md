@@ -26,7 +26,14 @@ independent HttpOnly device-receipt cookie. It grants only the exact new booking
 or phone never grants earlier history. Browser Web Locks serialize initial receipt creation across
 tabs. The browser verifies receipt proof and the new booking ID before showing immediate access.
 Cookie/probe failure keeps booking success and offers the email link. Withdrawing consent deletes
-receipt authority; the essential email-verified session and booking rows remain separate.
+receipt authority and device contact prefill; the essential email-verified session and booking rows
+remain separate. The list response may include `booking_contact` from the latest exact-ID receipt-owned
+booking for device authority. This unverified form hint never becomes `profile` or authorizes reviews,
+email linking, or earlier history. Verified profile contact takes precedence. Form hints live only in
+component memory; consent withdrawal, receipt expiry/revocation, and focus revalidation clear them
+without replacing fields the customer has edited. Apply
+`20261105074335_device_booking_contact_prefill.sql` before deploying the frontend to enable this
+additive response field; the frontend tolerates older gateways without it.
 
 Verified customers may link their email identities through `request_link` and `confirm_link` on
 the same signed gateway. `customer_profiles` and `customer_profile_emails` group addresses only
