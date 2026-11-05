@@ -81,7 +81,10 @@ export default tseslint.config(
       'security/detect-non-literal-regexp': 'warn',
     },
   },
-  { files: ['modules/public-web/src/**/*.{ts,tsx}'], ...restrictBootImports() },
+  {
+    files: ['src/**/*.{ts,tsx}', 'modules/public-web/src/**/*.{ts,tsx}'],
+    ...restrictBootImports(),
+  },
   { files: ['packages/backend-contracts/src/rpcSchemas.ts'], ...restrictBootImports(['zod']) },
   {
     files: ['modules/staff-admin/src/supabaseClient.ts'],
