@@ -33,19 +33,28 @@ export function PrivacyBanner({ lang, dark, controls }: PrivacyBannerProps): JSX
   useLayoutEffect(() => {
     if (!visible || panel.current === null) return
     const root = document.documentElement
+    let frame: number | null = null
     const measure = (): void => {
       if (panel.current === null) return
       const bottom = Number.parseFloat(getComputedStyle(panel.current).bottom) || 0
-      root.style.setProperty(
-        '--privacy-overlay-space',
-        `${panel.current.offsetHeight + bottom + 12}px`,
-      )
+      const space = `${panel.current.offsetHeight + bottom + 12}px`
+      if (root.style.getPropertyValue('--privacy-overlay-space') !== space)
+        root.style.setProperty('--privacy-overlay-space', space)
     }
     measure()
-    const observer = new ResizeObserver(measure)
+    // This changes the shallower mobile scroll root's height. Write outside resize delivery so
+    // that root's observer is not left with a skipped notification in the same delivery cycle.
+    const observer = new ResizeObserver(() => {
+      if (frame !== null) return
+      frame = requestAnimationFrame(() => {
+        frame = null
+        measure()
+      })
+    })
     observer.observe(panel.current)
     return () => {
       observer.disconnect()
+      if (frame !== null) cancelAnimationFrame(frame)
       root.style.removeProperty('--privacy-overlay-space')
     }
   }, [visible])

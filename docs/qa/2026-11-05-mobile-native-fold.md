@@ -109,3 +109,37 @@ from CSS viewport layout. They preserve the input, header position and compact b
 opening, closing and orientation-size changes; they do not open a real iOS keyboard. Chromium
 screencast comparisons cover native touch paint, including emulated DPR 3, but the recorder's
 output dimensions are not evidence of a physical DPR 3 iPhone display.
+
+## Hosted CI follow-up: preview assertion and privacy observer
+
+Run `42045947485` on integrated head `9034c8c` exposed two bounded issues. The owner live-preview
+case still read the surface's first child's height and expected a shrinking box. It now requires
+real scroll past the fold boundary, the actual controls header at zero, and the visual panel's
+bottom at exactly 112px. No timeout or geometry tolerance was increased.
+
+The barber WebKit case exposed a real ResizeObserver delivery error. Temporary, local-only
+observer instrumentation recorded PrivacyBanner callbacks changing its content height from
+177.5px to 178.5px. Their synchronous `--privacy-overlay-space` write changed the shallower
+MobileSite root from its delivered 608px height to 607px during the same delivery cycle. The
+error receipt contained PrivacyBanner and MobileSite observers, not Gallery or Embla callbacks.
+This matches the specification's [depth-limited observation delivery and skipped-observation
+error](https://drafts.csswg.org/resize-observer/#deliver-resize-loop-error).
+
+PrivacyBanner still measures synchronously before first paint. Subsequent observer notifications
+now coalesce into one animation-frame measurement, read the latest dimensions, avoid redundant
+style writes and cancel pending work when closed. The lifecycle unit was red on the old code
+(three writes during delivery instead of the initial write only), then green after the fix.
+The temporary instrumentation was removed; `cms-barber-marquee.spec.mjs`, including its empty
+error-list assertion, is unchanged.
+
+Receipts: `/tmp/mobile-ci-repro` reproduced both WebKit failures;
+`/tmp/mobile-ci-observer-diagnostic` records the observer stacks and dimensions;
+`/tmp/mobile-ci-repair-green` passes the three originally failing hosted cases (owner in both
+engines and barber in WebKit). Its additional Chromium barber case was interrupted by a trace
+activity gap from 34032.654ms to 2524124.644ms and reported 42 minutes against a 180-second timeout;
+this is retained as a separate execution interruption rather than attributed to the repair.
+Scoped typecheck/lint and the new lifecycle unit pass.
+
+The isolated Chromium barber replay then passed unchanged in 1.0 minute:
+`/tmp/mobile-ci-chromium-uninterrupted/test-results/results.json`. Both relevant cases now have
+passing receipts in both engines. No retry setting, timeout, error filter or tolerance changed.

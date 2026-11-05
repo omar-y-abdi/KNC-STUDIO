@@ -448,8 +448,19 @@ for (const scenario of CMS_OWNER_SCENARIOS) {
               '.cms-live-preview iframe',
             )?.contentDocument
             const root = doc?.querySelector('[data-testid="mobile-site-scroll"]')
-            const panel = root?.firstElementChild
-            return root?.scrollTop > 100 && panel?.getBoundingClientRect().height < 250
+            const panel = root?.querySelector('[data-knc-fold="panel"]')
+            const header = root?.querySelector('[data-knc-fold="controls"]')?.parentElement
+            const box = panel?.getBoundingClientRect()
+            // The full-height panel now folds through native clipping/sticky positioning.
+            // Assert its visible edge and header, not the private carrier's unchanged height.
+            return Boolean(
+              root &&
+              box &&
+              root.scrollTop >= box.height - 112 &&
+              root.scrollTop > 0 &&
+              box.bottom === 112 &&
+              header?.getBoundingClientRect().top === 0,
+            )
           })
           assert.equal(
             await mobile.locator('[data-gjs-type]').count(),

@@ -1730,6 +1730,11 @@
     "owners": ["public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
+  "tests/unit/privacyBannerLayout.test.ts": {
+    "kind": "unit",
+    "owners": ["public-web"],
+    "reason": "Privacy overlay measurement, observer coalescing, and close cleanup"
+  },
   "tests/unit/privacyEmailLogDisclosure.test.ts": {
     "kind": "unit",
     "owners": ["backend"],
