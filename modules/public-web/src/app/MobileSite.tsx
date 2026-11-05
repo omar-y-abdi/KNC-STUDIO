@@ -158,7 +158,12 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     if (!root) return
     return observeMobileBrandGeometry(root, () => {
       const height = mobileLayoutViewportHeight(root)
-      paintMobileBrand(root, mobileFold(root.scrollTop, height, privacyOpen).collapse, height, reduceMotion)
+      paintMobileBrand(
+        root,
+        mobileFold(root.scrollTop, height, privacyOpen).collapse,
+        height,
+        reduceMotion,
+      )
     })
   }, [props.homepageLogo, props.homepageScale, props.mode, props.lang, privacyOpen, reduceMotion])
   useLayoutEffect(() => {

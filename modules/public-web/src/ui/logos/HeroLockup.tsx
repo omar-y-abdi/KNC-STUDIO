@@ -72,7 +72,15 @@ export function HeroLockup({ height, style }: HeroLockupProps): JSX.Element {
       >
         BLADE &amp; BLEND
       </text>
-      <line data-knc-brand-part="detail" x1="70" y1="244" x2="150" y2="244" stroke="currentColor" stroke-width="1.4" />
+      <line
+        data-knc-brand-part="detail"
+        x1="70"
+        y1="244"
+        x2="150"
+        y2="244"
+        stroke="currentColor"
+        stroke-width="1.4"
+      />
       <text
         data-knc-brand-part="detail"
         x="230"
@@ -85,7 +93,15 @@ export function HeroLockup({ height, style }: HeroLockupProps): JSX.Element {
       >
         STUDIO
       </text>
-      <line data-knc-brand-part="detail" x1="310" y1="244" x2="390" y2="244" stroke="currentColor" stroke-width="1.4" />
+      <line
+        data-knc-brand-part="detail"
+        x1="310"
+        y1="244"
+        x2="390"
+        y2="244"
+        stroke="currentColor"
+        stroke-width="1.4"
+      />
       <text
         data-knc-brand-part="detail"
         x="230"

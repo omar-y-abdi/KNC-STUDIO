@@ -95,6 +95,7 @@ test('cms-native', async ({ page, context, browserName, evidenceDir }) => {
       const animated = fixture.querySelector('#caption')
       animated.setAttribute('style', 'opacity: 0; translate: 12px 30px; scale: .2; color: red')
       animated.setAttribute('inert', '')
+      animated.setAttribute('data-knc-brand-part', 'wordmark')
       animated.setAttribute(
         'data-knc-brand-baseline',
         JSON.stringify({
@@ -102,7 +103,10 @@ test('cms-native', async ({ page, context, browserName, evidenceDir }) => {
           inert: false,
         }),
       )
-      fixture.insertAdjacentHTML('beforeend', '<svg data-knc-brand-runtime aria-hidden="true"><path d="M0,0L1,1Z" /></svg>')
+      fixture.insertAdjacentHTML(
+        'beforeend',
+        '<svg data-knc-brand-runtime aria-hidden="true"><path d="M0,0L1,1Z" /></svg>',
+      )
       const desktop = snapshotNative(fixture, 'desktop-test')
       const mobile = snapshotNative(fixture, 'mobile-test')
       const doc = new globalThis.DOMParser().parseFromString(desktop + mobile, 'text/html')
@@ -111,6 +115,7 @@ test('cms-native', async ({ page, context, browserName, evidenceDir }) => {
         capturedBrandStyle: doc.querySelector('span').getAttribute('data-knc-light'),
         capturedBrandInert: doc.querySelector('span').hasAttribute('inert'),
         runtimeMetadata: doc.querySelectorAll('[data-knc-brand-baseline]').length,
+        runtimePartMarkers: doc.querySelectorAll('[data-knc-brand-part]').length,
         runtimeArtwork: doc.querySelectorAll('[data-knc-brand-runtime]').length,
         liveArtwork: fixture.querySelectorAll('[data-knc-brand-runtime]').length,
         liveBrandInert: animated.hasAttribute('inert'),
@@ -126,6 +131,7 @@ test('cms-native', async ({ page, context, browserName, evidenceDir }) => {
     assert.doesNotMatch(sourceContract.capturedBrandStyle, /translate|scale/)
     assert.equal(sourceContract.capturedBrandInert, false)
     assert.equal(sourceContract.runtimeMetadata, 0)
+    assert.equal(sourceContract.runtimePartMarkers, 0)
     assert.equal(sourceContract.runtimeArtwork, 0, 'Decorative glyphs must not become CMS source')
     assert.equal(sourceContract.liveArtwork, 1, 'Capture must retain the live artwork')
     assert.equal(sourceContract.liveBrandInert, true, 'Capture must only restore the clone')

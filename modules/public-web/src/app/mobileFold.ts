@@ -151,6 +151,8 @@ function rememberBrandBaseline(
 /** Restore a snapshot clone before its current inline styles become the CMS source baseline. */
 export function restoreMobileBrandSnapshot(root: Element): void {
   for (const runtime of root.querySelectorAll('[data-knc-brand-runtime]')) runtime.remove()
+  for (const part of [root, ...root.querySelectorAll('[data-knc-brand-part]')])
+    part.removeAttribute('data-knc-brand-part')
   for (const element of [root, ...root.querySelectorAll(`[${brandBaselineAttribute}]`)]) {
     const value = element.getAttribute(brandBaselineAttribute)
     if (!value) continue
@@ -184,7 +186,7 @@ interface BrandLayer {
   svg: SVGSVGElement
   sourceWord: SVGTextElement
   targetWord: SVGTextElement
-  paths: SVGPathElement[]
+  paths: readonly [SVGPathElement, SVGPathElement, SVGPathElement]
 }
 const brandLayers = new WeakMap<HTMLElement, BrandLayer>()
 
@@ -193,7 +195,9 @@ const brandLayers = new WeakMap<HTMLElement, BrandLayer>()
 function brandLayer(root: HTMLElement, geometry: MobileBrandGeometry): BrandLayer | undefined {
   const vector = geometry.vector
   if (!vector) return
-  const parent = root.querySelector('[data-knc-fold="header-carrier"]') ?? root.querySelector('[data-knc-fold="panel"]')
+  const parent =
+    root.querySelector('[data-knc-fold="header-carrier"]') ??
+    root.querySelector('[data-knc-fold="panel"]')
   if (!parent) return
   const cached = brandLayers.get(geometry.brand)
   if (cached?.svg.parentElement === parent && cached.vector === vector) return cached
@@ -202,21 +206,27 @@ function brandLayer(root: HTMLElement, geometry: MobileBrandGeometry): BrandLaye
   svg.setAttribute('data-knc-brand-runtime', '')
   svg.setAttribute('aria-hidden', 'true')
   svg.setAttribute('fill', 'currentColor')
-  svg.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100dvh;overflow:visible;pointer-events:none'
+  svg.style.cssText =
+    'position:absolute;left:0;top:0;width:100%;height:100dvh;overflow:visible;pointer-events:none'
   const cloneWord = (original: SVGTextElement): SVGTextElement => {
     const copy = original.cloneNode(true) as SVGTextElement
     for (const attribute of [...copy.attributes]) {
-      if (attribute.name === 'id' || attribute.name.startsWith('data-knc-')) copy.removeAttribute(attribute.name)
+      if (attribute.name === 'id' || attribute.name.startsWith('data-knc-'))
+        copy.removeAttribute(attribute.name)
     }
     copy.style.removeProperty('opacity')
     copy.style.removeProperty('transform')
     return copy
   }
-  const sourceWord = cloneWord(vector.word), targetWord = cloneWord(vector.finalWord)
-  const paths = monogramPaths.map(() => root.ownerDocument.createElementNS('http://www.w3.org/2000/svg', 'path'))
-  for (const index of [0, 2, 1]) svg.append(paths[index]!)
-  svg.append(sourceWord, targetWord)
-  parent.append(svg)
+  const sourceWord = cloneWord(vector.word),
+    targetWord = cloneWord(vector.finalWord)
+  const path = (): SVGPathElement =>
+    root.ownerDocument.createElementNS('http://www.w3.org/2000/svg', 'path')
+  const paths = [path(), path(), path()] as const
+  for (const index of [0, 2, 1] as const) svg.appendChild(paths[index])
+  svg.appendChild(sourceWord)
+  svg.appendChild(targetWord)
+  parent.appendChild(svg)
   const layer = { vector, svg, sourceWord, targetWord, paths }
   brandLayers.set(geometry.brand, layer)
   return layer
@@ -224,14 +234,19 @@ function brandLayer(root: HTMLElement, geometry: MobileBrandGeometry): BrandLaye
 
 /** Compatible contours are generated from the exact shipped fonts. The same three paths
  * change shape and position; no alternate BNB text is substituted during the movement. */
-function paintMonogram(geometry: MobileBrandGeometry, paths: SVGPathElement[], travel: number, form: number): void {
+function paintMonogram(
+  geometry: MobileBrandGeometry,
+  paths: readonly [SVGPathElement, SVGPathElement, SVGPathElement],
+  travel: number,
+  form: number,
+): void {
   const { targetLeft, targetTop, targetUnit, sourceLeft, sourceTop, sourceUnit, vector } = geometry
   if (!vector || vector.emblemCharOrigins.length !== 3) return
   const sourceGlyphs = [
-    { x: 174 - 0.672 * 150 / 2, y: 150, size: 150 },
-    { x: 230 - 0.863 * 122 / 2, y: 156, size: 122 },
-    { x: 286 - 0.672 * 150 / 2, y: 150, size: 150 },
-  ]
+    { x: 174 - (0.672 * 150) / 2, y: 150, size: 150 },
+    { x: 230 - (0.863 * 122) / 2, y: 156, size: 122 },
+    { x: 286 - (0.672 * 150) / 2, y: 150, size: 150 },
+  ] as const
   const startCenter = vector.sourceWordBounds.x + vector.sourceWordBounds.width / 2
   const endCenter = vector.targetWordBounds.x + vector.targetWordBounds.width / 2
   const startSize = vector.sourceWord.size * sourceUnit
@@ -241,34 +256,58 @@ function paintMonogram(geometry: MobileBrandGeometry, paths: SVGPathElement[], t
   const startY = sourceTop + vector.sourceWord.y * sourceUnit
   const frameX = startX + (targetLeft + endCenter * targetUnit - startX) * travel
   const frameY = startY + (targetTop + vector.targetWord.y * targetUnit - startY) * travel
-  for (const [index, contours] of monogramPaths.entries()) {
-    const start = sourceGlyphs[index]!
-    const end = vector.emblemCharOrigins[index]!
-    const d = contours.map(({ from, to }) => {
-      const points = []
-      for (let point = 0; point < from.length; point += 2) {
-        // The internal stacked-to-horizontal arrangement completes before the whole
-        // brand reaches the header. Both phases share one moving wordmark baseline.
-        const fromX = (start.x + from[point]! * start.size - startCenter) / vector.sourceWord.size
-        const fromY = (start.y + from[point + 1]! * start.size - vector.sourceWord.y) / vector.sourceWord.size
-        const toX = (end.x + to[point]! * 21 - endCenter) / vector.targetWord.size
-        const toY = (end.y + to[point + 1]! * 21 - vector.targetWord.y) / vector.targetWord.size
-        const x = frameX + (fromX + (toX - fromX) * form) * frameSize
-        const y = frameY + (fromY + (toY - fromY) * form) * frameSize
-        points.push(`${point === 0 ? 'M' : 'L'}${x.toFixed(2)},${y.toFixed(2)}`)
-      }
-      return points.join('') + 'Z'
-    }).join('')
-    paths[index]!.setAttribute('d', d)
+  for (const index of [0, 1, 2] as const) {
+    const contours = monogramPaths[index]
+    const start = sourceGlyphs[index]
+    const end = vector.emblemCharOrigins[index]
+    if (!end) return
+    const d = contours
+      .map((contour) => {
+        const points = []
+        for (const [point, [sourceX, sourceY, targetX, targetY]] of contour.entries()) {
+          // The internal stacked-to-horizontal arrangement completes before the whole
+          // brand reaches the header. Both phases share one moving wordmark baseline.
+          const fromX = (start.x + sourceX * start.size - startCenter) / vector.sourceWord.size
+          const fromY =
+            (start.y + sourceY * start.size - vector.sourceWord.y) / vector.sourceWord.size
+          const toX = (end.x + targetX * 21 - endCenter) / vector.targetWord.size
+          const toY = (end.y + targetY * 21 - vector.targetWord.y) / vector.targetWord.size
+          const x = frameX + (fromX + (toX - fromX) * form) * frameSize
+          const y = frameY + (fromY + (toY - fromY) * form) * frameSize
+          points.push(`${point === 0 ? 'M' : 'L'}${x.toFixed(2)},${y.toFixed(2)}`)
+        }
+        return points.join('') + 'Z'
+      })
+      .join('')
+    paths[index].setAttribute('d', d)
   }
 }
 
 /** Scroll frames use cached geometry and transform/opacity writes only. Font layout is
  * measured when assets, fonts or real layout change, never after a scroll-frame write. */
-export function paintMobileBrand(root: HTMLElement, collapse: number, viewportHeight: number, reduced = false): void {
+export function paintMobileBrand(
+  root: HTMLElement,
+  collapse: number,
+  viewportHeight: number,
+  reduced = false,
+): void {
   const geometry = getMobileBrandGeometry(root)
   if (!geometry) return
-  const { hero, brand, mark, source, target, sourceLeft, sourceTop, sourceUnit, targetLeft, targetTop, targetUnit, vector, phone } = geometry
+  const {
+    hero,
+    brand,
+    mark,
+    source,
+    target,
+    sourceLeft,
+    sourceTop,
+    sourceUnit,
+    targetLeft,
+    targetTop,
+    targetUnit,
+    vector,
+    phone,
+  } = geometry
   const motion = mobileBrandMotion(collapse, viewportHeight, reduced)
   let detailsShift = 0
   const mix = (a: number, b: number): number => a + (b - a) * motion.travel
@@ -290,7 +329,10 @@ export function paintMobileBrand(root: HTMLElement, collapse: number, viewportHe
     const startCenter = sourceWordBounds.x + sourceWordBounds.width / 2
     const endCenter = targetWordBounds.x + targetWordBounds.width / 2
     const center = mix(sourceLeft + startCenter * sourceUnit, targetLeft + endCenter * targetUnit)
-    const baseline = mix(sourceTop + sourceWord.y * sourceUnit, targetTop + targetWord.y * targetUnit)
+    const baseline = mix(
+      sourceTop + sourceWord.y * sourceUnit,
+      targetTop + targetWord.y * targetUnit,
+    )
     detailsShift = baseline - (sourceTop + sourceWord.y * sourceUnit)
     const width = mix(sourceWordBounds.width * sourceUnit, targetWordBounds.width * targetUnit)
     const size = mix(sourceWord.size * sourceUnit, targetWord.size * targetUnit)
@@ -305,7 +347,8 @@ export function paintMobileBrand(root: HTMLElement, collapse: number, viewportHe
         [layer.sourceWord, sourceWord, sourceWordBounds],
         [layer.targetWord, targetWord, targetWordBounds],
       ] as const) {
-        const sx = width / box.width, sy = size / metrics.size
+        const sx = width / box.width,
+          sy = size / metrics.size
         const x = center - (box.x + box.width / 2) * sx
         const y = baseline - metrics.y * sy
         node.style.transform = `matrix(${sx},0,0,${sy},${x},${y})`
@@ -320,14 +363,22 @@ export function paintMobileBrand(root: HTMLElement, collapse: number, viewportHe
     }
     for (const node of vector.emblem) {
       rememberBrandBaseline(node, ['opacity'])
-      node.style.opacity = node.localName === 'line' ? String(motion.rules) : reduced ? String(motion.banner) : '0'
+      node.style.opacity =
+        node.localName === 'line' ? String(motion.rules) : reduced ? String(motion.banner) : '0'
     }
     for (const node of source.children) {
-      if (node === word || vector.monogram.includes(node as SVGGraphicsElement) || node.hasAttribute('data-knc-brand-runtime')) continue
+      if (
+        node === word ||
+        vector.monogram.includes(node as SVGGraphicsElement) ||
+        node.hasAttribute('data-knc-brand-runtime')
+      )
+        continue
       rememberBrandBaseline(node as SVGElement, ['opacity', 'transform'])
       ;(node as SVGElement).style.opacity = String(motion.actions)
       // Keep supporting text below the moving wordmark while it gradually fades.
-      ;(node as SVGElement).style.transform = reduced ? 'none' : `translateY(${detailsShift / sourceUnit}px)`
+      ;(node as SVGElement).style.transform = reduced
+        ? 'none'
+        : `translateY(${detailsShift / sourceUnit}px)`
     }
   }
   if (phone) {
@@ -342,9 +393,10 @@ export function paintMobileBrand(root: HTMLElement, collapse: number, viewportHe
     element.inert = motion.actions === 0
   }
   // display:contents HeroLinks needs its rendered children faded individually.
-  for (const child of hero.children) if (child !== brand) {
-    if (child.localName === 'div' && (child as HTMLElement).style.display === 'contents') {
-      for (const item of child.children) fade(item as HTMLElement)
-    } else fade(child as HTMLElement)
-  }
+  for (const child of hero.children)
+    if (child !== brand) {
+      if (child.localName === 'div' && (child as HTMLElement).style.display === 'contents') {
+        for (const item of child.children) fade(item as HTMLElement)
+      } else fade(child as HTMLElement)
+    }
 }

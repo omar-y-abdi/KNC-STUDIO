@@ -24,7 +24,15 @@ export function CornerMark({ height, style }: CornerMarkProps): JSX.Element {
       fill="currentColor"
       style={style}
     >
-      <line data-knc-brand-part="monogram" x1="6" y1="9" x2="52" y2="9" stroke="currentColor" stroke-width="1.6" />
+      <line
+        data-knc-brand-part="monogram"
+        x1="6"
+        y1="9"
+        x2="52"
+        y2="9"
+        stroke="currentColor"
+        stroke-width="1.6"
+      />
       <text
         data-knc-brand-part="monogram"
         x="29"
@@ -37,7 +45,15 @@ export function CornerMark({ height, style }: CornerMarkProps): JSX.Element {
       >
         BNB
       </text>
-      <line data-knc-brand-part="monogram" x1="6" y1="40" x2="52" y2="40" stroke="currentColor" stroke-width="1.6" />
+      <line
+        data-knc-brand-part="monogram"
+        x1="6"
+        y1="40"
+        x2="52"
+        y2="40"
+        stroke="currentColor"
+        stroke-width="1.6"
+      />
       <text
         data-knc-brand-part="wordmark"
         x="70"

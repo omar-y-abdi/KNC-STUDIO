@@ -122,7 +122,10 @@ export function refreshMobileBrandGeometry(root: HTMLElement, fontsChanged = fal
       source.getAttribute('viewBox') === '0 0 460 330' &&
       target.getAttribute('viewBox') === '0 0 322 48' &&
       monogram.map((node) => node.textContent).join('') === 'BB&' &&
-      word && finalWord && monogram.length && emblem.length
+      word &&
+      finalWord &&
+      monogram.length &&
+      emblem.length
     ) {
       vector = {
         word,
@@ -136,11 +139,14 @@ export function refreshMobileBrandGeometry(root: HTMLElement, fontsChanged = fal
         monogramBounds: bounds(monogram),
         emblemBounds: bounds(emblem),
         emblemCharOrigins: (() => {
-          const text = emblem.find((node) => node.localName === 'text') as SVGTextElement | undefined
-          return text ? Array.from({ length: text.getNumberOfChars() }, (_, index) => {
-            const point = text.getStartPositionOfChar(index)
-            return { x: point.x, y: point.y }
-          }) : []
+          const text = emblem.find((node) => node.localName === 'text') as
+            SVGTextElement | undefined
+          return text
+            ? Array.from({ length: text.getNumberOfChars() }, (_, index) => {
+                const point = text.getStartPositionOfChar(index)
+                return { x: point.x, y: point.y }
+              })
+            : []
         })(),
       }
     }
@@ -151,8 +157,9 @@ export function refreshMobileBrandGeometry(root: HTMLElement, fontsChanged = fal
     mark,
     source,
     target,
-    phone: root.querySelector<HTMLElement>('[data-knc-fold="phone"]')
-      ?? root.querySelector<HTMLElement>('[data-knc-fold="controls"] a[href^="tel:"]'),
+    phone:
+      root.querySelector<HTMLElement>('[data-knc-fold="phone"]') ??
+      root.querySelector<HTMLElement>('[data-knc-fold="controls"] a[href^="tel:"]'),
     sourceLeft: brand.offsetLeft + (brand.offsetWidth - sourceWidth) / 2,
     sourceTop: brand.offsetTop,
     sourceUnit: sourceWidth / 460,

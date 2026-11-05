@@ -66,7 +66,13 @@ describe('reversible mobile branding', () => {
   it('reverses the same poses and uses fading without travel for reduced motion', () => {
     const positions = [0, 120, 340, 650, limit]
     const forward = positions.map((position) => mobileBrandMotion(position, height))
-    expect([...positions].reverse().map((position) => mobileBrandMotion(position, height))).toEqual([...forward].reverse())
-    expect(mobileBrandMotion(400, height, true)).toEqual({ ...mobileBrandMotion(400, height), travel: 0, form: 0 })
+    expect([...positions].reverse().map((position) => mobileBrandMotion(position, height))).toEqual(
+      [...forward].reverse(),
+    )
+    expect(mobileBrandMotion(400, height, true)).toEqual({
+      ...mobileBrandMotion(400, height),
+      travel: 0,
+      form: 0,
+    })
   })
 })

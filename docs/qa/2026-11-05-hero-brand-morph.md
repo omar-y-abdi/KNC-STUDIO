@@ -1,4 +1,4 @@
-# Hero-to-banner motion: approved storyboard candidate
+# Hero-to-banner motion: user-approved implementation
 
 The user approved a six-pose visual storyboard, then specified that the thin rules above and
 below BNB must fade in with the phone number after the banner arrives. The implementation below
@@ -29,7 +29,8 @@ transforms and opacity without font reshaping or synchronous glyph measurements.
 
 The editable SVG hierarchy and identities are retained. The private runtime artwork is marked
 `data-knc-brand-runtime`, has no editable identities, and is removed from snapshot clones before
-source identity allocation. Original motion-owned styles are restored on the clone only.
+source identity allocation. Original motion-owned styles are restored on the clone only. The private glyph-part markers are
+also removed; the saved document continues to use the existing native metadata contract.
 An assertion in the existing CMS-native capture fixture covers artwork removal and live-tree
 preservation. The canvas and public site share the motion calculation and geometry lifecycle.
 
@@ -46,9 +47,16 @@ The resulting forward capture shows one aligned wordmark and the delayed phone/r
 
 Chrome viewport size changed during the later part of a recording; those resized frames are not
 accepted as a full-resolution reverse-motion artifact. Physical iPhone Safari smoothness is not
-established by these captures. Final visual acceptance belongs to the user's mobile preview.
+established by these captures. The user accepted the final mobile Chrome preview at commit `d196431`.
 
 Focused motion and CMS capture checks were updated but not run locally. Automated tests and builds
 remain restricted to GitHub Actions. No production deployment, migration or final PR publication
 has been performed for this storyboard candidate. The manual preview has hot updates disabled so
 unfinished edits cannot appear in the user's open tab.
+
+The first remote qualification passed all current SQL tests and 93 integration tests, including
+the eight device-review integration cases. Frontend and customer browser qualification stopped
+on TypeScript DOM overload errors; CMS publishing rejected a private glyph marker that should
+not have been persisted. The follow-up replaces non-null assertions with typed glyph tuples,
+uses DOM appendChild, and strips the marker in capture without relaxing markup validation.
+The approved shape coordinates and animation behavior are unchanged.
