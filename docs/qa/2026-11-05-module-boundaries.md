@@ -98,6 +98,25 @@ resource engineering/workflow/usage/adversarial tests also consume it. Most publ
 changes remain broad because persisted documents, preview capture, SQL and runtime interfaces cross
 those boundaries. This first partition does not claim minimal selection for every possible file.
 
+## CodeQL follow-up
+
+Latest main `b8b7d00` was merged as `44749a0` without conflicts or source changes.
+CodeQL then reported nine polynomial regular-expression findings in route and shell metadata
+handling. Commits `7ed1c77` and `56f1546` replace those expressions with bounded scans while
+preserving the existing metadata matching and response bytes. No CodeQL suppressions were added.
+
+Independent review at `56f1546` passed 140 affected tests and 600,000 fresh differential cases
+against the previous metadata matching behavior, including malformed input. Actual private-renderer
+regressions cover repeated metadata markers and a leading match followed by a large uppercase body.
+The latter failed before the follow-up at 736 ms against its 250 ms bound, then passed at 13 ms.
+These are local regression timings, not production Worker CPU measurements.
+
+The final separate-checkout run at `56f1546` passed all 174 unit files and 2,339 tests. The production
+build, unchanged bundle gate and Worker dry-run also passed. Public boot now measures 111.7 kB gzip
+in 16 files against the same 115 kB limit. The earlier affected-plan and browser receipts above
+remain explicitly tied to their original checkpoint. Hosted CodeQL acceptance must be checked on
+the pushed follow-up commit; local review does not substitute for that result.
+
 ## Release and runtime limits
 
 Source relocation changes the CMS release digest. Keep the existing backend-before-frontend
