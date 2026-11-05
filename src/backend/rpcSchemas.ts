@@ -130,6 +130,13 @@ const listCustomerBookingsOk = z.object({
 const listDeviceBookingsOk = z.object({
   ok: z.literal(true),
   authority: z.literal('device'),
+  booking_contact: z
+    .object({
+      name: z.string(),
+      phone: z.string().regex(/^07[0-9]{8}$/),
+      email: z.string().email(),
+    })
+    .optional(),
   session_proof: customerSessionProof,
   receipt_proof: customerSessionProof,
   bookings: z.array(myBookingRow),

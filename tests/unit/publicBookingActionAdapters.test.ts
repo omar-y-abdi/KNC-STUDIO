@@ -83,6 +83,31 @@ describe('public booking action adapter errors', () => {
     })
   })
 
+  it('returns receipt-bound form hints without promoting them to a verified profile', async () => {
+    const bookingContact = {
+      name: 'Device Customer',
+      phone: '0701234567',
+      email: 'device@example.test',
+    }
+    invokePublicBookingAction.mockResolvedValue({
+      failed: false,
+      data: {
+        ok: true,
+        authority: 'device',
+        session_proof: 'a'.repeat(64),
+        receipt_proof: 'a'.repeat(64),
+        bookings: [],
+        booking_contact: bookingContact,
+      },
+    })
+    await expect(supabaseMyBookingsAdapter.list({ accessToken: '', lang: 'sv' })).resolves.toEqual({
+      ok: true,
+      authority: 'device',
+      bookings: { upcoming: [], past: [] },
+      bookingContact,
+    })
+  })
+
   it('never substitutes a receipt for an explicit email credential', async () => {
     invokePublicBookingAction.mockResolvedValue({
       failed: false,

@@ -222,7 +222,9 @@ first-party HttpOnly `SameSite=Lax` session cookie. The browser never stores the
 `sessionStorage`/`localStorage`, and no phone-memory cookie authorizes access. Current local code does not
 change production until deployed. Optional functional storage adds a separate, server-issued receipt
 for newly created booking IDs only. It does not authenticate the entered contact or expand into old
-history. Rejecting/withdrawing optional storage preserves the essential email-link session.
+history. It also allows contact prefill from the latest receipt-owned booking, kept separate from
+verified identity. Rejecting/withdrawing optional storage removes device prefill and preserves the
+essential email-link session.
 
 Customers may explicitly connect their own email addresses after fresh verification of both
 mailboxes. A verified profile groups their history; sharing a phone number never grants access.

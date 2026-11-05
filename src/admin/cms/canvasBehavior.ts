@@ -36,7 +36,7 @@ export function canvasBehavior(editor: Editor, scene: CmsScene, mode: CmsMode): 
       const scope = '[data-knc-surface="mobile-home"] [data-knc-fold='
       const css =
         visibility +
-        `${scope}"panel"]{position:sticky!important;top:0!important;height:calc(100dvh - ${motion.collapse}px)!important;border-radius:${motion.compact ? '0 0 28px 28px' : '0'}!important}` +
+        `${scope}"panel"]{position:${motion.pinned ? 'sticky' : 'relative'}!important;transform:${!motion.pinned && motion.collapse > 0 ? `translateY(${motion.collapse}px)` : 'none'}!important;top:0!important;height:calc(100dvh - ${motion.collapse}px)!important;border-radius:${motion.compact ? '0 0 28px 28px' : '0'}!important}` +
         `${scope}"spacer"]{height:${motion.collapse}px!important}` +
         `${scope}"controls"]{margin-top:${motion.compact ? 24 : 0}px!important}` +
         `${scope}"mark"]{opacity:${motion.compact ? 1 : 0}!important}` +

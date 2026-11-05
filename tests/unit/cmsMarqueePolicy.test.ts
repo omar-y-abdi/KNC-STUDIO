@@ -150,12 +150,12 @@ describe('marqueeCardStyle', () => {
 })
 
 /** Embla 8.6 SlideLooper.canLoop for the mobile strip: each slide's neighbours must cover the
- * view. Edge slides measure their card plus one 24 px margin, inner slides plus both. */
+ * view. Edge slides measure their card plus one 16 px margin, inner slides plus both. */
 function canLoop(cards: number, view: number, scale: number): boolean {
   const card = (view - 24) * scale
   const sizes = Array.from(
     { length: cards },
-    (_, index) => card + (index === 0 || index === cards - 1 ? 24 : 48),
+    (_, index) => card + (index === 0 || index === cards - 1 ? 16 : 32),
   )
   const total = sizes.reduce((sum, size) => sum + size, 0)
   return sizes.every((size) => view - (total - size) <= 0.1)
@@ -167,12 +167,15 @@ describe('minLoopScale', () => {
       const scale = minLoopScale(cards)
       for (const view of [320, 360, 390, 430, 600, 768])
         expect(canLoop(cards, view, scale), `${cards} cards at ${view}px`).toBe(true)
-      expect(canLoop(cards, 768, scale - 0.02), `${cards} cards below ${scale}`).toBe(false)
+      expect(
+        canLoop(cards, cards === 2 ? 320 : 768, scale - 0.01),
+        `${cards} cards below ${scale}`,
+      ).toBe(false)
     }
   })
 
   it('never lets two barbers shrink and leaves a single, static card free', () => {
-    expect(minLoopScale(2)).toBe(1)
+    expect(minLoopScale(2)).toBe(1.03)
     expect(canLoop(2, 390, 0.5)).toBe(false)
     expect(minLoopScale(4)).toBeLessThan(0.5)
     expect(minLoopScale(1)).toBe(0.1)

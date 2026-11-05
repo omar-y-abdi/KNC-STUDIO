@@ -47,13 +47,14 @@ export function marqueeCardWidth(scale: number): string {
 }
 
 /** The smallest card scale at which Embla keeps looping `cards` mobile slides at every mobile
- * width up to 768 px. Embla drops `loop` (and AutoScroll halts at the end) unless the other slides
- * cover the view (SlideLooper.canLoop): an edge slide measures its card plus one 24 px margin, an
+ * width from 320 to 768 px. Embla drops `loop` (and AutoScroll halts at the end) unless the other slides
+ * cover the view (SlideLooper.canLoop): an edge slide measures its card plus one 16 px margin, an
  * inner slide its card plus both. A single card never animates. */
 export function minLoopScale(cards: number): number {
   if (cards < 2) return 0.1
-  const view = 768
-  const width = cards === 2 ? view - 24 : (view + 48) / (cards - 1) - 48
+  // With two cards the fixed 8px deficit is largest relative to the narrowest viewport.
+  const view = cards === 2 ? 320 : 768
+  const width = cards === 2 ? view - 16 : (view + 32) / (cards - 1) - 32
   return Math.max(0.1, Math.ceil((width / (view - 24)) * 100) / 100)
 }
 

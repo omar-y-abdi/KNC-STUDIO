@@ -7,12 +7,12 @@ import {
   type LoopSlide,
 } from '../../src/about/useBarberMarquee'
 
-/** Mobile strip slides: equal cards with 24 px margins in a container at x = 0. */
+/** Mobile strip slides: equal cards with 16 px margins in a container at x = 0. */
 function strip(cards: number, width: number): LoopSlide[] {
   return Array.from({ length: cards }, (_, index) => ({
-    left: 24 + index * (width + 48),
+    left: 16 + index * (width + 32),
     width,
-    marginEnd: 24,
+    marginEnd: 16,
   }))
 }
 
@@ -55,9 +55,9 @@ function canLoop(view: number, slides: readonly LoopSlide[]): boolean {
 describe('loopFloor', () => {
   it('is the smallest whole-pixel card width Embla can loop at 390 px', () => {
     for (const [cards, floor] of [
-      [2, 366],
-      [3, 171],
-      [4, 98],
+      [2, 374],
+      [3, 179],
+      [4, 109],
     ] as const) {
       expect(loopFloor(390, 0, strip(cards, 100))).toBe(floor)
       expect(canLoop(390, strip(cards, floor)), `${cards} cards at ${floor}px`).toBe(true)
@@ -119,7 +119,7 @@ describe('gaplessLoopFloor', () => {
 
 describe('passFloor', () => {
   it('takes the measured estimate before the last pass, a pixel wider than the floor at least', () => {
-    expect(passFloor(0, 0, 390, 0, strip(4, 100))).toBe(98)
+    expect(passFloor(0, 0, 390, 0, strip(4, 100))).toBe(109)
     expect(passFloor(0, 120, 390, 0, strip(4, 100))).toBe(121)
   })
 

@@ -541,18 +541,32 @@ export function projectNativeTree(
     // Newly loaded entities and conditional runtime UI must not be frozen by an old snapshot.
     // The original child list distinguishes them from presentation children the owner removed.
     const previousChildren = baselineChildren(element)
-    if (original)
-      for (const child of childrenOf(original.props['children'] as ComponentChildren)) {
-        if (!isValidElement(child)) continue
+    if (original) {
+      const identityOf = (child: ComponentChild): unknown => {
+        if (!isValidElement(child)) return undefined
         const props = child.props as Record<string, unknown>
-        const id = props['data-knc-slot'] ?? props['data-knc-source']
-        if (
-          typeof id === 'string' &&
-          !identities.has(id) &&
-          (previousChildren ? !previousChildren.includes(id) : Boolean(props['data-knc-slot']))
-        )
-          children.push(child)
+        return props['data-knc-slot'] ?? props['data-knc-source']
       }
+      // Insert new runtime siblings before their next surviving source sibling. Appending them
+      // would put a newly visible challenge/error AFTER Book in an older captured details form.
+      // Walk backwards so adjacent new siblings retain source order; existing owner order stays.
+      let next: ComponentChild | undefined
+      for (const child of childrenOf(original.props['children'] as ComponentChildren).reverse()) {
+        const id = identityOf(child)
+        if (typeof id !== 'string') continue
+        const existing = children.find((candidate) => identityOf(candidate) === id)
+        if (existing) {
+          next = existing
+        } else if (
+          !identities.has(id) &&
+          (previousChildren ? !previousChildren.includes(id) : source.slots.has(id))
+        ) {
+          const index = next === undefined ? children.length : children.indexOf(next)
+          children.splice(index, 0, child)
+          next = child
+        }
+      }
+    }
     return h(original ? String(original.type) : element.tagName.toLowerCase(), props, children)
   }
   return visit(template)

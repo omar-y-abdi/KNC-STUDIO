@@ -90,7 +90,7 @@ export const privacySv: PrivacyStrings = {
   save: 'Spara val',
   functionalTitle: 'Valfri lagring',
   functionalLead:
-    'Ger åtkomst på den här enheten till nya bokningar som görs här. Äldre bokningar kräver din mejllänk.',
+    'Ger åtkomst till nya bokningar på den här enheten och fyller i kontaktuppgifter från din senaste bokning här. Äldre bokningar kräver din mejllänk.',
   necessary:
     'Efter giltig e-postlänk används en nödvändig, säker sessionscookie för att hålla dig inloggad. Utan cookies kan Mina bokningar inte logga in automatiskt.',
   manage: 'Integritet',

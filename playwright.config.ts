@@ -48,6 +48,8 @@ const projects: NonNullable<PlaywrightTestConfig['projects']> = [
             'id-coverage.spec.mjs',
             'upload-budget.spec.mjs',
             'turnstile-layout.spec.mjs',
+            'mobile-viewport.spec.mjs',
+            'booking-prefill.spec.mjs',
             'network-guard.spec.mjs',
             'legal-mode.spec.mjs',
             'style-contract.spec.mjs',
@@ -55,6 +57,8 @@ const projects: NonNullable<PlaywrightTestConfig['projects']> = [
         : [
             'admin-shared.spec.mjs',
             'turnstile-layout.spec.mjs',
+            'mobile-viewport.spec.mjs',
+            'booking-prefill.spec.mjs',
             'network-guard.spec.mjs',
             'legal-mode.spec.mjs',
             'style-contract.spec.mjs',

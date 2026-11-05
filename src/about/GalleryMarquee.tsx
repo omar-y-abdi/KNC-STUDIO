@@ -9,6 +9,8 @@ import { useNativeChild } from '../cms/NativeSurface'
 //    ("rotate the direction"). Vertical page scrolling is preserved (touch-action: pan-y).
 //  - tap a tile to SELECT it: that row pauses, the tile's frame highlights and it scales up a touch.
 //    Nothing disappears — the other tiles stay. Tap it again, or pick another, to change/clear it.
+//  - visible rows decode their photos and loop copies before starting; vertical gestures and small
+//    finger movements never shift the track. Only keyboard focus may reveal an offscreen tile.
 //
 // The scroll transform is written straight to the track ref inside requestAnimationFrame, so the
 // motion causes NO React re-renders; only selection (rare) is component state. prefers-reduced-motion
@@ -94,14 +96,16 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
   const lastDx = useRef(0)
   const pointerId = useRef<number | null>(null)
   const pausedRef = useRef(props.paused)
+  const keyboardFocus = useRef(false)
   const reduce = useRef(prefersReducedMotion())
 
-  useEffect(() => {
-    pausedRef.current = props.paused
+  useLayoutEffect(() => {
+    pausedRef.current = props.paused || keyboardFocus.current
   }, [props.paused])
 
   // Repeat real photos into a seamless loop; the transform wraps on one loop-half's width.
   const itemCount = props.photos.length
+  const photoSources = props.photos.map((photo) => photo.url).join('\n')
 
   // Repeat the photo set enough times that ONE loop-half always spans at least the row's full width.
   // A short photo list otherwise leaves a wide screen half-empty — tiles bunch on one side with a
@@ -187,6 +191,9 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
     let last = 0
     let intersecting = false
     let running = false
+    let disposed = false
+    let preparing = false
+    let imagesReady = false
 
     const tick = (t: number): void => {
       if (!running) return
@@ -201,7 +208,7 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
       raf = requestAnimationFrame(tick)
     }
     const start = (): void => {
-      if (running || document.hidden || !intersecting) return
+      if (disposed || running || document.hidden || !intersecting || !imagesReady) return
       running = true
       last = 0
       raf = requestAnimationFrame(tick)
@@ -219,16 +226,32 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
     }
     document.addEventListener('visibilitychange', onVisibility)
 
+    const prepareImages = (): void => {
+      if (preparing) return
+      preparing = true
+      // The reverse row immediately wraps into its cloned half. Lazy clones otherwise appear
+      // empty and decode during the first rotations. Warm this visible row once, before motion;
+      // failed photos must not prevent the remaining photos from scrolling.
+      const images = Array.from(row.querySelectorAll('img'))
+      for (const image of images) image.loading = 'eager'
+      void Promise.allSettled(images.map((image) => image.decode())).then(() => {
+        imagesReady = true
+        start()
+      })
+    }
+
     let observer: IntersectionObserver | null = null
     if (typeof IntersectionObserver === 'undefined') {
       intersecting = true
-      start()
+      prepareImages()
     } else {
       observer = new IntersectionObserver(
         (entries) => {
           intersecting = entries.some((entry) => entry.isIntersecting)
-          if (intersecting) start()
-          else stop()
+          if (intersecting) {
+            prepareImages()
+            start()
+          } else stop()
         },
         { threshold: 0.01 },
       )
@@ -236,20 +259,28 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
     }
 
     return () => {
+      disposed = true
       observer?.disconnect()
       document.removeEventListener('visibilitychange', onVisibility)
       stop()
     }
-  }, [])
+  }, [photoSources, perHalf])
 
   const onPointerDown = (e: JSX.TargetedPointerEvent<HTMLDivElement>): void => {
-    if (dragging.current) return
+    if (dragging.current || !e.isPrimary || e.button !== 0) return
+    // A pointer selects in place; native focus can scroll a clipped photo into view before our
+    // focus handler runs. Suppress that default action, while touch-action still permits pan-y.
+    // Keyboard focus keeps its separate reveal behavior.
+    e.preventDefault()
+    keyboardFocus.current = false
+    pausedRef.current = props.paused
     dragging.current = true
     pointerId.current = e.pointerId
     moved.current = false
     startX.current = e.clientX
     startY.current = e.clientY
     lastX.current = e.clientX
+    lastDx.current = 0
     startOffset.current = offset.current
     if (e.currentTarget.setPointerCapture) e.currentTarget.setPointerCapture(e.pointerId)
   }
@@ -257,7 +288,16 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
     if (!dragging.current || pointerId.current !== e.pointerId) return
     const dx = e.clientX - startX.current
     const dy = e.clientY - startY.current
-    if (Math.hypot(dx, dy) > 4) moved.current = true
+    if (!moved.current) {
+      if (Math.hypot(dx, dy) <= 4) return
+      // Decide the gesture before moving the strip. A page scroll must never briefly drag it
+      // sideways while the browser is deciding whether to dispatch pointercancel.
+      if (Math.abs(dy) >= Math.abs(dx)) {
+        cancelPointer(e)
+        return
+      }
+      moved.current = true
+    }
     lastDx.current = e.clientX - lastX.current
     lastX.current = e.clientX
     offset.current = startOffset.current + dx
@@ -288,21 +328,33 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
   }
 
   const onRowFocus = (e: JSX.TargetedFocusEvent<HTMLDivElement>): void => {
-    pausedRef.current = true
     const target = e.target
     if (!(target instanceof HTMLElement)) return
     const tile = target.closest<HTMLElement>('[data-tile-key]')
     if (tile === null || tile.getAttribute('aria-hidden') === 'true') return
-
-    // Only the first logical copy is focusable. Normal motion can carry that copy completely out
-    // of view when perHalf > 1, so put it back at the visible anchor before the keyboard user lands.
-    offset.current = 0
+    // Touch also focuses a button, after pointerup. It must not invoke keyboard repositioning.
+    if (!tile.matches(':focus-visible')) return
+    const row = rowRef.current
+    if (row === null) return
+    keyboardFocus.current = true
+    pausedRef.current = true
+    const bounds = row.getBoundingClientRect()
+    const tileBounds = tile.getBoundingClientRect()
+    const shift =
+      tileBounds.left < bounds.left
+        ? bounds.left - tileBounds.left
+        : Math.min(0, bounds.right - tileBounds.right)
+    // Focus may already have scrolled the overflow:hidden row. Fold that displacement into the
+    // track's single coordinate system and reveal only as much of the focused photo as needed.
+    offset.current += shift - row.scrollLeft
+    row.scrollLeft = 0
     paint()
   }
 
   const onRowBlur = (e: JSX.TargetedFocusEvent<HTMLDivElement>): void => {
     const row = rowRef.current
     if (row !== null && e.relatedTarget instanceof Node && row.contains(e.relatedTarget)) return
+    keyboardFocus.current = false
     pausedRef.current = props.paused
   }
 

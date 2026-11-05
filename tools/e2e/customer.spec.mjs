@@ -4,6 +4,7 @@ import { join } from 'node:path'
 
 import { verifyPublicFirstPaint } from './public-first-paint.mjs'
 import { test } from './customer-fixtures.mjs'
+import { expect } from './fixtures.mjs'
 import { phase, assert } from './public-checks.mjs'
 const WAIT_TIMEOUT = 15000
 test('customer access, booking, CMS publication and HTTPS cookie contracts', async ({
@@ -246,7 +247,13 @@ test('customer access, booking, CMS publication and HTTPS cookie contracts', asy
   const datePart = (options, date = bookingDate) =>
     new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Stockholm', ...options }).format(date)
   const bookingDateLabel = `${datePart({ weekday: 'long' })} ${datePart({ day: 'numeric' })} ${datePart({ month: 'long' })} ${datePart({ year: 'numeric' })}`
-  const prepareBooking = async (page, person, time, consent) => {
+  const prepareBooking = async (
+    page,
+    person,
+    time,
+    consent,
+    expected = { name: '', phone: '', email: '' },
+  ) => {
     page.setDefaultTimeout(WAIT_TIMEOUT)
     await page.goto(origin, { waitUntil: 'domcontentloaded' })
     await cms.verify(page, page.viewportSize().width)
@@ -267,12 +274,9 @@ test('customer access, booking, CMS publication and HTTPS cookie contracts', asy
     await page.getByTestId('booking-service-option').filter({ hasText: 'Customer E2E Cut' }).click()
     await page.getByRole('button', { name: time, exact: true }).click()
     const fields = page.getByRole('dialog').locator('input:not([type="hidden"])')
-    assert(
-      (await fields.nth(0).inputValue()) === '' &&
-        (await fields.nth(1).inputValue()) === '' &&
-        (await fields.nth(2).inputValue()) === '',
-      'device or unverified contact prefilled private customer data',
-    )
+    await expect(fields.nth(0)).toHaveValue(expected.name)
+    await expect(fields.nth(1)).toHaveValue(expected.phone)
+    await expect(fields.nth(2)).toHaveValue(expected.email)
     await fields.nth(0).fill(person.name)
     await fields.nth(1).fill(person.phone)
     await fields.nth(2).fill(person.email)
@@ -349,6 +353,15 @@ test('customer access, booking, CMS publication and HTTPS cookie contracts', asy
       ),
     'receipt omitted a concurrent booking or imported older email history',
   )
+  assert(
+    receiptList.booking_contact?.name === a.name &&
+      receiptList.booking_contact?.phone === a.phone &&
+      receiptList.booking_contact?.email === a.email,
+    'device receipt omitted its separate contact form hint',
+  )
+  const returningPage = await receiptContext.newPage()
+  await prepareBooking(returningPage, a, '12:30', true, a)
+  await returningPage.close()
   await receiptPages[0]
     .getByRole('dialog')
     .getByRole('button', { name: 'Mina bokningar', exact: true })
@@ -436,6 +449,7 @@ test('customer access, booking, CMS publication and HTTPS cookie contracts', asy
     ).rows[0].count === 2,
     'withdrawal deleted customer bookings',
   )
+  await prepareBooking(preferencesPage, a, '12:30', false)
   await receiptContext.close()
 
   phase(`customer ${browserName}: rejected consent still books without optional cookie`)

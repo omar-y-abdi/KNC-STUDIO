@@ -13,10 +13,10 @@ test('cms-barber-marquee', async ({ browserName, evidenceDir, newContext }) => {
     barberFixture({
       id: `fixture-barber-${index + 1}`,
       name,
-      ig: `fixture${index + 1}`,
+      ig: index === 0 ? 'fixture1 | @fixture.one' : 'fixture2',
       role_sv: 'Frisör',
       role_en: 'Barber',
-      bio_sv: `Publicerad presentation ${index + 1}.`,
+      bio_sv: `Publicerad presentation ${index + 1}. TikTok: @fixture${index + 1}.clips`,
       bio_en: `Published profile ${index + 1}.`,
       active: true,
       sort_order: index,
@@ -189,6 +189,10 @@ test('cms-barber-marquee', async ({ browserName, evidenceDir, newContext }) => {
         throw new Error('Captured canonical barber card identity is missing')
       const cardId = card.id
       name.textContent = 'Owner-styled A'
+      card.querySelector('p').textContent = 'Owner bio. TikTok: @owner.edited'
+      // Stored snapshots predate the new runtime social markers.
+      for (const node of parsed.querySelectorAll('[data-barber-social]'))
+        node.removeAttribute('data-barber-social')
       about.content.sv.html = parsed.body.innerHTML
       for (const mode of ['light', 'dark'])
         about.content.sv.css[mode] +=
@@ -556,6 +560,15 @@ test('cms-barber-marquee', async ({ browserName, evidenceDir, newContext }) => {
     await track.evaluate((node) => node.scrollIntoView({ block: 'center', inline: 'nearest' }))
     await live.clock.runFor(900)
     const barberRate = await velocity(live, track)
+    assert.ok(
+      barberRate > 14 && barberRate < 17,
+      `Expected modest 15px/s barber speed, got ${barberRate}`,
+    )
+    const cardSpacing = await cards.first().evaluate((node) => {
+      const style = globalThis.getComputedStyle(node)
+      return parseFloat(style.marginLeft) + parseFloat(style.marginRight)
+    })
+    assert.equal(cardSpacing, 32, 'Barber spacing must be moderately tighter')
     assert.ok(barberRate > 2, `Barber marquee did not move (${barberRate.toFixed(2)} px/s)`)
     assert.ok(galleryRate > barberRate * 1.5, 'Barber marquee must move slower than the galleries')
     await live.screenshot({ path: `${out}/cms-native-${name}-barber-before.png` })
@@ -564,6 +577,43 @@ test('cms-barber-marquee', async ({ browserName, evidenceDir, newContext }) => {
     assert.equal(await cards.nth(1).getAttribute('aria-expanded'), 'false')
     assert.equal(await cards.first().locator('p').first().getAttribute('aria-hidden'), 'false')
     assert.equal(await cards.nth(1).locator('p').first().getAttribute('aria-hidden'), 'true')
+    const social = cards.first().locator('a')
+    assert.deepEqual(await social.evaluateAll((nodes) => nodes.map((node) => node.href)), [
+      'https://www.instagram.com/fixture1/',
+      'https://www.instagram.com/fixture.one/',
+      'https://www.tiktok.com/@owner.edited',
+    ])
+    assert.equal(await social.first().getAttribute('tabindex'), null)
+    assert.equal(await cards.nth(1).locator('a').first().getAttribute('tabindex'), '-1')
+    await liveContext.route('https://www.instagram.com/**', (route) =>
+      route.fulfill({ body: 'Instagram fixture' }),
+    )
+    await liveContext.route('https://www.tiktok.com/**', (route) =>
+      route.fulfill({ body: 'TikTok fixture' }),
+    )
+    await cards.first().focus()
+    // WebKit follows macOS's link-tabbing preference; Enter activation is portable.
+    if (name === 'webkit') await social.first().focus()
+    else await live.keyboard.press('Tab')
+    assert.equal(
+      await social.first().evaluate((node) => node === globalThis.document.activeElement),
+      true,
+    )
+    const instagramPage = live.waitForEvent('popup')
+    await social.first().press('Enter')
+    const instagram = await instagramPage
+    await instagram.waitForURL('https://www.instagram.com/fixture1/')
+    await instagram.close()
+    const tiktokPage = live.waitForEvent('popup')
+    await social.nth(2).click()
+    const tiktok = await tiktokPage
+    await tiktok.waitForURL('https://www.tiktok.com/@owner.edited')
+    await tiktok.close()
+    assert.equal(
+      await cards.first().getAttribute('aria-expanded'),
+      'true',
+      'Social click collapsed the card',
+    )
     await live.clock.runFor(250)
     const paused = await transformX(track)
     await live.clock.runFor(900)
@@ -585,7 +635,28 @@ test('cms-barber-marquee', async ({ browserName, evidenceDir, newContext }) => {
       Math.abs((await transformX(track)) - afterResize) < 1,
       'Resize resumed an expanded card',
     )
+    await live.setViewportSize({ width: 768, height: 844 })
+    await live.clock.runFor(300)
+    const wideSelectedBounds = await cards.first().boundingBox()
+    assert.ok(
+      wideSelectedBounds &&
+        wideSelectedBounds.x >= -1 &&
+        wideSelectedBounds.x + wideSelectedBounds.width <= 769,
+      `Selected two-barber card escaped the widest mobile viewport: ${JSON.stringify(wideSelectedBounds)}`,
+    )
     await live.setViewportSize({ width: 390, height: 844 })
+    // ResizeObserver delivery follows the real viewport change, not the injected animation clock.
+    await live.waitForFunction((id) => {
+      const bounds = globalThis.document.getElementById(id)?.getBoundingClientRect()
+      return bounds && bounds.x >= -1 && bounds.right <= globalThis.innerWidth + 1
+    }, owned.cardId)
+    const narrowSelectedBounds = await cards.first().boundingBox()
+    assert.ok(
+      narrowSelectedBounds &&
+        narrowSelectedBounds.x >= -1 &&
+        narrowSelectedBounds.x + narrowSelectedBounds.width <= 391,
+      `Selected card did not shrink back to the phone viewport: ${JSON.stringify(narrowSelectedBounds)}`,
+    )
     await clickVisibleCard(live, cards.first())
     assert.equal(await cards.first().getAttribute('aria-expanded'), 'false')
     await live.clock.runFor(250)
@@ -705,6 +776,7 @@ test('cms-barber-marquee', async ({ browserName, evidenceDir, newContext }) => {
         {
           galleryRate,
           barberRate,
+          cardSpacing,
           seen,
           dragEvidence,
           ownerCardId: owned.cardId,

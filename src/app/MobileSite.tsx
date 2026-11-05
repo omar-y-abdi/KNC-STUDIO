@@ -30,7 +30,7 @@ import {
 } from '../site/siteChrome'
 import type { Mode, ShellPalette, View } from './shared'
 import { EASE, PANEL_COMPACT, PANEL_FULL, useReducedMotion } from './shared'
-import type { CustomerProfile } from '../mybookings/domain'
+import type { BookingContact, CustomerProfile } from '../mybookings/domain'
 
 /** Style object that also defines CSS custom properties (`--mob-*`). Subtype of CSSProperties. */
 type StyleWithVars = JSX.CSSProperties & Record<`--${string}`, string | number>
@@ -66,6 +66,8 @@ export interface MobileSiteProps {
   /** Owner-edited policy + confirmation title shown in the booking popups. */
   readonly bookingPopupText: BookingPopupText
   readonly initialContact?: CustomerProfile
+  readonly initialBookingContact?: BookingContact
+  readonly onBookingComplete?: () => void
   readonly privacy?: PrivacyControls
   readonly onManagePrivacy?: () => void
 }
@@ -119,7 +121,9 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
   const phoneShift = compactPanel ? '24px' : '0px'
   // Muted, theme-aware colour for the underlined hero links (sits on the panel surface).
   const heroLinkColor = dark ? 'rgba(255,255,255,.72)' : 'rgba(0,0,0,.6)'
-  const heroOpacity = inSection ? 0 : mobileFold(collapse, window.innerHeight).opacity
+  const motion = mobileFold(collapse, window.innerHeight)
+  const pinnedPanel = inSection || motion.pinned
+  const heroOpacity = inSection ? 0 : motion.opacity
 
   const foldingPanelStyle: StyleWithVars = {
     position: 'relative',
@@ -130,11 +134,9 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     color: c.text,
     borderRadius: compactPanel ? '0 0 28px 28px' : '0',
     height: inSection ? PANEL_COMPACT : `calc(${PANEL_FULL} - ${collapse}px)`,
-    transition: reduceMotion
-      ? 'none'
-      : inSection
-        ? 'height .66s ' + EASE + ', border-radius .3s ease'
-        : 'border-radius .3s ease',
+    // Booking must pin at its compact height immediately; animating a pinned full-screen box
+    // through this height range would seed Safari's cached bottom-edge color again.
+    transition: reduceMotion ? 'none' : 'border-radius .3s ease',
     '--mob-text': c.text,
     '--mob-muted': mobMutedColor,
     '--mob-icon': c.iconF,
@@ -166,7 +168,15 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     pointerEvents: 'none',
     transition: reduceMotion ? 'none' : 'opacity .4s ease',
   }
-  const panelTopStyle: JSX.CSSProperties = { flex: 'none', padding: '0 22px 16px' }
+  const panelTopStyle: JSX.CSSProperties = {
+    flex: 'none',
+    padding: '0 22px 16px',
+    // Keep the real header as the small edge-paint surface. Auto inset preserves normal flow;
+    // the surrounding folding panel supplies its position, including privacy-panel scrolling.
+    position: 'sticky',
+    top: 'auto',
+    background: 'inherit',
+  }
   const expandChevStyle: JSX.CSSProperties = {
     display: compactPanel ? 'flex' : 'none',
     alignItems: 'center',
@@ -262,7 +272,10 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
         data-knc-fold="panel"
         style={{
           ...foldingPanelStyle,
-          position: privacyOpen && !compactPanel ? 'relative' : 'sticky',
+          // A viewport-sized sticky hero makes Safari retain its first sampled edge colors.
+          // Translate during the fold to preserve the same coordinates; pin only the short header.
+          position: pinnedPanel ? 'sticky' : 'relative',
+          transform: !pinnedPanel && collapse > 0 ? `translateY(${collapse}px)` : undefined,
           top: 0,
           zIndex: 10,
         }}
@@ -455,9 +468,10 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
               popupText={props.bookingPopupText}
               business={business}
               showDirections={business.mapsHref !== ''}
-              {...(props.initialContact === undefined
+              {...((props.initialContact ?? props.initialBookingContact) === undefined
                 ? {}
-                : { initialContact: props.initialContact })}
+                : { initialContact: props.initialContact ?? props.initialBookingContact })}
+              {...(props.onBookingComplete ? { onBookingComplete: props.onBookingComplete } : {})}
             />
           </LazySurface>
         ) : (

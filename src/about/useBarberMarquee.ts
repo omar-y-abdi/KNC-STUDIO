@@ -131,7 +131,7 @@ export function useBarberMarquee({
         },
         [
           AutoScroll({
-            speed: 0.18,
+            speed: 0.25,
             startDelay: 800,
             playOnInit: false,
             stopOnInteraction: true,
@@ -151,6 +151,7 @@ export function useBarberMarquee({
         { readonly value: string; readonly priority: string; readonly transitionPriority: string }
       >()
       let floor = 0
+      let floorView = 0
       let passes = 0
       let ownReInit = false
       let fitFrame = 0
@@ -162,6 +163,7 @@ export function useBarberMarquee({
         }
         floors.clear()
         floor = 0
+        floorView = 0
       }
       const geometry = (): LoopSlide[] => {
         const slides = api.slideNodes()
@@ -173,14 +175,14 @@ export function useBarberMarquee({
         }))
       }
       // Measured without the floor, restored in the same task: nothing paints or resizes meanwhile.
-      const loopsAlone = (): boolean => {
+      const naturalLoop = (): { needed: number; loops: boolean } => {
         for (const [node, natural] of floors)
           node.style.setProperty('min-width', natural.value, natural.priority)
         const slides = geometry()
         for (const node of floors.keys())
           node.style.setProperty('min-width', `${floor}px`, 'important')
         const needed = loopFloor(track.offsetWidth, track.offsetLeft, slides)
-        return slides.every((slide) => slide.width >= needed)
+        return { needed, loops: slides.every((slide) => slide.width >= needed) }
       }
       const reInit = (): void => {
         ownReInit = true
@@ -191,9 +193,23 @@ export function useBarberMarquee({
       const fitLoop = (): void => {
         fitFrame = 0
         if (api.slideNodes().length < 2) return
-        if (floors.size && loopsAlone()) {
+        const natural = floors.size ? naturalLoop() : null
+        if (natural?.loops) {
           restoreSlides()
           passes = 0
+          reInit()
+          return
+        }
+        // A narrower viewport may still need a floor, but a smaller one. Leaving the old floor
+        // would keep phone cards tablet-sized. Refit from the natural geometry on external reInit;
+        // distributed gaps can still require the remaining fitting passes to widen it again.
+        // Height-only reInit must not retry an estimate already corrected by those passes.
+        if (natural && passes === 0 && track.offsetWidth < floorView && natural.needed < floor) {
+          floor = natural.needed
+          floorView = track.offsetWidth
+          for (const node of floors.keys())
+            node.style.setProperty('min-width', `${floor}px`, 'important')
+          passes = 1
           reInit()
           return
         }
@@ -212,6 +228,7 @@ export function useBarberMarquee({
           node.style.setProperty('min-width', `${next}px`, 'important')
         }
         floor = next
+        floorView = track.offsetWidth
         passes += 1
         reInit()
         // Only owner CSS that breaks the gapless floor's premise gets here. A strip that cannot
