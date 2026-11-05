@@ -44,8 +44,6 @@ import type { BookingContact, CustomerProfile } from '../mybookings/domain'
 type StyleWithVars = JSX.CSSProperties & Record<`--${string}`, string | number>
 
 export interface MobileSiteProps {
-  /** Report a mounted renderer, so viewport colors and preview capture read the real DOM. */
-  readonly onLayoutReady?: () => void
   readonly mode: Mode
   readonly lang: Lang
   readonly tx: AppStrings
@@ -83,7 +81,6 @@ export interface MobileSiteProps {
 }
 
 export function MobileSite(props: MobileSiteProps): JSX.Element {
-  useLayoutEffect(() => props.onLayoutReady?.(), [props.onLayoutReady])
   const { c, tx, dark, mobMutedColor, mobBtnBgColor, business } = props
   const reduceMotion = useReducedMotion()
   const view = props.view
