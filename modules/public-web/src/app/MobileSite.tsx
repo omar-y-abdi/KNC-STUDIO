@@ -1,13 +1,19 @@
 import { useNativeSurface } from '../cms/NativeSurface'
-import { mobileFold, mobileLayoutViewportHeight, primeMobileFold } from './mobileFold'
+import {
+  mobileBrandMotion,
+  mobileFold,
+  mobileLayoutViewportHeight,
+  paintMobileBrand,
+  primeMobileFold,
+} from './mobileFold'
 import { mobileFoldLayout } from './mobileFoldLayout'
 // Mobile (M3) layout — folding panel (hero <-> compact header) + booking below.
 //
 // Invariants:
 //  - native sticky bounds reduce the visible panel from PANEL_FULL to PANEL_COMPACT in either section;
 //    scrolling back up restores the hero without discarding the active booking selection.
-//  - the brand cross-fades between the centered hero lockup (home flow) and the compact CornerMark
-//    (absolute top-left, fades in when a section opens) — two elements, not one sliding element.
+//  - the original hero brand shrinks toward the compact emblem, then cross-fades into CornerMark;
+//    both scroll directions use the same progress, without timed state transitions.
 //  - fully faded hero controls are inert so they never steal taps from the section below.
 
 import type { JSX } from 'preact'
@@ -58,7 +64,6 @@ export interface MobileSiteProps {
   readonly openCancel: () => void
   /** Open the "Mina bokningar" (my-appointments) popup. */
   readonly openMyBookings: () => void
-  readonly onVerifyBooking?: () => void
   /** Owner-set font-size preset for the homepage editable text (opening hours / address). */
   readonly homepageScale: SizePreset
   /** Owner-managed logo replacement, bounded scale, and image treatment. */
@@ -120,7 +125,12 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     if (root === null) return
     const sync = (): void => syncCollapse()
     window.addEventListener('resize', sync)
-    const observer = new ResizeObserver(onScroll)
+    const observer = new ResizeObserver(() => {
+      onScroll()
+      // A width-only resize need not change fold state, but it changes the logo's travel path.
+      const height = mobileLayoutViewportHeight(root)
+      paintMobileBrand(root, mobileFold(root.scrollTop, height, privacyOpen).collapse, height, reduceMotion)
+    })
     observer.observe(root)
     sync()
     return () => {
@@ -131,7 +141,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
         scrollFrame.current = null
       }
     }
-  }, [inSection, privacyOpen])
+  }, [inSection, privacyOpen, reduceMotion])
   useLayoutEffect(() => {
     const root = scrollRoot.current
     if (root === null || privacyOpen) return
@@ -147,7 +157,11 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
   const heroLinkColor = dark ? 'rgba(255,255,255,.72)' : 'rgba(0,0,0,.6)'
   const motion = mobileFold(collapse, viewportHeight)
   const pinnedPanel = privacyOpen ? motion.pinned : scrolling || collapse > 0
-  const heroOpacity = motion.opacity
+  const brandMotion = mobileBrandMotion(collapse, viewportHeight, reduceMotion)
+  useLayoutEffect(() => {
+    const root = scrollRoot.current
+    if (root) paintMobileBrand(root, collapse, viewportHeight, reduceMotion)
+  })
 
   const foldingPanelStyle: StyleWithVars = {
     position: 'relative',
@@ -174,8 +188,8 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     height: 'auto',
     display: 'block',
   }
-  // Compact corner mark (absolute top-left) — fades in once a section opens, mirroring the pole's
-  // old placement. pointer-events:none so it never blocks the controls beneath it.
+  // The compact banner appears only after the large brand reaches its emblem anchor.
+  // It remains decorative and never takes pointer input from the controls beneath it.
   const headerMarkStyle: JSX.CSSProperties = {
     position: 'absolute',
     zIndex: 6,
@@ -186,9 +200,9 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     color: 'var(--mob-text)',
     top: 'calc(env(safe-area-inset-top, 0px) + 22px)',
     left: '22px',
-    opacity: compactPanel ? 1 : 0,
+    opacity: brandMotion.banner,
     pointerEvents: 'none',
-    transition: reduceMotion ? 'none' : 'opacity .4s ease',
+    transition: 'none',
   }
   const panelTopStyle: JSX.CSSProperties = {
     flex: 'none',
@@ -214,7 +228,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
   const heroExtrasStyle: JSX.CSSProperties = {
     flex: 1,
     minHeight: 0,
-    overflow: 'hidden',
+    overflow: 'visible',
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'stretch',
@@ -223,10 +237,9 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     // Bottom padding = the top row's height (safe-area + ~76px) so the centered hero block lands on
     // the screen's TRUE vertical centre instead of the centre of the area below the top row.
     padding: '0 26px calc(env(safe-area-inset-top, 0px) + 76px)',
-    opacity: heroOpacity,
     // Visible controls remain usable throughout the fade. Disabling at 24px left almost opaque
     // buttons untappable when a browser restored scroll/focus after closing the privacy notice.
-    pointerEvents: heroOpacity === 0 ? 'none' : 'auto',
+    pointerEvents: brandMotion.actions === 0 ? 'none' : 'auto',
   }
   const heroBtnDarkStyle: JSX.CSSProperties = {
     alignSelf: 'stretch',
@@ -366,8 +379,20 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
           <CornerMark height={26} />
         </div>
 
-        <div data-knc-fold="hero" style={heroExtrasStyle} inert={heroOpacity === 0}>
-          <h1 style={{ margin: 0, display: 'flex', justifyContent: 'center' }}>
+        <div data-knc-fold="hero" style={heroExtrasStyle} inert={brandMotion.brand === 0}>
+          <h1
+            data-knc-fold="brand"
+            style={{
+              margin: 0,
+              display: 'flex',
+              justifyContent: 'center',
+              position: 'relative',
+              zIndex: 20,
+              transformOrigin: '50% 0',
+              pointerEvents: 'none',
+              willChange: 'translate, scale, opacity',
+            }}
+          >
             <HomepageLogo
               logo={props.homepageLogo}
               layout="mobile"
@@ -495,7 +520,6 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
         ) : (
           <AboutSection
             mobile
-            {...(props.onVerifyBooking ? { onVerifyBooking: props.onVerifyBooking } : {})}
             mode={props.mode}
             lang={props.lang}
             fontScale={props.aboutScale}

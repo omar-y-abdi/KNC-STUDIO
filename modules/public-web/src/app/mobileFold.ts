@@ -97,3 +97,74 @@ export function primeMobileFold(root: HTMLElement, change: (active: boolean) => 
     root.removeEventListener('scroll', rest)
   }
 }
+
+/** Content-only choreography. Native panel/header positioning remains owned by the carriers. */
+export function mobileBrandMotion(collapse: number, viewportHeight: number, reduced = false) {
+  const progress = Math.min(1, Math.max(0, collapse / Math.max(1, viewportHeight - 112)))
+  const phase = (start: number, end: number): number => {
+    const t = Math.min(1, Math.max(0, (progress - start) / (end - start)))
+    return t * t * (3 - 2 * t)
+  }
+  const banner = phase(0.86, 1)
+  return {
+    actions: 1 - phase(0, 0.3),
+    brand: reduced ? 1 - phase(0, 0.18) : 1 - banner,
+    banner,
+    shrink: reduced ? 0 : phase(0, 0.65),
+    lift: reduced ? 0 : phase(0, 0.8),
+    slide: reduced ? 0 : phase(0.7, 0.86),
+  }
+}
+
+/** Measure layout offsets, never the transformed brand's client rect: reverse scrolling must not
+ * accumulate its own previous transform. The original SVG or owner image remains untouched.
+ */
+export function paintMobileBrand(
+  root: HTMLElement,
+  collapse: number,
+  viewportHeight: number,
+  reduced = false,
+): void {
+  const hero = root.querySelector<HTMLElement>('[data-knc-fold="hero"]')
+  const brand = hero?.querySelector<HTMLElement>('h1')
+  const mark = root.querySelector<HTMLElement>('[data-knc-fold="mark"]')
+  const asset = brand?.querySelector('svg,img')
+  const compact = mark?.querySelector('svg,img')
+  if (!hero || !brand || !mark || !asset || !compact) return
+  const win = root.ownerDocument.defaultView
+  if (!win) return
+  const motion = mobileBrandMotion(collapse, viewportHeight, reduced)
+  brand.setAttribute('data-knc-fold', 'brand')
+  const assetHeight = Number.parseFloat(win.getComputedStyle(asset).height) || asset.clientHeight
+  const compactStyle = win.getComputedStyle(compact)
+  const compactHeight = Number.parseFloat(compactStyle.height)
+  const compactWidth = Number.parseFloat(compactStyle.width)
+  if (!(assetHeight > 0 && compactHeight > 0 && compactWidth > 0)) return
+  const centerX = brand.offsetLeft + brand.offsetWidth / 2
+  const centerY = brand.offsetTop + assetHeight / 2
+  // CornerMark's emblem is centered at (29,24) in its 322×48 viewBox.
+  const anchorX = mark.offsetLeft + compactWidth * (29 / 322)
+  const anchorY = mark.offsetTop + compactHeight / 2
+  const scale = 1 + (compactHeight / assetHeight - 1) * motion.shrink
+  const x = (anchorX - centerX) * motion.slide
+  const y = reduced
+    ? 0
+    : collapse +
+      centerY +
+      (anchorY - centerY) * motion.lift -
+      brand.offsetTop -
+      (assetHeight / 2) * scale
+  brand.style.translate = `${x}px ${y}px`
+  brand.style.scale = String(scale)
+  brand.style.opacity = String(motion.brand)
+  mark.style.opacity = String(motion.banner)
+  const fade = (element: HTMLElement): void => {
+    if (win.getComputedStyle(element).display === 'contents') {
+      for (const child of element.children) fade(child as HTMLElement)
+    } else {
+      element.style.opacity = String(motion.actions)
+    }
+    element.inert = motion.actions === 0
+  }
+  for (const child of hero.children) if (child !== brand) fade(child as HTMLElement)
+}

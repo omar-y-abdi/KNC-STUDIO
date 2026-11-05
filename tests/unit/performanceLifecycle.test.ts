@@ -231,7 +231,7 @@ describe('public performance lifecycles', () => {
         bookingPopupText: bookingStrings('sv'),
       }),
     )
-    const root = Object.assign(new EventTarget(), { scrollTop: 0 })
+    const root = Object.assign(new EventTarget(), { scrollTop: 0, querySelector: () => null })
     // The mobile scroll root element ref.
     ref(0, root)
     const dispose = mount()
