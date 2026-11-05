@@ -109,7 +109,7 @@ describe('public performance lifecycles', () => {
 
   it.each([false, true])(
     'gates gallery frames by reduced motion, intersection and document visibility (reduced=%s)',
-    (reduced) => {
+    async (reduced) => {
       vi.stubGlobal('window', { matchMedia: () => ({ matches: reduced }) })
       const document = Object.assign(new EventTarget(), { hidden: false })
       vi.stubGlobal('document', document)
@@ -141,13 +141,21 @@ describe('public performance lifecycles', () => {
       reset()
       render(() => (row.type as (props: unknown) => unknown)(row.props))
       // The gallery row element ref.
-      ref(0, {})
+      let decoded!: () => void
+      const decoding = new Promise<void>((resolve) => {
+        decoded = resolve
+      })
+      ref(0, { querySelectorAll: () => [{ loading: 'lazy', decode: () => decoding }] })
       const dispose = mount()
       expect(frame).not.toHaveBeenCalled()
       if (reduced) {
         expect(observer.intersect).toBeUndefined()
       } else {
         observer.intersect?.([{ isIntersecting: true }])
+        expect(frame).not.toHaveBeenCalled()
+        decoded()
+        await decoding
+        await Promise.resolve()
         expect(frame).toHaveBeenCalledOnce()
         document.hidden = true
         document.dispatchEvent(new Event('visibilitychange'))
