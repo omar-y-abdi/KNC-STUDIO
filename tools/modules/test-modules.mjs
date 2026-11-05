@@ -156,6 +156,12 @@ test('wildcard exports and browser server builtins fail boundary enforcement', (
   const result = inspectBoundaries(f.root)
   assert.ok(result.errors.some((error) => error.includes('explicit source files')))
   assert.ok(result.errors.some((error) => error.includes('browser imports server builtin')))
+  f.write('src/index.ts', `import '@bladeblend/backend/entry'`)
+  assert.ok(
+    inspectBoundaries(f.root).errors.some((error) =>
+      error.includes('browser composition imports backend'),
+    ),
+  )
 })
 
 test('isolated Studio edit selects its units and full Studio cohort while omitting unrelated jobs', (t) => {
@@ -385,4 +391,24 @@ test('audited delivery panel narrows browsers only while its exact callers and s
     ],
   }
   assert.ok(select([change], harness).tests.browser.cms.length > deliveryCohort.cms.length)
+})
+
+test('backend local commands check real Deno entrypoints and package Worker without deployment', () => {
+  const plan = { tests: { unit: ['tests/unit/workerRoutes.test.ts'] } }
+  const typecheck = commandsFor('backend', 'typecheck', plan)
+  const edge = typecheck.filter(({ executable }) => executable === 'deno')
+  assert.ok(edge.length > 0)
+  assert.ok(
+    edge.every(
+      ({ cwd, args }) =>
+        cwd === 'supabase/functions' &&
+        JSON.stringify(args.slice(0, 4)) ===
+          JSON.stringify(['check', '--config', 'deno.json', '--frozen']) &&
+        /^\.\/[^/]+\/index\.ts$/.test(args[4]),
+    ),
+  )
+  const build = commandsFor('backend', 'build', plan)
+  assert.deepEqual(build.at(-1).args.slice(-2), ['deploy', '--dry-run'])
+  assert.deepEqual(commandsFor('backend', 'lint', plan)[0].args.slice(-1), ['supabase/worker'])
+  assert.deepEqual(commandsFor('backend', 'database', plan)[0].args.slice(-2), ['test', 'db'])
 })

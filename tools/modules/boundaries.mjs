@@ -1,8 +1,8 @@
-import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { dirname, extname, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
-import { createRequire } from 'node:module'
+import { builtinModules, createRequire } from 'node:module'
 
 export const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 export const modulePaths = {
@@ -154,7 +154,12 @@ export function inspectBoundaries(root = repositoryRoot) {
         continue
       }
       const absolute = resolve(root, directory, target)
-      if (!absolute.startsWith(`${resolve(root, directory)}/`) || !existsSync(absolute)) {
+      if (
+        !absolute.startsWith(`${resolve(root, directory)}/`) ||
+        !existsSync(absolute) ||
+        !statSync(absolute).isFile() ||
+        !realpathSync(absolute).startsWith(`${resolve(root, directory)}/`)
+      ) {
         errors.push(`${id}: missing or escaping export ${key}`)
         continue
       }
@@ -261,7 +266,7 @@ export function inspectBoundaries(root = repositoryRoot) {
           continue
         } else if (specifier === 'cloudflare:workers' && file.startsWith('supabase/worker/'))
           continue
-        else if (specifier.startsWith('node:')) {
+        else if (specifier.startsWith('node:') || builtinModules.includes(specifier)) {
           if (owner !== 'backend')
             errors.push(`${file}: browser imports server builtin ${specifier}`)
         } else {
@@ -287,6 +292,8 @@ export function inspectBoundaries(root = repositoryRoot) {
       if (target.startsWith('../'))
         errors.push(`${file}: dependency escapes repository ${specifier}`)
       const provider = ownerOf(target)
+      if (!owner && provider === 'backend')
+        errors.push(`${file}: browser composition imports backend implementation ${target}`)
       if (target.startsWith('public/') && /\.[cm]?[jt]sx?$/.test(target))
         errors.push(`${file}: module imports unowned public executable ${target}`)
       if (

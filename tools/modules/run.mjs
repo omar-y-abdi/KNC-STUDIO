@@ -4,7 +4,7 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { inspectBoundaries, modulePaths, repositoryRoot } from './boundaries.mjs'
+import { inspectBoundaries, modulePaths, repositoryRoot, walkFiles } from './boundaries.mjs'
 import { loadInventory, selectVerification, unitOwnership } from './model.mjs'
 
 export function modulePlan(id, root = repositoryRoot) {
@@ -25,24 +25,65 @@ export function modulePlan(id, root = repositoryRoot) {
   return selectVerification([{ path, status: 'M' }], graph, inventory, units)
 }
 
-export function commandsFor(id, task, plan) {
+export function commandsFor(id, task, plan, root = repositoryRoot) {
   const boundary = { executable: process.execPath, args: ['tools/modules/boundaries.mjs'] }
   const typecheck = { executable: 'npm', args: ['run', 'typecheck'] }
   const lint = {
     executable: process.execPath,
-    args: ['node_modules/eslint/bin/eslint.js', modulePaths[id]],
+    args: [
+      'node_modules/eslint/bin/eslint.js',
+      id === 'backend' ? 'supabase/worker' : modulePaths[id],
+    ],
   }
   const unit = {
     executable: process.execPath,
     args: ['node_modules/vitest/vitest.mjs', 'run', ...plan.tests.unit],
   }
   assert.ok(plan.tests.unit.length, 'No module tests selected')
+  const edgeChecks =
+    id === 'backend'
+      ? walkFiles(root, 'supabase/functions')
+          .filter((path) => /^supabase\/functions\/[^/]+\/index\.ts$/.test(path))
+          .map((path) => ({
+            executable: 'deno',
+            cwd: 'supabase/functions',
+            args: [
+              'check',
+              '--config',
+              'deno.json',
+              '--frozen',
+              `./${path.slice('supabase/functions/'.length)}`,
+            ],
+          }))
+      : []
+  if (id === 'backend') assert.ok(edgeChecks.length, 'No Edge Function entrypoints found')
   const commands = {
-    check: [boundary, typecheck, lint, unit],
+    check: [boundary, typecheck, ...edgeChecks, lint, unit],
     test: [unit],
     lint: [lint],
-    typecheck: [typecheck],
-    build: [{ executable: 'npm', args: ['run', 'build'] }],
+    typecheck: [typecheck, ...edgeChecks],
+    build: [
+      ...edgeChecks,
+      { executable: 'npm', args: ['run', 'build'] },
+      ...(id === 'backend'
+        ? [
+            {
+              executable: process.execPath,
+              args: ['node_modules/wrangler/bin/wrangler.js', 'deploy', '--dry-run'],
+            },
+          ]
+        : []),
+    ],
+    ...(id === 'backend'
+      ? {
+          database: [
+            {
+              executable: process.execPath,
+              args: ['node_modules/supabase/dist/supabase.js', 'test', 'db'],
+            },
+          ],
+        }
+      : {}),
   }
   assert.ok(commands[task], `Unknown module task ${task}`)
   return commands[task]
@@ -62,7 +103,7 @@ export function browserArguments(paths, extra = []) {
 
 function execute(command, root, options = {}) {
   const result = spawnSync(command.executable, command.args, {
-    cwd: root,
+    cwd: command.cwd ? resolve(root, command.cwd) : root,
     stdio: 'inherit',
     ...options,
   })
