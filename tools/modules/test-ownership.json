@@ -851,6 +851,18 @@
     ],
     "reason": "SQL/backend integration and browser consumers"
   },
+  "supabase/tests/77_device_booking_reviews_test.sql": {
+    "kind": "database",
+    "owners": [
+      "backend",
+      "backend-contracts",
+      "content-contracts",
+      "public-web",
+      "staff-admin",
+      "studio"
+    ],
+    "reason": "Exact booking receipt review authorization, verified-session precedence and public RPC grants"
+  },
   "tests/integration/admin.barber.test.ts": {
     "kind": "integration",
     "owners": [
@@ -958,6 +970,18 @@
       "studio"
     ],
     "reason": "SQL/backend integration and browser consumers"
+  },
+  "tests/integration/deviceReviews.test.ts": {
+    "kind": "integration",
+    "owners": [
+      "backend",
+      "backend-contracts",
+      "content-contracts",
+      "public-web",
+      "staff-admin",
+      "studio"
+    ],
+    "reason": "Real Worker, Edge and database device-review authorization and concurrent uniqueness"
   },
   "tests/integration/passwordRecovery.test.ts": {
     "kind": "integration",
@@ -1515,6 +1539,11 @@
     "kind": "unit",
     "owners": ["staff-admin"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
+  },
+  "tests/unit/deviceReviewGateway.test.ts": {
+    "kind": "unit",
+    "owners": ["backend", "public-web"],
+    "reason": "Review Edge credential transport, Turnstile, rate limits and gateway trust boundaries"
   },
   "tests/unit/documentationContracts.test.ts": {
     "kind": "unit",

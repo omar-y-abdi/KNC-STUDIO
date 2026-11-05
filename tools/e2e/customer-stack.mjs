@@ -151,6 +151,7 @@ export async function customerStackFixture({ browserName }, use) {
         'customer_booking_receipt_bookings',
         'booking_email_delivery_jobs',
         'booking_reminders',
+        'reviews',
       ])
         await db.query(
           `delete from public.${table} where booking_id in (select id from public.bookings where barber_id=$1)`,
@@ -164,6 +165,14 @@ export async function customerStackFixture({ browserName }, use) {
         await db.query('delete from public.booking_attempts where id=any($1)', [
           state.fixture.attempts,
         ])
+      await db.query(
+        "delete from public.public_action_attempts where action='review' and phone_hash=any($1::text[])",
+        [
+          state.fixture.people.map((person) =>
+            hash(`phone:${person.phone}:ci-public-action-hash-salt-not-for-production`),
+          ),
+        ],
+      )
       for (const table of ['bookings', 'services', 'barber_schedules'])
         await db.query(`delete from public.${table} where barber_id=$1`, [state.fixture.barber])
       await db.query('delete from public.barbers where id=$1', [state.fixture.barber])

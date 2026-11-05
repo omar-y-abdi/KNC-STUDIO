@@ -19,7 +19,7 @@ Auth email; Cloudflare Turnstile for booking abuse protection. Frontend runs on 
    origin, timestamp, client IP, and body with `CUSTOMER_GATEWAY_SECRET` before calling the Edge gateway.
    Valid access receives a first-party HttpOnly `SameSite=Lax` session cookie. Requesting a new link by
    email rotates the token and invalidates the previous token. Phone remains booking contact data and
-   review scope, not a lookup field.
+   review cross-check, not a lookup field.
 
 After an accepted functional-storage choice, a successful first-party booking also receives an
 independent HttpOnly device-receipt cookie. It grants only the exact new booking IDs; submitted email
@@ -28,12 +28,22 @@ tabs. The browser verifies receipt proof and the new booking ID before showing i
 Cookie/probe failure keeps booking success and offers the email link. Withdrawing consent deletes
 receipt authority and device contact prefill; the essential email-verified session and booking rows
 remain separate. The list response may include `booking_contact` from the latest exact-ID receipt-owned
-booking for device authority. This unverified form hint never becomes `profile` or authorizes reviews,
-email linking, or earlier history. Verified profile contact takes precedence. Form hints live only in
-component memory; consent withdrawal, receipt expiry/revocation, and focus revalidation clear them
+booking for device authority. This unverified form hint never becomes `profile` or grants authority.
+Email linking and earlier history still require verified access. Verified profile contact takes
+precedence. Form hints live only in component memory; consent withdrawal, receipt expiry/revocation, and focus revalidation clear them
 without replacing fields the customer has edited. Apply
 `20261105074335_device_booking_contact_prefill.sql` before deploying the frontend to enable this
 additive response field; the frontend tolerates older gateways without it.
+
+After the [device-review rollout](docs/operations/DEVICE_REVIEW_RELEASE.md), the same receipt also
+allows a review for an exact owned booking without an email click. The service-only
+`create_review_for_browser` RPC uses the list/cancel predicate: verified profile emails, or exact
+receipt IDs restricted to that verified session's original parent email when a session exists.
+A receipt alone never expands through a shared phone or email. SQL also requires a matching phone,
+`confirmed` status, an end time strictly before database time, and no prior review; the unique
+booking constraint handles concurrent submissions. The public name comes from the booking.
+Turnstile, origin/gateway checks and per-IP/per-phone review limits remain in the Edge path.
+Explicit review bearer requests retain their original email-only scope without cookie fallback.
 
 Verified customers may link their email identities through `request_link` and `confirm_link` on
 the same signed gateway. `customer_profiles` and `customer_profile_emails` group addresses only
@@ -127,7 +137,7 @@ and recovery. Follow `docs/operations/BACKUP_RESTORE.md` before database changes
   resend them in bulk. The [booking-email recovery contract](supabase/functions/send-confirmation/README.md)
   owns generation-safe token repair and retries that preserve acknowledged recipients.
 
-The dated customer-access, device-access, launch and gateway runbooks in `docs/operations/` are
+The dated September customer-access, device-access, launch and gateway runbooks in `docs/operations/` are
 archived receipts. Their recorded migrations, deployments and password rotation must not be replayed
 as a current release procedure.
 
