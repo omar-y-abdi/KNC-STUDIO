@@ -90,7 +90,10 @@ const PUBLIC_FILE_ALIASES: Readonly<Record<string, string>> = {
 }
 
 function withoutTrailingSlash(pathname: string): string {
-  return pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname
+  let end = pathname.length
+  if (end === 1) return pathname
+  while (end > 0 && pathname.charCodeAt(end - 1) === 47) end--
+  return pathname.slice(0, end)
 }
 
 export function customerAccessTokenFromPath(pathname: string): string | null {
@@ -424,6 +427,50 @@ function replaceMetaContent(html: string, id: string, value: string): string {
     () => `content="${escapeAttribute(value)}"`,
   )
   return `${html.slice(0, bounds.start)}${updated}${html.slice(bounds.end + 1)}`
+}
+
+/** Keep the shell's existing double-quoted, ordered metadata matching and all untouched bytes.
+ * Each `>`-delimited region is searched once: repeated tag/property near misses must not restart
+ * a greedy regex at every candidate. The last value attribute preserves the old greedy match,
+ * including duplicate attributes; this is byte editing of the trusted shell, not HTML validation.
+ */
+function replaceShellMetadata(
+  html: string,
+  tag: 'meta' | 'link',
+  marker: string,
+  attribute: 'content' | 'href',
+  value: string | null,
+): string {
+  // ASCII folding preserves offsets even when owner text contains characters such as U+0130.
+  const folded = html.replace(/[A-Z]/g, (letter) => letter.toLowerCase())
+  const opening = tag === 'meta' ? /<meta\b/ : /<link\b/
+  const valueOpening = `${attribute}="`
+  const lastQuote = html.lastIndexOf('"')
+  let start = 0
+  while (start < html.length) {
+    const closing = folded.indexOf('>', start)
+    const end = closing < 0 ? html.length : closing
+    const region = folded.slice(start, end)
+    const match = opening.exec(region)
+    if (match !== null) {
+      const markerAt = region.indexOf(marker, match.index + match[0].length)
+      if (markerAt >= 0) {
+        if (value === null) {
+          if (closing >= 0) return html.slice(0, start + match.index) + html.slice(closing + 1)
+        } else {
+          const latest = Math.min(region.length, lastQuote - start - valueOpening.length)
+          const valueAt = latest < 0 ? -1 : region.lastIndexOf(valueOpening, latest)
+          if (valueAt >= markerAt + marker.length) {
+            const valueStart = start + valueAt + valueOpening.length
+            const valueEnd = html.indexOf('"', valueStart)
+            return html.slice(0, valueStart) + escapeAttribute(value) + html.slice(valueEnd)
+          }
+        }
+      }
+    }
+    start = end + 1
+  }
+  return html
 }
 
 const DESCRIPTION_META_IDS = [
@@ -900,24 +947,28 @@ export function renderCmsPage(
         rendered = replaceMetaContent(rendered, 'business-og-title', page.title[lang])
         rendered = replaceMetaContent(rendered, 'business-twitter-title', page.title[lang])
         rendered = withDescription(rendered, page.description[lang])
-        rendered = rendered.replace(
-          /(<meta\b[^>]*property="og:locale"[^>]*content=")[^"]*(")/i,
-          `$1${lang === 'en' ? 'en_US' : 'sv_SE'}$2`,
+        rendered = replaceShellMetadata(
+          rendered,
+          'meta',
+          'property="og:locale"',
+          'content',
+          lang === 'en' ? 'en_US' : 'sv_SE',
         )
-        rendered = rendered.replace(
-          /(<meta\b[^>]*property="og:locale:alternate"[^>]*content=")[^"]*(")/i,
-          `$1${lang === 'en' ? 'sv_SE' : 'en_US'}$2`,
+        rendered = replaceShellMetadata(
+          rendered,
+          'meta',
+          'property="og:locale:alternate"',
+          'content',
+          lang === 'en' ? 'sv_SE' : 'en_US',
         )
-        rendered = rendered.replace(
-          /(<link\b[^>]*rel="canonical"[^>]*href=")[^"]*(")/i,
-          (_match, open: string, close: string) =>
-            `${open}${escapeAttribute(canonicalUrl)}${close}`,
-        )
+        rendered = replaceShellMetadata(rendered, 'link', 'rel="canonical"', 'href', canonicalUrl)
         // og:url shares the page's canonical identity; the index shell carries the homepage's.
-        rendered = rendered.replace(
-          /(<meta\b[^>]*property="og:url"[^>]*content=")[^"]*(")/i,
-          (_match, open: string, close: string) =>
-            `${open}${escapeAttribute(canonicalUrl)}${close}`,
+        rendered = replaceShellMetadata(
+          rendered,
+          'meta',
+          'property="og:url"',
+          'content',
+          canonicalUrl,
         )
         // Last: the title keeps quotes, so an owner title can name the ids looked up above.
         rendered = replaceElementText(rendered, 'business-title', page.title[lang])
@@ -1042,18 +1093,20 @@ export function renderPrivateMetadata(html: string, pathname: string): string {
     )
   }
   const route = pathname.startsWith('/admin') ? '/admin' : withoutTrailingSlash(pathname)
-  rendered = rendered.replace(
-    /(<meta\b[^>]*property="og:url"[^>]*content=")[^"]*(")/i,
-    (_match, open: string, close: string) => `${open}${SITE_URL}${route}${close}`,
+  rendered = replaceShellMetadata(
+    rendered,
+    'meta',
+    'property="og:url"',
+    'content',
+    `${SITE_URL}${route}`,
   )
   rendered = replaceMetaContent(
     rendered,
     'business-description',
     'Inloggning och administration för salongens personal.',
   )
-  rendered = rendered
-    .replace(/<link\b[^>]*rel="canonical"[^>]*>/i, '')
-    .replace(/(<meta\b[^>]*name="robots"[^>]*content=")[^"]*(")/i, '$1noindex, nofollow$2')
+  rendered = replaceShellMetadata(rendered, 'link', 'rel="canonical"', 'href', null)
+  rendered = replaceShellMetadata(rendered, 'meta', 'name="robots"', 'content', 'noindex, nofollow')
   return rendered
 }
 

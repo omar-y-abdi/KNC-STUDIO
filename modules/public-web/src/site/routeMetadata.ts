@@ -3,7 +3,7 @@ export const NATIVE_PUBLIC_PATHS: readonly string[] = ['/', '/about', '/booking'
 
 /** Public paths that must wait for the authoritative CMS presentation before rendering App. */
 export function isNativePublicPath(pathname: string): boolean {
-  const path = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname
+  const path = pathname.length > 1 ? trimTrailingSlashes(pathname) : pathname
   return NATIVE_PUBLIC_PATHS.includes(path) || /^\/[0-9a-f]{64}$/i.test(path)
 }
 
@@ -35,9 +35,15 @@ export function requestedPresentationRevision(url: URL): number | null {
     : null
 }
 
+function trimTrailingSlashes(pathname: string): string {
+  let end = pathname.length
+  while (end > 0 && pathname.charCodeAt(end - 1) === 47) end--
+  return pathname.slice(0, end)
+}
+
 /** Fixed route names only: never place customer credentials or arbitrary paths in metadata. */
 export function privatePageTitle(pathname: string): string | null {
-  const path = pathname.replace(/\/+$/, '')
+  const path = trimTrailingSlashes(pathname)
   const titles: Readonly<Record<string, string>> = {
     '/login': 'Logga in',
     '/reset': 'Återställ lösenord',

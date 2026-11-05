@@ -18,7 +18,7 @@ import {
   SCHEMA_DAYS,
   type BusinessOpeningHours,
 } from '../../modules/public-web/src/site/business'
-import worker, { renderContactMetadata } from '../../supabase/worker/index'
+import worker, { renderContactMetadata, renderCmsPage } from '../../supabase/worker/index'
 import { withPageReads } from './helpers/cmsPageReads'
 
 // TST-2: /terms rendered by the Worker itself, not the static fallback file. The built shell shape
@@ -964,4 +964,34 @@ describe('Worker CMS Contact Open Graph identity (A.R05)', () => {
     expect(html).not.toContain('data-cms-public="1"')
     expect(ogUrl(html)).toBe('https://bladeblendstudio.se/contact')
   })
+})
+
+describe('CMS shell metadata byte compatibility', () => {
+  it.each(['sv', 'en'] as const)(
+    'rewrites only the existing metadata value bytes for %s',
+    (lang) => {
+      const metadata =
+        '<meta property="og:locale" content="old" content="last">' +
+        '<meta property="og:locale:alternate" content="old">' +
+        '<link rel="canonical" href="first" href="last">' +
+        '<meta property="og:url" content="old">' +
+        '<meta content="reordered" property="og:url">' +
+        "<meta property='og:url' content='single-quoted'>"
+      const source =
+        '<html lang="sv"><head>İ' + metadata + '</head><body><div id="root"></div></body></html>'
+      const canonical = 'https://bladeblendstudio.se/terms?a=1&b=$1'
+      const expected =
+        '<meta property="og:locale" content="old" content="' +
+        (lang === 'en' ? 'en_US' : 'sv_SE') +
+        '">' +
+        '<meta property="og:locale:alternate" content="' +
+        (lang === 'en' ? 'sv_SE' : 'en_US') +
+        '">' +
+        '<link rel="canonical" href="first" href="https://bladeblendstudio.se/terms?a=1&amp;b=$1">' +
+        '<meta property="og:url" content="https://bladeblendstudio.se/terms?a=1&amp;b=$1">' +
+        '<meta content="reordered" property="og:url">' +
+        "<meta property='og:url' content='single-quoted'>"
+      expect(renderCmsPage(source, terms, lang, 'light', canonical)).toContain('İ' + expected)
+    },
+  )
 })
