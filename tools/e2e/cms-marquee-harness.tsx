@@ -1,11 +1,11 @@
 import { render } from 'preact'
-import { AboutSection } from '../../src/about/AboutSection'
-import { GalleryMarquee } from '../../src/about/GalleryMarquee'
-import type { GalleryPhoto } from '../../src/about/gallery/port'
-import type { ReviewsPort } from '../../src/about/reviews/port'
-import type { BarbersPort } from '../../src/booking/barbersPort'
-import { palette } from '../../src/booking/bookingStyles'
-import { asBarberId } from '../../src/booking/domain'
+import { AboutSection } from '../../modules/public-web/src/about/AboutSection'
+import { GalleryMarquee } from '../../modules/public-web/src/about/GalleryMarquee'
+import type { GalleryPhoto } from '../../modules/public-web/src/about/gallery/port'
+import type { ReviewsPort } from '../../modules/public-web/src/about/reviews/port'
+import type { BarbersPort } from '../../modules/public-web/src/booking/barbersPort'
+import { palette } from '../../modules/public-web/src/booking/bookingStyles'
+import { asBarberId } from '../../modules/public-web/src/booking/domain'
 
 // The real marquee components outside the Studio, so specs measure their actual motion geometry.
 

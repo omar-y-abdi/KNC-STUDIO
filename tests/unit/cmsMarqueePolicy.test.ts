@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { deniedProperty, runtimeOwnedRole } from '../../src/admin/cms/editorPolicy'
-import { marqueeCardStyle, minLoopScale } from '../../src/admin/cms/hierarchicalResize'
+import { deniedProperty, runtimeOwnedRole } from '../../modules/studio/src/editorPolicy'
+import { marqueeCardStyle, minLoopScale } from '../../modules/studio/src/hierarchicalResize'
 
 const motion = [
   'all',

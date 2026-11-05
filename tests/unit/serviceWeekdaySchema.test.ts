@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { serviceRow } from '../../src/admin/adminSchemas'
-import { publicServiceRow } from '../../src/backend/rpcSchemas'
+import { serviceRow } from '../../modules/staff-admin/src/adminSchemas'
+import { publicServiceRow } from '../../packages/backend-contracts/src/rpcSchemas'
 
 const service = {
   id: '11111111-1111-4111-8111-111111111111',

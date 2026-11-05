@@ -52,30 +52,32 @@ const {
 // test hold it back, and `available: false` gives null, the client of a page with no live updates.
 const realtime = vi.hoisted(() => ({ ready: Promise.resolve(), available: true }))
 
-vi.mock('../../src/backend/publicRest', () => ({ getPublicRest: () => ({ rpc }) }))
+vi.mock('../../modules/public-web/src/backend/publicRest', () => ({
+  getPublicRest: () => ({ rpc }),
+}))
 
-vi.mock('../../src/backend/publicRealtime', () => ({
+vi.mock('../../modules/public-web/src/backend/publicRealtime', () => ({
   getPublicRealtime: () =>
     realtime.ready.then(() =>
       realtime.available ? { channel: () => channel, removeChannel } : null,
     ),
 }))
 
-vi.mock('../../src/backend/config', () => ({
+vi.mock('../../modules/public-web/src/backend/config', () => ({
   SUPABASE_URL: 'https://example.supabase.co',
   SUPABASE_ANON_KEY: 'eyJ.test.signature',
   isBackendConfigured: () => true,
 }))
 
-import { defaultBarbersPort } from '../../src/booking/adapters/barbersIndex'
-import { defaultServicesPort } from '../../src/booking/adapters/servicesIndex'
+import { defaultBarbersPort } from '../../modules/public-web/src/booking/adapters/barbersIndex'
+import { defaultServicesPort } from '../../modules/public-web/src/booking/adapters/servicesIndex'
 import {
   BOOKING_CATALOG_TTL_MS,
   cachedBookingCatalog,
   refreshBookingCatalog,
   subscribeBookingCatalog,
-} from '../../src/booking/adapters/supabaseBookingCatalog'
-import { asBarberId } from '../../src/booking/domain'
+} from '../../modules/public-web/src/booking/adapters/supabaseBookingCatalog'
+import { asBarberId } from '../../modules/public-web/src/booking/domain'
 import { unhandledRejectionsDuring } from './helpers/unhandledRejections'
 
 const channelOpened = () => vi.waitFor(() => expect(channel.subscribe).toHaveBeenCalled())

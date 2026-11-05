@@ -4,7 +4,7 @@
 // Fixtures cross-checked against the ISO-8601 calendar (week 1 = the week containing Jan 4).
 
 import { describe, expect, it } from 'vitest'
-import { isoWeek, weekLabel } from '../../src/admin/weekOfYear'
+import { isoWeek, weekLabel } from '../../modules/staff-admin/src/weekOfYear'
 
 describe('isoWeek — composite week-year + week number at year boundaries', () => {
   it('2026-12-31 is week 53 of 2026 (calendar year and week-year agree here)', () => {

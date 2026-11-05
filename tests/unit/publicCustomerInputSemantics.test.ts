@@ -1,21 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { DetailsDialog } from '../../src/booking/DetailsDialog'
-import { AboutSection } from '../../src/about/AboutSection'
-import { MyBookingsDialog } from '../../src/mybookings/MyBookingsDialog'
-import { buildBookingStyles, palette } from '../../src/booking/bookingStyles'
-import { bookingStrings } from '../../src/i18n/index'
+import { DetailsDialog } from '../../modules/public-web/src/booking/DetailsDialog'
+import { AboutSection } from '../../modules/public-web/src/about/AboutSection'
+import { MyBookingsDialog } from '../../modules/public-web/src/mybookings/MyBookingsDialog'
+import { buildBookingStyles, palette } from '../../modules/public-web/src/booking/bookingStyles'
+import { bookingStrings } from '../../modules/public-web/src/i18n/index'
 import { nodes, reset } from './helpers/fakeHooks'
 
 vi.mock('preact/hooks', () => import('./helpers/fakeHooks'))
-vi.mock('../../src/ui/Dialog', () => ({ Dialog: () => null }))
-vi.mock('../../src/ui/pseudo', () => ({ FOCUS_CLS: '', pseudoClass: () => '' }))
-vi.mock('../../src/cms/NativeSurface', () => ({
+vi.mock('../../modules/public-web/src/ui/Dialog', () => ({ Dialog: () => null }))
+vi.mock('../../modules/public-web/src/ui/pseudo', () => ({ FOCUS_CLS: '', pseudoClass: () => '' }))
+vi.mock('../../modules/public-web/src/cms/NativeSurface', () => ({
   NativeRegion: () => null,
   useNativeSource: () => false,
   useNativeSurface: (node: unknown) => node,
   useNativeChild: () => (node: unknown) => node,
 }))
-vi.mock('../../src/about/useBarberMarquee', () => ({
+vi.mock('../../modules/public-web/src/about/useBarberMarquee', () => ({
   useBarberMarquee: () => ({
     selected: null,
     toggle: vi.fn(),

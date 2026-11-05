@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { makeMockMyBookingsAdapter } from '../../src/mybookings/adapters/mockMyBookings'
-import { asBarberId } from '../../src/booking/domain'
+import { makeMockMyBookingsAdapter } from '../../modules/public-web/src/mybookings/adapters/mockMyBookings'
+import { asBarberId } from '../../modules/public-web/src/booking/domain'
 
 // Pin "today" so the demo history is deterministic (no real clock). 2026-06-19 is a Friday.
 const fixedClock = (): Date => new Date(2026, 5, 19)

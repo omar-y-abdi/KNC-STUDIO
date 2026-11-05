@@ -40,7 +40,7 @@ export const THIRD_PARTY_ALLOWLIST = Object.freeze([
     groups: Object.freeze(['customer']),
     reason:
       'customer.spec.mjs books through the real dialog, which loads Cloudflare Turnstile with the ' +
-      'always-pass test site key (src/booking/Turnstile.tsx). Every other group stubs the widget.',
+      'always-pass test site key (modules/public-web/src/booking/Turnstile.tsx). Every other group stubs the widget.',
   }),
 ])
 

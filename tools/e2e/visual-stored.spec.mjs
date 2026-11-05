@@ -40,7 +40,7 @@ const POLL_MS = 50
 const POLL_TIMEOUT_MS = 15_000
 const ABOUT_PEEK_PX = 40
 const MOBILE_MAX_WIDTH = 768
-// PANEL_COMPACT in src/app/shared.ts: the mobile panel's height once the hero has folded away.
+// PANEL_COMPACT in modules/public-web/src/app/shared.ts: the mobile panel's height once the hero has folded away.
 const COMPACT_PANEL_PX = 112
 const CONSENT_COOKIE = 'bladeblend_storage_preferences'
 const SNAPSHOT = {

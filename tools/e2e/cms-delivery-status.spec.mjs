@@ -179,7 +179,7 @@ async function mountDeliveryStatus(page) {
   await page.goto(`${baseUrl}/tools/e2e/admin-harness.html`, { waitUntil: 'domcontentloaded' })
   await page.evaluate(async () => {
     const { h, render } = await import('/tools/e2e/admin-harness.tsx')
-    const { DeliveryStatus } = await import('/src/admin/cms/DeliveryStatus.tsx')
+    const { DeliveryStatus } = await import('/modules/studio/src/DeliveryStatus.tsx')
     const target = globalThis.document.querySelector('#root')
     render(null, target)
     render(h(DeliveryStatus, {}), target)

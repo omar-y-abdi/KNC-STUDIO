@@ -107,7 +107,7 @@ test('cms-resource-workflow', async ({ page, browserName, evidenceDir }) => {
   try {
     await page.goto(`${base}/tools/e2e/admin-harness.html`)
     await page.evaluate(async () => {
-      const { emptyDocument } = await import('/shared/cms.ts')
+      const { emptyDocument } = await import('/packages/content-contracts/src/cms.ts')
       const { mountResources } = await import('/tools/e2e/cms-resources-harness.tsx')
       const doc = emptyDocument()
       doc.barbers = ['a', 'b'].map((id) => ({
@@ -292,7 +292,7 @@ test('cms-site-resources', async ({ page, browserName, evidenceDir }) => {
   ])
   await page.goto(`${base}/tools/e2e/admin-harness.html`)
   await page.evaluate(async () => {
-    const { emptyDocument } = await import('/shared/cms.ts')
+    const { emptyDocument } = await import('/packages/content-contracts/src/cms.ts')
     const { mountResources } = await import('/tools/e2e/cms-resources-harness.tsx')
     const doc = emptyDocument()
     doc.settings.business_phone_display = '079-000 00 00'

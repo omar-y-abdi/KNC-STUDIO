@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { MIN_PASSWORD_LENGTH, validateNewPassword } from '../../src/admin/passwordPolicy'
+import {
+  MIN_PASSWORD_LENGTH,
+  validateNewPassword,
+} from '../../modules/staff-admin/src/passwordPolicy'
 
 describe('validateNewPassword', () => {
   it('rejects a password shorter than the minimum', () => {

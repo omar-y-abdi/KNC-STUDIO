@@ -14,14 +14,14 @@
 
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { Client } from 'pg'
-import { defaultBarbersPort } from '../../src/booking/adapters/barbersIndex'
-import { refreshBookingCatalog } from '../../src/booking/adapters/supabaseBookingCatalog'
-import { supabaseAboutContentAdapter } from '../../src/about/content/supabaseAboutContent'
-import { supabaseGalleryAdapter } from '../../src/about/gallery/supabaseGallery'
-import { supabaseBookingAdapter } from '../../src/booking/adapters/supabaseBooking'
-import { stockholmInstant } from '../../src/booking/stockholmTime'
-import { supabaseSiteChromeAdapter } from '../../src/site/adapters/supabaseSiteChrome'
-import { asBarberId } from '../../src/booking/domain'
+import { defaultBarbersPort } from '../../modules/public-web/src/booking/adapters/barbersIndex'
+import { refreshBookingCatalog } from '../../modules/public-web/src/booking/adapters/supabaseBookingCatalog'
+import { supabaseAboutContentAdapter } from '../../modules/public-web/src/about/content/supabaseAboutContent'
+import { supabaseGalleryAdapter } from '../../modules/public-web/src/about/gallery/supabaseGallery'
+import { supabaseBookingAdapter } from '../../modules/public-web/src/booking/adapters/supabaseBooking'
+import { stockholmInstant } from '../../modules/public-web/src/booking/stockholmTime'
+import { supabaseSiteChromeAdapter } from '../../modules/public-web/src/site/adapters/supabaseSiteChrome'
+import { asBarberId } from '../../modules/public-web/src/booking/domain'
 import {
   adminBackendReady,
   insertBookingRaw,

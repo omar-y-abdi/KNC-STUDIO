@@ -2,10 +2,10 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { gunzipSync } from 'node:zlib'
-import { emptyDocument, validateDocument } from '../../shared/cms.ts'
-import { CMS_BUILT_ASSETS } from '../../shared/cms-built-assets.ts'
-import { validateDocumentMarkupPlacements } from '../../shared/cms-markup.ts'
-import { createSitePage } from '../../shared/site-page.ts'
+import { emptyDocument, validateDocument } from '../../packages/content-contracts/src/cms.ts'
+import { CMS_BUILT_ASSETS } from '../../packages/content-contracts/src/cms-built-assets.ts'
+import { validateDocumentMarkupPlacements } from '../../packages/content-contracts/src/cms-markup.ts'
+import { createSitePage } from '../../packages/content-contracts/src/site-page.ts'
 import { nativeBackend } from './cms-backend.mjs'
 import { attachTabState } from './cms-tab-state.mjs'
 import { expect, test } from './fixtures.mjs'
@@ -117,7 +117,7 @@ const productionDocument = async () => ({
 const mountExitableStudio = async (page) => {
   await page.evaluate(async () => {
     const { h, render } = await import('/tools/e2e/admin-harness.tsx')
-    const { CmsStudio } = await import('/src/admin/cms/Studio.tsx')
+    const { CmsStudio } = await import('/modules/studio/src/Studio.tsx')
     const root = globalThis.document.querySelector('#root')
     render(h(CmsStudio, { onExit: () => render(null, root) }), root)
   })
@@ -141,8 +141,8 @@ test('cms-lifecycle retries a failed backup initialization without hiding its or
   await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html?view=cms-studio`)
   const recoveredName = 'Utkast före misslyckad backupstart'
   await page.evaluate(async (name) => {
-    const { cmsApi } = await import('/src/admin/cms/api.ts')
-    const { openKeyedStore } = await import('/src/admin/cms/indexedDb.ts')
+    const { cmsApi } = await import('/modules/studio/src/api.ts')
+    const { openKeyedStore } = await import('/modules/studio/src/indexedDb.ts')
     const loaded = await cmsApi.state()
     const document = globalThis.structuredClone(loaded.document)
     document.presentation.pages[0].name.sv = name
@@ -382,7 +382,7 @@ test('cms-lifecycle ordinary Desktop-width Contact CSS opens as published and su
   assert.equal(
     await page.evaluate(
       async (document) =>
-        (await import('/src/admin/cms/corePages.ts')).needsCorePageSource(document),
+        (await import('/modules/studio/src/corePages.ts')).needsCorePageSource(document),
       backend.document,
     ),
     false,
@@ -820,7 +820,7 @@ test('cms-lifecycle a pending source upgrade cannot overwrite a recovered draft'
   await recipient.route(sourceRoute, holdSource)
   await recipient.goto(`${harnessOrigin}/tools/e2e/admin-harness.html?view=cms-studio`)
   await recipient.evaluate(async () => {
-    const session = await (await import('/src/admin/cms/backup.ts')).cmsBackups()
+    const session = await (await import('/modules/studio/src/backup.ts')).cmsBackups()
     const adopt = session.adopt.bind(session)
     const ready = new Promise((resolve) => {
       globalThis.__releaseCmsAdoption = resolve
@@ -847,7 +847,7 @@ test('cms-lifecycle a pending source upgrade cannot overwrite a recovered draft'
       .waitFor({ state: 'detached', timeout: 90000 })
     // Complete any write the old source effect scheduled, without relying on a fixed delay.
     await recipient.evaluate(async () =>
-      (await (await import('/src/admin/cms/backup.ts')).cmsBackups()).flush(),
+      (await (await import('/modules/studio/src/backup.ts')).cmsBackups()).flush(),
     )
     assert.deepEqual(await storedDrafts(recipient), [recoveredName])
   } finally {

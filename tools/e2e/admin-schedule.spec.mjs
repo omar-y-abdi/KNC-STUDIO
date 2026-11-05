@@ -20,7 +20,7 @@ const BARBER = 'schedule-barber'
 const ROW_ID = 'dddddddd-0000-4000-8000-000000000001'
 const OFF_ID = 'dddddddd-0000-4000-8000-000000000002'
 const BOOKING_ID = 'eeeeeeee-0000-4000-8000-000000000001'
-// Mirrors SAVE_DEBOUNCE_MS in src/admin/views/useWeekAutosave.ts: the autosave timing is the contract.
+// Mirrors SAVE_DEBOUNCE_MS in modules/staff-admin/src/views/useWeekAutosave.ts: the autosave timing is the contract.
 const SAVE_DEBOUNCE_MS = 600
 
 test.use({ viewport: { width: 1280, height: 900 }, timezoneId: 'Europe/Stockholm' })

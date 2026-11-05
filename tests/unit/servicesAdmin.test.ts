@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { ok } from '../../src/admin/types'
+import { ok } from '../../modules/staff-admin/src/types'
 
 const { from, rpc, insert, update, remove, select, single, eq } = vi.hoisted(() => ({
   from: vi.fn(),
@@ -12,7 +12,7 @@ const { from, rpc, insert, update, remove, select, single, eq } = vi.hoisted(() 
   eq: vi.fn(),
 }))
 
-vi.mock('../../src/admin/adminClient', () => ({
+vi.mock('../../modules/staff-admin/src/adminClient', () => ({
   getAdminClient: () => ({ from, rpc }),
 }))
 
@@ -21,7 +21,7 @@ import {
   deleteService,
   reorderService,
   updateService,
-} from '../../src/admin/adapters/servicesAdmin'
+} from '../../modules/staff-admin/src/adapters/servicesAdmin'
 
 const SERVICE_ROW = {
   id: '41000000-0000-4000-8000-000000000001',
@@ -132,7 +132,8 @@ describe('services admin ordering boundary', () => {
 // Reads and writes share a resource queue beyond a component's lifetime.
 describe('admin operation ordering', () => {
   it('a returning read observes the first commit and a later write remains final', async () => {
-    const { orderedAdminOperation } = await import('../../src/admin/orderedOperations')
+    const { orderedAdminOperation } =
+      await import('../../modules/staff-admin/src/orderedOperations')
     let release = (): void => undefined
     const gate = new Promise<void>((resolve) => {
       release = resolve
@@ -166,7 +167,8 @@ describe('admin operation ordering', () => {
   })
 
   it('a different barber can proceed while A is pending', async () => {
-    const { orderedAdminOperation } = await import('../../src/admin/orderedOperations')
+    const { orderedAdminOperation } =
+      await import('../../modules/staff-admin/src/orderedOperations')
     let release = (): void => undefined
     const gate = new Promise<void>((resolve) => {
       release = resolve
@@ -186,7 +188,8 @@ describe('admin operation ordering', () => {
   })
 
   it('a rejected write releases the resource without hiding the rejection', async () => {
-    const { orderedAdminOperation } = await import('../../src/admin/orderedOperations')
+    const { orderedAdminOperation } =
+      await import('../../modules/staff-admin/src/orderedOperations')
     const failed = orderedAdminOperation('test:rejected', async () => {
       throw new Error('write failed')
     })
@@ -200,7 +203,7 @@ describe('admin operation ordering', () => {
 
   it('drops old queued intent at session end while a new session still reads after the in-flight commit', async () => {
     const { orderedAdminOperation, invalidateAdminOperations } =
-      await import('../../src/admin/orderedOperations')
+      await import('../../modules/staff-admin/src/orderedOperations')
     let release = (): void => undefined
     const gate = new Promise<void>((resolve) => {
       release = resolve

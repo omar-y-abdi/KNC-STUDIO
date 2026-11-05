@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { generate, parse, walk } from 'css-tree'
 import { nativeBackend } from './cms-backend.mjs'
-import { minLoopScale } from '../../src/admin/cms/hierarchicalResize.ts'
+import { minLoopScale } from '../../modules/studio/src/hierarchicalResize.ts'
 import { test } from './fixtures.mjs'
 import { harnessOrigin } from './origins.mjs'
 test.use({
@@ -243,7 +243,7 @@ test('cms-hierarchical-resize', async ({ page, context, browserName, evidenceDir
   const ownerBlocks = () =>
     page.evaluate(async (selector) => {
       const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
-      const { readCanvasRuleCss } = await import('/src/admin/cms/nativeCanvas.ts')
+      const { readCanvasRuleCss } = await import('/modules/studio/src/nativeCanvas.ts')
       const editor = cmsGrapes.editors.at(-1)
       const ids = new Set(
         editor
@@ -746,8 +746,8 @@ test('cms-hierarchical-resize: a grouped rule never carries a resize guard past 
   page.on('pageerror', (error) => errors.push(error.message))
   await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
   const result = await page.evaluate(async () => {
-    const { syncPageLayout } = await import('/src/admin/cms/responsiveStyles.ts')
-    const { createSitePage } = await import('/shared/site-page.ts')
+    const { syncPageLayout } = await import('/modules/studio/src/responsiveStyles.ts')
+    const { createSitePage } = await import('/packages/content-contracts/src/site-page.ts')
     const id = '10000000-0000-4000-8000-000000000002'
     const guard = (width) => `@media (min-width:769px){&:where(#card){width:${width}!important}}`
     const sheet = (middle, last) =>
@@ -863,8 +863,8 @@ test('cms-hierarchical-resize: removing an emptied rule never moves the next res
   page.on('pageerror', (error) => errors.push(error.message))
   await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
   const result = await page.evaluate(async () => {
-    const { syncPageLayout } = await import('/src/admin/cms/responsiveStyles.ts')
-    const { createSitePage } = await import('/shared/site-page.ts')
+    const { syncPageLayout } = await import('/modules/studio/src/responsiveStyles.ts')
+    const { createSitePage } = await import('/packages/content-contracts/src/site-page.ts')
     const guard = (width) => `@media (min-width:769px){&:where(#card){width:${width}!important}}`
     // The inner narrow-Desktop media keeps this Desktop block one rule in the editor, so a
     // Desktop edit either adds a separate rule or changes the first one in place.
@@ -1602,9 +1602,10 @@ test('cms-hierarchical-resize: intrinsically sized flex cards shrink after a Des
       aboutOf(seeded).content[lang].css[mode] += flexRow(ids[lang])
   // The stored document passes the validators that the Studio and the publication run.
   await capturePage.evaluate(async (document) => {
-    const { validateDocument } = await import('/shared/cms.ts')
-    const { validateDocumentMarkupPlacements } = await import('/shared/cms-markup.ts')
-    const { CMS_BUILT_ASSETS } = await import('/shared/cms-built-assets.ts')
+    const { validateDocument } = await import('/packages/content-contracts/src/cms.ts')
+    const { validateDocumentMarkupPlacements } =
+      await import('/packages/content-contracts/src/cms-markup.ts')
+    const { CMS_BUILT_ASSETS } = await import('/packages/content-contracts/src/cms-built-assets.ts')
     validateDocument(document)
     validateDocumentMarkupPlacements(document, {
       siteOrigin: globalThis.location.origin,

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }))
 
-vi.mock('../../src/admin/adminClient', () => ({
+vi.mock('../../modules/staff-admin/src/adminClient', () => ({
   getAdminClient: () => ({
     functions: { invoke },
     storage: {
@@ -17,7 +17,10 @@ vi.mock('../../src/admin/adminClient', () => ({
   }),
 }))
 
-import { removeBarberPhoto, uploadBarberPhoto } from '../../src/admin/adapters/barberPhotoAdmin'
+import {
+  removeBarberPhoto,
+  uploadBarberPhoto,
+} from '../../modules/staff-admin/src/adapters/barberPhotoAdmin'
 function imageFile(): File {
   return new File(['image'], 'portrait.jpg', { type: 'image/jpeg' })
 }

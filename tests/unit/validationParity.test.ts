@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod/v3'
-import { parseReview } from '../../src/about/reviewValidation'
+import { parseReview } from '../../modules/public-web/src/about/reviewValidation'
 import {
   normalizePhone,
   parseEmail,
   parseName,
   parsePhone,
   type ValidationResult,
-} from '../../src/booking/validation'
+} from '../../modules/public-web/src/booking/validation'
 
 // The public form checks used to be zod schemas. The schemas below are those schemas, verbatim,
 // kept only as the oracle: the plain functions must accept, reject, normalise and word every

@@ -10,12 +10,12 @@ import worker, {
   renderLlmsText,
   renderPrivateMetadata,
   renderLegalMetadata,
-} from '../../src/worker'
+} from '../../supabase/worker/index'
 import {
   buildBusinessStructuredData,
   resolveBusinessSettings,
   type BusinessSettings,
-} from '../../src/site/business'
+} from '../../modules/public-web/src/site/business'
 
 const assetBodies: Readonly<Record<string, string>> = {
   '/index.html': '<main>homepage</main>',

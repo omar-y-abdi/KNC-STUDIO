@@ -6,12 +6,19 @@ import {
   validateDocument,
   type CmsPage,
   type CmsPresentation,
-} from '../../shared/cms'
-import { validateDocumentMarkupPlacements, validateMarkup } from '../../shared/cms-markup'
-import { CMS_BUILT_ASSETS } from '../../shared/cms-built-assets'
-import { createSitePage, SITE_PAGE_CSS } from '../../shared/site-page'
-import { DEFAULT_BUSINESS, SCHEMA_DAYS, type BusinessOpeningHours } from '../../src/site/business'
-import worker, { renderContactMetadata } from '../../src/worker'
+} from '../../packages/content-contracts/src/cms'
+import {
+  validateDocumentMarkupPlacements,
+  validateMarkup,
+} from '../../packages/content-contracts/src/cms-markup'
+import { CMS_BUILT_ASSETS } from '../../packages/content-contracts/src/cms-built-assets'
+import { createSitePage, SITE_PAGE_CSS } from '../../packages/content-contracts/src/site-page'
+import {
+  DEFAULT_BUSINESS,
+  SCHEMA_DAYS,
+  type BusinessOpeningHours,
+} from '../../modules/public-web/src/site/business'
+import worker, { renderContactMetadata } from '../../supabase/worker/index'
 import { withPageReads } from './helpers/cmsPageReads'
 
 // TST-2: /terms rendered by the Worker itself, not the static fallback file. The built shell shape
@@ -214,7 +221,7 @@ const contactDiscovery = {
 
 // As nativePages adopts Contact: no owner title or description, and the English template in `en`.
 const englishContact = readFileSync(
-  new URL('../../src/admin/cms/contact.en.html', import.meta.url),
+  new URL('../../modules/studio/src/contact.en.html', import.meta.url),
   'utf8',
 ).trim()
 const adoptedContact: CmsPage = {

@@ -247,7 +247,7 @@ export async function customerStackFixture({ browserName }, use) {
       workerConfig,
       JSON.stringify({
         name: 'knc-customer-browser',
-        main: resolve('src/worker.ts'),
+        main: resolve('supabase/worker/index.ts'),
         compatibility_date: '2026-08-09',
         vars: { SUPABASE_URL: `http://127.0.0.1:${upstreamAddress.port}` },
         assets: {

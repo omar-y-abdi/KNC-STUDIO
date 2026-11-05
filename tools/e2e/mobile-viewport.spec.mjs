@@ -111,12 +111,12 @@ for (const mode of ['light', 'dark'])
             { NativeSiteProvider },
           ] = await Promise.all([
             import('/tools/e2e/admin-harness.tsx'),
-            import('/src/booking/DetailsDialog.tsx'),
-            import('/src/booking/ConfirmationDialog.tsx'),
-            import('/src/booking/Turnstile.tsx'),
-            import('/src/booking/bookingStyles.ts'),
-            import('/src/i18n/index.ts'),
-            import('/src/cms/NativeSurface.tsx'),
+            import('/modules/public-web/src/booking/DetailsDialog.tsx'),
+            import('/modules/public-web/src/booking/ConfirmationDialog.tsx'),
+            import('/modules/public-web/src/booking/Turnstile.tsx'),
+            import('/modules/public-web/src/booking/bookingStyles.ts'),
+            import('/modules/public-web/src/i18n/index.ts'),
+            import('/modules/public-web/src/cms/NativeSurface.tsx'),
           ])
           const noop = () => undefined
           globalThis.widgetHeight = 65
@@ -310,7 +310,7 @@ test('new live children keep source anchors without undoing owner edits', async 
   const result = await page.evaluate(async () => {
     const [{ h, render }, { nativeTree, projectNativeTree }] = await Promise.all([
       import('/tools/e2e/admin-harness.tsx'),
-      import('/src/cms/NativeSurface.tsx'),
+      import('/modules/public-web/src/cms/NativeSurface.tsx'),
     ])
     const Runtime = () => h('span', null, 'verification')
     const source = (active) =>

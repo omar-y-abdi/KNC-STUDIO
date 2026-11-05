@@ -7,7 +7,7 @@ import {
   type AdminStackEnv,
 } from './_adminHelpers'
 import { withClient } from './_helpers'
-import type { CmsDocument, CmsEmail, CmsState } from '../../shared/cms'
+import type { CmsDocument, CmsEmail, CmsState } from '../../packages/content-contracts/src/cms'
 
 // Real Edge, PostgREST and Postgres. Before the authority migration the owner wrote site_content and
 // email_templates directly: any site key, and mail copy limited only by the column lengths. These

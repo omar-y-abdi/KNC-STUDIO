@@ -161,9 +161,10 @@ test('cms-scenes', async ({ page, context, browserName }) => {
     await page.goto(base)
     await page.evaluate(async (presentation) => {
       const { h, render } = await import('/tools/e2e/admin-harness.tsx')
-      const { NativeSiteProvider } = await import('/src/cms/NativeSurface.tsx')
-      const { MyBookingsDialog } = await import('/src/mybookings/MyBookingsDialog.tsx')
-      const { previewCustomerPort } = await import('/src/cms/PreviewPorts.ts')
+      const { NativeSiteProvider } = await import('/modules/public-web/src/cms/NativeSurface.tsx')
+      const { MyBookingsDialog } =
+        await import('/modules/public-web/src/mybookings/MyBookingsDialog.tsx')
+      const { previewCustomerPort } = await import('/modules/public-web/src/cms/PreviewPorts.ts')
       const port = {
         ...previewCustomerPort,
         list: async () => ({
@@ -210,8 +211,8 @@ test('cms-scenes', async ({ page, context, browserName }) => {
     assert.ok(!(await page.locator('body').innerText()).includes('Exempelbarberare'))
     await page.evaluate(async (presentation) => {
       const { h, render } = await import('/tools/e2e/admin-harness.tsx')
-      const { NativeSiteProvider } = await import('/src/cms/NativeSurface.tsx')
-      const { BookingFlow } = await import('/src/booking/BookingFlow.tsx')
+      const { NativeSiteProvider } = await import('/modules/public-web/src/cms/NativeSurface.tsx')
+      const { BookingFlow } = await import('/modules/public-web/src/booking/BookingFlow.tsx')
       const barber = { id: 'runtime-barber', name: 'Runtime barber', ig: 'runtime' }
       const service = { id: 'runtime-service', name: 'Runtime haircut', price: 420, dur: 45 }
       const port = {

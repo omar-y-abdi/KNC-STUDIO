@@ -33,7 +33,7 @@ test('cms-responsive: stored muted colors keep computed values and respect theme
     }
   await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
   const result = await page.evaluate(async (samples) => {
-    const { themeStyleValue } = await import('/shared/site-theme.ts')
+    const { themeStyleValue } = await import('/packages/content-contracts/src/site-theme.ts')
     const literals = new Set([
       'rgba(0, 0, 0, 0.6)',
       'rgba(0, 0, 0, 0.62)',

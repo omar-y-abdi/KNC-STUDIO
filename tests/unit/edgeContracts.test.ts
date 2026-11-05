@@ -205,11 +205,13 @@ describe('edge bundles', () => {
     },
   )
 
-  it('only cms-studio reaches shared/cms.ts', () => {
+  it('only cms-studio reaches packages/content-contracts/src/cms.ts', () => {
     const entries = readdirSync(FUNCTIONS, { withFileTypes: true })
       .filter((entry) => entry.isDirectory() && !entry.name.startsWith('_'))
       .map((entry) => join(FUNCTIONS, entry.name, 'index.ts'))
-    const reaching = entries.filter((entry) => [...reach(entry)].includes('shared/cms.ts'))
+    const reaching = entries.filter((entry) =>
+      [...reach(entry)].includes('packages/content-contracts/src/cms.ts'),
+    )
     expect(reaching).toEqual([join(FUNCTIONS, 'cms-studio', 'index.ts')])
   })
 })

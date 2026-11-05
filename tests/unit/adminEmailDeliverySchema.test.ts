@@ -3,7 +3,7 @@ import {
   discardFailedBookingEmailDeliveryResponse,
   emailSendLogEntryRow,
   failedBookingEmailDeliveryRow,
-} from '../../src/admin/adminSchemas'
+} from '../../modules/staff-admin/src/adminSchemas'
 
 describe('failed booking email delivery admin contract', () => {
   const row = {

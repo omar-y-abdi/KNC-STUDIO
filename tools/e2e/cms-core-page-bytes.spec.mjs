@@ -14,9 +14,11 @@ test('adding a missing Contact preserves complete owner information pages byte f
 }) => {
   await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html?view=cms-studio`)
   const result = await page.evaluate(async (templates) => {
-    const { emptyDocument, validateDocument } = await import('/shared/cms.ts')
-    const { validateDocumentMarkupPlacements } = await import('/shared/cms-markup.ts')
-    const { CORE_PAGE_IDS, ensureCorePages } = await import('/src/admin/cms/corePages.ts')
+    const { emptyDocument, validateDocument } =
+      await import('/packages/content-contracts/src/cms.ts')
+    const { validateDocumentMarkupPlacements } =
+      await import('/packages/content-contracts/src/cms-markup.ts')
+    const { CORE_PAGE_IDS, ensureCorePages } = await import('/modules/studio/src/corePages.ts')
     const source = Object.entries(templates).map(([path, template], index) => {
       const parsed = new globalThis.DOMParser().parseFromString(template, 'text/html')
       const css = [...parsed.querySelectorAll('style')]

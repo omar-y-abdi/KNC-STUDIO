@@ -8,9 +8,9 @@ async function resources(page, state = 'active') {
   await page.goto(`${base}/tools/e2e/admin-harness.html`)
   await page.evaluate(async (state) => {
     const { h, render } = await import('/tools/e2e/admin-harness.tsx')
-    const { CmsResources } = await import('/src/admin/cms/Resources.tsx')
-    const { cmsApi } = await import('/src/admin/cms/api.ts')
-    const { emptyDocument } = await import('/shared/cms.ts')
+    const { CmsResources } = await import('/modules/studio/src/Resources.tsx')
+    const { cmsApi } = await import('/modules/studio/src/api.ts')
+    const { emptyDocument } = await import('/packages/content-contracts/src/cms.ts')
     const first = {
       id: '20000000-0000-4000-8000-000000000001',
       bucket: 'cms-library',
@@ -106,11 +106,11 @@ async function repeatedCards(page) {
   return page.evaluate(async () => {
     const { h, render } = await import('/tools/e2e/admin-harness.tsx')
     const { nativeTree, NativeRegion, NativeSiteProvider } =
-      await import('/src/cms/NativeSurface.tsx')
-    const { createInstanceScope } = await import('/src/cms/instanceScope.ts')
-    const { snapshotNative } = await import('/src/admin/cms/nativePages.ts')
-    const { emptyDocument } = await import('/shared/cms.ts')
-    const { validateMarkup } = await import('/shared/cms-markup.ts')
+      await import('/modules/public-web/src/cms/NativeSurface.tsx')
+    const { createInstanceScope } = await import('/modules/public-web/src/cms/instanceScope.ts')
+    const { snapshotNative } = await import('/modules/studio/src/nativePages.ts')
+    const { emptyDocument } = await import('/packages/content-contracts/src/cms.ts')
+    const { validateMarkup } = await import('/packages/content-contracts/src/cms-markup.ts')
     const surface = 'my-booking-card'
     const make = () => {
       let deep = h('span', { class: 'review-deep' }, 'Original deep text')
@@ -297,8 +297,8 @@ test('Missing scene upgrade preserves owner CSS precedence and is idempotent', a
   page.setDefaultTimeout(15000)
   await page.goto(`${base}/tools/e2e/admin-harness.html`)
   const actual = await page.evaluate(async () => {
-    const { emptyDocument } = await import('/shared/cms.ts')
-    const { ensureCorePages } = await import('/src/admin/cms/corePages.ts')
+    const { emptyDocument } = await import('/packages/content-contracts/src/cms.ts')
+    const { ensureCorePages } = await import('/modules/studio/src/corePages.ts')
     const draft = emptyDocument()
     const original = {
       id: '10000000-0000-4000-8000-000000000003',
@@ -353,9 +353,9 @@ test('Missing scene upgrade preserves owner CSS precedence and is idempotent', a
 test('Raw and adopted CSS preserve native canvas output in both schemes', async ({ page }) => {
   await page.goto(`${base}/tools/e2e/admin-harness.html`)
   const result = await page.evaluate(async () => {
-    const { emptyDocument } = await import('/shared/cms.ts')
-    const { normalizeDocument } = await import('/src/admin/cms/normalizeDocument.ts')
-    const { nativeCanvas } = await import('/src/admin/cms/nativeCanvas.ts')
+    const { emptyDocument } = await import('/packages/content-contracts/src/cms.ts')
+    const { normalizeDocument } = await import('/modules/studio/src/normalizeDocument.ts')
+    const { nativeCanvas } = await import('/modules/studio/src/nativeCanvas.ts')
     const html =
       '<main data-knc-native="1"><section id="owner-offset" data-knc-baseline="{}" ' +
       'data-knc-light="padding:2px;color:#123456" data-knc-dark="padding:3px;color:#abcdef">Owner wording</section></main>'
@@ -433,10 +433,10 @@ test('Nested component instances retain hooks, refs and local label targets', as
     const { h, render } = await import('/tools/e2e/admin-harness.tsx')
     const { createRef, useState } = await import('/tools/e2e/cms-resources-harness.tsx')
     const { useNativeChild, NativeRegion, NativeSiteProvider } =
-      await import('/src/cms/NativeSurface.tsx')
-    const { createInstanceScope } = await import('/src/cms/instanceScope.ts')
-    const { snapshotNative } = await import('/src/admin/cms/nativePages.ts')
-    const { emptyDocument } = await import('/shared/cms.ts')
+      await import('/modules/public-web/src/cms/NativeSurface.tsx')
+    const { createInstanceScope } = await import('/modules/public-web/src/cms/instanceScope.ts')
+    const { snapshotNative } = await import('/modules/studio/src/nativePages.ts')
+    const { emptyDocument } = await import('/packages/content-contracts/src/cms.ts')
     function Child({ reference }) {
       const [count, setCount] = useState(0)
       const project = useNativeChild()

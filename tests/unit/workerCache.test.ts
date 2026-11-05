@@ -1,14 +1,18 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { INFORMATION_PAGE_PATHS, emptyDocument, type CmsPage } from '../../shared/cms'
-import { resolveBusinessSettings } from '../../src/site/business'
+import {
+  INFORMATION_PAGE_PATHS,
+  emptyDocument,
+  type CmsPage,
+} from '../../packages/content-contracts/src/cms'
+import { resolveBusinessSettings } from '../../modules/public-web/src/site/business'
 import {
   CMS_REVISION_ATTRIBUTE,
   parseCmsRevision,
   presentationPath,
   requestedPresentationRevision,
-} from '../../src/site/routeMetadata'
-import worker, { PublicContent, isCmsPagePath, renderCmsPage } from '../../src/worker'
+} from '../../modules/public-web/src/site/routeMetadata'
+import worker, { PublicContent, isCmsPagePath, renderCmsPage } from '../../supabase/worker/index'
 
 // E2 (worker-cache): non-page requests skip the CMS, independent reads overlap, the presentation is
 // versioned and cached per revision, empty descriptions keep the defaults, and the static layer

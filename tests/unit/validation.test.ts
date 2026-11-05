@@ -5,7 +5,7 @@ import {
   parseEmail,
   parseContact,
   normalizePhone,
-} from '../../src/booking/validation'
+} from '../../modules/public-web/src/booking/validation'
 
 describe('parsePhone (Swedish mobile)', () => {
   it('accepts valid mobile forms (incl. +46 / spacing / dashes)', () => {

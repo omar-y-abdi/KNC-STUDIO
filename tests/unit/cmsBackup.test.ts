@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { emptyDocument, type CmsDocument } from '../../shared/cms'
+import { emptyDocument, type CmsDocument } from '../../packages/content-contracts/src/cms'
 import {
   JournalFull,
   openBackupSession,
   type BackupPorts,
   type BackupSession,
   type StoredBackup,
-} from '../../src/admin/cms/backup'
+} from '../../modules/studio/src/backup'
 
 const FINGERPRINT = '0123456789abcdef0123456789abcdef'
 

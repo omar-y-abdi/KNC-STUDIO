@@ -9,7 +9,7 @@ import {
   readAdminScroll,
   tabFromAdminUrl,
   withAdminNavigationHistoryState,
-} from '../../src/admin/navigationState'
+} from '../../modules/staff-admin/src/navigationState'
 
 function memoryStorage(initial: Record<string, string> = {}): Storage {
   const values = new Map(Object.entries(initial))

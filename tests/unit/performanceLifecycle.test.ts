@@ -1,14 +1,14 @@
-import type * as SharedModule from '../../src/app/shared'
+import type * as SharedModule from '../../modules/public-web/src/app/shared'
 import { h } from 'preact'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { AboutSection } from '../../src/about/AboutSection'
-import { GalleryMarquee } from '../../src/about/GalleryMarquee'
-import { MobileSite } from '../../src/app/MobileSite'
-import { shellPalette } from '../../src/app/shared'
-import { palette } from '../../src/booking/bookingStyles'
-import { appStrings, bookingStrings } from '../../src/i18n/index'
-import { DEFAULT_BUSINESS } from '../../src/config'
-import { DEFAULT_CHROME } from '../../src/site/siteChrome'
+import { AboutSection } from '../../modules/public-web/src/about/AboutSection'
+import { GalleryMarquee } from '../../modules/public-web/src/about/GalleryMarquee'
+import { MobileSite } from '../../modules/public-web/src/app/MobileSite'
+import { shellPalette } from '../../modules/public-web/src/app/shared'
+import { palette } from '../../modules/public-web/src/booking/bookingStyles'
+import { appStrings, bookingStrings } from '../../modules/public-web/src/i18n/index'
+import { DEFAULT_BUSINESS } from '../../modules/public-web/src/config'
+import { DEFAULT_CHROME } from '../../modules/public-web/src/site/siteChrome'
 import { hooks, mount, nodes, ref, render, reset } from './helpers/fakeHooks'
 
 const ports = vi.hoisted(() => ({
@@ -18,17 +18,17 @@ const ports = vi.hoisted(() => ({
   gallery: vi.fn(),
 }))
 vi.mock('preact/hooks', () => import('./helpers/fakeHooks'))
-vi.mock('../../src/ui/pseudo', () => ({ FOCUS_CLS: '', pseudoClass: () => '' }))
-vi.mock('../../src/cms/NativeSurface', () => ({
+vi.mock('../../modules/public-web/src/ui/pseudo', () => ({ FOCUS_CLS: '', pseudoClass: () => '' }))
+vi.mock('../../modules/public-web/src/cms/NativeSurface', () => ({
   useNativeSource: () => false,
   useNativeSurface: (node: unknown) => node,
   useNativeChild: () => (node: unknown) => node,
 }))
-vi.mock('../../src/app/shared', async (original) => ({
+vi.mock('../../modules/public-web/src/app/shared', async (original) => ({
   ...(await original<typeof SharedModule>()),
   useReducedMotion: () => false,
 }))
-vi.mock('../../src/about/useBarberMarquee', () => ({
+vi.mock('../../modules/public-web/src/about/useBarberMarquee', () => ({
   useBarberMarquee: () => ({
     selected: null,
     toggle: vi.fn(),
@@ -36,13 +36,15 @@ vi.mock('../../src/about/useBarberMarquee', () => ({
     animate: false,
   }),
 }))
-vi.mock('../../src/booking/useRoster', () => ({ useRoster: ports.roster }))
-vi.mock('../../src/about/gallery/useGallery', () => ({ useGallery: ports.gallery }))
-vi.mock('../../src/about/content/index', () => ({
+vi.mock('../../modules/public-web/src/booking/useRoster', () => ({ useRoster: ports.roster }))
+vi.mock('../../modules/public-web/src/about/gallery/useGallery', () => ({
+  useGallery: ports.gallery,
+}))
+vi.mock('../../modules/public-web/src/about/content/index', () => ({
   aboutContentIsMock: false,
   defaultAboutContentPort: { overlay: ports.overlay },
 }))
-vi.mock('../../src/about/reviews/adapters/index', () => ({
+vi.mock('../../modules/public-web/src/about/reviews/adapters/index', () => ({
   defaultReviewsPort: { list: ports.reviews },
 }))
 

@@ -1,5 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { CmsValidationError, validMediaRef, type CmsAsset } from '../../../shared/cms.ts'
+import {
+  CmsValidationError,
+  validMediaRef,
+  type CmsAsset,
+} from '../../../packages/content-contracts/src/cms.ts'
 import type { CopyRequest } from './request.ts'
 
 const COLUMNS = 'id,bucket,path,name,alt,mime,width,height,bytes,archived,trashed_at,version'

@@ -1,4 +1,4 @@
-import type { CmsPresentation } from '../../../shared/cms'
+import type { CmsPresentation } from '../../../packages/content-contracts/src/cms'
 
 type FetchAnswer = (input: string | URL | Request, init?: RequestInit) => Promise<Response>
 

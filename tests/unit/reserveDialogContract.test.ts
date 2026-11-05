@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { ReserveDialog, type ReserveDialogProps } from '../../src/admin/ReserveDialog'
-import { adminText } from '../../src/i18n/adminStrings'
+import { ReserveDialog, type ReserveDialogProps } from '../../modules/staff-admin/src/ReserveDialog'
+import { adminText } from '../../modules/staff-admin/src/adminStrings'
 import { nodes, render as renderWithHooks, reset } from './helpers/fakeHooks'
 
 vi.mock('preact/hooks', () => import('./helpers/fakeHooks'))
-vi.mock('../../src/ui/Dialog', () => ({ Dialog: () => null }))
-vi.mock('../../src/ui/pseudo', () => ({ FOCUS_CLS: '', pseudoClass: () => '' }))
+vi.mock('../../modules/public-web/src/ui/Dialog', () => ({ Dialog: () => null }))
+vi.mock('../../modules/public-web/src/ui/pseudo', () => ({ FOCUS_CLS: '', pseudoClass: () => '' }))
 
 function dialog(services: ReserveDialogProps['services'] = []) {
   const onSubmit = vi.fn()

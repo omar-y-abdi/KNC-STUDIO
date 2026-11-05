@@ -1,16 +1,21 @@
 import { describe, expect, it } from 'vitest'
-import { emptyDocument, validateDocument, type CmsDocument, type CmsPage } from '../../shared/cms'
-import { CMS_BUILT_ASSETS } from '../../shared/cms-built-assets'
-import { validateDocumentMarkupPlacements } from '../../shared/cms-markup'
-import { nativeCanvas } from '../../src/admin/cms/nativeCanvas'
+import {
+  emptyDocument,
+  validateDocument,
+  type CmsDocument,
+  type CmsPage,
+} from '../../packages/content-contracts/src/cms'
+import { CMS_BUILT_ASSETS } from '../../packages/content-contracts/src/cms-built-assets'
+import { validateDocumentMarkupPlacements } from '../../packages/content-contracts/src/cms-markup'
+import { nativeCanvas } from '../../modules/studio/src/nativeCanvas'
 import {
   ensureCorePages,
   needsCorePageSource,
   retainCorePageLayouts,
-} from '../../src/admin/cms/corePages'
-import { CmsDraft, restoreRevision } from '../../src/admin/cms/draft'
-import type { CmsBackup } from '../../src/admin/cms/backup'
-import { normalizeDocument } from '../../src/admin/cms/normalizeDocument'
+} from '../../modules/studio/src/corePages'
+import { CmsDraft, restoreRevision } from '../../modules/studio/src/draft'
+import type { CmsBackup } from '../../modules/studio/src/backup'
+import { normalizeDocument } from '../../modules/studio/src/normalizeDocument'
 
 const legacyCss =
   '@media(max-width:1440px){#owner-offset{translate:12px 0!important}}' +

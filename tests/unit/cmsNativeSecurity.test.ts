@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
-import { validateMarkup } from '../../shared/cms-markup'
-import { cmsFrameResponse } from '../../src/worker'
+import { validateMarkup } from '../../packages/content-contracts/src/cms-markup'
+import { cmsFrameResponse } from '../../supabase/worker/index'
 
 const policy = {
   siteOrigin: 'https://bladeblendstudio.se',

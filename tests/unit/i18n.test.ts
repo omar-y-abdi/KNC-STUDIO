@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { aboutStrings, appStrings, bookingStrings, myBookingsStrings } from '../../src/i18n/index'
+import {
+  aboutStrings,
+  appStrings,
+  bookingStrings,
+  myBookingsStrings,
+} from '../../modules/public-web/src/i18n/index'
 
 describe('i18n sv/en parity', () => {
   it('booking strings have identical key sets', () => {

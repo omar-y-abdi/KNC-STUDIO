@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { customerGateway } from '../../src/mybookings/customerGateway'
+import { customerGateway } from '../../supabase/worker/customerGateway'
 import { readStackEnv, withClient } from './_helpers'
 
 /** Node has no document origin or cookie jar. Execute the real Worker handler, then real Edge/DB. */

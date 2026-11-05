@@ -1,8 +1,8 @@
-import { emptyDocument } from '../../shared/cms.ts'
+import { emptyDocument } from '../../packages/content-contracts/src/cms.ts'
 
 /**
- * @param {Partial<import('../../shared/cms.ts').CmsDocument>} [overrides]
- * @returns {import('../../shared/cms.ts').CmsDocument}
+ * @param {Partial<import('../../packages/content-contracts/src/cms.ts').CmsDocument>} [overrides]
+ * @returns {import('../../packages/content-contracts/src/cms.ts').CmsDocument}
  */
 export function documentFixture(overrides = {}) {
   return { ...emptyDocument(), ...globalThis.structuredClone(overrides) }
@@ -10,8 +10,8 @@ export function documentFixture(overrides = {}) {
 
 /**
  * A registered cms_assets row, including nullable database columns.
- * @param {Partial<import('../../shared/cms.ts').CmsAsset>} [overrides]
- * @returns {import('../../shared/cms.ts').CmsAsset}
+ * @param {Partial<import('../../packages/content-contracts/src/cms.ts').CmsAsset>} [overrides]
+ * @returns {import('../../packages/content-contracts/src/cms.ts').CmsAsset}
  */
 export function assetFixture(overrides = {}) {
   return {
@@ -32,7 +32,7 @@ export function assetFixture(overrides = {}) {
 }
 
 /**
- * @typedef {import('../../shared/cms.ts').CmsBarber & {
+ * @typedef {import('../../packages/content-contracts/src/cms.ts').CmsBarber & {
  *   active?: boolean, photo_path?: string | null
  * }} BarberRow
  * @param {Partial<BarberRow>} [overrides]

@@ -6,11 +6,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { from, select } = vi.hoisted(() => ({ from: vi.fn(), select: vi.fn() }))
 
-vi.mock('../../src/admin/adminClient', () => ({
+vi.mock('../../modules/staff-admin/src/adminClient', () => ({
   getAdminClient: () => ({ from }),
 }))
 
-import { barberAccountStates } from '../../src/admin/adapters/barbersAdmin'
+import { barberAccountStates } from '../../modules/staff-admin/src/adapters/barbersAdmin'
 
 beforeEach(() => {
   from.mockReset()

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { emptyDocument, type CmsDocument } from '../../shared/cms'
-import { resourceLayoutsChanged } from '../../src/admin/cms/captureResourceLayouts'
-import { CmsDraft, restoreRevision } from '../../src/admin/cms/draft'
-import { LayoutProvenance } from '../../src/admin/cms/layoutProvenance'
+import { emptyDocument, type CmsDocument } from '../../packages/content-contracts/src/cms'
+import { resourceLayoutsChanged } from '../../modules/studio/src/captureResourceLayouts'
+import { CmsDraft, restoreRevision } from '../../modules/studio/src/draft'
+import { LayoutProvenance } from '../../modules/studio/src/layoutProvenance'
 
 const salonImage = {
   id: '7c000000-0000-4000-8000-000000000001',

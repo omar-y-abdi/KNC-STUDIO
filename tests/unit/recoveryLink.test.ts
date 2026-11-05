@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseRecoveryLink } from '../../src/admin/recoveryLink'
+import { parseRecoveryLink } from '../../modules/staff-admin/src/recoveryLink'
 
 describe('parseRecoveryLink', () => {
   it('accepts a durable staff invitation only on the invite route and only from the fragment', () => {

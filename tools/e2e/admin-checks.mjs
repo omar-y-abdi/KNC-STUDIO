@@ -1,4 +1,4 @@
-import { ADMIN_SCROLL_RESTORE_TIMEOUT_MS } from '../../src/admin/navigationState.ts'
+import { ADMIN_SCROLL_RESTORE_TIMEOUT_MS } from '../../modules/staff-admin/src/navigationState.ts'
 import { test, expect } from './fixtures.mjs'
 import { routeApi } from './route-api.mjs'
 import assert from 'node:assert/strict'
@@ -889,7 +889,7 @@ async function verifyBookingTerms(page, lang) {
   await page.goto(`${baseUrl}/tools/e2e/admin-harness.html`, { waitUntil: 'domcontentloaded' })
   const strings = await page.evaluate(async (lang) => {
     ;(await import('/tools/e2e/admin-harness.tsx')).mountContactHarness('booking', lang)
-    return (await import('/src/i18n/index.ts')).bookingStrings(lang)
+    return (await import('/modules/public-web/src/i18n/index.ts')).bookingStrings(lang)
   }, lang)
   const barber = page.getByTestId('booking-barber-option')
   await barber.focus()
@@ -963,7 +963,7 @@ async function mountCalendarHarness(page, lang = 'en', mode = 'component') {
   await waitCalendarCalls(page, 'statusCalls', 'a', 1, 'initial Calendar status read missing')
   await pauseCalendarClock(page)
   return page.evaluate(async (currentLang) => {
-    const { adminText } = await import('/src/i18n/adminStrings.ts')
+    const { adminText } = await import('/modules/staff-admin/src/adminStrings.ts')
     return adminText(currentLang)
   }, lang)
 }
@@ -1549,7 +1549,9 @@ async function installCustomerAppRoutes(page) {
 async function verifyCustomerEmail(page) {
   await mountCustomerHarness(page)
   const t = await page.evaluate(async () =>
-    (await import('/src/i18n/customerEmailLinkStrings.ts')).customerEmailLinkStrings('en'),
+    (
+      await import('/modules/public-web/src/i18n/customerEmailLinkStrings.ts')
+    ).customerEmailLinkStrings('en'),
   )
 
   // Verified authority exposes aliases and the manage control. The source email passed to the
@@ -1696,7 +1698,7 @@ async function verifyCustomerEmail(page) {
   // and two same-turn confirmations produce one port mutation.
   {
     const bookingsText = await page.evaluate(async () =>
-      (await import('/src/i18n/index.ts')).myBookingsStrings('en'),
+      (await import('/modules/public-web/src/i18n/index.ts')).myBookingsStrings('en'),
     )
     await mountCustomerHarness(page, 'en', '9'.repeat(64))
     await customerControl(page, 'resolve-list', 'a', 0, customerUpcomingResult())
@@ -1796,7 +1798,9 @@ async function verifyCustomerEmail(page) {
   {
     const appState = await installCustomerAppRoutes(page)
     const appT = await page.evaluate(async () =>
-      (await import('/src/i18n/customerEmailLinkStrings.ts')).customerEmailLinkStrings('sv'),
+      (
+        await import('/modules/public-web/src/i18n/customerEmailLinkStrings.ts')
+      ).customerEmailLinkStrings('sv'),
     )
     const codeA = '3'.repeat(64)
     const codeB = '4'.repeat(64)
@@ -2206,7 +2210,9 @@ async function verifyAdminSession(page, scenario) {
       .toBe(true)
   const signOut = () =>
     page.evaluate(async () =>
-      (await import('/src/admin/adminClient.ts')).getAdminClient().auth.signOut({ scope: 'local' }),
+      (await import('/modules/staff-admin/src/adminClient.ts'))
+        .getAdminClient()
+        .auth.signOut({ scope: 'local' }),
     )
   const focus = () =>
     page.evaluate(() => {
@@ -2217,7 +2223,7 @@ async function verifyAdminSession(page, scenario) {
   try {
     await page.goto(`${baseUrl}/tools/e2e/admin-harness.html`, { waitUntil: 'networkidle' })
     const configured = await page.evaluate(async () =>
-      (await import('/src/backend/config.ts')).isBackendConfigured(),
+      (await import('/modules/public-web/src/backend/config.ts')).isBackendConfigured(),
     )
     assert(
       configured,
@@ -2230,7 +2236,7 @@ async function verifyAdminSession(page, scenario) {
     if (scenario === 'late-reset-logout') {
       await data.waitFor()
       await page.evaluate(async () => {
-        const { setNewPassword } = await import('/src/admin/auth.ts')
+        const { setNewPassword } = await import('/modules/staff-admin/src/auth.ts')
         globalThis.__resetResult = null
         void setNewPassword('Synthetic-new-password-123!').then((result) => {
           globalThis.__resetResult = result
@@ -2243,10 +2249,12 @@ async function verifyAdminSession(page, scenario) {
           waitUntil: 'domcontentloaded',
         })
         const login = await other.evaluate(async () =>
-          (await import('/src/admin/adminClient.ts')).getAdminClient().auth.signInWithPassword({
-            email: 'b@audit.invalid',
-            password: 'Synthetic-password-123!',
-          }),
+          (await import('/modules/staff-admin/src/adminClient.ts'))
+            .getAdminClient()
+            .auth.signInWithPassword({
+              email: 'b@audit.invalid',
+              password: 'Synthetic-password-123!',
+            }),
         )
         assert(
           login.data.user.id === AUTH_USER_B,
@@ -2323,10 +2331,12 @@ async function verifyAdminSession(page, scenario) {
         .click()
       await waitCall((call) => call.path === '/auth/v1/token')
       const login = await page.evaluate(async () =>
-        (await import('/src/admin/adminClient.ts')).getAdminClient().auth.signInWithPassword({
-          email: 'b@audit.invalid',
-          password: 'Synthetic-password-123!',
-        }),
+        (await import('/modules/staff-admin/src/adminClient.ts'))
+          .getAdminClient()
+          .auth.signInWithPassword({
+            email: 'b@audit.invalid',
+            password: 'Synthetic-password-123!',
+          }),
       )
       assert(login.data.user.id === AUTH_USER_B, 'B did not establish a session')
       holds.password.release()
@@ -2352,8 +2362,9 @@ async function verifyAdminSession(page, scenario) {
       // The retained Settings form serializes its own saves. Seed a real in-flight operation on
       // that shared resource, then queue the owner's next intent through the actual form.
       await page.evaluate(async () => {
-        const { orderedAdminOperation } = await import('/src/admin/orderedOperations.ts')
-        const { saveSiteSetting } = await import('/src/admin/adapters/siteAdmin.ts')
+        const { orderedAdminOperation } =
+          await import('/modules/staff-admin/src/orderedOperations.ts')
+        const { saveSiteSetting } = await import('/modules/staff-admin/src/adapters/siteAdmin.ts')
         void orderedAdminOperation('site:settings', () =>
           saveSiteSetting('cancellation_policy_hours', '48'),
         )
@@ -2373,7 +2384,8 @@ async function verifyAdminSession(page, scenario) {
       // A no-op queued after the form lets the test wait for both intents to settle, even if
       // detecting the changed account unmounts the form before its button can become enabled.
       await page.evaluate(async () => {
-        const { orderedAdminOperation } = await import('/src/admin/orderedOperations.ts')
+        const { orderedAdminOperation } =
+          await import('/modules/staff-admin/src/orderedOperations.ts')
         globalThis.__queuedSettingsDrain = null
         void orderedAdminOperation('site:settings', async () => ({ ok: true, value: null })).then(
           (result) => {
@@ -2388,10 +2400,12 @@ async function verifyAdminSession(page, scenario) {
             waitUntil: 'domcontentloaded',
           })
           const login = await other.evaluate(async () =>
-            (await import('/src/admin/adminClient.ts')).getAdminClient().auth.signInWithPassword({
-              email: 'b@audit.invalid',
-              password: 'Synthetic-password-123!',
-            }),
+            (await import('/modules/staff-admin/src/adminClient.ts'))
+              .getAdminClient()
+              .auth.signInWithPassword({
+                email: 'b@audit.invalid',
+                password: 'Synthetic-password-123!',
+              }),
           )
           assert(login.data.user.id === AUTH_USER_B, 'Other tab did not sign in as B')
           await page.waitForFunction(() => globalThis.__heldAuthMessages.length > 0)
@@ -2411,7 +2425,10 @@ async function verifyAdminSession(page, scenario) {
         await page.getByRole('button', { name: 'Logga ut', exact: true }).first().click()
         await page.waitForFunction(() => globalThis.location.pathname === '/login')
         const login = await page.evaluate(async () =>
-          (await import('/src/admin/auth.ts')).signIn('b@audit.invalid', 'Synthetic-password-123!'),
+          (await import('/modules/staff-admin/src/auth.ts')).signIn(
+            'b@audit.invalid',
+            'Synthetic-password-123!',
+          ),
         )
         assert(login.ok && login.value.userId === AUTH_USER_B, 'Second user never signed in')
         await mountRealAdmin(page, 'settings')
@@ -2560,7 +2577,7 @@ async function verifyPrivacy(
   const strings = await page.evaluate(async (lang) => {
     ;(await import('/tools/e2e/admin-harness.tsx')).mountPrivacyHarness()
     const { appStrings, privacyStrings, myBookingsStrings, aboutStrings } =
-      await import('/src/i18n/index.ts')
+      await import('/modules/public-web/src/i18n/index.ts')
     return {
       app: appStrings(lang),
       privacy: privacyStrings(lang),
@@ -2574,7 +2591,7 @@ async function verifyPrivacy(
   await notice.waitFor({ state: 'attached' })
   const choice = () =>
     page.evaluate(async () =>
-      (await import('/src/site/storageConsent.ts')).readStoragePreferences(),
+      (await import('/modules/public-web/src/site/storageConsent.ts')).readStoragePreferences(),
     )
   assert((await choice()) === null, 'Fresh visitor already had an optional-storage choice')
   const assertFixedNotice = async (context) => {

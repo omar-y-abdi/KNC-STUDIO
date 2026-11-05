@@ -10,7 +10,8 @@ test('cms-resource-projection', async ({ page }) => {
   await page.goto(`${base}/tools/e2e/admin-harness.html`)
   const results = await page.evaluate(async () => {
     const { h, render } = await import('/tools/e2e/admin-harness.tsx')
-    const { nativeTree, projectNativeTree } = await import('/src/cms/NativeSurface.tsx')
+    const { nativeTree, projectNativeTree } =
+      await import('/modules/public-web/src/cms/NativeSurface.tsx')
     const Placeholder = () => h('span', null, 'No photo')
     const host = globalThis.document.createElement('div')
     globalThis.document.body.append(host)
@@ -66,10 +67,12 @@ test('cms-graphic-projection', async ({ page }) => {
   await page.goto(`${base}/tools/e2e/admin-harness.html`)
   const result = await page.evaluate(async () => {
     const { h, render } = await import('/tools/e2e/admin-harness.tsx')
-    const { nativeTree, projectNativeTree } = await import('/src/cms/NativeSurface.tsx')
-    const { snapshotNative } = await import('/src/admin/cms/nativePages.ts')
-    const { replaceSiteResource } = await import('/shared/cms-site-resources.ts')
-    const { emptyDocument } = await import('/shared/cms.ts')
+    const { nativeTree, projectNativeTree } =
+      await import('/modules/public-web/src/cms/NativeSurface.tsx')
+    const { snapshotNative } = await import('/modules/studio/src/nativePages.ts')
+    const { replaceSiteResource } =
+      await import('/packages/content-contracts/src/cms-site-resources.ts')
+    const { emptyDocument } = await import('/packages/content-contracts/src/cms.ts')
     const host = globalThis.document.createElement('div')
     globalThis.document.body.append(host)
     let clicks = 0

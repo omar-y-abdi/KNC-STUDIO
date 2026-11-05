@@ -5,7 +5,7 @@ import {
   MAX_FIT_PASSES,
   passFloor,
   type LoopSlide,
-} from '../../src/about/useBarberMarquee'
+} from '../../modules/public-web/src/about/useBarberMarquee'
 
 /** Mobile strip slides: equal cards with 16 px margins in a container at x = 0. */
 function strip(cards: number, width: number): LoopSlide[] {

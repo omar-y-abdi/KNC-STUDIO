@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { nudgeStyle, resetNudgeStyle } from '../../src/admin/cms/position'
+import { nudgeStyle, resetNudgeStyle } from '../../modules/studio/src/position'
 
 describe('CMS component nudge', () => {
   it('adds independent translate without replacing rotate/scale transform', () => {

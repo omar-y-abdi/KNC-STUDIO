@@ -1,6 +1,10 @@
 import { expect, it } from 'vitest'
-import { emptyDocument, validateDocument, type CmsPage } from '../../shared/cms'
-import { validateMarkup } from '../../shared/cms-markup'
+import {
+  emptyDocument,
+  validateDocument,
+  type CmsPage,
+} from '../../packages/content-contracts/src/cms'
+import { validateMarkup } from '../../packages/content-contracts/src/cms-markup'
 
 const policy = {
   siteOrigin: 'https://bladeblendstudio.se',

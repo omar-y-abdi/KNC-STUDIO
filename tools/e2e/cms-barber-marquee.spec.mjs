@@ -173,7 +173,7 @@ test('cms-barber-marquee', async ({ browserName, evidenceDir, newContext }) => {
     // Only owner edits create backups; the captured source alone is pristine.
     await editor.getByRole('textbox', { name: 'Namn', exact: true }).fill('Barberartestets källa')
     const owned = await editor.evaluate(async () => {
-      const session = await (await import('/src/admin/cms/backup.ts')).cmsBackups()
+      const session = await (await import('/modules/studio/src/backup.ts')).cmsBackups()
       await session.flush()
       const backup = await session.own()
       if (!backup) throw new Error('The actual CMS source was not captured')
@@ -230,7 +230,7 @@ test('cms-barber-marquee', async ({ browserName, evidenceDir, newContext }) => {
             `\n#${globalThis.CSS.escape(gridId)}{gap:8px}` +
             `\n#${globalThis.CSS.escape(ownerCardId)}{padding:20px;color:#123456;outline:3px solid #1a8e62!important}`
       }
-      const { ensureCorePages } = await import('/src/admin/cms/corePages.ts')
+      const { ensureCorePages } = await import('/modules/studio/src/corePages.ts')
       const upgraded = ensureCorePages(legacy, backup.document.presentation.pages)
       if (
         JSON.stringify(upgraded) !==
@@ -252,7 +252,7 @@ test('cms-barber-marquee', async ({ browserName, evidenceDir, newContext }) => {
       )
         throw new Error('Mobile CSS did not remap IDs ahead of owner overrides')
       // Snapshots stored before the gallery markers existed are recaptured and gain them in place.
-      const { needsCorePageSource } = await import('/src/admin/cms/corePages.ts')
+      const { needsCorePageSource } = await import('/modules/studio/src/corePages.ts')
       const aboutTree = (source, lang) =>
         new globalThis.DOMParser().parseFromString(
           source.presentation.pages.find((page) => page.path === '/about').content[lang].html,

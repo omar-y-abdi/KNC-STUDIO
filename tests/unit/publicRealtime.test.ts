@@ -11,12 +11,12 @@ const BASES = [
 
 async function loadRealtime(projectUrl: string) {
   vi.resetModules()
-  vi.doMock('../../src/backend/config', () => ({
+  vi.doMock('../../modules/public-web/src/backend/config', () => ({
     SUPABASE_URL: projectUrl,
     SUPABASE_ANON_KEY: KEY,
     isBackendConfigured: () => true,
   }))
-  return import('../../src/backend/publicRealtime')
+  return import('../../modules/public-web/src/backend/publicRealtime')
 }
 
 /** A WebSocket that records the address it was opened with and every frame sent to it. */
@@ -157,7 +157,7 @@ function stubPage() {
 
 afterEach(() => {
   vi.unstubAllGlobals()
-  vi.doUnmock('../../src/backend/config')
+  vi.doUnmock('../../modules/public-web/src/backend/config')
   vi.doUnmock('@supabase/realtime-js')
   FakeSocket.opened.length = 0
 })
@@ -210,12 +210,13 @@ describe('public Realtime client', () => {
 
   it('refuses to exist without a configured backend', async () => {
     vi.resetModules()
-    vi.doMock('../../src/backend/config', () => ({
+    vi.doMock('../../modules/public-web/src/backend/config', () => ({
       SUPABASE_URL: undefined,
       SUPABASE_ANON_KEY: undefined,
       isBackendConfigured: () => false,
     }))
-    const { getPublicRealtime } = await import('../../src/backend/publicRealtime')
+    const { getPublicRealtime } =
+      await import('../../modules/public-web/src/backend/publicRealtime')
     await expect(getPublicRealtime()).rejects.toThrow(/not configured/)
   })
 

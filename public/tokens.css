@@ -1,7 +1,7 @@
 /* The one look of every user-facing page outside the homepage. The values are the homepage palette
-   (src/app/shared.ts; tests/unit/styleTokens.test.ts keeps them equal). light-dark() follows the
+   (modules/public-web/src/app/shared.ts; tests/unit/styleTokens.test.ts keeps them equal). light-dark() follows the
    element's color-scheme: the visitor's OS unless the page pins one (`?mode`, the staff toggle).
-   The app bundles a copy through src/ui/styles/global.css; static documents, the Worker's legal
+   The app bundles a copy through modules/public-web/src/ui/styles/global.css; static documents, the Worker's legal
    render and the Studio canvas use this file. */
 @font-face {
   font-family: 'Inter Variable';

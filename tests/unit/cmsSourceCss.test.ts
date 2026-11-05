@@ -9,10 +9,13 @@ import {
   validateCompleteDocument,
   validatePresentation,
   type CmsPage,
-} from '../../shared/cms'
-import { isSitePage } from '../../shared/site-page'
-import { validateDocumentMarkupPlacements, validateMarkup } from '../../shared/cms-markup'
-import { legalCanvasBase } from '../../src/admin/cms/nativeCanvas'
+} from '../../packages/content-contracts/src/cms'
+import { isSitePage } from '../../packages/content-contracts/src/site-page'
+import {
+  validateDocumentMarkupPlacements,
+  validateMarkup,
+} from '../../packages/content-contracts/src/cms-markup'
+import { legalCanvasBase } from '../../modules/studio/src/nativeCanvas'
 
 const policy = {
   siteOrigin: 'https://bladeblendstudio.se',
@@ -148,7 +151,7 @@ it('accepts the imported contact body and rejects deletion of its live business 
 
 it('ships an English contact template with the same server-owned slots and lang=en links', () => {
   const english = readFileSync(
-    new URL('../../src/admin/cms/contact.en.html', import.meta.url),
+    new URL('../../modules/studio/src/contact.en.html', import.meta.url),
     'utf8',
   ).trim()
   const swedish = readFileSync(new URL('../../public/contact.html', import.meta.url), 'utf8')

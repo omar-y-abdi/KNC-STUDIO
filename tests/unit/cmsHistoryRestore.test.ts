@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { emptyDocument, validateDocument, type CmsBarber, type CmsDocument } from '../../shared/cms'
-import { restoreRevision } from '../../src/admin/cms/draft'
+import {
+  emptyDocument,
+  validateDocument,
+  type CmsBarber,
+  type CmsDocument,
+} from '../../packages/content-contracts/src/cms'
+import { restoreRevision } from '../../modules/studio/src/draft'
 
 const barber = (id: string, name: string, sort_order: number): CmsBarber => ({
   id,

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { asBarberId } from '../../src/booking/domain'
+import { asBarberId } from '../../modules/public-web/src/booking/domain'
 
 // The public adapters used to read through the full supabase-js client. These are the requests
 // that client made for each adapter call, recorded from the unchanged adapters; the slim clients
@@ -66,20 +66,23 @@ async function runAdapters(key: string) {
     return Response.json(answerFor(new URL(url).pathname))
   })
   vi.resetModules()
-  vi.doMock('../../src/backend/config', () => ({
+  vi.doMock('../../modules/public-web/src/backend/config', () => ({
     SUPABASE_URL: PROJECT_URL,
     SUPABASE_ANON_KEY: key,
     isBackendConfigured: () => true,
   }))
-  const { supabaseGalleryAdapter } = await import('../../src/about/gallery/supabaseGallery')
+  const { supabaseGalleryAdapter } =
+    await import('../../modules/public-web/src/about/gallery/supabaseGallery')
   const { supabaseReviewsAdapter } =
-    await import('../../src/about/reviews/adapters/supabaseReviews')
+    await import('../../modules/public-web/src/about/reviews/adapters/supabaseReviews')
   const { supabaseAboutContentAdapter } =
-    await import('../../src/about/content/supabaseAboutContent')
-  const { supabaseBookingAdapter } = await import('../../src/booking/adapters/supabaseBooking')
+    await import('../../modules/public-web/src/about/content/supabaseAboutContent')
+  const { supabaseBookingAdapter } =
+    await import('../../modules/public-web/src/booking/adapters/supabaseBooking')
   const { refreshBookingCatalog } =
-    await import('../../src/booking/adapters/supabaseBookingCatalog')
-  const { supabaseSiteChromeAdapter } = await import('../../src/site/adapters/supabaseSiteChrome')
+    await import('../../modules/public-web/src/booking/adapters/supabaseBookingCatalog')
+  const { supabaseSiteChromeAdapter } =
+    await import('../../modules/public-web/src/site/adapters/supabaseSiteChrome')
 
   const photos = await supabaseGalleryAdapter.list('salon')
   const cuts = await supabaseGalleryAdapter.list('cuts')
@@ -180,7 +183,7 @@ function expectedRequests(key: string, bearer: boolean): readonly Recorded[] {
 
 afterEach(() => {
   vi.unstubAllGlobals()
-  vi.doUnmock('../../src/backend/config')
+  vi.doUnmock('../../modules/public-web/src/backend/config')
 })
 
 describe.each([

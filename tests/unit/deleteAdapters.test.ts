@@ -12,12 +12,12 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 
 const { rpc, invoke } = vi.hoisted(() => ({ rpc: vi.fn(), invoke: vi.fn() }))
 
-vi.mock('../../src/admin/adminClient', () => ({
+vi.mock('../../modules/staff-admin/src/adminClient', () => ({
   getAdminClient: () => ({ rpc, functions: { invoke } }),
 }))
 
-import { deleteBarber } from '../../src/admin/adapters/barbersAdmin'
-import { deleteBookings, purgeHistory } from '../../src/admin/adapters/bookingsAdmin'
+import { deleteBarber } from '../../modules/staff-admin/src/adapters/barbersAdmin'
+import { deleteBookings, purgeHistory } from '../../modules/staff-admin/src/adapters/bookingsAdmin'
 
 beforeEach(() => {
   rpc.mockReset()

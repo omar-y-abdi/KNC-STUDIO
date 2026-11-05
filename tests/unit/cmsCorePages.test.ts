@@ -7,18 +7,18 @@ import {
   validateDocument,
   type CmsDocument,
   type CmsPage,
-} from '../../shared/cms'
-import { CMS_BUILT_ASSETS } from '../../shared/cms-built-assets'
-import { validateDocumentMarkupPlacements } from '../../shared/cms-markup'
-import { createSitePage } from '../../shared/site-page'
+} from '../../packages/content-contracts/src/cms'
+import { CMS_BUILT_ASSETS } from '../../packages/content-contracts/src/cms-built-assets'
+import { validateDocumentMarkupPlacements } from '../../packages/content-contracts/src/cms-markup'
+import { createSitePage } from '../../packages/content-contracts/src/site-page'
 import {
   ensureCorePages,
   CORE_PAGE_IDS,
   hasCorePageLayouts,
   canOpenStoredPages,
   retainCorePageLayouts,
-} from '../../src/admin/cms/corePages'
-import { restoreRevision } from '../../src/admin/cms/draft'
+} from '../../modules/studio/src/corePages'
+import { restoreRevision } from '../../modules/studio/src/draft'
 
 it('requires a rendered source instead of supplying another website', () => {
   expect(ensureCorePages(emptyDocument())).toEqual(emptyDocument())
@@ -86,7 +86,7 @@ it('recognizes stored layouts without requiring newer optional scene markers', (
 })
 
 it('adds the contact core identity to retained layouts without replacing an authored contact', async () => {
-  const { retainCorePageLayouts } = await import('../../src/admin/cms/corePages')
+  const { retainCorePageLayouts } = await import('../../modules/studio/src/corePages')
   const document = emptyDocument()
   const source: CmsPage = {
     id: '10000000-0000-4000-8000-000000000007',
@@ -118,7 +118,7 @@ it('adds the contact core identity to retained layouts without replacing an auth
 })
 
 it('retains authoritative core layouts for legacy restore without copying unrelated pages', async () => {
-  const { retainCorePageLayouts } = await import('../../src/admin/cms/corePages')
+  const { retainCorePageLayouts } = await import('../../modules/studio/src/corePages')
   const document = emptyDocument()
   const page: CmsPage = {
     id: CORE_PAGE_IDS[0],

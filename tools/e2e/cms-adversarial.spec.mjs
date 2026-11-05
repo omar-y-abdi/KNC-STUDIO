@@ -242,8 +242,8 @@ test('scene-css-precedence', async ({ page }) => {
   page.setDefaultTimeout(10000)
   await page.goto(`${base}/tools/e2e/admin-harness.html?view=cms-studio`)
   const result = await page.evaluate(async () => {
-    const { emptyDocument } = await import('/shared/cms.ts')
-    const { ensureCorePages } = await import('/src/admin/cms/corePages.ts')
+    const { emptyDocument } = await import('/packages/content-contracts/src/cms.ts')
+    const { ensureCorePages } = await import('/modules/studio/src/corePages.ts')
     const document = emptyDocument()
     const html = '<main data-knc-native="1"><p id="review-owner">Owner text</p></main>'
     const content = () => ({
@@ -307,8 +307,9 @@ test('email-authoritative-limits', async ({ page }) => {
   await page.goto(`${base}/tools/e2e/admin-harness.html?view=cms-studio`)
   await page.evaluate(async () => {
     const { h, render } = await import('/tools/e2e/admin-harness.tsx')
-    const { EmailPanel } = await import('/src/admin/cms/DomainPanels.tsx')
-    const { emptyDocument, defaultEmailDesign } = await import('/shared/cms.ts')
+    const { EmailPanel } = await import('/modules/studio/src/DomainPanels.tsx')
+    const { emptyDocument, defaultEmailDesign } =
+      await import('/packages/content-contracts/src/cms.ts')
     const state = emptyDocument()
     state.emails.push({
       template: 'customer_confirmation',
@@ -360,8 +361,9 @@ test('email-optional-text-clearing', async ({ page }) => {
   await page.goto(`${base}/tools/e2e/admin-harness.html`)
   await page.evaluate(async () => {
     const { h, render } = await import('/tools/e2e/admin-harness.tsx')
-    const { EmailPanel } = await import('/src/admin/cms/DomainPanels.tsx')
-    const { emptyDocument, validateDocument } = await import('/shared/cms.ts')
+    const { EmailPanel } = await import('/modules/studio/src/DomainPanels.tsx')
+    const { emptyDocument, validateDocument } =
+      await import('/packages/content-contracts/src/cms.ts')
     let state = emptyDocument()
     state.emails.push({
       template: 'customer_confirmation',

@@ -4,13 +4,13 @@ const { invokePublicBookingAction } = vi.hoisted(() => ({
   invokePublicBookingAction: vi.fn(),
 }))
 
-vi.mock('../../src/backend/publicBookingActions', () => ({
+vi.mock('../../modules/public-web/src/backend/publicBookingActions', () => ({
   invokePublicBookingAction,
 }))
 
-import { asBarberId } from '../../src/booking/domain'
-import { supabaseMyBookingsAdapter } from '../../src/mybookings/adapters/supabaseMyBookings'
-import type { MyBooking } from '../../src/mybookings/domain'
+import { asBarberId } from '../../modules/public-web/src/booking/domain'
+import { supabaseMyBookingsAdapter } from '../../modules/public-web/src/mybookings/adapters/supabaseMyBookings'
+import type { MyBooking } from '../../modules/public-web/src/mybookings/domain'
 
 const myBooking: MyBooking = {
   id: '4d3f88f7-5e08-4d03-abfa-9604816f5614',

@@ -19,7 +19,12 @@ export default defineConfig({
     include: ['tests/unit/**/*.test.ts'],
     coverage: {
       provider: 'v8',
-      include: ['src/**/*.{ts,tsx}'],
+      include: [
+        'src/**/*.{ts,tsx}',
+        'modules/*/src/**/*.{ts,tsx}',
+        'packages/*/src/**/*.ts',
+        'supabase/worker/**/*.ts',
+      ],
     },
   },
 })

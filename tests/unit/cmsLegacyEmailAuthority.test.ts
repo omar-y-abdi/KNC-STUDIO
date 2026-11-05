@@ -5,7 +5,7 @@ import {
   validateDocument,
   type CmsDocument,
   type CmsEmail,
-} from '../../shared/cms'
+} from '../../packages/content-contracts/src/cms'
 
 // The retired mail editor wrote email_templates directly and accepted any text within the column
 // limits, including a placeholder the renderer does not know. After the authority migration Studio

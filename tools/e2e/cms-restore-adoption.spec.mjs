@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { gunzipSync } from 'node:zlib'
-import { emptyDocument, validateDocument } from '../../shared/cms.ts'
-import { CMS_BUILT_ASSETS } from '../../shared/cms-built-assets.ts'
-import { validateDocumentMarkupPlacements } from '../../shared/cms-markup.ts'
-import { createSitePage } from '../../shared/site-page.ts'
+import { emptyDocument, validateDocument } from '../../packages/content-contracts/src/cms.ts'
+import { CMS_BUILT_ASSETS } from '../../packages/content-contracts/src/cms-built-assets.ts'
+import { validateDocumentMarkupPlacements } from '../../packages/content-contracts/src/cms-markup.ts'
+import { createSitePage } from '../../packages/content-contracts/src/site-page.ts'
 import { nativeBackend } from './cms-backend.mjs'
 import { expect, test } from './fixtures.mjs'
 import { harnessOrigin } from './origins.mjs'
@@ -30,9 +30,9 @@ async function mountStudio(page) {
 
 async function renderStudio(page) {
   await page.evaluate(async () => {
-    const { CmsDraft } = await import('/src/admin/cms/draft.ts')
+    const { CmsDraft } = await import('/modules/studio/src/draft.ts')
     const { h, render } = await import('/tools/e2e/admin-harness.tsx')
-    const { CmsStudio } = await import('/src/admin/cms/Studio.tsx')
+    const { CmsStudio } = await import('/modules/studio/src/Studio.tsx')
     // A migration-only draft writes no backup, so the test reads the live draft that migrated.
     if (!CmsDraft.prototype.migrate.recordsDraft) {
       const migrate = CmsDraft.prototype.migrate
@@ -79,7 +79,7 @@ const continueHere = (page) =>
   offers(page).getByRole('button', { name: 'Fortsätt här', exact: true })
 const ownBackup = (page) =>
   page.evaluate(async () => {
-    const session = await (await import('/src/admin/cms/backup.ts')).cmsBackups()
+    const session = await (await import('/modules/studio/src/backup.ts')).cmsBackups()
     await session.flush()
     return session.own()
   })
@@ -378,7 +378,7 @@ async function checkAutosaveRecovery(context, reopen) {
   await waitForSourceUpgrade(recipient)
   assert.equal(
     await recipient.evaluate(async () => {
-      const { needsCorePageSource } = await import('/src/admin/cms/corePages.ts')
+      const { needsCorePageSource } = await import('/modules/studio/src/corePages.ts')
       return needsCorePageSource(globalThis.cmsMigratedDraft.document)
     }),
     false,
@@ -473,7 +473,7 @@ async function publishedHead(context) {
 
 const needsSource = (page, document) =>
   page.evaluate(
-    async (value) => (await import('/src/admin/cms/corePages.ts')).needsCorePageSource(value),
+    async (value) => (await import('/modules/studio/src/corePages.ts')).needsCorePageSource(value),
     document,
   )
 

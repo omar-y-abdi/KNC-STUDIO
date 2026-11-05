@@ -2,8 +2,11 @@ import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { parse, type DefaultTreeAdapterMap } from 'parse5'
 import { generate, parse as parseCss, walk, type CssNode } from 'css-tree'
-import worker, { PublicContent } from '../../src/worker'
-import { PRESENTATION_RETRY_DELAYS_MS, readWithRetries } from '../../src/cms/NativeSurface'
+import worker, { PublicContent } from '../../supabase/worker/index'
+import {
+  PRESENTATION_RETRY_DELAYS_MS,
+  readWithRetries,
+} from '../../modules/public-web/src/cms/NativeSurface'
 
 // Homepage first load (R12): the shell paints only the background the app will paint, and the
 // presentation read survives one slow database answer.

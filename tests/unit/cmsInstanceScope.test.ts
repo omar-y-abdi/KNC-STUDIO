@@ -1,7 +1,7 @@
 import { createRef, Fragment, h, type VNode } from 'preact'
 import { describe, expect, it, vi } from 'vitest'
 import { ident } from 'css-tree'
-import { createInstanceScope, nativeNodeId } from '../../src/cms/instanceScope'
+import { createInstanceScope, nativeNodeId } from '../../modules/public-web/src/cms/instanceScope'
 
 function fixture() {
   const click = vi.fn()

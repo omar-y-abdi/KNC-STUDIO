@@ -248,8 +248,8 @@ test('cms-public-regression', async ({ page, context, newContext, browserName })
   await page.locator('.cms-editor-canvas[data-cms-about-preview-ready="true"]').waitFor()
   const result = await page.evaluate(async () => {
     const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
-    const { stripComposedCanvas } = await import('/src/admin/cms/composedCanvas.ts')
-    const { exportNativeCanvas } = await import('/src/admin/cms/nativeCanvas.ts')
+    const { stripComposedCanvas } = await import('/modules/studio/src/composedCanvas.ts')
+    const { exportNativeCanvas } = await import('/modules/studio/src/nativeCanvas.ts')
     const editor = cmsGrapes.editors.at(-1)
     const first = exportNativeCanvas(
       editor.getHtml({ cleanId: false }),

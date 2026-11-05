@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { emptyDocument, mediaUrl, type CmsPage, type MediaRef } from '../../shared/cms'
-import { resourceUsage, resourceUsageIndex } from '../../shared/cms-resources'
-import { validateDocumentMarkupPlacements } from '../../shared/cms-markup'
+import {
+  emptyDocument,
+  mediaUrl,
+  type CmsPage,
+  type MediaRef,
+} from '../../packages/content-contracts/src/cms'
+import {
+  resourceUsage,
+  resourceUsageIndex,
+} from '../../packages/content-contracts/src/cms-resources'
+import { validateDocumentMarkupPlacements } from '../../packages/content-contracts/src/cms-markup'
 
 const policy = { siteOrigin: 'https://salon.example', storageOrigin: 'https://fixture.supabase.co' }
 const image: MediaRef = {

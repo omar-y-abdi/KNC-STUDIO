@@ -100,29 +100,27 @@ Effects live at the edges; the domain stays pure and referentially transparent.
 [CODEBASE-MAP.md](CODEBASE-MAP.md) maps areas to entry files, tests and common change routes.
 
 ```text
-src/
-  main.tsx              # browser entry and lazy CMS source route
-  config.ts             # site URL and injectable booking clock
-  app/                  # router, shared state, desktop/mobile composition
-  backend/              # public REST/Realtime, RPC schemas, lazy admin Auth client
-  booking/              # domain, calendar, validation, dialogs and booking adapters
-  mybookings/           # email-link access, cookie gateway, history and cancellation
-  about/                # About content, gallery, barber marquee and reviews
-  site/                 # business identity, SEO, consent, logo and public chrome
-  admin/                # staff session, operational views and authenticated adapters
-    cms/                # Studio, GrapesJS editor, resources, history and publication
-  cms/                  # native public projection and read-only preview seams
-  cmsRuntime.tsx        # custom-page runtime mounting
-  i18n/                 # typed Swedish/English string tables
-  ui/                   # shared dialogs, lazy surfaces, logos and global styles
-  worker.ts             # Cloudflare HTML, metadata and same-origin gateway routes
-shared/                 # CMS validation, pages, resources, themes and email rendering
-tests/                  # unit and local-Supabase integration suites
-tools/e2e/              # Playwright contracts and isolated fake/local backends
-tools/visual/           # screenshot utilities and approved pixel baselines
-supabase/               # migrations, Edge Functions, pgTAP tests and seed
-public/                 # self-hosted fonts, icons, discovery files and static assets
+src/                         # browser mount, root routing and owner-gated Studio composition
+modules/public-web/src/      # public pages, booking, browser adapters, UI and read-only preview
+modules/staff-admin/src/     # staff session, operational views and protected client
+modules/studio/src/          # authoring, drafts, GrapesJS, resources and publication client
+packages/content-contracts/  # CMS document, validation, markup, resource and rendering protocol
+packages/backend-contracts/  # browser-safe RPC, timestamp, delivery and challenge wire contracts
+supabase/worker/             # Cloudflare HTML, metadata and same-origin customer gateway
+supabase/functions/          # deployed Edge Functions and their explicit Deno import maps
+supabase/migrations/         # database migrations; pgTAP tests and seed remain under supabase/
+tests/                       # owned unit and local-Supabase integration suites
+tools/e2e/                   # Playwright contracts and isolated fake/local backends
+tools/visual/                # screenshot utilities and approved pixel baselines
+public/                      # self-hosted fonts, icons, discovery files and static assets
 ```
+
+These are private npm workspaces with explicit package exports. Production imports cross a workspace
+through its declared interface; Deno-reachable contract imports retain explicit relative `.ts` paths
+to exported targets. The root owns bundling and routing. Staff owns the single authenticated session
+and protected client; Studio consumes those capabilities through staff interfaces. Public preview
+owns the isolated read-only runtime at `/cms-public/source`, with a lightweight `public-web/preview`
+protocol separate from its lazy runtime entry. Neither public startup nor staff imports Studio.
 
 ### Owner content and operations
 
@@ -141,7 +139,7 @@ recovered feature scope, test anchors, deployment dependencies and deferred owne
 
 ### The clock is injectable
 
-The booking calendar's "today" comes from a `Clock` (`src/config.ts`), never a bare `new Date()`:
+The booking calendar's "today" comes from a `Clock` (`modules/public-web/src/config.ts`), never a bare `new Date()`:
 
 - **production** → `realClock` (the calendar tracks the real current day).
 - **visual-regression** → `fixedClock` (`2026-06-19`, the original prototype's day) so screenshots
@@ -167,7 +165,7 @@ for server-side security. Current controls:
   Cloudflare Turnstile endpoints required by booking and authentication, plus Cloudflare's existing
   cookieless Web Analytics on three public paths outside the EU. Private routes are excluded.
 - **Input validation at the boundary:** all contact details pass plain validation functions
-  (`src/booking/validation.ts`) before a `Booking` is produced. Branded types make a validated value
+  (`modules/public-web/src/booking/validation.ts`) before a `Booking` is produced. Branded types make a validated value
   impossible to confuse with a raw string.
 - **Injection-safe output:** the `.ics` builder escapes per RFC5545 (the prototype concatenated
   unescaped commas — fixed); every dynamic URL part is `encodeURIComponent`-ed (no mailto/calendar

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { emptyDocument, type CmsDocument } from '../../shared/cms'
+import { emptyDocument, type CmsDocument } from '../../packages/content-contracts/src/cms'
 import { nativeBackend } from '../../tools/e2e/cms-backend.mjs'
 
 // The e2e fake must reject what the deployed cms-studio rejects: internal_cms_missing_media

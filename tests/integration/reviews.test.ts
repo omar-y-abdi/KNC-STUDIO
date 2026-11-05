@@ -4,9 +4,9 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createHash, randomBytes } from 'node:crypto'
-import { supabaseReviewsAdapter } from '../../src/about/reviews/adapters/supabaseReviews'
-import { supabaseMyBookingsAdapter } from '../../src/mybookings/adapters/supabaseMyBookings'
-import type { Phone } from '../../src/booking/validation'
+import { supabaseReviewsAdapter } from '../../modules/public-web/src/about/reviews/adapters/supabaseReviews'
+import { supabaseMyBookingsAdapter } from '../../modules/public-web/src/mybookings/adapters/supabaseMyBookings'
+import type { Phone } from '../../modules/public-web/src/booking/validation'
 import {
   backendReady,
   readStackEnv,

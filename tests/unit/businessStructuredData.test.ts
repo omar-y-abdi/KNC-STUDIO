@@ -3,7 +3,7 @@ import {
   DEFAULT_BUSINESS,
   buildBusinessStructuredData,
   resolveBusinessSettings,
-} from '../../src/site/business'
+} from '../../modules/public-web/src/site/business'
 
 describe('business structured data', () => {
   it('ships fully rendered fallback metadata without leaking CMS template tokens', () => {

@@ -8,9 +8,9 @@
 // real adapter. The gateway HTTP layer (Turnstile + rate-limit) is verified separately.
 
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { supabaseBookingAdapter } from '../../src/booking/adapters/supabaseBooking'
-import type { Barber } from '../../src/booking/domain'
-import { asBarberId } from '../../src/booking/domain'
+import { supabaseBookingAdapter } from '../../modules/public-web/src/booking/adapters/supabaseBooking'
+import type { Barber } from '../../modules/public-web/src/booking/domain'
+import { asBarberId } from '../../modules/public-web/src/booking/domain'
 import type { CreateBookingArgs } from './_helpers'
 import {
   backendReady,

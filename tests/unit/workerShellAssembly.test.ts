@@ -7,11 +7,11 @@ import {
   validateDocumentMedia,
   type CmsPage,
   type CmsPresentation,
-} from '../../shared/cms'
-import { CMS_BUILT_ASSETS } from '../../shared/cms-built-assets'
-import { validateDocumentMarkupPlacements } from '../../shared/cms-markup'
-import { createSitePage } from '../../shared/site-page'
-import worker, { PublicContent } from '../../src/worker'
+} from '../../packages/content-contracts/src/cms'
+import { CMS_BUILT_ASSETS } from '../../packages/content-contracts/src/cms-built-assets'
+import { validateDocumentMarkupPlacements } from '../../packages/content-contracts/src/cms-markup'
+import { createSitePage } from '../../packages/content-contracts/src/site-page'
+import worker, { PublicContent } from '../../supabase/worker/index'
 import { withPageReads } from './helpers/cmsPageReads'
 
 // G01 and G02 (PR #104 final gate): the Worker assembles the served HTML from the trusted index.html
@@ -60,7 +60,10 @@ const contactBodies = {
     contactSource.indexOf('<body>') + '<body>'.length,
     contactSource.indexOf('</body>'),
   ),
-  en: readFileSync(new URL('../../src/admin/cms/contact.en.html', import.meta.url), 'utf8').trim(),
+  en: readFileSync(
+    new URL('../../modules/studio/src/contact.en.html', import.meta.url),
+    'utf8',
+  ).trim(),
 }
 
 /** The shipped Contact templates, as Studio adopts them, with `css` in both schemes. */

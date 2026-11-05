@@ -1,6 +1,6 @@
 /* global Request, Response */
 // Real Worker output for browser tests of Worker-rendered CMS pages (TST-2, PAR-2). Playwright
-// cannot import src/worker.ts directly (`cloudflare:workers`), so Vite's SSR loader runs the real
+// cannot import supabase/worker/index.ts directly (`cloudflare:workers`), so Vite's SSR loader runs the real
 // TypeScript graph in the test process with the unit-test shim for that one module, as vitest does.
 // Nothing is sent anywhere and no port is opened: the caller supplies the index.html shell and the
 // published presentation, the Supabase calls are answered from them, and any other request the
@@ -28,7 +28,7 @@ export const productionCsp = (() => {
   return policy.replace(/;?\s*upgrade-insecure-requests/g, '')
 })()
 
-/** Load src/worker.ts once per test file; call `close()` in afterAll. */
+/** Load supabase/worker/index.ts once per test file; call `close()` in afterAll. */
 export async function loadWorker() {
   const server = await createServer({
     root,
@@ -43,7 +43,7 @@ export async function loadWorker() {
       alias: { 'cloudflare:workers': join(root, 'tests/unit/helpers/cloudflareWorkers.ts') },
     },
   })
-  const worker = await server.ssrLoadModule('/src/worker.ts')
+  const worker = await server.ssrLoadModule('/supabase/worker/index.ts')
   // `load` reaches other source modules through the same loader (e.g. Studio data upgrades).
   return { worker, load: (path) => server.ssrLoadModule(path), close: () => server.close() }
 }
@@ -87,7 +87,7 @@ function shellAssets(shell, unexpected) {
             'Content-Security-Policy': productionCsp,
           },
         })
-      // The legal pages inline these two static files as their base (src/worker.ts legalBaseCss).
+      // The legal pages inline these two static files as their base (supabase/worker/index.ts legalBaseCss).
       if (pathname === '/tokens.css' || pathname === '/info.css')
         return new Response(readFileSync(join(root, 'public', pathname), 'utf8'), {
           headers: { 'Content-Type': 'text/css; charset=utf-8' },

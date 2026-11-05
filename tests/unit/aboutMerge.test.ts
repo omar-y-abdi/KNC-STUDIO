@@ -3,11 +3,11 @@
 // override and DB-owned stylist-copy resolution.
 
 import { describe, expect, it } from 'vitest'
-import { mergeAbout, stylistCopyFor } from '../../src/about/content/merge'
-import { aboutStrings } from '../../src/i18n/index'
-import type { AboutOverlay } from '../../src/about/content/port'
-import type { RosterBarber } from '../../src/booking/barbersPort'
-import { asBarberId } from '../../src/booking/domain'
+import { mergeAbout, stylistCopyFor } from '../../modules/public-web/src/about/content/merge'
+import { aboutStrings } from '../../modules/public-web/src/i18n/index'
+import type { AboutOverlay } from '../../modules/public-web/src/about/content/port'
+import type { RosterBarber } from '../../modules/public-web/src/booking/barbersPort'
+import { asBarberId } from '../../modules/public-web/src/booking/domain'
 
 const baseSv = aboutStrings('sv')
 const baseEn = aboutStrings('en')

@@ -8,12 +8,15 @@ import {
   editorDevices,
   syncLayout,
   syncPageLayout,
-} from '../../src/admin/cms/responsiveStyles'
-import { repairDesktopCss } from '../../shared/cms-device-css'
-import { siteThemeCss, themeStyleValue } from '../../shared/site-theme'
-import { themeDeclarations } from '../../shared/site-theme-declarations'
-import { emptyPresentation, type CmsPresentation } from '../../shared/cms'
-import { createSitePage, normalizeSitePageContent } from '../../shared/site-page'
+} from '../../modules/studio/src/responsiveStyles'
+import { repairDesktopCss } from '../../packages/content-contracts/src/cms-device-css'
+import { siteThemeCss, themeStyleValue } from '../../packages/content-contracts/src/site-theme'
+import { themeDeclarations } from '../../packages/content-contracts/src/site-theme-declarations'
+import { emptyPresentation, type CmsPresentation } from '../../packages/content-contracts/src/cms'
+import {
+  createSitePage,
+  normalizeSitePageContent,
+} from '../../packages/content-contracts/src/site-page'
 
 describe('narrow Desktop preview', () => {
   it('offers 820px only as a Desktop view with the same saved breakpoint', () => {

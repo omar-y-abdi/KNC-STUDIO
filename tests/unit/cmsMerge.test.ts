@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { emptyDocument, type CmsDocument } from '../../shared/cms'
-import { mergeCmsDocuments } from '../../src/admin/cms/draft'
+import { emptyDocument, type CmsDocument } from '../../packages/content-contracts/src/cms'
+import { mergeCmsDocuments } from '../../modules/studio/src/draft'
 
 function firstPage(document: CmsDocument) {
   const page = document.presentation.pages[0]

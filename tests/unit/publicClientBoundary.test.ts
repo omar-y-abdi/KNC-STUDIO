@@ -6,21 +6,22 @@ vi.mock('@supabase/supabase-js', () => {
   throw new Error('the public pages must not load @supabase/supabase-js')
 })
 
-vi.mock('../../src/backend/config', () => ({
+vi.mock('../../modules/public-web/src/backend/config', () => ({
   SUPABASE_URL: 'https://example.supabase.co',
   SUPABASE_ANON_KEY: 'eyJ.test.signature',
   isBackendConfigured: () => true,
 }))
 
 const PUBLIC_ADAPTERS = {
-  gallery: () => import('../../src/about/gallery/supabaseGallery'),
-  reviews: () => import('../../src/about/reviews/adapters/supabaseReviews'),
-  aboutContent: () => import('../../src/about/content/supabaseAboutContent'),
-  booking: () => import('../../src/booking/adapters/supabaseBooking'),
-  bookingCatalog: () => import('../../src/booking/adapters/supabaseBookingCatalog'),
-  siteChrome: () => import('../../src/site/adapters/supabaseSiteChrome'),
-  publicRest: () => import('../../src/backend/publicRest'),
-  publicRealtime: () => import('../../src/backend/publicRealtime'),
+  gallery: () => import('../../modules/public-web/src/about/gallery/supabaseGallery'),
+  reviews: () => import('../../modules/public-web/src/about/reviews/adapters/supabaseReviews'),
+  aboutContent: () => import('../../modules/public-web/src/about/content/supabaseAboutContent'),
+  booking: () => import('../../modules/public-web/src/booking/adapters/supabaseBooking'),
+  bookingCatalog: () =>
+    import('../../modules/public-web/src/booking/adapters/supabaseBookingCatalog'),
+  siteChrome: () => import('../../modules/public-web/src/site/adapters/supabaseSiteChrome'),
+  publicRest: () => import('../../modules/public-web/src/backend/publicRest'),
+  publicRealtime: () => import('../../modules/public-web/src/backend/publicRealtime'),
 }
 
 describe('public adapters', () => {

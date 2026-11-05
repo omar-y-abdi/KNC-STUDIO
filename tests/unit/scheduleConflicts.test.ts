@@ -5,9 +5,14 @@ import {
   orphansInRange,
   orphansUnderWeek,
   partitionCancellations,
-} from '../../src/admin/scheduleConflicts'
-import type { AdminBooking, DaySchedule, Weekday, WeekSchedule } from '../../src/admin/types'
-import { stockholmWallClockDate } from '../../src/booking/stockholmTime'
+} from '../../modules/staff-admin/src/scheduleConflicts'
+import type {
+  AdminBooking,
+  DaySchedule,
+  Weekday,
+  WeekSchedule,
+} from '../../modules/staff-admin/src/types'
+import { stockholmWallClockDate } from '../../modules/public-web/src/booking/stockholmTime'
 
 // Salon-local July times use the +02:00 (CEST) offset so the instant is unambiguous.
 // 2026-07-21 is a Tuesday (getDay()===2); 2026-07-18 / 2026-07-25 are Saturdays.

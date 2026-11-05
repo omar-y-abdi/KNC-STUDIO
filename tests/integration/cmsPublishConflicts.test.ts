@@ -15,7 +15,7 @@ import {
   type CmsPublication,
   type CmsState,
   type MediaRef,
-} from '../../shared/cms'
+} from '../../packages/content-contracts/src/cms'
 
 // Real Edge, PostgREST and Postgres: the archived-media rule, conflict status codes and
 // request idempotency as the owner's browser meets them.

@@ -1,0 +1,29 @@
+{
+  "name": "@bladeblend/staff-admin",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    "./confirmation": "./src/ConfirmDialog.tsx",
+    "./email-delivery": "./src/adapters/emailDeliveryAdmin.ts",
+    "./entry": "./src/index.tsx",
+    "./session": "./src/useAdminSession.ts",
+    "./studio-access": "./src/studioAccess.ts"
+  },
+  "dependencies": {
+    "@bladeblend/backend-contracts": "*",
+    "@bladeblend/public-web": "*",
+    "@supabase/supabase-js": "2.112.2",
+    "preact": "^10.29.1",
+    "wouter-preact": "^3.10.0",
+    "zod": "4.6.6"
+  },
+  "scripts": {
+    "check": "node ../../tools/modules/run.mjs staff-admin check",
+    "test": "node ../../tools/modules/run.mjs staff-admin test",
+    "lint": "node ../../tools/modules/run.mjs staff-admin lint",
+    "typecheck": "node ../../tools/modules/run.mjs staff-admin typecheck",
+    "build": "node ../../tools/modules/run.mjs staff-admin build",
+    "plan": "node ../../tools/modules/run.mjs staff-admin plan"
+  }
+}

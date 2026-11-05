@@ -7,8 +7,8 @@ const root = fileURLToPath(new URL('../../', import.meta.url))
 const documents = [
   'CODEBASE-MAP.md',
   'README.md',
-  'src/admin/cms/UX-CONTRACT.md',
-  'src/admin/cms/DESIGN.md',
+  'modules/studio/src/UX-CONTRACT.md',
+  'modules/studio/src/DESIGN.md',
 ]
 
 // Routes, commands, CSS properties and ignored local config are not repository paths.

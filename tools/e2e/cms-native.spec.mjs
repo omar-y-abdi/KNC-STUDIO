@@ -87,7 +87,7 @@ test('cms-native', async ({ page, context, browserName, evidenceDir }) => {
     })
     await page.locator('.cms-canvas-shell').waitFor({ timeout: 90000 })
     const sourceContract = await page.evaluate(async () => {
-      const { snapshotNative } = await import('/src/admin/cms/nativePages.ts')
+      const { snapshotNative } = await import('/modules/studio/src/nativePages.ts')
       const fixture = new globalThis.DOMParser().parseFromString(
         '<section><a href="#privacy-preferences">Privacy</a><div data-knc-slot="outer"><div id="nested" data-knc-slot="nested"><span id="caption">Name</span><input aria-labelledby="caption"></div></div></section>',
         'text/html',
@@ -107,7 +107,7 @@ test('cms-native', async ({ page, context, browserName, evidenceDir }) => {
     assert.equal(sourceContract.nestedSlots, 0, 'Nested runtime identities leaked into snapshots')
     assert.equal(sourceContract.privacy, '/#privacy-preferences')
     assert.deepEqual(sourceContract.labels, ['Name', 'Name'])
-    const { validateMarkup } = await import('../../shared/cms-markup.ts')
+    const { validateMarkup } = await import('../../packages/content-contracts/src/cms-markup.ts')
     validateMarkup(
       sourceContract.html,
       '',
@@ -328,7 +328,8 @@ const leavingCases = [
   },
   {
     load: 'booking-catalog module',
-    held: (pathname) => pathname === '/src/booking/adapters/supabaseBookingCatalog.ts',
+    held: (pathname) =>
+      pathname === '/modules/public-web/src/booking/adapters/supabaseBookingCatalog.ts',
     // Live updates have their client once it opens its socket.
     otherSettled: (page) =>
       page.waitForEvent('websocket', (socket) => socket.url().includes('/realtime/v1/websocket')),

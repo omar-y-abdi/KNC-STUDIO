@@ -4,8 +4,8 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createServer as createHttpServer } from 'node:http'
 import { createServer as createViteServer, type UserConfig, type UserConfigFn } from 'vite'
-import { consumeBookingAccessLink } from '../../src/mybookings/accessLink'
-import { customerGateway } from '../../src/mybookings/customerGateway'
+import { consumeBookingAccessLink } from '../../modules/public-web/src/mybookings/accessLink'
+import { customerGateway } from '../../supabase/worker/customerGateway'
 import {
   customerCookie,
   customerCookieHeader,

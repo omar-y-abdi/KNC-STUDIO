@@ -8,12 +8,16 @@ import {
   type CmsLang,
   type CmsPage,
   type CmsPresentation,
-} from '../../shared/cms'
-import { CMS_BUILT_ASSETS } from '../../shared/cms-built-assets'
-import { validateDocumentMarkupPlacements } from '../../shared/cms-markup'
-import { createSitePage, isFrozenSitePage, type SiteContact } from '../../shared/site-page'
-import { previewSitePage } from '../../src/admin/cms/LivePreview'
-import worker from '../../src/worker'
+} from '../../packages/content-contracts/src/cms'
+import { CMS_BUILT_ASSETS } from '../../packages/content-contracts/src/cms-built-assets'
+import { validateDocumentMarkupPlacements } from '../../packages/content-contracts/src/cms-markup'
+import {
+  createSitePage,
+  isFrozenSitePage,
+  type SiteContact,
+} from '../../packages/content-contracts/src/site-page'
+import { previewSitePage } from '../../modules/studio/src/LivePreview'
+import worker from '../../supabase/worker/index'
 
 // Created pages through the real Worker: the homepage logo the live header copies, and pages an
 // earlier Studio stored with their own frozen header.

@@ -1,0 +1,27 @@
+{
+  "name": "@bladeblend/backend",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    "./worker": "./worker/index.ts"
+  },
+  "dependencies": {
+    "@bladeblend/backend-contracts": "*",
+    "@bladeblend/content-contracts": "*",
+    "@bladeblend/public-web": "*",
+    "@imagemagick/magick-wasm": "0.0.42",
+    "@supabase/supabase-js": "2.112.2",
+    "fontkit": "2.0.4",
+    "parse5": "8.0.1",
+    "zod": "4.6.6"
+  },
+  "scripts": {
+    "check": "node ../tools/modules/run.mjs backend check",
+    "test": "node ../tools/modules/run.mjs backend test",
+    "lint": "node ../tools/modules/run.mjs backend lint",
+    "typecheck": "node ../tools/modules/run.mjs backend typecheck",
+    "build": "node ../tools/modules/run.mjs backend build",
+    "plan": "node ../tools/modules/run.mjs backend plan"
+  }
+}

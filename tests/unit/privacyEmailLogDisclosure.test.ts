@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import worker, { PublicContent } from '../../src/worker'
+import worker, { PublicContent } from '../../supabase/worker/index'
 
 // The delivery log stores a copy of every app email and keeps it after its booking is deleted.
 // The shipped privacy page is the static /privacy answer and the Studio seed of a missing CMS

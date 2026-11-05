@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { readFile, writeFile } from 'node:fs/promises'
-import { emptyDocument } from '../../shared/cms.ts'
+import { emptyDocument } from '../../packages/content-contracts/src/cms.ts'
 import { assetFixture, barberFixture } from './builders.mjs'
 import { nativeBackend } from './cms-backend.mjs'
 import { loadWorker } from './cms-render.mjs'
@@ -228,7 +228,8 @@ for (const reordered of [false, true])
       current,
     ]
     const pages = await page.evaluate(async (document) => {
-      const { captureResourceLayouts } = await import('/src/admin/cms/captureResourceLayouts.ts')
+      const { captureResourceLayouts } =
+        await import('/modules/studio/src/captureResourceLayouts.ts')
       return captureResourceLayouts(document, new globalThis.AbortController().signal)
     }, backend.document)
     backend.document.presentation.pages = backend.document.presentation.pages.map(

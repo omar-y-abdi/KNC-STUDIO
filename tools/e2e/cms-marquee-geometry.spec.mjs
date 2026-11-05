@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { writeFile } from 'node:fs/promises'
-import { marqueeCardWidth, minLoopScale } from '../../src/admin/cms/hierarchicalResize.ts'
+import { marqueeCardWidth, minLoopScale } from '../../modules/studio/src/hierarchicalResize.ts'
 import { installBlankProbe, readBlankProbe } from './cms-marquee-probe.mjs'
 import { test } from './fixtures.mjs'
 import { harnessOrigin } from './origins.mjs'

@@ -1,12 +1,14 @@
 import type * as ExternalActionsModule from '../../supabase/functions/_shared/externalActions'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { CalendarConnectButton } from '../../src/admin/calendar/CalendarConnectButton'
-import { useCalendarSync } from '../../src/admin/calendar/useCalendarSync'
-import { buildAdminStyles } from '../../src/admin/adminStyles'
-import { palette } from '../../src/booking/bookingStyles'
-import { adminText } from '../../src/i18n/adminStrings'
+import { CalendarConnectButton } from '../../modules/staff-admin/src/calendar/CalendarConnectButton'
+import { useCalendarSync } from '../../modules/staff-admin/src/calendar/useCalendarSync'
+import { buildAdminStyles } from '../../modules/staff-admin/src/adminStyles'
+import { palette } from '../../modules/public-web/src/booking/bookingStyles'
+import { adminText } from '../../modules/staff-admin/src/adminStrings'
 
-vi.mock('../../src/admin/calendar/useCalendarSync', () => ({ useCalendarSync: vi.fn() }))
+vi.mock('../../modules/staff-admin/src/calendar/useCalendarSync', () => ({
+  useCalendarSync: vi.fn(),
+}))
 
 interface RenderedNode {
   readonly type?: unknown

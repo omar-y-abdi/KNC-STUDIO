@@ -1,10 +1,14 @@
 import { FunctionsFetchError, FunctionsHttpError } from '@supabase/supabase-js'
 import { beforeEach, expect, it, vi } from 'vitest'
-import { CmsValidationError, emptyDocument, validateDocument } from '../../shared/cms'
-import { cmsApi } from '../../src/admin/cms/api'
+import {
+  CmsValidationError,
+  emptyDocument,
+  validateDocument,
+} from '../../packages/content-contracts/src/cms'
+import { cmsApi } from '../../modules/studio/src/api'
 
 const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }))
-vi.mock('../../src/admin/adminClient', () => ({
+vi.mock('../../modules/staff-admin/src/adminClient', () => ({
   getAdminClient: () => ({ functions: { invoke } }),
 }))
 beforeEach(() => invoke.mockReset())

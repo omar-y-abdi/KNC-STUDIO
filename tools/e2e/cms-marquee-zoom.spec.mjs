@@ -3,7 +3,7 @@ import { routeApi } from './route-api.mjs'
 import assert from 'node:assert/strict'
 import { writeFile } from 'node:fs/promises'
 import { generate, parse, walk } from 'css-tree'
-import { marqueeCardWidth } from '../../src/admin/cms/hierarchicalResize.ts'
+import { marqueeCardWidth } from '../../modules/studio/src/hierarchicalResize.ts'
 import { nativeBackend } from './cms-backend.mjs'
 import { installBlankProbe, readBlankProbe } from './cms-marquee-probe.mjs'
 import { test } from './fixtures.mjs'
@@ -147,7 +147,7 @@ test.describe('stored marquee', () => {
     // Only owner edits create backups; the captured source alone is pristine.
     await capturePage.getByRole('textbox', { name: 'Namn', exact: true }).fill('Zoomtestets källa')
     const { captured, ids } = await capturePage.evaluate(async () => {
-      const session = await (await import('/src/admin/cms/backup.ts')).cmsBackups()
+      const session = await (await import('/modules/studio/src/backup.ts')).cmsBackups()
       await session.flush()
       const backup = await session.own()
       if (!backup) throw new Error('The CMS source was not captured')
@@ -190,7 +190,7 @@ test.describe('stored marquee', () => {
     // GrapesJS's own dirty count, which rises at once; Studio shows a change 180 ms later.
     const policyProbe = await page.evaluate(async () => {
       const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
-      const { readCanvasCss } = await import('/src/admin/cms/nativeCanvas.ts')
+      const { readCanvasCss } = await import('/modules/studio/src/nativeCanvas.ts')
       const editor = cmsGrapes.editors.at(-1)
       const steps = []
       const changes = []
@@ -377,8 +377,8 @@ test.describe('stored marquee', () => {
     await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html?view=cms-studio`)
     await page.evaluate(
       async (legacy) => {
-        const { cmsApi } = await import('/src/admin/cms/api.ts')
-        const { cmsBackups } = await import('/src/admin/cms/backup.ts')
+        const { cmsApi } = await import('/modules/studio/src/api.ts')
+        const { cmsBackups } = await import('/modules/studio/src/backup.ts')
         const head = await cmsApi.state()
         const session = await cmsBackups()
         session.schedule({
@@ -466,7 +466,7 @@ test.describe('stored marquee', () => {
       .getByRole('textbox', { name: 'Namn', exact: true })
       .fill('Markeringstestets källa')
     const { captured, ids } = await capturePage.evaluate(async () => {
-      const session = await (await import('/src/admin/cms/backup.ts')).cmsBackups()
+      const session = await (await import('/modules/studio/src/backup.ts')).cmsBackups()
       await session.flush()
       const backup = await session.own()
       if (!backup) throw new Error('The CMS source was not captured')
@@ -496,7 +496,7 @@ test.describe('stored marquee', () => {
     const canvas = () =>
       page.evaluate(async () => {
         const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
-        const { readCanvasCss } = await import('/src/admin/cms/nativeCanvas.ts')
+        const { readCanvasCss } = await import('/modules/studio/src/nativeCanvas.ts')
         const editor = cmsGrapes.editors.at(-1)
         return {
           status: globalThis.document.querySelector('.cms-status')?.textContent,
@@ -714,7 +714,7 @@ test.describe('stored marquee', () => {
     // Only owner edits create backups; the captured source alone is pristine.
     await capturePage.getByRole('textbox', { name: 'Namn', exact: true }).fill('Ångratestets källa')
     const { captured, ids } = await capturePage.evaluate(async () => {
-      const session = await (await import('/src/admin/cms/backup.ts')).cmsBackups()
+      const session = await (await import('/modules/studio/src/backup.ts')).cmsBackups()
       await session.flush()
       const backup = await session.own()
       if (!backup) throw new Error('The CMS source was not captured')
@@ -744,7 +744,7 @@ test.describe('stored marquee', () => {
     const canvas = () =>
       page.evaluate(async () => {
         const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
-        const { readCanvasCss } = await import('/src/admin/cms/nativeCanvas.ts')
+        const { readCanvasCss } = await import('/modules/studio/src/nativeCanvas.ts')
         const editor = cmsGrapes.editors.at(-1)
         return {
           status: globalThis.document.querySelector('.cms-status')?.textContent,
@@ -799,7 +799,7 @@ test.describe('stored marquee', () => {
     // is read after each selection change.
     const history = await page.evaluate(async () => {
       const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
-      const { readCanvasCss } = await import('/src/admin/cms/nativeCanvas.ts')
+      const { readCanvasCss } = await import('/modules/studio/src/nativeCanvas.ts')
       const editor = cmsGrapes.editors.at(-1)
       const tick = (ms) => new Promise((resolve) => globalThis.setTimeout(resolve, ms))
       const [track] = editor.getWrapper().find('[data-knc-fold="gallery-track"]')
@@ -974,7 +974,7 @@ test.describe('stored marquee', () => {
     // Only owner edits create backups; the captured source alone is pristine.
     await capturePage.getByRole('textbox', { name: 'Namn', exact: true }).fill(source)
     const { captured, ids } = await capturePage.evaluate(async () => {
-      const session = await (await import('/src/admin/cms/backup.ts')).cmsBackups()
+      const session = await (await import('/modules/studio/src/backup.ts')).cmsBackups()
       await session.flush()
       const backup = await session.own()
       if (!backup) throw new Error('The CMS source was not captured')
@@ -1004,7 +1004,7 @@ test.describe('stored marquee', () => {
     const canvas = () =>
       page.evaluate(async () => {
         const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
-        const { readCanvasCss } = await import('/src/admin/cms/nativeCanvas.ts')
+        const { readCanvasCss } = await import('/modules/studio/src/nativeCanvas.ts')
         const editor = cmsGrapes.editors.at(-1)
         return {
           status: globalThis.document.querySelector('.cms-status')?.textContent,
@@ -1143,7 +1143,7 @@ test.describe('stored marquee', () => {
     // tile joins the selection. The canvas CSS is read once the Style Manager targets both.
     const added = await page.evaluate(async () => {
       const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
-      const { readCanvasCss } = await import('/src/admin/cms/nativeCanvas.ts')
+      const { readCanvasCss } = await import('/modules/studio/src/nativeCanvas.ts')
       const editor = cmsGrapes.editors.at(-1)
       const tick = (ms) => new Promise((resolve) => globalThis.setTimeout(resolve, ms))
       const [track] = editor.getWrapper().find('[data-knc-fold="gallery-track"]')
@@ -1237,7 +1237,7 @@ test.describe('stored marquee', () => {
     // The canvas CSS is read after each selection change, once the Style Manager follows it.
     const history = await page.evaluate(async () => {
       const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
-      const { readCanvasCss } = await import('/src/admin/cms/nativeCanvas.ts')
+      const { readCanvasCss } = await import('/modules/studio/src/nativeCanvas.ts')
       const editor = cmsGrapes.editors.at(-1)
       const tick = (ms) => new Promise((resolve) => globalThis.setTimeout(resolve, ms))
       const [track] = editor.getWrapper().find('[data-knc-fold="gallery-track"]')
@@ -1348,7 +1348,7 @@ test.describe('stored marquee', () => {
     // The canvas CSS is read after each selection change, once the Style Manager follows it.
     const history = await page.evaluate(async () => {
       const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
-      const { readCanvasCss } = await import('/src/admin/cms/nativeCanvas.ts')
+      const { readCanvasCss } = await import('/modules/studio/src/nativeCanvas.ts')
       const editor = cmsGrapes.editors.at(-1)
       const tick = (ms) => new Promise((resolve) => globalThis.setTimeout(resolve, ms))
       const [track] = editor.getWrapper().find('[data-knc-fold="gallery-track"]')
@@ -1582,7 +1582,7 @@ test.describe('source adoption', () => {
     const remote = withLegacyZoom(captured, ids, 'Om oss (server)')
     aboutPage(remote).content.sv.css.light += `\n#${ids.sv.cards[0]}{color:red}`
     await page.evaluate(async (remote) => {
-      const { cmsApi } = await import('/src/admin/cms/api.ts')
+      const { cmsApi } = await import('/modules/studio/src/api.ts')
       const head = await cmsApi.state()
       await cmsApi.publish(remote, head.revision, head.fingerprint, globalThis.crypto.randomUUID())
     }, remote)

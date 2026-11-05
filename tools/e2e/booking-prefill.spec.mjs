@@ -144,7 +144,9 @@ test('late device hydration preserves edits; withdrawal clears only untouched hi
   await page.evaluate(() => globalThis.dispatchEvent(new globalThis.Event('focus')))
   await expect.poll(() => state.listCalls).toBeGreaterThan(calls)
   await page.evaluate(async () =>
-    (await import('/src/site/storageConsent.ts')).saveStoragePreferences({ functional: false }),
+    (await import('/modules/public-web/src/site/storageConsent.ts')).saveStoragePreferences({
+      functional: false,
+    }),
   )
   release()
   state.hold = null
@@ -301,12 +303,16 @@ test('withdrawing and re-enabling storage cannot resurrect a revoked in-flight r
   await page.evaluate(() => globalThis.dispatchEvent(new globalThis.Event('focus')))
   await expect.poll(() => state.listCalls).toBeGreaterThan(reads)
   await page.evaluate(async () =>
-    (await import('/src/site/storageConsent.ts')).saveStoragePreferences({ functional: false }),
+    (await import('/modules/public-web/src/site/storageConsent.ts')).saveStoragePreferences({
+      functional: false,
+    }),
   )
   // The server revocation completes before consent is enabled again; only the old response has PII.
   await expect.poll(() => state.contact).toBeUndefined()
   await page.evaluate(async () =>
-    (await import('/src/site/storageConsent.ts')).saveStoragePreferences({ functional: true }),
+    (await import('/modules/public-web/src/site/storageConsent.ts')).saveStoragePreferences({
+      functional: true,
+    }),
   )
   const listed = page.waitForResponse(
     (response) =>
@@ -373,7 +379,9 @@ for (const { refreshDuringRevocation, verified } of [
     await expect.poll(() => state.listCalls).toBeGreaterThanOrEqual(2)
     if (!verified)
       await page.evaluate(async () =>
-        (await import('/src/site/storageConsent.ts')).saveStoragePreferences({ functional: true }),
+        (await import('/modules/public-web/src/site/storageConsent.ts')).saveStoragePreferences({
+          functional: true,
+        }),
       )
     if (refreshDuringRevocation) {
       const reads = state.listCalls

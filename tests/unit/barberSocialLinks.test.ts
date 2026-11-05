@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import { h, isValidElement, type ComponentChild, type VNode } from 'preact'
-import { barberSocialLinks, socialText } from '../../src/about/barberSocialLinks'
+import { barberSocialLinks, socialText } from '../../modules/public-web/src/about/barberSocialLinks'
 
-vi.mock('../../src/ui/pseudo', () => ({ FOCUS_CLS: 'focus' }))
+vi.mock('../../modules/public-web/src/ui/pseudo', () => ({ FOCUS_CLS: 'focus' }))
 
 const anchors = (children: ComponentChild[]) =>
   children.filter(

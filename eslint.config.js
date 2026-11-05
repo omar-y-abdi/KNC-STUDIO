@@ -51,7 +51,7 @@ export default tseslint.config(
       '.vite-cache/**',
       '.wrangler/tmp/**',
       'tools/visual/**/*.png',
-      'supabase/**',
+      'supabase/functions/**',
     ],
   },
   js.configs.recommended,
@@ -81,9 +81,12 @@ export default tseslint.config(
       'security/detect-non-literal-regexp': 'warn',
     },
   },
-  { files: ['src/**/*.{ts,tsx}'], ignores: ['src/admin/**'], ...restrictBootImports() },
-  { files: ['src/backend/rpcSchemas.ts'], ...restrictBootImports(['zod']) },
-  { files: ['src/backend/supabaseClient.ts'], ...restrictBootImports(['@supabase/supabase-js']) },
+  { files: ['modules/public-web/src/**/*.{ts,tsx}'], ...restrictBootImports() },
+  { files: ['packages/backend-contracts/src/rpcSchemas.ts'], ...restrictBootImports(['zod']) },
+  {
+    files: ['modules/staff-admin/src/supabaseClient.ts'],
+    ...restrictBootImports(['@supabase/supabase-js']),
+  },
   // Tooling + tests run on Node and may use console + Node globals.
   {
     files: ['tools/**', 'tests/**', '**/*.config.{js,ts}'],

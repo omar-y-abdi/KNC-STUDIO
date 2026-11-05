@@ -1,0 +1,24 @@
+{
+  "name": "@bladeblend/backend-contracts",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    "./email-send-log": "./src/email-send-log.ts",
+    "./iso-timestamp": "./src/iso-timestamp.ts",
+    "./rpcSchemas": "./src/rpcSchemas.ts",
+    "./turnstile": "./src/turnstile.ts"
+  },
+  "dependencies": {
+    "zod": "4.6.6",
+    "@bladeblend/content-contracts": "*"
+  },
+  "scripts": {
+    "check": "node ../../tools/modules/run.mjs backend-contracts check",
+    "test": "node ../../tools/modules/run.mjs backend-contracts test",
+    "lint": "node ../../tools/modules/run.mjs backend-contracts lint",
+    "typecheck": "node ../../tools/modules/run.mjs backend-contracts typecheck",
+    "build": "node ../../tools/modules/run.mjs backend-contracts build",
+    "plan": "node ../../tools/modules/run.mjs backend-contracts plan"
+  }
+}

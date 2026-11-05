@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { inflateSync } from 'node:zlib'
-import { emptyDocument } from '../../shared/cms.ts'
+import { emptyDocument } from '../../packages/content-contracts/src/cms.ts'
 
 const PRESENTATION_PATH = '/api/cms/presentation'
 const HERO_AMPERSAND =
@@ -69,7 +69,7 @@ export async function installEmptyCmsPresentation(context) {
 const answers = {
   presentation: (presentation) => (route) =>
     route.fulfill({ headers: NO_STORE, json: { revision: 1, presentation } }),
-  // The Worker's own answer when the database read fails or times out (src/worker.ts).
+  // The Worker's own answer when the database read fails or times out (supabase/worker/index.ts).
   unavailable: () => (route) =>
     route.fulfill({ status: 503, headers: NO_STORE, json: { error: 'unavailable' } }),
   invalid: () => (route) =>

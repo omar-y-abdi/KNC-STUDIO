@@ -6,15 +6,15 @@ import {
   validateCompleteDocument,
   validateDocumentMedia,
   type CmsDocument,
-} from '../../shared/cms'
-import { CMS_BUILT_ASSETS } from '../../shared/cms-built-assets'
-import { validateDocumentMarkupPlacements } from '../../shared/cms-markup'
-import worker from '../../src/worker'
+} from '../../packages/content-contracts/src/cms'
+import { CMS_BUILT_ASSETS } from '../../packages/content-contracts/src/cms-built-assets'
+import { validateDocumentMarkupPlacements } from '../../packages/content-contracts/src/cms-markup'
+import worker from '../../supabase/worker/index'
 import { withPageReads } from './helpers/cmsPageReads'
 
 // G09 (PR #104 final gate): a Contact body carrying data-business-contact-page="1" is the managed
 // template, and the Worker refills its five server-owned slots on every request
-// (src/site/businessSlots.ts fillSlots). Publication must accept such a body only when every slot is
+// (modules/public-web/src/site/businessSlots.ts fillSlots). Publication must accept such a body only when every slot is
 // present and each one can be refilled: no slot inside another slot (the outer refill erases it),
 // one slot per element (only the first is refilled), and an element whose content the browser keeps
 // after the refill (a void element drops it; a <p> pushes a refilled <dl> out of itself). Unmarked
@@ -28,7 +28,7 @@ const policy = {
 const source = readFileSync(new URL('../../public/contact.html', import.meta.url), 'utf8')
 const shipped = source.slice(source.indexOf('<body>') + '<body>'.length, source.indexOf('</body>'))
 const english = readFileSync(
-  new URL('../../src/admin/cms/contact.en.html', import.meta.url),
+  new URL('../../modules/studio/src/contact.en.html', import.meta.url),
   'utf8',
 ).trim()
 

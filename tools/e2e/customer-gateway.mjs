@@ -3,7 +3,7 @@
 
 /**
  * The customer gateway's answer for a visitor with no session, or undefined for a call this module
- * does not fixture. A page boot makes these two (src/app/App.tsx): `forget_device` for a visitor who
+ * does not fixture. A page boot makes these two (modules/public-web/src/app/App.tsx): `forget_device` for a visitor who
  * refused functional storage, and a `list` without a token that restores a returning customer.
  */
 export function customerGatewayAnswer(payload) {
@@ -20,7 +20,7 @@ export function isCustomerGatewayUrl(url) {
   return url.pathname === CUSTOMER_GATEWAY_PATH
 }
 
-// The actions of PublicBookingAction (src/backend/publicBookingActions.ts). Only these names may
+// The actions of PublicBookingAction (modules/public-web/src/backend/publicBookingActions.ts). Only these names may
 // appear in a failure message; whatever else a body carries is not echoed.
 const GATEWAY_ACTIONS = [
   'request_link',

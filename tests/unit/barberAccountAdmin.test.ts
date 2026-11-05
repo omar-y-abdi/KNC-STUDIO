@@ -2,14 +2,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }))
 
-vi.mock('../../src/admin/adminClient', () => ({
+vi.mock('../../modules/staff-admin/src/adminClient', () => ({
   getAdminClient: () => ({ functions: { invoke } }),
 }))
 
 import {
   createBarberAccount,
   setBarberAccountAccess,
-} from '../../src/admin/adapters/barberAccountAdmin'
+} from '../../modules/staff-admin/src/adapters/barberAccountAdmin'
 
 beforeEach(() => {
   invoke.mockReset()

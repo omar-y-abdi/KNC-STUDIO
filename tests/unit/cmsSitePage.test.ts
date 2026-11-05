@@ -7,8 +7,11 @@ import {
   validateCompleteDocument,
   type CmsPage,
   type CmsPresentation,
-} from '../../shared/cms'
-import { validateDocumentMarkupPlacements, validateMarkup } from '../../shared/cms-markup'
+} from '../../packages/content-contracts/src/cms'
+import {
+  validateDocumentMarkupPlacements,
+  validateMarkup,
+} from '../../packages/content-contracts/src/cms-markup'
 import {
   SITE_PAGE_CSS,
   createSitePage,
@@ -24,11 +27,11 @@ import {
   sitePageBody,
   withoutFrozenChromeCss,
   type SiteContact,
-} from '../../shared/site-page'
-import { restoreRevision } from '../../src/admin/cms/draft'
-import { previewSitePage } from '../../src/admin/cms/LivePreview'
-import { normalizeDocument } from '../../src/admin/cms/normalizeDocument'
-import { renderCmsPage } from '../../src/worker'
+} from '../../packages/content-contracts/src/site-page'
+import { restoreRevision } from '../../modules/studio/src/draft'
+import { previewSitePage } from '../../modules/studio/src/LivePreview'
+import { normalizeDocument } from '../../modules/studio/src/normalizeDocument'
+import { renderCmsPage } from '../../supabase/worker/index'
 
 const contact: SiteContact = {
   phoneTel: '0701234567',

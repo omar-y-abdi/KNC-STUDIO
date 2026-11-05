@@ -35,5 +35,5 @@
     "noPropertyAccessFromIndexSignature": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src", "tools/e2e/*.tsx"]
+  "include": ["src", "modules", "packages", "supabase/worker", "tools/e2e/*.tsx"]
 }

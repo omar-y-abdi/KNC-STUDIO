@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { gunzipSync } from 'node:zlib'
-import { emptyDocument } from '../../shared/cms.ts'
+import { emptyDocument } from '../../packages/content-contracts/src/cms.ts'
 import { nativeBackend } from './cms-backend.mjs'
 import { test } from './fixtures.mjs'
 import { harnessOrigin } from './origins.mjs'

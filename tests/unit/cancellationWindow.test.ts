@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { checkCancellationHours } from '../../src/admin/cancellationWindow'
+import { checkCancellationHours } from '../../modules/staff-admin/src/cancellationWindow'
 
 describe('cancellation window bounds (database trigger: ^[0-9]{1,3}$, 1..168)', () => {
   it.each(['1', '24', '168', ' 48 ', '007'])('accepts %j', (raw) => {

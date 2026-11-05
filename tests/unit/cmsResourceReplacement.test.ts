@@ -4,14 +4,14 @@ import {
   emptyDocument,
   validateDocument,
   type CmsAsset,
-} from '../../shared/cms'
-import { replaceDocumentResource } from '../../shared/cms-resources'
+} from '../../packages/content-contracts/src/cms'
+import { replaceDocumentResource } from '../../packages/content-contracts/src/cms-resources'
 
 const invoke = vi.hoisted(() => vi.fn())
-vi.mock('../../src/admin/adminClient', () => ({
+vi.mock('../../modules/staff-admin/src/adminClient', () => ({
   getAdminClient: () => ({ functions: { invoke } }),
 }))
-import { cmsApi } from '../../src/admin/cms/api'
+import { cmsApi } from '../../modules/studio/src/api'
 
 const policy = { siteOrigin: 'https://salon.example', storageOrigin: 'https://fixture.supabase.co' }
 const oldAsset: CmsAsset = {

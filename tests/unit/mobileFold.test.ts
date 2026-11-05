@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { mobileFold } from '../../src/app/mobileFold'
+import { mobileFold } from '../../modules/public-web/src/app/mobileFold'
 
 describe('shared mobile hero motion', () => {
   it('keeps panel plus spacer at one viewport and clamps to the compact header', () => {

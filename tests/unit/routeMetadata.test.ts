@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isNativePublicPath } from '../../src/site/routeMetadata'
+import { isNativePublicPath } from '../../modules/public-web/src/site/routeMetadata'
 
 describe('isNativePublicPath', () => {
   it.each(['/', '/about', '/booking', '/my-bookings', '/about/'])(

@@ -7,11 +7,11 @@ const { from, upsert, select, single } = vi.hoisted(() => ({
   single: vi.fn(),
 }))
 
-vi.mock('../../src/admin/adminClient', () => ({
+vi.mock('../../modules/staff-admin/src/adminClient', () => ({
   getAdminClient: () => ({ from }),
 }))
 
-import { saveSiteSetting } from '../../src/admin/adapters/siteAdmin'
+import { saveSiteSetting } from '../../modules/staff-admin/src/adapters/siteAdmin'
 
 beforeEach(() => {
   from.mockReset()

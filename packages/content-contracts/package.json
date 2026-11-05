@@ -1,0 +1,39 @@
+{
+  "name": "@bladeblend/content-contracts",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    "./cms": "./src/cms.ts",
+    "./cms-built-assets": "./src/cms-built-assets.ts",
+    "./cms-device-css": "./src/cms-device-css.ts",
+    "./cms-email": "./src/cms-email.ts",
+    "./cms-markup": "./src/cms-markup.ts",
+    "./cms-mode-css": "./src/cms-mode-css.ts",
+    "./cms-native-id": "./src/cms-native-id.ts",
+    "./cms-primitives": "./src/cms-primitives.ts",
+    "./cms-release": "./src/cms-release.ts",
+    "./cms-resource-assignment": "./src/cms-resource-assignment.ts",
+    "./cms-resource-target": "./src/cms-resource-target.ts",
+    "./cms-resources": "./src/cms-resources.ts",
+    "./cms-site-resources": "./src/cms-site-resources.ts",
+    "./cms-style-text": "./src/cms-style-text.ts",
+    "./email-design": "./src/email-design.ts",
+    "./email-render": "./src/email-render.ts",
+    "./site-page": "./src/site-page.ts",
+    "./site-theme": "./src/site-theme.ts",
+    "./site-theme-declarations": "./src/site-theme-declarations.ts"
+  },
+  "dependencies": {
+    "css-tree": "3.2.1",
+    "parse5": "8.0.1"
+  },
+  "scripts": {
+    "check": "node ../../tools/modules/run.mjs content-contracts check",
+    "test": "node ../../tools/modules/run.mjs content-contracts test",
+    "lint": "node ../../tools/modules/run.mjs content-contracts lint",
+    "typecheck": "node ../../tools/modules/run.mjs content-contracts typecheck",
+    "build": "node ../../tools/modules/run.mjs content-contracts build",
+    "plan": "node ../../tools/modules/run.mjs content-contracts plan"
+  }
+}

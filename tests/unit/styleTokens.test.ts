@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { generate, parse, walk } from 'css-tree'
 import { describe, expect, it } from 'vitest'
-import { mobMuted, shellPalette } from '../../src/app/shared'
+import { mobMuted, shellPalette } from '../../modules/public-web/src/app/shared'
 
 // STY-12: public/tokens.css is derived from the homepage palette; this ties the two together.
 const tokensCss = readFileSync(new URL('../../public/tokens.css', import.meta.url), 'utf8')

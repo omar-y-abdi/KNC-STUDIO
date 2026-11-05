@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { cmsFontFaceCss, emptyDocument, validateDocument, documentMedia } from '../../shared/cms'
+import {
+  cmsFontFaceCss,
+  emptyDocument,
+  validateDocument,
+  documentMedia,
+} from '../../packages/content-contracts/src/cms'
 
 const id = '10000000-0000-4000-8000-000000000001'
 describe('uploaded font publication contract', () => {

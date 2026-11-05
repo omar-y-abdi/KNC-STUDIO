@@ -6,7 +6,7 @@ import {
   OWNER_PASSWORD,
   type AdminStackEnv,
 } from './_adminHelpers'
-import { validateDocument, type CmsState } from '../../shared/cms'
+import { validateDocument, type CmsState } from '../../packages/content-contracts/src/cms'
 
 let env: AdminStackEnv
 let ownerToken = ''

@@ -1,20 +1,20 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('../../src/backend/config', () => ({
+vi.mock('../../modules/public-web/src/backend/config', () => ({
   SUPABASE_URL: 'https://example.supabase.co',
   SUPABASE_ANON_KEY: 'test-anon-key',
 }))
 
-import { invokePublicBookingAction } from '../../src/backend/publicBookingActions'
-import { supabaseBookingAdapter } from '../../src/booking/adapters/supabaseBooking'
-import { asBarberId, type Booking } from '../../src/booking/domain'
+import { invokePublicBookingAction } from '../../modules/public-web/src/backend/publicBookingActions'
+import { supabaseBookingAdapter } from '../../modules/public-web/src/booking/adapters/supabaseBooking'
+import { asBarberId, type Booking } from '../../modules/public-web/src/booking/domain'
 import {
   customerAccessExchangeResponse,
   customerAccessRequestResponse,
   customerBookingCancelResponse,
   listCustomerBookingsResponse,
   parseWith,
-} from '../../src/backend/rpcSchemas'
+} from '../../packages/backend-contracts/src/rpcSchemas'
 
 afterEach(() => vi.unstubAllGlobals())
 

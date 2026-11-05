@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { adminText } from '../../src/i18n/adminStrings'
+import { adminText } from '../../modules/staff-admin/src/adminStrings'
 import { mount, nodes, ref, render, reset } from './helpers/fakeHooks'
 // Resolve the mock before resetModules so it keeps this helper's shared state.
 import 'preact/hooks'
 
 vi.mock('preact/hooks', () => import('./helpers/fakeHooks'))
-vi.mock('../../src/admin/useTheme', () => ({ useTheme: () => ({ dark: false }) }))
-vi.mock('../../src/ui/pseudo', () => ({ FOCUS_CLS: '', pseudoClass: () => '' }))
+vi.mock('../../modules/staff-admin/src/useTheme', () => ({ useTheme: () => ({ dark: false }) }))
+vi.mock('../../modules/public-web/src/ui/pseudo', () => ({ FOCUS_CLS: '', pseudoClass: () => '' }))
 
 beforeEach(() => {
   vi.resetModules()
@@ -22,7 +22,7 @@ describe('Turnstile widget recovery', () => {
   it.each(['error-callback', 'timeout-callback', 'expired-callback'] as const)(
     'invalidates the token and notifies its parent on %s; ignores callbacks after disposal',
     async (failure) => {
-      const { Turnstile } = await import('../../src/booking/Turnstile')
+      const { Turnstile } = await import('../../modules/public-web/src/booking/Turnstile')
       const widgetRender = vi.fn<NonNullable<Window['turnstile']>['render']>(() => 'widget')
       const remove = vi.fn()
       vi.stubGlobal('window', { turnstile: { render: widgetRender, remove } })
@@ -51,7 +51,7 @@ describe('Turnstile widget recovery', () => {
   )
 
   it('reserves loading space, releases it on success or failure, and restores it for retry', async () => {
-    const { Turnstile } = await import('../../src/booking/Turnstile')
+    const { Turnstile } = await import('../../modules/public-web/src/booking/Turnstile')
     const widgetRender = vi.fn<NonNullable<Window['turnstile']>['render']>(() => 'widget')
     vi.stubGlobal('window', { turnstile: { render: widgetRender, remove: vi.fn() } })
     const onToken = vi.fn()
@@ -90,8 +90,9 @@ describe('Turnstile widget recovery', () => {
   it.each(['sv', 'en'] as const)(
     'offers a localized password-recovery retry that requests a fresh widget (%s)',
     async (lang) => {
-      const { Turnstile } = await import('../../src/booking/Turnstile')
-      const { ForgotPasswordForm } = await import('../../src/admin/ForgotPasswordForm')
+      const { Turnstile } = await import('../../modules/public-web/src/booking/Turnstile')
+      const { ForgotPasswordForm } =
+        await import('../../modules/staff-admin/src/ForgotPasswordForm')
       const form = () => nodes(render(() => ForgotPasswordForm({ lang, onBackToSignIn: vi.fn() })))
       const challenge = () => {
         const node = form().find((node) => Object.is(node.type, Turnstile))

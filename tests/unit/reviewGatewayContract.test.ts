@@ -4,8 +4,10 @@ const { invokePublicBookingAction } = vi.hoisted(() => ({
   invokePublicBookingAction: vi.fn(),
 }))
 
-vi.mock('../../src/backend/publicBookingActions', () => ({ invokePublicBookingAction }))
-vi.mock('../../src/backend/publicRest', () => ({
+vi.mock('../../modules/public-web/src/backend/publicBookingActions', () => ({
+  invokePublicBookingAction,
+}))
+vi.mock('../../modules/public-web/src/backend/publicRest', () => ({
   getPublicRest: () => ({
     from: () => ({
       select: () => ({
@@ -15,10 +17,10 @@ vi.mock('../../src/backend/publicRest', () => ({
   }),
 }))
 
-import { createReviewResponse } from '../../src/backend/rpcSchemas'
-import { supabaseReviewsAdapter } from '../../src/about/reviews/adapters/supabaseReviews'
-import type { ValidReview } from '../../src/about/reviews/domain'
-import { parsePhone } from '../../src/booking/validation'
+import { createReviewResponse } from '../../packages/backend-contracts/src/rpcSchemas'
+import { supabaseReviewsAdapter } from '../../modules/public-web/src/about/reviews/adapters/supabaseReviews'
+import type { ValidReview } from '../../modules/public-web/src/about/reviews/domain'
+import { parsePhone } from '../../modules/public-web/src/booking/validation'
 
 const phone = parsePhone('0701234567')
 if (!phone.ok) throw new Error(`Expected the fixture phone to be valid: ${phone.error}`)

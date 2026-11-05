@@ -1,6 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { validateEmailDesign, type EmailDesign } from '../../../shared/email-design.ts'
-import type { EmailSendOutcome } from '../../../shared/email-send-log.ts'
+import {
+  validateEmailDesign,
+  type EmailDesign,
+} from '../../../packages/content-contracts/src/email-design.ts'
+import type { EmailSendOutcome } from '../../../packages/backend-contracts/src/email-send-log.ts'
 import { uuid } from './http.ts'
 import {
   emailSendRecordParams,
@@ -14,8 +17,8 @@ import type {
   EmailTemplateCopy,
   EmailBusiness,
   EmailMessage,
-} from '../../../shared/email-render.ts'
-export { buildEmailMessage } from '../../../shared/email-render.ts'
+} from '../../../packages/content-contracts/src/email-render.ts'
+export { buildEmailMessage } from '../../../packages/content-contracts/src/email-render.ts'
 export { prepareEmail } from './emailSendLog.ts'
 export type { EmailSendLogClient, PreparedEmail } from './emailSendLog.ts'
 export type {
@@ -25,7 +28,7 @@ export type {
   EmailBusiness,
   EmailMessage,
   EmailDetailRow,
-} from '../../../shared/email-render.ts'
+} from '../../../packages/content-contracts/src/email-render.ts'
 
 export type ResendFailureKind = 'transient' | 'permanent'
 

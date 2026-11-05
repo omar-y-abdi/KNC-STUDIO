@@ -6,17 +6,17 @@ const JWT_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiJ9.c2lnb
 
 async function loadRest(key: string | undefined) {
   vi.resetModules()
-  vi.doMock('../../src/backend/config', () => ({
+  vi.doMock('../../modules/public-web/src/backend/config', () => ({
     SUPABASE_URL: key === undefined ? undefined : PROJECT_URL,
     SUPABASE_ANON_KEY: key,
     isBackendConfigured: () => key !== undefined,
   }))
-  return import('../../src/backend/publicRest')
+  return import('../../modules/public-web/src/backend/publicRest')
 }
 
 afterEach(() => {
   vi.unstubAllGlobals()
-  vi.doUnmock('../../src/backend/config')
+  vi.doUnmock('../../modules/public-web/src/backend/config')
 })
 
 describe('public REST client', () => {
