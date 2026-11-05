@@ -1,3 +1,4 @@
+import { restoreMobileBrandSnapshot } from '@bladeblend/public-web/mobile-layout'
 import { PREVIEW_MESSAGE, PUBLIC_PREVIEW_PATH } from '@bladeblend/public-web/preview'
 import type { CmsLang, CmsMode, CmsPage } from '@bladeblend/content-contracts/cms'
 import privacyTemplate from '../../../public/privacy.html?raw'
@@ -73,6 +74,7 @@ export function mobileBarberCss(desktopHtml: string, mobileHtml: string): string
 
 export function snapshotNative(root: Element, prefix: string): string {
   const copy = root.cloneNode(true) as Element
+  restoreMobileBrandSnapshot(copy)
   // The scroll carrier is private runtime geometry, never editable content or a saved parent.
   for (const carrier of copy.querySelectorAll(
     '[data-knc-fold="carrier"],[data-knc-fold="header-carrier"]',

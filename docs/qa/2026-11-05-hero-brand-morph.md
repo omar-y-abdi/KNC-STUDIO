@@ -24,3 +24,11 @@ reverse determinism and reduced motion. They have NOT been run locally, per the 
 No local automated tests, build, Docker or GitHub push were performed. This first candidate is
 awaiting root's short GIF capture and the explicitly requested GPT-6-Luna visual review. It is not
 yet a claim of final visual acceptance or physical-device verification.
+
+Capture follow-up: `snapshotNative` clones live inline styles before assigning `data-knc-light`.
+The painter therefore records only its original translate/scale/opacity/inert values; capture
+restores those values on the clone and removes the private motion metadata. Unrelated owner
+styles and CSS priorities remain intact, and the live visual state is not reset. The existing
+CMS-native capture fixture now checks this boundary; that assertion is also unrun locally.
+The hero parent becomes inert only after both brand and action fades finish, so reduced-motion
+buttons remain interactive throughout their visible fade.

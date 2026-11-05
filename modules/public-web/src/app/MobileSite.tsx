@@ -379,7 +379,11 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
           <CornerMark height={26} />
         </div>
 
-        <div data-knc-fold="hero" style={heroExtrasStyle} inert={brandMotion.brand === 0}>
+        <div
+          data-knc-fold="hero"
+          style={heroExtrasStyle}
+          inert={brandMotion.brand === 0 && brandMotion.actions === 0}
+        >
           <h1
             data-knc-fold="brand"
             style={{

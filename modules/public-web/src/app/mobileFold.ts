@@ -116,6 +116,47 @@ export function mobileBrandMotion(collapse: number, viewportHeight: number, redu
   }
 }
 
+const brandBaselineAttribute = 'data-knc-brand-baseline'
+
+/** Capture runs in another iframe realm, so keep the original values on the painted node.
+ * Only these decorative properties are restored; unrelated owner styling stays untouched. */
+function rememberBrandBaseline(element: HTMLElement, properties: string[], inert = false): void {
+  if (element.hasAttribute(brandBaselineAttribute)) return
+  element.setAttribute(
+    brandBaselineAttribute,
+    JSON.stringify({
+      styles: Object.fromEntries(
+        properties.map((property) => [
+          property,
+          [element.style.getPropertyValue(property), element.style.getPropertyPriority(property)],
+        ]),
+      ),
+      ...(inert ? { inert: element.hasAttribute('inert') } : {}),
+    }),
+  )
+}
+
+/** Restore a snapshot clone before its current inline styles become the CMS source baseline. */
+export function restoreMobileBrandSnapshot(root: Element): void {
+  for (const element of [root, ...root.querySelectorAll(`[${brandBaselineAttribute}]`)]) {
+    const value = element.getAttribute(brandBaselineAttribute)
+    if (!value) continue
+    const baseline = JSON.parse(value) as {
+      styles: Record<string, [string, string]>
+      inert?: boolean
+    }
+    const style = (element as HTMLElement).style
+    for (const property of ['translate', 'scale', 'opacity']) {
+      const original = baseline.styles[property]
+      if (!original) continue
+      if (original[0]) style.setProperty(property, original[0], original[1])
+      else style.removeProperty(property)
+    }
+    if (baseline.inert !== undefined) element.toggleAttribute('inert', baseline.inert)
+    element.removeAttribute(brandBaselineAttribute)
+  }
+}
+
 /** Measure layout offsets, never the transformed brand's client rect: reverse scrolling must not
  * accumulate its own previous transform. The original SVG or owner image remains untouched.
  */
@@ -154,11 +195,14 @@ export function paintMobileBrand(
       (anchorY - centerY) * motion.lift -
       brand.offsetTop -
       (assetHeight / 2) * scale
+  rememberBrandBaseline(brand, ['translate', 'scale', 'opacity'])
+  rememberBrandBaseline(mark, ['opacity'])
   brand.style.translate = `${x}px ${y}px`
   brand.style.scale = String(scale)
   brand.style.opacity = String(motion.brand)
   mark.style.opacity = String(motion.banner)
   const fade = (element: HTMLElement): void => {
+    rememberBrandBaseline(element, ['opacity'], true)
     if (win.getComputedStyle(element).display === 'contents') {
       for (const child of element.children) fade(child as HTMLElement)
     } else {

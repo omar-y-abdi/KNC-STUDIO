@@ -92,11 +92,25 @@ test('cms-native', async ({ page, context, browserName, evidenceDir }) => {
         '<section><a href="#privacy-preferences">Privacy</a><div data-knc-slot="outer"><div id="nested" data-knc-slot="nested"><span id="caption">Name</span><input aria-labelledby="caption"></div></div></section>',
         'text/html',
       ).body.firstElementChild
+      const animated = fixture.querySelector('#caption')
+      animated.setAttribute('style', 'opacity: 0; translate: 12px 30px; scale: .2; color: red')
+      animated.setAttribute('inert', '')
+      animated.setAttribute(
+        'data-knc-brand-baseline',
+        JSON.stringify({
+          styles: { opacity: ['.7', 'important'], translate: ['', ''], scale: ['', ''] },
+          inert: false,
+        }),
+      )
       const desktop = snapshotNative(fixture, 'desktop-test')
       const mobile = snapshotNative(fixture, 'mobile-test')
       const doc = new globalThis.DOMParser().parseFromString(desktop + mobile, 'text/html')
       return {
         html: desktop + mobile,
+        capturedBrandStyle: doc.querySelector('span').getAttribute('data-knc-light'),
+        capturedBrandInert: doc.querySelector('span').hasAttribute('inert'),
+        runtimeMetadata: doc.querySelectorAll('[data-knc-brand-baseline]').length,
+        liveBrandInert: animated.hasAttribute('inert'),
         nestedSlots: doc.querySelectorAll('[data-knc-slot="nested"]').length,
         privacy: doc.querySelector('a').getAttribute('href'),
         labels: [...doc.querySelectorAll('input')].map(
@@ -104,6 +118,12 @@ test('cms-native', async ({ page, context, browserName, evidenceDir }) => {
         ),
       }
     })
+    assert.match(sourceContract.capturedBrandStyle, /opacity: 0\.7 !important/)
+    assert.match(sourceContract.capturedBrandStyle, /color: red/)
+    assert.doesNotMatch(sourceContract.capturedBrandStyle, /translate|scale/)
+    assert.equal(sourceContract.capturedBrandInert, false)
+    assert.equal(sourceContract.runtimeMetadata, 0)
+    assert.equal(sourceContract.liveBrandInert, true, 'Capture must only restore the clone')
     assert.equal(sourceContract.nestedSlots, 0, 'Nested runtime identities leaked into snapshots')
     assert.equal(sourceContract.privacy, '/#privacy-preferences')
     assert.deepEqual(sourceContract.labels, ['Name', 'Name'])
