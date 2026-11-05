@@ -11,6 +11,7 @@ import { mobileFoldLayout } from './mobileFoldLayout'
 //  - fully faded hero controls are inert so they never steal taps from the section below.
 
 import type { JSX } from 'preact'
+import { flushSync } from 'preact/compat'
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import { AboutSection } from '../about/AboutSection'
 import { HeroLinks } from '../about/HeroLinks'
@@ -135,7 +136,12 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
   useLayoutEffect(() => {
     const root = scrollRoot.current
     if (root === null || privacyOpen) return
-    return primeMobileFold(root, setScrolling)
+    return primeMobileFold(root, (active) => {
+      // Native panning can paint before Preact's queued render. Commit the carrier before
+      // the first movement handler returns; ordinary taps never activate this path.
+      if (active) flushSync(() => setScrolling(true))
+      else setScrolling(false)
+    })
   }, [privacyOpen])
   const navigate = (action: () => void): void => {
     if (!privacyOpen) setScrolling(true)

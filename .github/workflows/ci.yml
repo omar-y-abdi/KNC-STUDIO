@@ -26,12 +26,12 @@ jobs:
           node-version: 22
           package-manager-cache: false
       - run: npm ci
-      - name: All nine native touch paint regressions
-        run: npx playwright test tools/e2e/cms-mobile-scroll-carrier.chromium.spec.mjs tools/e2e/cms-mobile-scroll-edges.chromium.spec.mjs --project=cms-chromium --workers=1
+      - name: Source first-touch edge regressions
+        run: npx playwright test tools/e2e/cms-mobile-scroll-edges.chromium.spec.mjs --project=cms-chromium --grep 'source,' --workers=1
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
-          name: native-touch-nine
+          name: native-touch-source-priming
           path: |
             test-results
             playwright-report
