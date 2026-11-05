@@ -74,6 +74,10 @@ commits do not add product behavior.
 
 ## Review authorization recovery checkpoint
 
+Historical checkpoint: the email-first review action described here is superseded by
+[Device review UI](2026-11-05-device-review-ui.md). Its recorded test counts belong to that
+original checkpoint, not the replacement device-access flow.
+
 Ported `8054227` directly onto the clean `91632a2` candidate. Git resolved the existing module
 renames without conflicts. The new `review-recovery.spec.mjs` is byte-identical to the frozen
 original and needs no URL/import translation; its public-web ownership is explicit. The

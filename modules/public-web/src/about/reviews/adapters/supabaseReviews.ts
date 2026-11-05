@@ -1,7 +1,7 @@
 // The real (Supabase) ReviewsPort adapter. Published reviews remain directly readable; review writes
-// go through the protected public action gateway and require the current email-scoped bearer token
-// obtained from the booking-email link. A fresh email request rotates and revokes the old token; the
-// phone remains a scope cross-check, not the authorization secret.
+// go through the protected public action gateway. The server applies the same device-receipt or
+// email-session booking scope as My Bookings; phone is a cross-check, not an authorization secret.
+// Browser requests carry the existing HttpOnly cookies through same-origin credentials.
 
 import { getPublicRest } from '../../../backend/publicRest'
 import { invokePublicBookingAction } from '../../../backend/publicBookingActions'
@@ -15,7 +15,7 @@ import type { ReviewsPort } from '../port'
 
 const SUBMIT_ERROR_MESSAGE = 'Kunde inte skicka recensionen. Försök igen.'
 const NO_BOOKING_MESSAGE =
-  'Verifiera bokningens e-poståtkomst via Mina bokningar. Omdömen kräver en avslutad, ännu inte recenserad bokning med samma telefonnummer.'
+  'Vi kunde inte hitta en avslutad bokning som du kan lämna omdöme om. Kontrollera telefonnumret och bokningen i Mina bokningar.'
 const INVALID_MESSAGE = 'Recensionen kunde inte valideras.'
 const CHALLENGE_MESSAGE = 'Verifieringen misslyckades. Försök igen.'
 const RATE_LIMITED_MESSAGE = 'För många försök. Vänta en stund och försök igen.'

@@ -1,18 +1,25 @@
-# Review verification recovery
+# Review verification recovery (superseded checkpoint)
+
+This document records the earlier email-first recovery implementation and its historical
+verification. It is **not the current review-access requirement**. The user subsequently
+required the same device booking access as Mina bokningar, without a separate email step.
+See [Device review UI](2026-11-05-device-review-ui.md) for the replacement UI and verification
+limits. The original observations and receipts below describe the earlier checkpoint only.
 
 Base: `e484e7d`. A customer could see a finished appointment under Mina bokningar yet receive
 text claiming that no completed booking existed when submitting a review. The public gateway
-and review RPC use `no_booking` both for missing verified email scope and for a scope without
+and review RPC at that checkpoint used `no_booking` both for missing verified email scope and for a scope without
 an eligible booking. The old UI turned that deliberately ambiguous result into a false claim
 about the existence of a booking and supplied no direct verification action.
 
 ## Authorization findings
 
-Read-only production inspection confirmed the relevant deployed function/SQL policy. Listing
-accepts either verified email access or a device booking receipt. Reviewing requires verified
-email scope, a matching phone, a confirmed appointment whose end time has passed, and no prior
-review for that appointment. The Worker forwards the allowed customer cookies; the browser
-adapter uses same-origin credentials. No credential-propagation defect was found in that path.
+Read-only production inspection at that checkpoint recorded the then-deployed function/SQL
+policy. Listing accepted either verified email access or a device booking receipt. Reviewing
+then required verified email scope, a matching phone, a confirmed appointment whose end time
+had passed, and no prior review for that appointment. The Worker forwarded the allowed customer
+cookies; the browser adapter used same-origin credentials. No credential-propagation defect
+was found in that earlier path.
 
 Seeing an appointment in the same browser establishes listing access, not which cookie supplied
 it. The customer's exact Safari cookies were not observed. Private production receipts remain

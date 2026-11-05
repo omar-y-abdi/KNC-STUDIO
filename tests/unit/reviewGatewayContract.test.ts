@@ -49,6 +49,26 @@ describe('review gateway response contract', () => {
     if (!result.ok) expect(result.error.kind).toBe(domainKind)
   })
 
+  it('submits with existing cookies without an explicit access token', async () => {
+    const published = { id: 'device-review', name: 'Fixture C.', rating: 5, text: 'Bra.' }
+    invokePublicBookingAction.mockResolvedValue({
+      data: { ok: true, review: published },
+      failed: false,
+    })
+
+    expect(await supabaseReviewsAdapter.submit(review, 'challenge-token')).toEqual({
+      ok: true,
+      review: published,
+    })
+    expect(invokePublicBookingAction).toHaveBeenCalledExactlyOnceWith({
+      action: 'review',
+      phone: review.phone,
+      rating: review.rating,
+      text: review.text,
+      turnstileToken: 'challenge-token',
+    })
+  })
+
   it('maps malformed and transport responses to submit', async () => {
     invokePublicBookingAction.mockResolvedValueOnce({
       data: { ok: false, error: 'unknown' },

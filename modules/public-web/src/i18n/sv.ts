@@ -119,20 +119,17 @@ export const aboutSv: AboutStrings = {
   reviewPhone: 'Telefonnummer',
   reviewPhonePh: '07X XXX XX XX',
   reviewPhoneHint:
-    'Använd numret från bokningen. Omdömen kräver verifierad e-poståtkomst och ett avslutat besök. Ditt namn visas som förnamn + initial.',
+    'Ange numret du bokade med. Ditt namn hämtas från bokningen och visas som förnamn + initial.',
   reviewRating: 'Betyg',
   reviewText: 'Ditt omdöme',
   reviewTextPh: 'Berätta om ditt besök …',
   reviewSubmit: 'Lämna ett omdöme',
-  reviewVerifyBooking: 'Verifiera bokning via e-post',
-  reviewVerifyHint:
-    'Verifiera gärna innan du skriver. Har du ett utkast, öppna mejllänken i en annan flik och kom tillbaka hit.',
   reviewThanks: 'Tack för ditt omdöme!',
   reviewErrPhone: 'Ogiltigt telefonnummer',
   reviewErrText: 'Skriv något om ditt besök',
   reviewErrRating: 'Välj ett betyg',
   reviewErrNoBooking:
-    'Vi kunde inte verifiera en avslutad bokning som du ännu inte har lämnat omdöme om. Öppna bokningens säkra mejllänk och kontrollera telefonnumret.',
+    'Vi kunde inte hitta en avslutad bokning som du kan lämna omdöme om. Kontrollera telefonnumret och bokningen i Mina bokningar.',
   reviewErrInvalid: 'Omdömet kunde inte valideras. Kontrollera uppgifterna och försök igen.',
   reviewErrChallenge: 'Verifieringen misslyckades. Ladda om kontrollen och försök igen.',
   reviewErrRateLimited: 'För många försök. Vänta en stund innan du försöker igen.',

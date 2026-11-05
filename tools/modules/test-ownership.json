@@ -2405,7 +2405,7 @@
   "tools/e2e/review-recovery.spec.mjs": {
     "kind": "public",
     "owners": ["public-web"],
-    "reason": "Public review authorization recovery, retained draft, and verified customer access"
+    "reason": "Public device-scoped review access, denial feedback, and existing booking recovery"
   },
   "tools/e2e/style-contract.spec.mjs": {
     "kind": "public",
