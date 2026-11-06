@@ -416,32 +416,16 @@ export function App({
     setState((s) => ({ view: s.view === 'booking' ? 'home' : 'booking' }))
   const scrollToAbout = (): void => {
     setState({ view: 'home' })
+    if (isMobile) return // MobileSite owns the original timed hero transition.
     window.requestAnimationFrame(() => {
       document
         .getElementById(ABOUT_SECTION_ID)
         ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     })
   }
-  // Mobile: the hero becomes the compact header as its own scroll container advances.
-  const openMobBooking = (): void => {
-    if (state.view !== 'booking') {
-      // MobileSite positions a newly entered section in its layout effect before paint.
-      setState({ view: 'booking' })
-      return
-    }
-    document
-      .querySelector<HTMLElement>('[data-testid="mobile-site-scroll"] [data-knc-fold="body"]')
-      ?.scrollIntoView({ block: 'start', behavior: 'instant' })
-  }
-  const scrollMobToHero = (): void => {
-    setState({ view: 'home' })
-    window.requestAnimationFrame(() => {
-      document.querySelector<HTMLElement>('[data-testid="mobile-site-scroll"]')?.scrollTo({
-        top: 0,
-        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
-      })
-    })
-  }
+  // MobileSite animates its scroll container after these section changes have rendered.
+  const openMobBooking = (): void => setState({ view: 'booking' })
+  const scrollMobToHero = (): void => setState({ view: 'home' })
   const openMyBookings = (): void => {
     accessSequence.current++
     preloadMyBookingsDialog()

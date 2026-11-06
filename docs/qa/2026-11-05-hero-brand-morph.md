@@ -25,6 +25,23 @@ The controls move into their final row with a transform instead of a timed layou
 Glyph/layout measurements are cached outside scroll painting. Scroll paints write path coordinates,
 transforms and opacity without font reshaping or synchronous glyph measurements.
 
+## Mobile navigation timing restoration
+
+The iPhone follow-up found that clicking into booking skipped this choreography. Commit
+`809160b` removed the original `height .66s cubic-bezier(.32,.72,0,1)` transition; `5c6d9b8`
+then placed booking at its final scroll position in a layout effect. About navigation used
+browser-controlled smooth scrolling, which supplies no fixed duration.
+
+Mobile section clicks now drive the existing scroll-linked choreography with the original
+660 ms duration and exact CSS easing. About, booking and return-to-hero use this timing; a
+new gesture cancels it immediately. Direct booking URLs, CMS scene entry and reduced-motion
+navigation retain their immediate positioning. Native manual scroll and the morph geometry
+are unchanged: both the historical and current fold map one scroll pixel to one collapse pixel.
+There is no measured evidence that iPhone gesture velocity itself doubled. The regression checks
+cover intermediate click poses, timing, interruption and unchanged content travel in the existing
+public browser matrix, with source and persisted CMS fixtures. Physical iPhone pacing still needs
+the owner's assessment; automated verification runs on GitHub only.
+
 ## CMS boundary
 
 The editable SVG hierarchy and identities are retained. The private runtime artwork is marked

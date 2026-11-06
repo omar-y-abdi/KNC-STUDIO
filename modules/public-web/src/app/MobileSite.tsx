@@ -8,6 +8,7 @@ import {
 } from './mobileFold'
 import { mobileFoldLayout } from './mobileFoldLayout'
 import { observeMobileBrandGeometry } from './mobileBrandGeometry'
+import { scrollMobileHero } from './mobileNavigation'
 // Mobile (M3) layout — folding panel (hero <-> compact header) + booking below.
 //
 // Invariants:
@@ -92,6 +93,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
   const [fold, setFold] = useState(() => ({ collapse: 0, viewportHeight: window.innerHeight }))
   const { collapse, viewportHeight } = fold
   const scrollFrame = useRef<number | null>(null)
+  const navigation = useRef<(() => void) | null>(null)
   const [scrolling, setScrolling] = useState(false)
   const compactPanel = collapse > 0
   const syncCollapse = (): void => {
@@ -116,8 +118,8 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
   }
   useLayoutEffect(() => {
     const root = scrollRoot.current
-    if (root === null || !inSection) return
-    // Enter a new booking section before paint, while keeping its full hero reachable above it.
+    if (root === null || !inSection || navigation.current) return
+    // Direct booking URLs and CMS scenes start in their section. User clicks animate there.
     root.scrollTop = mobileFold(Infinity, mobileLayoutViewportHeight(root)).collapse
     syncCollapse()
   }, [inSection])
@@ -143,8 +145,22 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     if (root === null || privacyOpen) return
     return primeMobileFold(root, setScrolling)
   }, [privacyOpen])
-  const navigate = (action: () => void): void => {
+  useEffect(() => () => navigation.current?.(), [])
+  const navigate = (action: () => void, home = false): void => {
+    navigation.current?.()
     if (!privacyOpen) setScrolling(true)
+    const frame = requestAnimationFrame(() => {
+      const root = scrollRoot.current
+      if (!root) return
+      const top = home ? 0 : mobileFold(Infinity, mobileLayoutViewportHeight(root)).collapse
+      let finished = false
+      const cancel = scrollMobileHero(root, top, () => {
+        finished = true
+        navigation.current = null
+      })
+      navigation.current = finished ? null : cancel
+    })
+    navigation.current = () => cancelAnimationFrame(frame)
     action()
   }
   const chromeIcon = props.chromeIconStyle
@@ -371,7 +387,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
               {props.themeToggle}
               <button
                 data-knc-fold="return"
-                onClick={props.scrollMobToHero}
+                onClick={() => navigate(props.scrollMobToHero, true)}
                 style={expandChevStyle}
                 title={tx.ariaBackHome}
               >
