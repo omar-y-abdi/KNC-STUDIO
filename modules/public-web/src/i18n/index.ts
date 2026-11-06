@@ -123,6 +123,12 @@ export interface AboutStrings {
   reviewsLoading: string
   reviewsEmpty: string
   reviewsUnavailable: string
+  /** Review page row: `aria-label` of the row, of a page button (`{n}` is replaced) and of the
+   * arrows that move the row to earlier or later page numbers. */
+  reviewPagesLabel: string
+  reviewPageLabel: string
+  reviewPagesPrevious: string
+  reviewPagesNext: string
   reviewPhone: string
   reviewPhonePh: string
   /** Helper line under the phone field explaining the gate + derived name. */
