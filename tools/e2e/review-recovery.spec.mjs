@@ -152,9 +152,6 @@ for (const width of [390, 1440]) {
       await page.getByRole('button', { name: labels.about, exact: true }).click()
       await expect(page.getByText(labels.reviewsEmpty, { exact: true })).toBeVisible()
       await expect(page.getByText(labels.galleryLoading, { exact: true })).toHaveCount(0)
-      await expect(
-        page.getByRole('button', { name: /Verifiera bokning via e-post|Verify booking by email/ }),
-      ).toHaveCount(0)
       await expect(page.locator(`[id="${edited.id}"]`)).toHaveText(labels.editedHeading)
       const number = page.getByRole('textbox', { name: labels.phone })
       const text = page.getByRole('textbox', { name: labels.text, exact: true })

@@ -191,7 +191,8 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
   }, [dataActive, port])
 
   // Review form state — raw draft + per-field errors + a transient thank-you flag + a submit-level
-  // error (missing booking access or eligible booking, or an invalid/transport failure).
+  // error (no device receipt or verified session, no eligible booking, or an invalid/transport
+  // failure).
   const [draft, setDraft] = useState<ReviewDraft>(emptyReviewDraft)
   const typedPhone = useRef(false)
   useEffect(() => {

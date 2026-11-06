@@ -117,8 +117,9 @@ export interface AboutStrings {
   /** Customer-cuts gallery. */
   cutsTitle: string
   cutsAlt: string
-  /** Reviews require access to a finished booking; phone is a scope cross-check. The name is
-   * derived server-side from that booking ("Förnamn E."), so the form asks for the phone, not a name. */
+  /** Reviews require a device receipt or a verified session for a finished booking; phone is a
+   * scope cross-check. The name is derived server-side from that booking ("Förnamn E."), so the
+   * form asks for the phone, not a name. */
   reviewsTitle: string
   reviewsLoading: string
   reviewsEmpty: string
@@ -135,7 +136,8 @@ export interface AboutStrings {
   reviewErrPhone: string
   reviewErrText: string
   reviewErrRating: string
-  /** Missing booking access or no eligible finished, not-yet-reviewed booking in that scope. */
+  /** No device receipt or verified session, or no eligible finished, not-yet-reviewed booking in
+   * that scope. */
   reviewErrNoBooking: string
   reviewErrInvalid: string
   reviewErrChallenge: string

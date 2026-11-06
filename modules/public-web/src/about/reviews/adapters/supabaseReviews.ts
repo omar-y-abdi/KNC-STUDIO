@@ -1,7 +1,7 @@
 // The real (Supabase) ReviewsPort adapter. Published reviews remain directly readable; review writes
-// go through the protected public action gateway. The server applies the same device-receipt or
-// email-session booking scope as My Bookings; phone is a cross-check, not an authorization secret.
-// Browser requests carry the existing HttpOnly cookies through same-origin credentials.
+// go through the protected public action gateway. The server authorizes a review through the same
+// device receipt or verified session as My Bookings; phone is a cross-check, not an authorization
+// secret. Browser requests carry the existing HttpOnly cookies through same-origin credentials.
 
 import { getPublicRest } from '../../../backend/publicRest'
 import { invokePublicBookingAction } from '../../../backend/publicBookingActions'

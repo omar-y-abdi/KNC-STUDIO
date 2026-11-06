@@ -1,8 +1,8 @@
 // Domain ADTs for the About-section reviews. Mirrors the booking domain's shape: branded-ish
 // closed types, `null` for "not yet chosen", and a Result union for the port. A `Review` is an
 // already-published item shown in the list; a `ReviewDraft` is the raw, unvalidated form state.
-// Booking access from the same device or an email session scopes the finished booking.
-// Phone is a scope cross-check, not the authorization secret.
+// A device receipt or a verified session authorizes the finished booking; phone is a scope
+// cross-check, not the authorization secret.
 // The displayed name is derived server-side, never supplied by the reviewer.
 
 import type { Phone } from '../../booking/validation'
@@ -42,9 +42,9 @@ export interface ValidReview {
 
 /**
  * Domain error for submitting a review. `invalid` = the server rejected the shape; `no_booking` =
- * missing booking access or no finished, not-yet-reviewed confirmed booking matching that
- * scope and phone; `challenge` / `rate_limited` = gateway controls; `submit` = transport or
- * unexpected failure.
+ * no device receipt or verified session, or no finished, not-yet-reviewed confirmed booking
+ * matching that scope and phone; `challenge` / `rate_limited` = gateway controls; `submit` =
+ * transport or unexpected failure.
  */
 export interface ReviewError {
   readonly kind: 'invalid' | 'no_booking' | 'challenge' | 'rate_limited' | 'submit' | 'unavailable'
