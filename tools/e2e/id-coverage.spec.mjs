@@ -55,9 +55,10 @@ const LANGUAGE_SWITCH_ORPHANS = [
     { id: `${toggle}-i1`, stored: 'button', live: 'span' },
   ].map((retagged) => ({ orphan: { surface, kind: 'retagged', ...retagged }, captures }))
 })
-// The Turnstile wrapper of the my-bookings lookup form. MyBookingsDialog.tsx:122 sets
+// The Turnstile wrapper of the my-bookings lookup form. MyBookingsDialog.tsx:123 sets
 // `challengeRequired = turnstileConfigured && previewPorts === undefined` and /cms-public/source
-// passes previewPorts, so no capture carries the slot; the real /my-bookings renders it (probed).
+// passes previewPorts, so no capture carries the slot; the real /my-bookings renders it once the
+// customer has typed in the email field.
 const TURNSTILE_ORPHAN = {
   orphan: {
     surface: 'my-bookings',

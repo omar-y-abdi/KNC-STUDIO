@@ -121,6 +121,9 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
   const [turnstileToken, setTurnstileToken] = useState('')
   const [turnstileNonce, setTurnstileNonce] = useState(0)
   const challengeRequired = turnstileConfigured && previewPorts === undefined
+  // Cloudflare runs the challenge on render and stalls the compositor ~1.5 s, so the widget mounts
+  // on the first email keystroke instead of on open; the latch never resets within this session.
+  const [challengeStarted, setChallengeStarted] = useState(false)
   const actionError = (
     error: 'failed_challenge' | 'rate_limited' | 'system',
     fallback: string,
@@ -245,6 +248,7 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
     if (emailError) setEmailError(false)
     setSystemError(null)
     setEmail(e.currentTarget.value)
+    if (!challengeStarted && e.currentTarget.value !== '') setChallengeStarted(true)
   }
 
   const lookupDisabled = busy || email.trim() === '' || (challengeRequired && turnstileToken === '')
@@ -605,7 +609,7 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
                 {systemError}
               </p>
             ) : null}
-            {challengeRequired && (
+            {challengeRequired && challengeStarted && (
               <Turnstile
                 action="customer_access"
                 lang={lang}
