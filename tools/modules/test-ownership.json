@@ -1719,11 +1719,6 @@
     "owners": ["public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
-  "tests/unit/mobileFoldPriming.test.ts": {
-    "kind": "unit",
-    "owners": ["public-web", "studio"],
-    "reason": "Shared public mobile-layout gesture priming and canvas cleanup contract"
-  },
   "tests/unit/mockMyBookings.test.ts": {
     "kind": "unit",
     "owners": ["public-web"],

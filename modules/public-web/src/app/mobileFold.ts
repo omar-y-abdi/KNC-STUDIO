@@ -11,18 +11,11 @@ export function mobileFold(
 ): {
   collapse: number
   compact: boolean
-  pinned: boolean
-  opacity: number
 } {
   const limit = Math.max(0, viewportHeight - 112)
   const scrolled = Math.max(0, scrollTop)
   const collapse = privacyOpen ? (scrolled >= limit ? limit : 0) : Math.min(limit, scrolled)
-  return {
-    collapse,
-    compact: collapse > 0,
-    pinned: collapse === limit,
-    opacity: Math.max(0, 1 - collapse / Math.max(1, limit * 0.45)),
-  }
+  return { collapse, compact: collapse > 0 }
 }
 
 /** The fold uses CSS 100dvh, which can differ from innerHeight while a mobile keyboard is open.
@@ -35,75 +28,7 @@ export function mobileLayoutViewportHeight(root: HTMLElement): number {
   )
 }
 
-/** Prime native sticky positioning before the browser's first pan, without forwarding or
- * cancelling scrolling. Ordinary taps, including the theme toggle, leave the resting layout alone.
- */
-export function primeMobileFold(root: HTMLElement, change: (active: boolean) => void): () => void {
-  let touching = false
-  let startY = 0
-  const prime = (): void => change(true)
-  const rest = (): void => {
-    if (!touching && root.scrollTop <= 0) change(false)
-  }
-  const move = (event: TouchEvent): void => {
-    const touch = event.touches[0]
-    if (event.defaultPrevented || !touch || event.touches.length !== 1) return
-    if (touch.clientY < startY || root.scrollTop > 0) {
-      prime()
-      // Only the first movement waits for main-thread setup. The browser owns the pan.
-      root.removeEventListener('touchmove', move)
-    }
-  }
-  const start = (event: TouchEvent): void => {
-    touching = true
-    startY = event.touches[0]?.clientY ?? 0
-    root.addEventListener('touchmove', move, { passive: false })
-  }
-  const end = (): void => {
-    touching = false
-    root.removeEventListener('touchmove', move)
-    rest()
-  }
-  const wheel = (event: WheelEvent): void => {
-    if (
-      !event.defaultPrevented &&
-      !event.ctrlKey &&
-      event.deltaY !== 0 &&
-      (event.deltaY > 0 || root.scrollTop > 0)
-    )
-      prime()
-  }
-  const key = (event: KeyboardEvent): void => {
-    // Canvas events come from another Window; use its DOM method, not a cross-realm instanceof.
-    const target = event.target as HTMLElement | null
-    if (
-      event.defaultPrevented ||
-      target?.closest?.('input,textarea,select,[contenteditable]:not([contenteditable="false"])')
-    )
-      return
-    if (event.key === ' ' && target?.closest?.('button,a[href]')) return
-    if (['ArrowDown', 'PageDown', 'End', ' '].includes(event.key)) prime()
-    else if (root.scrollTop > 0 && ['ArrowUp', 'PageUp', 'Home'].includes(event.key)) prime()
-  }
-  root.addEventListener('touchstart', start, { passive: true })
-  root.addEventListener('touchend', end, { passive: true })
-  root.addEventListener('touchcancel', end, { passive: true })
-  root.addEventListener('wheel', wheel, { passive: false })
-  root.addEventListener('keydown', key)
-  root.addEventListener('scroll', rest, { passive: true })
-  rest()
-  return () => {
-    root.removeEventListener('touchstart', start)
-    root.removeEventListener('touchmove', move)
-    root.removeEventListener('touchend', end)
-    root.removeEventListener('touchcancel', end)
-    root.removeEventListener('wheel', wheel)
-    root.removeEventListener('keydown', key)
-    root.removeEventListener('scroll', rest)
-  }
-}
-
-/** Content-only choreography. Native panel/header positioning remains owned by the carriers. */
+/** Content choreography over the fold progress. The panel height itself is the scroll position. */
 export function mobileBrandMotion(collapse: number, viewportHeight: number, reduced = false) {
   const progress = Math.min(1, Math.max(0, collapse / Math.max(1, viewportHeight - 112)))
   const phase = (start: number, end: number): number => {
@@ -120,7 +45,6 @@ export function mobileBrandMotion(collapse: number, viewportHeight: number, redu
     banner,
     travel: reduced ? 0 : phase(0, 0.85),
     form: reduced ? 0 : phase(0.05, 0.6),
-    settled: progress >= 0.85,
   }
 }
 
@@ -151,8 +75,6 @@ function rememberBrandBaseline(
 /** Restore a snapshot clone before its current inline styles become the CMS source baseline. */
 export function restoreMobileBrandSnapshot(root: Element): void {
   for (const runtime of root.querySelectorAll('[data-knc-brand-runtime]')) runtime.remove()
-  for (const part of [root, ...root.querySelectorAll('[data-knc-brand-part]')])
-    part.removeAttribute('data-knc-brand-part')
   for (const element of [root, ...root.querySelectorAll(`[${brandBaselineAttribute}]`)]) {
     const value = element.getAttribute(brandBaselineAttribute)
     if (!value) continue
@@ -161,16 +83,7 @@ export function restoreMobileBrandSnapshot(root: Element): void {
       inert?: boolean
     }
     const style = (element as HTMLElement).style
-    for (const property of [
-      'translate',
-      'scale',
-      'opacity',
-      'transform',
-      'font-size',
-      'font-weight',
-      'letter-spacing',
-      'overflow',
-    ]) {
+    for (const property of ['opacity', 'transform', 'overflow']) {
       const original = baseline.styles[property]
       if (!original) continue
       if (original[0]) style.setProperty(property, original[0], original[1])
@@ -217,14 +130,12 @@ interface BrandLayer {
 }
 const brandLayers = new WeakMap<HTMLElement, BrandLayer>()
 
-/** The artwork has one viewport anchor. Keeping both word weights in this private header
- * layer avoids compositor scroll moving one copy before JavaScript updates the other. */
+/** The artwork lives in one private layer anchored to the sticky panel, so both word weights
+ * share one frame while the panel shrinks with the scroll position. */
 function brandLayer(root: HTMLElement, geometry: MobileBrandGeometry): BrandLayer | undefined {
   const vector = geometry.vector
   if (!vector) return
-  const parent =
-    root.querySelector('[data-knc-fold="header-carrier"]') ??
-    root.querySelector('[data-knc-fold="panel"]')
+  const parent = root.querySelector('[data-knc-fold="panel"]')
   if (!parent) return
   const cached = brandLayers.get(geometry.brand)
   if (cached?.svg.parentElement === parent && cached.vector === vector) return cached
@@ -263,11 +174,12 @@ function brandLayer(root: HTMLElement, geometry: MobileBrandGeometry): BrandLaye
  * change shape and position; no alternate BNB text is substituted during the movement. */
 function paintMonogram(
   geometry: MobileBrandGeometry,
+  sourceTop: number,
   paths: readonly [SVGPathElement, SVGPathElement, SVGPathElement],
   travel: number,
   form: number,
 ): void {
-  const { targetLeft, targetTop, targetUnit, sourceLeft, sourceTop, sourceUnit, vector } = geometry
+  const { targetLeft, targetTop, targetUnit, sourceLeft, sourceUnit, vector } = geometry
   if (!vector || vector.emblemCharOrigins.length !== 3) return
   const sourceGlyphs = [
     { x: 174 - (0.672 * 150) / 2, y: 150, size: 150 },
@@ -310,8 +222,9 @@ function paintMonogram(
   }
 }
 
-/** Scroll frames use cached geometry and transform/opacity writes only. Font layout is
- * measured when assets, fonts or real layout change, never after a scroll-frame write. */
+/** Scroll frames use cached glyph geometry and write path coordinates, transforms and opacity
+ * only. The hero is centered in the shrinking panel, so the brand's resting place moves with
+ * every fold frame; that one vertical offset is read from layout here instead of the cache. */
 export function paintMobileBrand(
   root: HTMLElement,
   collapse: number,
@@ -327,7 +240,6 @@ export function paintMobileBrand(
     source,
     target,
     sourceLeft,
-    sourceTop,
     sourceUnit,
     targetLeft,
     targetTop,
@@ -336,15 +248,12 @@ export function paintMobileBrand(
     phone,
   } = geometry
   const motion = mobileBrandMotion(collapse, viewportHeight, reduced)
+  const sourceTop = brand.offsetTop
   let detailsShift = 0
   const mix = (a: number, b: number): number => a + (b - a) * motion.travel
-  rememberBrandBaseline(brand, ['translate', 'scale', 'opacity'])
-  rememberBrandBaseline(mark, ['translate', 'scale', 'opacity'])
-  brand.style.translate = vector && !reduced ? `0px ${collapse}px` : '0px 0px'
-  brand.style.scale = '1'
+  rememberBrandBaseline(brand, ['opacity'])
+  rememberBrandBaseline(mark, ['opacity'])
   paintOpacity(brand, vector ? 1 : motion.brand)
-  mark.style.translate = '0px 0px'
-  mark.style.scale = '1'
   // The wrapper's initial zero is motion state from MobileSite, not authored opacity.
   // Glyph/SVG presentation remains author-owned; never cache this wrapper as its baseline.
   mark.style.opacity = vector ? '1' : String(motion.banner)
@@ -400,7 +309,7 @@ export function paintMobileBrand(
           originalOpacity + (targetOpacity - originalOpacity) * motion.form,
         )
       }
-      if (!reduced) paintMonogram(geometry, layer.paths, motion.travel, motion.form)
+      if (!reduced) paintMonogram(geometry, sourceTop, layer.paths, motion.travel, motion.form)
     }
     for (const node of vector.monogram) {
       rememberBrandBaseline(node, ['opacity'])
@@ -431,8 +340,7 @@ export function paintMobileBrand(
     phone.inert = motion.phone === 0
   }
   const fade = (element: HTMLElement): void => {
-    rememberBrandBaseline(element, ['opacity', 'translate'], true)
-    element.style.translate = vector && !reduced ? `0px ${collapse + detailsShift}px` : '0px 0px'
+    rememberBrandBaseline(element, ['opacity'], true)
     paintOpacity(element, motion.actions)
     element.inert = motion.actions === 0
   }

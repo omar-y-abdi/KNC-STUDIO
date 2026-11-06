@@ -77,7 +77,6 @@ export interface AppStrings {
   cancelLink: string
   lazyBookingLoading: string
   lazyBookingError: string
-  lazyMyBookingsLoading: string
   lazyMyBookingsError: string
   lazyReload: string
 }

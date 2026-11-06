@@ -1,3 +1,5 @@
+Superseded on 2026-11-06 by docs/qa/2026-11-06-mobile-fold-restore.md: the sticky-carrier mechanism, the instant booking entry and the PR #176 scripted navigation were withdrawn at the owner's request.
+
 # Mobile hero fold: native scroll geometry
 
 This follow-up replaces the scroll-position compensation in `8054227`. The earlier first-paint,

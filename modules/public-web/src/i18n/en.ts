@@ -75,7 +75,6 @@ export const appEn: AppStrings = {
   cancelLink: 'Cancel booking',
   lazyBookingLoading: 'Loading booking …',
   lazyBookingError: 'Could not load booking.',
-  lazyMyBookingsLoading: 'Loading appointments …',
   lazyMyBookingsError: 'Could not load appointments.',
   lazyReload: 'Reload',
 }

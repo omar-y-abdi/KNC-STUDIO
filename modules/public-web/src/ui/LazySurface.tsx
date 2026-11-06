@@ -24,7 +24,8 @@ export class LazyLoadBoundary extends Component<LazyLoadBoundaryProps, LazyLoadB
 
 export interface LazySurfaceProps {
   readonly children: ComponentChildren
-  readonly loadingLabel: string
+  /** Visible status while the chunk loads; without one the surface stays empty until it renders. */
+  readonly loadingLabel?: string
   readonly errorLabel: string
   readonly retryLabel: string
   readonly overlay?: boolean
@@ -119,7 +120,13 @@ export function LazySurface(props: LazySurfaceProps): JSX.Element {
     >
       <Suspense
         fallback={
-          <LazyLoadingMessage label={props.loadingLabel} overlay={overlay} minHeight={minHeight} />
+          props.loadingLabel === undefined ? null : (
+            <LazyLoadingMessage
+              label={props.loadingLabel}
+              overlay={overlay}
+              minHeight={minHeight}
+            />
+          )
         }
       >
         {props.children}
