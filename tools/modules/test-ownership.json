@@ -1762,7 +1762,7 @@
   "tests/unit/privacyBannerLayout.test.ts": {
     "kind": "unit",
     "owners": ["public-web"],
-    "reason": "Privacy overlay measurement, resize re-measurement, and close cleanup"
+    "reason": "Privacy overlay measurement, observer coalescing, and close cleanup"
   },
   "tests/unit/privacyEmailLogDisclosure.test.ts": {
     "kind": "unit",

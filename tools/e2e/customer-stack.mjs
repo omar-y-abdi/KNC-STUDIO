@@ -42,7 +42,10 @@ export async function customerStackFixture({ browserName }, use) {
     VITE_SUPABASE_URL: `${origin}/__supabase`,
     LOCAL_SUPABASE_URL: stack.API_URL,
     VITE_SUPABASE_ANON_KEY: stack.ANON_KEY,
-    VITE_TURNSTILE_SITE_KEY: '1x00000000000000000000AA',
+    // Cloudflare's always-passing INVISIBLE test key: the production site key is configured
+    // invisible, so the browser fixtures see the same zero-footprint widget as customers do. The
+    // visible '…AA' key renders a 65 px widget late and moves the buttons under a pending click.
+    VITE_TURNSTILE_SITE_KEY: '1x00000000000000000000BB',
     CUSTOMER_GATEWAY_PROXY_URL: workerOrigin,
     LOCAL_WORKER_DOCUMENTS: '1',
     LOCAL_HTTPS_KEY: key,
