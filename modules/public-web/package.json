@@ -34,8 +34,7 @@
     "./site-chrome": "./src/site/siteChrome.ts",
     "./styles/fonts.css": "./src/ui/styles/fonts.css",
     "./styles/global.css": "./src/ui/styles/global.css",
-    "./turnstile": "./src/booking/Turnstile.tsx",
-    "./turnstile-widget-mode": "./src/booking/turnstileWidgetMode.ts"
+    "./turnstile": "./src/booking/Turnstile.tsx"
   },
   "dependencies": {
     "@bladeblend/backend-contracts": "*",

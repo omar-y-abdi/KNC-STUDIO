@@ -11,7 +11,6 @@ vi.mock('../../modules/public-web/src/ui/pseudo', () => ({ FOCUS_CLS: '', pseudo
 beforeEach(() => {
   vi.resetModules()
   vi.stubEnv('VITE_TURNSTILE_SITE_KEY', 'local-test-site-key')
-  vi.stubEnv('VITE_TURNSTILE_WIDGET_MODE', 'managed')
   reset()
 })
 afterEach(() => {
@@ -51,47 +50,56 @@ describe('Turnstile widget recovery', () => {
     },
   )
 
-  it.each(['managed', 'non-interactive', 'invisible'])(
-    'uses the configured %s footprint through loading, success, failure and retry',
-    async (mode) => {
-      vi.stubEnv('VITE_TURNSTILE_WIDGET_MODE', mode)
-      const pendingHeight = mode === 'invisible' ? '0px' : '65px'
-      const { Turnstile } = await import('../../modules/public-web/src/booking/Turnstile')
-      const widgetRender = vi.fn<NonNullable<Window['turnstile']>['render']>(() => 'widget')
-      vi.stubGlobal('window', { turnstile: { render: widgetRender, remove: vi.fn() } })
-      const onToken = vi.fn()
-      const draw = () =>
-        render(() => Turnstile({ action: 'booking', lang: 'sv', resetNonce: 0, onToken }))
-      const minimum = () =>
-        nodes(draw())
-          .map((node) => node.props['style'])
-          .find((style) => typeof style === 'object' && style !== null && 'minHeight' in style)
-      expect(minimum()).toEqual({ minHeight: pendingHeight })
-      ref(0, {})
-      const dispose = mount()
-      await Promise.resolve()
-      const options = widgetRender.mock.calls[0]?.[1]
-      if (!options) throw new Error('Turnstile did not render its widget')
-      options.callback('valid-token')
-      expect(minimum()).toEqual({ minHeight: '0px' })
-      options['expired-callback']()
-      expect(onToken).toHaveBeenLastCalledWith('')
-      expect(minimum()).toEqual({ minHeight: '0px' })
-      const retry = nodes(draw()).find((node) => node.type === 'button')
-      if (!retry) throw new Error('Missing retry button')
-      ;(retry.props['onClick'] as () => void)()
-      draw()
-      dispose()
-      const disposeRetry = mount()
-      await Promise.resolve()
-      expect(minimum()).toEqual({ minHeight: pendingHeight })
-      const retried = widgetRender.mock.calls[1]?.[1]
-      if (!retried) throw new Error('Turnstile did not retry its widget')
-      retried['error-callback']()
-      expect(minimum()).toEqual({ minHeight: '0px' })
-      disposeRetry()
-    },
-  )
+  it('reserves no placeholder height through loading, success, failure and retry', async () => {
+    const { Turnstile } = await import('../../modules/public-web/src/booking/Turnstile')
+    const widgetRender = vi.fn<NonNullable<Window['turnstile']>['render']>(() => 'widget')
+    vi.stubGlobal('window', { turnstile: { render: widgetRender, remove: vi.fn() } })
+    const onToken = vi.fn()
+    const draw = () =>
+      render(() => Turnstile({ action: 'booking', lang: 'sv', resetNonce: 0, onToken }))
+    // The widget container is the wrapper's first child. It carries no inline style, and no node
+    // in the tree sizes anything: the widget alone decides the footprint.
+    const expectNoPlaceholder = () => {
+      const tree = nodes(draw())
+      const container = tree[1]
+      if (container?.type !== 'div') throw new Error('Missing widget container')
+      expect(container.props['style']).toBeUndefined()
+      expect(
+        tree.filter((node) => {
+          const style = node.props['style']
+          return (
+            typeof style === 'object' &&
+            style !== null &&
+            ('minHeight' in style || 'height' in style)
+          )
+        }),
+      ).toEqual([])
+    }
+    expectNoPlaceholder()
+    ref(0, {})
+    const dispose = mount()
+    await Promise.resolve()
+    const options = widgetRender.mock.calls[0]?.[1]
+    if (!options) throw new Error('Turnstile did not render its widget')
+    options.callback('valid-token')
+    expectNoPlaceholder()
+    options['expired-callback']()
+    expect(onToken).toHaveBeenLastCalledWith('')
+    expectNoPlaceholder()
+    const retry = nodes(draw()).find((node) => node.type === 'button')
+    if (!retry) throw new Error('Missing retry button')
+    ;(retry.props['onClick'] as () => void)()
+    draw()
+    dispose()
+    const disposeRetry = mount()
+    await Promise.resolve()
+    expectNoPlaceholder()
+    const retried = widgetRender.mock.calls[1]?.[1]
+    if (!retried) throw new Error('Turnstile did not retry its widget')
+    retried['error-callback']()
+    expectNoPlaceholder()
+    disposeRetry()
+  })
 
   it.each(['sv', 'en'] as const)(
     'offers a localized password-recovery retry that requests a fresh widget (%s)',
