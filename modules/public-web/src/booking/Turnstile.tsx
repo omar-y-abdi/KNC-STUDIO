@@ -1,6 +1,5 @@
 // One shared script; independent, disposable widgets. Retries recover from script/network failure
 // as well as expired tokens. Action + hostname are checked again by the Edge gateway.
-import { configuredTurnstileWidgetMode } from './turnstileWidgetMode'
 import type { JSX } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import type { Lang } from '../i18n/index'
@@ -8,10 +7,6 @@ import type { TurnstilePolicy } from '@bladeblend/backend-contracts/turnstile'
 
 const SCRIPT_SRC = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit'
 const SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY?.trim() || undefined
-const WIDGET_MODE = configuredTurnstileWidgetMode(
-  SITE_KEY,
-  import.meta.env.VITE_TURNSTILE_WIDGET_MODE,
-)
 export const turnstileConfigured = SITE_KEY !== undefined
 
 interface TurnstileRenderOptions {
@@ -88,7 +83,7 @@ export function Turnstile(props: TurnstileProps): JSX.Element | null {
   const containerRef = useRef<HTMLDivElement>(null)
   const onTokenRef = useRef(props.onToken)
   const onErrorRef = useRef(props.onError)
-  const [status, setStatus] = useState<'pending' | 'ready' | 'failed'>('pending')
+  const [failed, setFailed] = useState(false)
   const [retry, setRetry] = useState(0)
   useEffect(() => {
     onTokenRef.current = props.onToken
@@ -99,13 +94,13 @@ export function Turnstile(props: TurnstileProps): JSX.Element | null {
 
   useEffect(() => {
     onTokenRef.current('')
-    setStatus('pending')
+    setFailed(false)
     if (SITE_KEY === undefined) return
     let cancelled = false
     let widget: string | undefined
     const notifyError = (): void => {
       if (cancelled) return
-      setStatus('failed')
+      setFailed(true)
       onTokenRef.current('')
       onErrorRef.current?.()
     }
@@ -124,7 +119,7 @@ export function Turnstile(props: TurnstileProps): JSX.Element | null {
           language: lang,
           callback: (token) => {
             if (cancelled) return
-            setStatus('ready')
+            setFailed(false)
             onTokenRef.current(token)
           },
           'expired-callback': notifyError,
@@ -142,13 +137,10 @@ export function Turnstile(props: TurnstileProps): JSX.Element | null {
   if (SITE_KEY === undefined) return null
   return (
     <div style={{ marginTop: '4px' }}>
-      {/* The site key's public mode is known before the first render. Invisible verification
-          reserves nothing; visible widgets retain loading space and then size themselves. */}
-      <div
-        ref={containerRef}
-        style={{ minHeight: status === 'pending' && WIDGET_MODE !== 'invisible' ? '65px' : '0px' }}
-      />
-      {status === 'failed' && props.onError === undefined ? (
+      {/* No placeholder height: the container stays empty until the widget renders and sizes it,
+          so an invisible widget never leaves a blank gap. */}
+      <div ref={containerRef} />
+      {failed && props.onError === undefined ? (
         <div role="alert" style={{ fontSize: '12px', lineHeight: 1.5, margin: '8px 0' }}>
           <span>
             {lang === 'sv'

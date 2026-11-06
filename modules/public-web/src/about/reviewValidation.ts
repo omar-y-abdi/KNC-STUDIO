@@ -2,7 +2,8 @@
 // booking/validation.ts). The phone parser is reused from the booking validation (same branded
 // `Phone`, Swedish-mobile rule); the review text and rating get their own checks here. Per-field
 // flags drive the same red-border + note UI. Phone validation is not authorization: the server
-// requires device or email-session access to an eligible finished booking and checks the phone.
+// requires a device receipt or a verified session for an eligible finished booking and checks
+// the phone.
 
 import { parsePhone, type ValidationResult } from '../booking/validation'
 import type { Rating, ValidReview } from './reviews/domain'

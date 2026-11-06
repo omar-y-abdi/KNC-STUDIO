@@ -5,7 +5,6 @@ import {
   mobileBrandMotion,
   mobileLayoutViewportHeight,
   paintMobileBrand,
-  primeMobileFold,
 } from '@bladeblend/public-web/mobile-layout'
 import type { CmsScene } from '@bladeblend/public-web/preview'
 import { SITE_THEME_DEFAULTS } from '@bladeblend/content-contracts/site-theme'
@@ -37,10 +36,6 @@ export function canvasBehavior(editor: Editor, scene: CmsScene, mode: CmsMode): 
     const visibility = sceneVisibilityCss(scene, mode)
     let frame = 0
     let previousRoot: HTMLElement | null = null
-    let carrier: HTMLElement | null = null
-    let headerCarrier: HTMLElement | null = null
-    let primed = false
-    let stopPriming = (): void => undefined
     let stopBrandGeometry = (): void => undefined
     let brandRoot: HTMLElement | null = null
     let brandGeometryDirty = false
@@ -50,68 +45,24 @@ export function canvasBehavior(editor: Editor, scene: CmsScene, mode: CmsMode): 
         '[data-knc-surface="mobile-home"], [data-knc-surface="mobile-booking"]',
       )
       const surface = root?.getAttribute('data-knc-surface') ?? 'mobile-home'
-      const panel = root?.querySelector<HTMLElement>('[data-knc-fold="panel"]')
-      if (
-        root &&
-        root.clientHeight > 0 &&
-        (root !== previousRoot || (panel && panel.parentElement !== carrier))
-      ) {
-        stopPriming()
-        if (headerCarrier) headerCarrier.replaceWith(...headerCarrier.childNodes)
-        if (carrier) carrier.replaceWith(...carrier.childNodes)
-        const entering = root !== previousRoot
+      if (root && root !== previousRoot && root.clientHeight > 0) {
         previousRoot = root
-        carrier = doc.createElement('div')
-        carrier.setAttribute('data-knc-fold', 'carrier')
-        if (panel) {
-          panel.parentNode?.insertBefore(carrier, panel)
-          carrier.appendChild(panel)
-          const hero = panel.querySelector<HTMLElement>(':scope > [data-knc-fold="hero"]')
-          headerCarrier = doc.createElement('div')
-          headerCarrier.setAttribute('data-knc-fold', 'header-carrier')
-          if (hero) {
-            const headerNodes = []
-            for (let child = panel.firstChild; child && child !== hero; child = child.nextSibling)
-              headerNodes.push(child)
-            panel.insertBefore(headerCarrier, panel.firstChild)
-            for (const child of headerNodes) headerCarrier.appendChild(child)
-          }
-        }
-        primed = false
-        stopPriming = primeMobileFold(root, (active) => {
-          if (active === primed) return
-          primed = active
-          if (frame) win.cancelAnimationFrame(frame)
-          update()
-        })
-        if (entering && surface === 'mobile-booking')
+        // A captured booking opens at its content, like a direct booking URL on the public site.
+        if (surface === 'mobile-booking')
           root.scrollTop = mobileFold(Infinity, mobileLayoutViewportHeight(root)).collapse
-      }
-      if (panel && headerCarrier?.parentElement === panel) {
-        const hero = panel.querySelector<HTMLElement>(':scope > [data-knc-fold="hero"]')
-        if (hero && (panel.firstChild !== headerCarrier || headerCarrier.nextSibling !== hero)) {
-          const prefix: ChildNode[] = []
-          for (let child = panel.firstChild; child && child !== hero; child = child.nextSibling)
-            prefix.push(...(child === headerCarrier ? [...headerCarrier.childNodes] : [child]))
-          panel.insertBefore(headerCarrier, panel.firstChild)
-          for (const child of prefix) headerCarrier.appendChild(child)
-        }
       }
       const height = root ? mobileLayoutViewportHeight(root) : win.innerHeight
       const motion = mobileFold(root?.scrollTop ?? 0, height)
-      const pinned = primed || motion.collapse > 0
+      const brand = mobileBrandMotion(motion.collapse, height)
       const scope = `[data-knc-surface="${surface}"] [data-knc-fold=`
       const css =
         visibility +
-        `${scope}"carrier"]{display:${pinned ? 'block' : 'contents'}!important;position:${pinned ? 'sticky' : 'static'}!important;top:calc(112px - 100dvh)!important;height:100dvh!important;z-index:10!important}` +
-        `${scope}"header-carrier"]{display:${pinned ? 'block' : 'contents'}!important;position:${pinned ? 'sticky' : 'static'}!important;top:0!important;flex:none!important;z-index:10!important;background:inherit!important}` +
-        `${scope}"panel"]{position:relative!important;transform:none!important;top:0!important;height:100dvh!important;overflow:clip!important;border-radius:${motion.compact ? '0 0 28px 28px' : '0'}!important}` +
-        `${scope}"spacer"]{height:0!important}` +
-        `${scope}"controls"]{margin-top:0!important;translate:0 ${mobileBrandMotion(motion.collapse, height).controlsShift}px!important}` +
-        `${scope}"mark"]{transition:none!important;transform-origin:50% 0!important}` +
-        `${scope}"brand"]{position:relative!important;z-index:20!important;transform-origin:50% 0!important;pointer-events:none!important}` +
+        `${scope}"panel"]{position:sticky!important;top:0!important;height:calc(100dvh - ${motion.collapse}px)!important;transition:none!important;border-radius:${motion.compact ? '0 0 28px 28px' : '0'}!important}` +
+        `${scope}"spacer"]{height:${motion.collapse}px!important}` +
+        `${scope}"controls"]{margin-top:0!important;translate:0 ${brand.controlsShift}px!important}` +
+        `${scope}"mark"]{transition:none!important}` +
         `${scope}"return"]{display:${motion.compact ? 'flex' : 'none'}!important}` +
-        `${scope}"hero"]{opacity:1!important;overflow:visible!important}`
+        `${scope}"hero"]{opacity:1!important;transition:none!important}`
       if (style.textContent !== css) {
         style.textContent = css
         editor.refresh()
@@ -126,7 +77,7 @@ export function canvasBehavior(editor: Editor, scene: CmsScene, mode: CmsMode): 
         paintMobileBrand(
           root,
           motion.collapse,
-          mobileLayoutViewportHeight(root),
+          height,
           win.matchMedia('(prefers-reduced-motion: reduce)').matches,
         )
     }
@@ -146,10 +97,7 @@ export function canvasBehavior(editor: Editor, scene: CmsScene, mode: CmsMode): 
       win.removeEventListener('resize', changed)
       editor.off('component:mount', changed)
       win.cancelAnimationFrame(frame)
-      stopPriming()
       stopBrandGeometry()
-      if (headerCarrier) headerCarrier.replaceWith(...headerCarrier.childNodes)
-      if (carrier) carrier.replaceWith(...carrier.childNodes)
       style.remove()
     }
   }

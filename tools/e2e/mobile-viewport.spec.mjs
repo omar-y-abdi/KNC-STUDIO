@@ -277,7 +277,7 @@ for (const mode of ['light', 'dark'])
         globalThis.renderDetails(false, true, 1)
       })
       await expect(frame).toHaveCSS('height', '0px')
-      await expect(frame.locator('..')).toHaveCSS('min-height', '65px')
+      await expect(frame.locator('..')).toHaveCSS('min-height', '0px')
       await page.evaluate(() => globalThis.completeWidget())
       await expect(frame.locator('..')).toHaveCSS('min-height', '0px')
       await assertFit()
@@ -287,7 +287,7 @@ for (const mode of ['light', 'dark'])
       await expect(dialog.getByRole('alert')).toHaveCount(1)
       await expect(frame.locator('..')).toHaveCSS('min-height', '0px')
       await dialog.getByRole('button', { name: 'Försök igen', exact: true }).click()
-      await expect(frame.locator('..')).toHaveCSS('min-height', '65px')
+      await expect(frame.locator('..')).toHaveCSS('min-height', '0px')
       await page.evaluate(() => globalThis.completeWidget())
       await expect(frame.locator('..')).toHaveCSS('min-height', '0px')
       await expect(dialog.getByRole('alert')).toHaveCount(0)
@@ -374,7 +374,7 @@ test('new live children keep source anchors without undoing owner edits', async 
 })
 
 for (const stored of [false, true])
-  test(`mobile edge sampling avoids cached fullscreen sticky colors (${stored ? 'stored' : 'source'})`, async ({
+  test(`mobile theme toggles repaint the header while the sticky panel folds with the scroll (${stored ? 'stored' : 'source'})`, async ({
     page,
     context,
   }) => {
@@ -387,58 +387,28 @@ for (const stored of [false, true])
     await page.goto(`${harnessOrigin}/?mode=dark`)
     const toggle = page.getByRole('button', { name: 'Växla ljust/mörkt' })
     await toggle.waitFor()
-    const edges = () =>
-      page.evaluate(() => {
-        // WebKit LocalFrameView::fixedContainerEdges: 4px inset; 0.9/1.05 size comparisons.
-        // This models candidate classification, not Safari's private UI color extension itself.
-        const sample = (bottom) => {
-          let element = globalThis.document.elementFromPoint(
-            globalThis.innerWidth / 2,
-            bottom ? globalThis.innerHeight - 4 : 4,
-          )
-          let color = 'rgba(0, 0, 0, 0)'
-          while (element) {
-            const style = globalThis.getComputedStyle(element)
-            if (color === 'rgba(0, 0, 0, 0)' && style.backgroundColor !== 'rgba(0, 0, 0, 0)')
-              color = style.backgroundColor
-            if (style.backdropFilter && style.backdropFilter !== 'none') return { backdrop: true }
-            if (['fixed', 'sticky'].includes(style.position) && Number(style.opacity) > 0) {
-              const box = element.getBoundingClientRect()
-              const compare = (length, viewport) =>
-                length < (viewport - 8) * 0.9
-                  ? 'smaller'
-                  : length < (viewport - 8) * 1.05
-                    ? 'similar'
-                    : 'larger'
-              const width = compare(box.width, globalThis.innerWidth)
-              const height = compare(box.height, globalThis.innerHeight)
-              if (width !== 'smaller' && height !== 'larger')
-                return {
-                  viewportSized: width === 'similar' && height === 'similar',
-                  color,
-                }
-            }
-            element = element.parentElement
-          }
-          return null
-        }
-        return { top: sample(false), bottom: sample(true) }
-      })
-    const assertTheme = async (color, pinned = false, bottomCandidate = false) => {
-      await expect.poll(edges).toEqual({
-        top: pinned ? { viewportSized: false, color } : null,
-        bottom: bottomCandidate ? { viewportSized: true, color } : null,
-      })
+    // The header inherits the folding panel's colour and never pins on its own. Once the panel is
+    // folded, that inherited colour is what sits at the top edge of the viewport.
+    const assertTheme = async (color, pinned = false) => {
       await expect
         .poll(() =>
           page.locator('[data-knc-fold="panel"]').evaluate((panel) => {
             const style = globalThis.getComputedStyle(
               panel.querySelector('[data-knc-fold="controls"]').parentElement,
             )
-            return { position: style.position, top: style.top, bottom: style.bottom }
+            return {
+              position: style.position,
+              top: style.top,
+              bottom: style.bottom,
+              color: style.backgroundColor,
+            }
           }),
         )
-        .toEqual({ position: 'relative', top: '0px', bottom: '0px' })
+        .toEqual(
+          pinned
+            ? { position: 'relative', top: '0px', bottom: '0px', color }
+            : expect.objectContaining({ position: 'relative', top: '0px', bottom: '0px' }),
+        )
     }
     await assertTheme('rgb(36, 36, 39)')
     const themeFrames = await page.evaluate(async () => {
@@ -472,21 +442,9 @@ for (const stored of [false, true])
         theme: stored ? 'rgb(244, 243, 240)' : '#f4f3f0',
       })
     await assertTheme('rgb(244, 243, 240)')
-    const noCarriers = () =>
-      page
-        .locator('[data-knc-fold="carrier"],[data-knc-fold="header-carrier"]')
-        .evaluateAll((nodes) =>
-          nodes.every(
-            (node) =>
-              globalThis.getComputedStyle(node).display === 'contents' &&
-              node.getClientRects().length === 0,
-          ),
-        )
-    expect(await noCarriers()).toBe(true)
     await toggle.focus()
     await toggle.press('Space')
     await assertTheme('rgb(36, 36, 39)')
-    expect(await noCarriers()).toBe(true)
     await toggle.click()
     await assertTheme('rgb(244, 243, 240)')
     const scroll = page.getByTestId('mobile-site-scroll')
@@ -515,15 +473,14 @@ for (const stored of [false, true])
           }),
         )
         .toEqual({
-          top: amount === 0 ? 0 : -Math.min(amount, 732),
+          top: 0,
           headerTop: 0,
-          height: 844,
+          height: Math.max(112, 844 - amount),
           spacerBottom: 844 - amount,
           scroll: amount,
         })
-      await assertTheme('rgb(244, 243, 240)', amount > 0, amount > 0 && amount <= 4)
+      await assertTheme('rgb(244, 243, 240)', amount > 0)
     }
-    expect(await noCarriers()).toBe(true)
     await page.getByRole('button', { name: 'Boka tid', exact: true }).click()
     await toggle.click()
     await assertTheme('rgb(36, 36, 39)', true)
@@ -560,7 +517,6 @@ for (const stored of [false, true])
     await page.getByRole('button', { name: 'Spara val', exact: true }).click()
     await page.getByRole('button', { name: 'Mina bokningar', exact: true }).click()
     await expect(page.getByRole('dialog')).toBeVisible()
-    await expect.poll(edges).toEqual({ top: { backdrop: true }, bottom: { backdrop: true } })
     await page.getByRole('dialog').getByRole('button', { name: 'Stäng', exact: true }).click()
     await assertTheme('rgb(244, 243, 240)')
     if (stored) {
@@ -576,41 +532,88 @@ for (const stored of [false, true])
       await toggle.click()
       await assertTheme('rgb(48, 59, 76)')
     }
-    await page.emulateMedia({ reducedMotion: 'no-preference' })
+  })
+
+for (const stored of [false, true])
+  test(`Boka tid tweens the sticky panel to the compact header and scrolling back restores the hero (${stored ? 'stored' : 'source'})`, async ({
+    page,
+    context,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'no-preference' })
+    await (stored ? installStoredBackend : installPublicBackend)(context)
+    await context.addCookies([
+      { name: 'bladeblend_storage_preferences', value: 'essential', url: harnessOrigin },
+    ])
     await page.goto(`${harnessOrigin}/?mode=dark`)
-    await toggle.waitFor()
-    const fullStickyFrames = await page.evaluate(async () => {
-      const book = [...globalThis.document.querySelectorAll('button')].find(
+    await page.getByRole('button', { name: 'Växla ljust/mörkt' }).waitFor()
+    // Sample every animation frame from the click: the scroll position jumps to the fold limit at
+    // once while the panel height tweens down to meet it and the hero fades underneath.
+    const frames = await page.evaluate(async () => {
+      const root = globalThis.document.querySelector('[data-testid="mobile-site-scroll"]')
+      const panel = root.querySelector('[data-knc-fold="panel"]')
+      const hero = root.querySelector('[data-knc-fold="hero"]')
+      const book = [...hero.querySelectorAll('button')].find(
         (button) => button.textContent === 'Boka tid',
       )
-      return new Promise((resolve) => {
-        let frames = 0
-        let fullscreen = 0
-        book.click()
-        const inspect = () => {
-          // Inspect the first candidate at each actual edge, as WebKit does. The full-height
-          // outer carrier is behind the compact header during booking and has no renderer at rest.
-          for (const y of [4, globalThis.innerHeight - 4]) {
-            let node = globalThis.document.elementFromPoint(globalThis.innerWidth / 2, y)
-            while (node) {
-              if (['sticky', 'fixed'].includes(globalThis.getComputedStyle(node).position)) {
-                const height = node.getBoundingClientRect().height
-                if (
-                  height >= (globalThis.innerHeight - 8) * 0.9 &&
-                  height < (globalThis.innerHeight - 8) * 1.05
-                )
-                  fullscreen++
-                break
-              }
-              node = node.parentElement
-            }
-          }
-          if (++frames < 20) globalThis.requestAnimationFrame(inspect)
-          else resolve(fullscreen)
-        }
-        globalThis.requestAnimationFrame(inspect)
-      })
+      const frames = []
+      const start = globalThis.performance.now()
+      book.click()
+      while (globalThis.performance.now() - start < 1200) {
+        await new Promise(globalThis.requestAnimationFrame)
+        const style = globalThis.getComputedStyle(panel)
+        const morph = root.querySelector('[data-knc-brand-runtime]')
+        frames.push({
+          at: globalThis.performance.now() - start,
+          scroll: root.scrollTop,
+          height: panel.getBoundingClientRect().height,
+          properties: style.transitionProperty,
+          durations: style.transitionDuration,
+          hero: globalThis.getComputedStyle(hero).opacity,
+          fade: globalThis.getComputedStyle(hero).transitionDuration,
+          morph: morph ? globalThis.getComputedStyle(morph).display : 'none',
+        })
+      }
+      return frames
     })
-    expect(fullStickyFrames).toBe(0)
-    await page.getByTestId('booking-barber-option').first().waitFor()
+    expect(frames.length).toBeGreaterThan(10)
+    for (const frame of frames) expect(frame.scroll).toBe(732)
+    expect(frames[0].height).toBeGreaterThan(300)
+    for (let index = 1; index < frames.length; index++)
+      expect(frames[index].height).toBeLessThanOrEqual(frames[index - 1].height + 0.5)
+    expect(frames.some((frame) => frame.height > 112 && frame.height < 844)).toBe(true)
+    const compact = frames.findIndex((frame) => frame.height <= 112.5)
+    expect(compact).toBeGreaterThan(0)
+    expect(frames[compact].at).toBeGreaterThanOrEqual(250)
+    for (const frame of frames.slice(compact)) expect(Math.round(frame.height)).toBe(112)
+    expect(
+      frames.some(
+        (frame) => frame.properties.includes('height') && frame.durations.includes('0.66s'),
+      ),
+    ).toBe(true)
+    expect(frames.at(-1).properties.includes('height')).toBe(false)
+    expect(frames.some((frame) => frame.fade.includes('0.34s'))).toBe(true)
+    expect(frames.some((frame) => Number(frame.hero) > 0 && Number(frame.hero) < 1)).toBe(true)
+    expect(frames.some((frame) => frame.hero === '0' && frame.height > 112)).toBe(true)
+    expect(frames.some((frame) => frame.height > 112 && frame.morph !== 'none')).toBe(true)
+    const scroll = page.getByTestId('mobile-site-scroll')
+    const panel = page.locator('[data-knc-fold="panel"]')
+    const book = page
+      .locator('[data-knc-fold="hero"]')
+      .getByRole('button', { name: 'Boka tid', exact: true })
+    await expect(page.getByTestId('booking-barber-option').first()).toBeAttached()
+    await scroll.evaluate((element) => {
+      element.scrollTop = 0
+    })
+    await expect
+      .poll(() => panel.evaluate((panel) => panel.getBoundingClientRect().bottom))
+      .toBe(844)
+    await expect(book).toBeVisible()
+    await expect(page.locator('[data-knc-brand-runtime]')).toHaveCSS('display', 'none')
+    await expect(page.getByTestId('booking-barber-option').first()).toBeAttached()
+    await book.click()
+    await expect.poll(() => scroll.evaluate((element) => element.scrollTop)).toBe(732)
+    await expect
+      .poll(() => panel.evaluate((panel) => panel.getBoundingClientRect().height))
+      .toBe(112)
   })

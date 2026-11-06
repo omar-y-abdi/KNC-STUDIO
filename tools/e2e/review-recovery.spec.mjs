@@ -23,6 +23,7 @@ const copy = {
     submit: 'Lämna ett omdöme',
     editedHeading: 'Dela din upplevelse',
     bookings: 'Mina bokningar',
+    home: 'Till startsidan',
     past: 'Visa tidigare bokningar',
     details: /Visa detaljer$/,
     close: 'Stäng',
@@ -40,6 +41,7 @@ const copy = {
     submit: 'Leave a review',
     editedHeading: 'Share your experience',
     bookings: 'My appointments',
+    home: 'Back to home',
     past: 'Show past appointments',
     details: /Show details$/,
     close: 'Close',
@@ -152,9 +154,6 @@ for (const width of [390, 1440]) {
       await page.getByRole('button', { name: labels.about, exact: true }).click()
       await expect(page.getByText(labels.reviewsEmpty, { exact: true })).toBeVisible()
       await expect(page.getByText(labels.galleryLoading, { exact: true })).toHaveCount(0)
-      await expect(
-        page.getByRole('button', { name: /Verifiera bokning via e-post|Verify booking by email/ }),
-      ).toHaveCount(0)
       await expect(page.locator(`[id="${edited.id}"]`)).toHaveText(labels.editedHeading)
       const number = page.getByRole('textbox', { name: labels.phone })
       const text = page.getByRole('textbox', { name: labels.text, exact: true })
@@ -190,8 +189,11 @@ for (const width of [390, 1440]) {
       )
       expect(await page.evaluate(() => globalThis.document.cookie)).not.toContain(receiptCookie)
 
-      // Losing device access still offers the existing recovery inside My Bookings.
+      // Losing device access still offers the existing recovery inside My Bookings. The folded
+      // mobile hero keeps its buttons inert, so return to it through the header like a customer
+      // would; a programmatic scroll into the sticky panel lands between fold frames.
       await context.clearCookies({ name: receiptCookie })
+      if (width === 390) await page.getByRole('button', { name: labels.home, exact: true }).click()
       await openBookings.click()
       await dialog
         .getByRole('textbox', { name: labels.email, exact: true })

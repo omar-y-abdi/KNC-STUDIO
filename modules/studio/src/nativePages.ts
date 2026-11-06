@@ -74,12 +74,9 @@ export function mobileBarberCss(desktopHtml: string, mobileHtml: string): string
 
 export function snapshotNative(root: Element, prefix: string): string {
   const copy = root.cloneNode(true) as Element
+  // The brand morph paints opacity/transform/overflow onto authored nodes; the clone gets the
+  // authored values back before they become the source baseline.
   restoreMobileBrandSnapshot(copy)
-  // The scroll carrier is private runtime geometry, never editable content or a saved parent.
-  for (const carrier of copy.querySelectorAll(
-    '[data-knc-fold="carrier"],[data-knc-fold="header-carrier"]',
-  ))
-    carrier.replaceWith(...carrier.childNodes)
   for (const node of copy.querySelectorAll('script,style,iframe,object,embed,noscript'))
     node.remove()
   const nodes = [copy, ...copy.querySelectorAll('*')]

@@ -18,6 +18,9 @@ runs against the original source layout, not browser runs against this integrate
   `modules/public-web/src/booking/turnstileWidgetMode.ts`. Turnstile uses a local import; root Vite
   configuration uses the explicit `@bladeblend/public-web/turnstile-widget-mode` export. No shared
   miscellaneous package or CMS document dependency was introduced.
+  Superseded 2026-11-06: widget mode was removed again. `turnstileWidgetMode.ts`, its unit test,
+  the `turnstile-widget-mode` export and `VITE_TURNSTILE_WIDGET_MODE` no longer exist; the
+  Turnstile container reserves no height in any status.
 - The new CMS browser spec imports content contracts from their current location and loads Studio
   harness modules through `/modules/studio/src/` URLs. Existing translated browser URLs remain.
 - All five new tests have explicit ownership: the widget-mode unit and three public browser specs

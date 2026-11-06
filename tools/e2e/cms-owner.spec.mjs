@@ -449,17 +449,14 @@ for (const scenario of CMS_OWNER_SCENARIOS) {
             )?.contentDocument
             const root = doc?.querySelector('[data-testid="mobile-site-scroll"]')
             const panel = root?.querySelector('[data-knc-fold="panel"]')
-            const header = root?.querySelector('[data-knc-fold="controls"]')?.parentElement
             const box = panel?.getBoundingClientRect()
-            // The full-height panel now folds through native clipping/sticky positioning.
-            // Assert its visible edge and header, not the private carrier's unchanged height.
+            // The sticky panel folds to its compact height as the preview scrolls.
             return Boolean(
               root &&
               box &&
-              root.scrollTop >= box.height - 112 &&
-              root.scrollTop > 0 &&
-              box.bottom === 112 &&
-              header?.getBoundingClientRect().top === 0,
+              root.scrollTop > 100 &&
+              box.top === 0 &&
+              Math.abs(box.height - 112) < 2,
             )
           })
           assert.equal(

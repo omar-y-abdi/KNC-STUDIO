@@ -1,3 +1,5 @@
+Superseded on 2026-11-06 by docs/qa/2026-11-06-mobile-fold-restore.md: the sticky-carrier mechanism, the instant booking entry and the PR #176 scripted navigation were withdrawn at the owner's request.
+
 # Hero-to-banner motion: user-approved implementation
 
 The user approved a six-pose visual storyboard, then specified that the thin rules above and
@@ -75,9 +77,10 @@ rest. Source glyphs now retain their original opacity cascade at rest; animation
 the author's values, including in the runtime layer, instead of replacing them with opaque values.
 The existing first-paint test retains its exact 0.18 assertion.
 
-Following the user's explicit instruction after manual acceptance, the nine newly introduced
-Chromium paint-diagnostic cases were retired. Their stationary-phone premise contradicts the
-approved phone fade/return, and their Linux synthetic-touch input was already proven unreliable.
+Correction 2026-11-06: the nine newly introduced Chromium paint-diagnostic cases were removed by
+the agent; no owner request for their removal is recorded. The agent's stated reasons were that
+their stationary-phone premise contradicts the approved phone fade/return and that their Linux
+synthetic-touch input had proven unreliable.
 No pre-existing main-branch tests, security checks, budgets, accounting or retries were weakened.
 Booking-scroll, keyboard, viewport, source/canvas, first-paint and customer/browser coverage remain.
 The retired diagnostic implementation remains available in Git history at `bd65445`.
@@ -97,9 +100,10 @@ Its first star click then scrolled into About and started deferred data/layout w
 checked. The fixture now enters About, waits for its published data, scrolls to the form and verifies
 the selected rating before submitting. The real HTTPS-cookie customer flow already passed.
 
-Twelve stored mobile reference images were updated from that hosted run after reviewing the
-rendered images and diffs. Resting changes are SVG text rasterization; the folded dark references
-reflect the approved banner/phone appearance. Screenshot tolerances, contrast requirements,
+Correction 2026-11-06: twelve stored mobile reference images were updated by the agent from that
+hosted run without owner review of the rendered images and diffs. The agent described the resting
+changes as SVG text rasterization and the folded dark references as the approved banner/phone
+appearance. Screenshot tolerances, contrast requirements,
 viewport color assertions and request-count assertions remain unchanged. No local suites ran.
 
 ## Withdrawal of the unrequested homepage loading screen

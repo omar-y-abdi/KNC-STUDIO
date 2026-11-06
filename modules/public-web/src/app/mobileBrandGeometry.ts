@@ -1,4 +1,5 @@
-/** Geometry for the decorative mobile brand. Scroll painting only reads this cache. */
+/** Geometry for the decorative mobile brand. Scroll painting only reads this cache; the brand's
+ * vertical position inside the folding panel is read from layout per frame instead. */
 export interface BrandBounds {
   x: number
   y: number
@@ -10,9 +11,6 @@ export interface BrandWordMetrics {
   x: number
   y: number
   size: number
-  weight: number
-  spacing: number
-  advance: number
 }
 
 export interface MobileBrandGeometry {
@@ -23,15 +21,10 @@ export interface MobileBrandGeometry {
   target: SVGSVGElement | HTMLImageElement
   phone: HTMLElement | null
   sourceLeft: number
-  sourceTop: number
   sourceUnit: number
   targetLeft: number
   targetTop: number
   targetUnit: number
-  sourceWidth: number
-  sourceHeight: number
-  targetWidth: number
-  targetHeight: number
   vector: {
     word: SVGTextElement
     finalWord: SVGTextElement
@@ -41,8 +34,6 @@ export interface MobileBrandGeometry {
     targetWordBounds: BrandBounds
     monogram: SVGGraphicsElement[]
     emblem: SVGGraphicsElement[]
-    monogramBounds: BrandBounds
-    emblemBounds: BrandBounds
     emblemCharOrigins: { x: number; y: number }[]
   } | null
 }
@@ -67,14 +58,7 @@ function bounds(nodes: SVGGraphicsElement[]): BrandBounds {
 
 function wordMetrics(node: SVGTextElement): BrandWordMetrics {
   const value = (name: string): number => Number(node.getAttribute(name))
-  return {
-    x: value('x'),
-    y: value('y'),
-    size: value('font-size'),
-    weight: value('font-weight'),
-    spacing: value('letter-spacing'),
-    advance: node.getComputedTextLength(),
-  }
+  return { x: value('x'), y: value('y'), size: value('font-size') }
 }
 
 export function refreshMobileBrandGeometry(root: HTMLElement, fontsChanged = false): void {
@@ -102,22 +86,11 @@ export function refreshMobileBrandGeometry(root: HTMLElement, fontsChanged = fal
   let vector = previous?.vector ?? null
   if (fontsChanged || previous?.source !== source || previous?.target !== target) {
     vector = null
-    const word = source.querySelector<SVGTextElement>(
-      '[data-knc-brand-part="wordmark"],text[x="230"][y="216"]',
-    )
-    const finalWord = target.querySelector<SVGTextElement>(
-      '[data-knc-brand-part="wordmark"],text[x="70"][y="32"]',
-    )
-    const monogram = [
-      ...source.querySelectorAll<SVGGraphicsElement>(
-        '[data-knc-brand-part="monogram"],text[y="150"],text[y="156"]',
-      ),
-    ]
-    const emblem = [
-      ...target.querySelectorAll<SVGGraphicsElement>(
-        '[data-knc-brand-part="monogram"],line,text[x="29"]',
-      ),
-    ]
+    // The shipped lockups place these glyphs at fixed coordinates; an uploaded image has none.
+    const word = source.querySelector<SVGTextElement>('text[x="230"][y="216"]')
+    const finalWord = target.querySelector<SVGTextElement>('text[x="70"][y="32"]')
+    const monogram = [...source.querySelectorAll<SVGGraphicsElement>('text[y="150"],text[y="156"]')]
+    const emblem = [...target.querySelectorAll<SVGGraphicsElement>('line,text[x="29"]')]
     if (
       source.getAttribute('viewBox') === '0 0 460 330' &&
       target.getAttribute('viewBox') === '0 0 322 48' &&
@@ -136,8 +109,6 @@ export function refreshMobileBrandGeometry(root: HTMLElement, fontsChanged = fal
         targetWordBounds: bounds([finalWord]),
         monogram,
         emblem,
-        monogramBounds: bounds(monogram),
-        emblemBounds: bounds(emblem),
         emblemCharOrigins: (() => {
           const text = emblem.find((node) => node.localName === 'text') as
             SVGTextElement | undefined
@@ -157,24 +128,18 @@ export function refreshMobileBrandGeometry(root: HTMLElement, fontsChanged = fal
     mark,
     source,
     target,
-    phone:
-      root.querySelector<HTMLElement>('[data-knc-fold="phone"]') ??
-      root.querySelector<HTMLElement>('[data-knc-fold="controls"] a[href^="tel:"]'),
+    phone: root.querySelector<HTMLElement>('[data-knc-fold="controls"] a[href^="tel:"]'),
     sourceLeft: brand.offsetLeft + (brand.offsetWidth - sourceWidth) / 2,
-    sourceTop: brand.offsetTop,
     sourceUnit: sourceWidth / 460,
     targetLeft: mark.offsetLeft,
     targetTop: mark.offsetTop,
     targetUnit: targetWidth / 322,
-    sourceWidth,
-    sourceHeight,
-    targetWidth,
-    targetHeight,
     vector,
   })
 }
 
-/** Watch actual layout/font changes, never scroll events or animated style mutations. */
+/** Watch actual size and font changes, never scroll frames. The hero box resizes with every
+ * fold frame, so it is deliberately not observed; its brand offset is read per paint. */
 export function observeMobileBrandGeometry(root: HTMLElement, repaint: () => void): () => void {
   const win = root.ownerDocument?.defaultView
   if (!win) return () => undefined
@@ -187,14 +152,7 @@ export function observeMobileBrandGeometry(root: HTMLElement, repaint: () => voi
     refreshMobileBrandGeometry(root, fontsChanged)
     fontsChanged = false
     const geometry = geometries.get(root)
-    // The existing compact-header margin transition can resize the hero without resizing root.
-    for (const element of [
-      root,
-      geometry?.hero,
-      geometry?.source,
-      geometry?.target,
-      root.querySelector('[data-knc-fold="controls"]')?.parentElement,
-    ]) {
+    for (const element of [root, geometry?.source, geometry?.target]) {
       if (element && !observed.has(element)) {
         observed.add(element)
         observer.observe(element)
@@ -205,13 +163,14 @@ export function observeMobileBrandGeometry(root: HTMLElement, repaint: () => voi
   const schedule = (): void => {
     if (!disposed && !frame) frame = win.requestAnimationFrame(refresh)
   }
+  // Word widths and BNB glyph origins come from the self-hosted serif; measurements taken with
+  // the fallback font would misplace the whole morph, so remeasure once the fonts arrive.
   const fontReady = (): void => {
     if (disposed) return
     fontsChanged = true
     schedule()
   }
   const observer = new ResizeObserver(schedule)
-  root.addEventListener('load', schedule, true)
   root.ownerDocument.fonts?.addEventListener('loadingdone', fontReady)
   void root.ownerDocument.fonts?.ready.then(fontReady)
   refresh()
@@ -219,7 +178,6 @@ export function observeMobileBrandGeometry(root: HTMLElement, repaint: () => voi
     disposed = true
     win.cancelAnimationFrame(frame)
     observer.disconnect()
-    root.removeEventListener('load', schedule, true)
     root.ownerDocument.fonts?.removeEventListener('loadingdone', fontReady)
     geometries.delete(root)
   }

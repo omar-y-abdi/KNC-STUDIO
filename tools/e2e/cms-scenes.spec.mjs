@@ -104,6 +104,7 @@ test('cms-scenes', async ({ page, context, browserName }) => {
     await page.getByRole('button', { name: 'Startsida', exact: true }).click()
     await page.getByRole('button', { name: 'Mobil', exact: true }).click()
     const mobile = frame.locator('[data-knc-surface="mobile-home"]')
+    const panel = mobile.locator('[data-knc-fold="panel"]')
     const mark = mobile.locator('[data-knc-fold="mark"]')
     await page.waitForFunction(
       () => globalThis.document.querySelector('.gjs-frame').clientWidth === 390,
@@ -121,30 +122,16 @@ test('cms-scenes', async ({ page, context, browserName }) => {
     const rect = await page.locator('.gjs-frame').boundingBox()
     await page.mouse.move(rect.x + rect.width / 2, rect.y + Math.min(200, rect.height / 2))
     for (let n = 0; n < 4; n++) await page.mouse.wheel(0, 400)
-    const compactGeometry = () =>
-      mobile.evaluate((root) => {
-        const panel = root.querySelector('[data-knc-fold="panel"]')
-        const header = root.querySelector('[data-knc-fold="controls"]')?.parentElement
-        const box = panel.getBoundingClientRect()
-        const viewportTop = root.getBoundingClientRect().top + root.clientTop
-        return {
-          visibleBottom: box.bottom - viewportTop,
-          headerTop: header ? header.getBoundingClientRect().top - viewportTop : null,
-          scrolled: root.scrollTop > 0 && root.scrollTop >= box.height - 112,
-        }
-      })
-    // Native sticky clipping pins the actual header to the scroll viewport. Measure relative
-    // to that viewport: the editor's scaled canvas can offset its origin by a fractional pixel.
-    const compact = { visibleBottom: 112, headerTop: 0, scrolled: true }
-    await expect.poll(compactGeometry).toEqual(compact)
+    await expect
+      .poll(() => panel.evaluate((node) => Math.abs(node.getBoundingClientRect().height - 112) < 2))
+      .toBe(true)
     await expect
       .poll(() => mark.evaluate((node) => globalThis.getComputedStyle(node).opacity))
       .toBe('1')
     assert.equal(await mark.evaluate((n) => globalThis.getComputedStyle(n).opacity), '1')
-    assert.deepEqual(
-      await compactGeometry(),
-      compact,
-      'Editor header must stay pinned above the compact visible panel after real scrolling',
+    assert.ok(
+      await panel.evaluate((n) => Math.abs(n.getBoundingClientRect().height - 112) < 2),
+      'Editor header must fold to the same compact height',
     )
     assert.ok(await mobile.locator('[data-knc-fold="return"]').isVisible())
     assert.deepEqual(

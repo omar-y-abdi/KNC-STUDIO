@@ -1,3 +1,5 @@
+Superseded on 2026-11-06 by docs/qa/2026-11-06-mobile-fold-restore.md: the sticky-carrier mechanism, the instant booking entry and the PR #176 scripted navigation were withdrawn at the owner's request.
+
 # Reversible mobile booking scroll
 
 Follow-up to `68bd7fb`. The booking view previously forced a 112px panel and omitted its hero

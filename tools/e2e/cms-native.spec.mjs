@@ -93,13 +93,15 @@ test('cms-native', async ({ page, context, browserName, evidenceDir }) => {
         'text/html',
       ).body.firstElementChild
       const animated = fixture.querySelector('#caption')
-      animated.setAttribute('style', 'opacity: 0; translate: 12px 30px; scale: .2; color: red')
+      animated.setAttribute(
+        'style',
+        'opacity: 0; transform: translateY(12px); overflow: visible; color: red',
+      )
       animated.setAttribute('inert', '')
-      animated.setAttribute('data-knc-brand-part', 'wordmark')
       animated.setAttribute(
         'data-knc-brand-baseline',
         JSON.stringify({
-          styles: { opacity: ['.7', 'important'], translate: ['', ''], scale: ['', ''] },
+          styles: { opacity: ['.7', 'important'], transform: ['', ''], overflow: ['', ''] },
           inert: false,
         }),
       )
@@ -115,7 +117,6 @@ test('cms-native', async ({ page, context, browserName, evidenceDir }) => {
         capturedBrandStyle: doc.querySelector('span').getAttribute('data-knc-light'),
         capturedBrandInert: doc.querySelector('span').hasAttribute('inert'),
         runtimeMetadata: doc.querySelectorAll('[data-knc-brand-baseline]').length,
-        runtimePartMarkers: doc.querySelectorAll('[data-knc-brand-part]').length,
         runtimeArtwork: doc.querySelectorAll('[data-knc-brand-runtime]').length,
         liveArtwork: fixture.querySelectorAll('[data-knc-brand-runtime]').length,
         liveBrandInert: animated.hasAttribute('inert'),
@@ -128,10 +129,9 @@ test('cms-native', async ({ page, context, browserName, evidenceDir }) => {
     })
     assert.match(sourceContract.capturedBrandStyle, /opacity: 0\.7 !important/)
     assert.match(sourceContract.capturedBrandStyle, /color: red/)
-    assert.doesNotMatch(sourceContract.capturedBrandStyle, /translate|scale/)
+    assert.doesNotMatch(sourceContract.capturedBrandStyle, /transform|overflow/)
     assert.equal(sourceContract.capturedBrandInert, false)
     assert.equal(sourceContract.runtimeMetadata, 0)
-    assert.equal(sourceContract.runtimePartMarkers, 0)
     assert.equal(sourceContract.runtimeArtwork, 0, 'Decorative glyphs must not become CMS source')
     assert.equal(sourceContract.liveArtwork, 1, 'Capture must retain the live artwork')
     assert.equal(sourceContract.liveBrandInert, true, 'Capture must only restore the clone')
@@ -413,7 +413,9 @@ for (const path of ['/admin/cms', '/admin/cms/'])
       return routeLoads === 1 ? route.abort('failed') : route.continue()
     })
     await page.goto(`${harnessOrigin}${path}`, { waitUntil: 'domcontentloaded' })
-    await expect(page.getByRole('alert')).toContainText('Kunde inte ladda adminpanelen.')
+    // Root's CmsEntry is the only boundary on this path: one alert, one reload button.
+    await expect(page.getByRole('alert')).toHaveCount(1)
+    await expect(page.getByRole('alert')).toContainText('Studion kunde inte öppnas.')
     await expect(page.getByRole('button', { name: 'Ladda om', exact: true })).toBeVisible()
     expect(routeLoads).toBe(1)
 

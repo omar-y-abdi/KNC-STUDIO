@@ -83,15 +83,7 @@ VITE_CLOCK=real
 VITE_SUPABASE_URL=https://<project-ref>.supabase.co
 VITE_SUPABASE_ANON_KEY=<public-anon-key>
 VITE_TURNSTILE_SITE_KEY=<public-site-key>
-VITE_TURNSTILE_WIDGET_MODE=invisible
 ```
-
-Pair the public Turnstile site key with its actual Cloudflare widget mode (`managed`,
-`non-interactive`, or `invisible`). The checked-in production key uses `invisible`, verified
-through Cloudflare's widget configuration. This public metadata determines the initial layout
-reservation; it does not change challenge execution or server verification. A configured key
-with a missing or invalid mode fails startup/build. When changing a key or its Cloudflare mode,
-update both build values together. Visible modes retain the normal 65px pending reservation.
 
 Never expose `SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY`, `TURNSTILE_SECRET`, `CUSTOMER_GATEWAY_SECRET`,
 or webhook secrets in frontend variables.

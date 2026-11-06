@@ -170,6 +170,10 @@ export function App({
   const accessSequence = useRef(0)
   const contactSequence = useRef(0)
   const deviceContactEpoch = useRef(0)
+  // The contact-hint read checks the dialog state at reply time: a customer link in the same
+  // mount opens the dialog before the read starts, and its verified profile must stay.
+  const myBookingsOpenRef = useRef(false)
+  myBookingsOpenRef.current = state.myBookingsOpen
   const [customerProfile, setCustomerProfile] = useState<CustomerProfile | undefined>(undefined)
   const [deviceBookingContact, setDeviceBookingContact] = useState<BookingContact | undefined>(
     undefined,
@@ -223,7 +227,7 @@ export function App({
         setDeviceBookingContact(undefined)
         setBookingAccess({})
         setEmailLinkCode(link.emailLinkCode)
-        preloadMyBookingsDialog()
+        void preloadMyBookingsDialog()
         setState({ myBookingsOpen: true })
         return
       }
@@ -285,44 +289,42 @@ export function App({
   }, [])
 
   useEffect(() => {
+    // One device-contact read when booking is entered and one after a completed booking. A customer
+    // dialog open at entry, or opened by a link before the reply, owns the session; closing it, or
+    // a tab regaining focus, never re-lists.
     if (preview || state.view !== 'booking' || state.myBookingsOpen) return
     let active = true
-    const refresh = (): void => {
-      const accessRead = accessSequence.current
-      const sequence = ++contactSequence.current
-      const deviceRead = deviceContactEpoch.current
-      const allowDeviceContact = readStoragePreferences()?.functional === true
-      // Revalidate returning tabs before showing a receipt revoked elsewhere.
-      setDeviceBookingContact(undefined)
-      void defaultMyBookingsPort
-        .list({ accessToken: '', lang: 'sv' })
-        .then((result) => {
-          if (
-            !active ||
-            sequence !== contactSequence.current ||
-            accessRead !== accessSequence.current
-          )
-            return
-          setCustomerProfile(result.ok ? result.profile : undefined)
-          setDeviceBookingContact(
-            result.ok &&
-              allowDeviceContact &&
-              deviceRead === deviceContactEpoch.current &&
-              result.authority === 'device' &&
-              readStoragePreferences()?.functional === true
-              ? result.bookingContact
-              : undefined,
-          )
-        })
-        .catch(() => undefined)
-    }
-    refresh()
-    window.addEventListener('focus', refresh)
+    const accessRead = accessSequence.current
+    const sequence = ++contactSequence.current
+    const deviceRead = deviceContactEpoch.current
+    const allowDeviceContact = readStoragePreferences()?.functional === true
+    setDeviceBookingContact(undefined)
+    void defaultMyBookingsPort
+      .list({ accessToken: '', lang: 'sv' })
+      .then((result) => {
+        if (
+          !active ||
+          sequence !== contactSequence.current ||
+          accessRead !== accessSequence.current ||
+          myBookingsOpenRef.current
+        )
+          return
+        setCustomerProfile(result.ok ? result.profile : undefined)
+        setDeviceBookingContact(
+          result.ok &&
+            allowDeviceContact &&
+            deviceRead === deviceContactEpoch.current &&
+            result.authority === 'device' &&
+            readStoragePreferences()?.functional === true
+            ? result.bookingContact
+            : undefined,
+        )
+      })
+      .catch(() => undefined)
     return () => {
       active = false
-      window.removeEventListener('focus', refresh)
     }
-  }, [state.view, state.myBookingsOpen, bookingRefresh])
+  }, [state.view, bookingRefresh])
 
   const dark = state.mode === 'dark'
   const lang = state.lang
@@ -425,13 +427,17 @@ export function App({
   // Mobile: the hero becomes the compact header as its own scroll container advances.
   const openMobBooking = (): void => {
     if (state.view !== 'booking') {
-      // MobileSite positions a newly entered section in its layout effect before paint.
+      // MobileSite folds its panel and positions the new section in its layout effect.
       setState({ view: 'booking' })
       return
     }
+    // The hero was scrolled back into view above the mounted booking: return to the form.
     document
       .querySelector<HTMLElement>('[data-testid="mobile-site-scroll"] [data-knc-fold="body"]')
-      ?.scrollIntoView({ block: 'start', behavior: 'instant' })
+      ?.scrollIntoView({
+        block: 'start',
+        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+      })
   }
   const scrollMobToHero = (): void => {
     setState({ view: 'home' })
@@ -443,11 +449,14 @@ export function App({
     })
   }
   const openMyBookings = (): void => {
-    accessSequence.current++
-    preloadMyBookingsDialog()
+    const sequence = ++accessSequence.current
     setBookingAccess({})
     setEmailLinkCode(undefined)
-    setState({ myBookingsOpen: true })
+    // The chunk is normally resolved by the button's pointerdown/focus preload, so the dialog
+    // opens without a loading surface; a rejected chunk still opens into the LazySurface error.
+    void preloadMyBookingsDialog().then(() => {
+      if (sequence === accessSequence.current) setState({ myBookingsOpen: true })
+    })
   }
   const closeMyBookings = (): void => {
     accessSequence.current++
@@ -567,12 +576,7 @@ export function App({
   )
 
   const myBookingsDialog = state.myBookingsOpen ? (
-    <LazySurface
-      overlay
-      loadingLabel={tx.lazyMyBookingsLoading}
-      errorLabel={tx.lazyMyBookingsError}
-      retryLabel={tx.lazyReload}
-    >
+    <LazySurface overlay errorLabel={tx.lazyMyBookingsError} retryLabel={tx.lazyReload}>
       <LazyMyBookingsDialog
         key={accessSequence.current}
         {...(preview ? { port: example?.customer?.port ?? previewCustomerPort } : {})}
