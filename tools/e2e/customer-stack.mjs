@@ -43,7 +43,6 @@ export async function customerStackFixture({ browserName }, use) {
     LOCAL_SUPABASE_URL: stack.API_URL,
     VITE_SUPABASE_ANON_KEY: stack.ANON_KEY,
     VITE_TURNSTILE_SITE_KEY: '1x00000000000000000000AA',
-    VITE_TURNSTILE_WIDGET_MODE: 'managed',
     CUSTOMER_GATEWAY_PROXY_URL: workerOrigin,
     LOCAL_WORKER_DOCUMENTS: '1',
     LOCAL_HTTPS_KEY: key,

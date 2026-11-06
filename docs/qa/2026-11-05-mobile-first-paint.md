@@ -29,15 +29,13 @@ downloaded observed asset graph: `/tmp/booking-first-frame-live-assets/` and its
 
 The old component reserved 65px for every pending widget and released it on success. Production's
 invisible widget has zero footprint throughout, so success moved the button and shrank the dialog.
-The public build now pairs its existing site key with its verified widget mode. Missing/invalid
-mode with a configured key fails startup/build. Visible modes still reserve 65px while pending;
-their actual iframe supplies its own height after success. No appearance/execution/security option
-was changed; token and server verification remain authoritative.
+Superseded 2026-11-06: the widget-mode build variable and contract introduced here were removed
+again; the container now reserves no height in any status, and a visible widget sizes it only
+once it renders. No appearance/execution/security option was changed; token and server
+verification remain authoritative.
 
 [Cloudflare's widget configuration documentation](https://developers.cloudflare.com/turnstile/get-started/client-side-rendering/widget-configurations/)
 distinguishes the normal 300×65 widget from invisible widgets' zero footprint regardless of size.
-The mode metadata ships through the tracked build environment; no new remote Worker binding or
-database migration is required. A future key/mode change must update the pair together.
 
 The real built public App test opens Details with stored CMS presentation, holds the provider
 script for at least 90 animation frames, then inserts a deterministic zero-height provider iframe

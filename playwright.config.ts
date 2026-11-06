@@ -99,7 +99,6 @@ const devServer = {
     VITE_SUPABASE_URL: 'https://admin-harness.invalid',
     VITE_SUPABASE_ANON_KEY: 'e2e-public-anon-key',
     VITE_TURNSTILE_SITE_KEY: '1x00000000000000000000AA',
-    VITE_TURNSTILE_WIDGET_MODE: 'managed',
   },
 }
 
