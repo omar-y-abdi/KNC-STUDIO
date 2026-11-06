@@ -413,7 +413,9 @@ for (const path of ['/admin/cms', '/admin/cms/'])
       return routeLoads === 1 ? route.abort('failed') : route.continue()
     })
     await page.goto(`${harnessOrigin}${path}`, { waitUntil: 'domcontentloaded' })
-    await expect(page.getByRole('alert')).toContainText('Kunde inte ladda adminpanelen.')
+    // Root's CmsEntry is the only boundary on this path: one alert, one reload button.
+    await expect(page.getByRole('alert')).toHaveCount(1)
+    await expect(page.getByRole('alert')).toContainText('Studion kunde inte öppnas.')
     await expect(page.getByRole('button', { name: 'Ladda om', exact: true })).toBeVisible()
     expect(routeLoads).toBe(1)
 

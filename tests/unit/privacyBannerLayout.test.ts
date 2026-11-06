@@ -6,29 +6,12 @@ import { ref, render, reset } from './helpers/fakeHooks'
 vi.mock('preact/hooks', () => import('./helpers/fakeHooks'))
 afterEach(() => vi.unstubAllGlobals())
 
-it('measures before first paint, then coalesces privacy resizes outside observer delivery and cancels on close', () => {
+it('measures before first paint, re-measures on each panel resize and cleans up on close', () => {
   reset()
-  const values = new Map<string, string>()
-  const setProperty = vi.fn((name: string, value: string) => values.set(name, value))
-  const removeProperty = vi.fn((name: string) => values.delete(name))
-  vi.stubGlobal('document', {
-    documentElement: {
-      style: {
-        setProperty,
-        removeProperty,
-        getPropertyValue: (name: string) => values.get(name) ?? '',
-      },
-    },
-  })
+  const setProperty = vi.fn()
+  const removeProperty = vi.fn()
+  vi.stubGlobal('document', { documentElement: { style: { setProperty, removeProperty } } })
   vi.stubGlobal('getComputedStyle', () => ({ bottom: '12px' }))
-  const frames: FrameRequestCallback[] = []
-  const request = vi.fn((callback: FrameRequestCallback) => {
-    frames.push(callback)
-    return frames.length
-  })
-  const cancel = vi.fn()
-  vi.stubGlobal('requestAnimationFrame', request)
-  vi.stubGlobal('cancelAnimationFrame', cancel)
   const observer: { resize?: () => void } = {}
   const observe = vi.fn()
   const disconnect = vi.fn()
@@ -61,23 +44,14 @@ it('measures before first paint, then coalesces privacy resizes outside observer
   const dispose = vi.mocked(useLayoutEffect).mock.calls[0]?.[0]()
   expect(setProperty).toHaveBeenCalledExactlyOnceWith('--privacy-overlay-space', '234px')
   expect(observe).toHaveBeenCalledWith(panel)
-  panel.offsetHeight = 211
-  observer.resize?.()
-  observer.resize?.()
-  // Writing here resizes the shallower MobileSite root during the same delivery cycle.
-  expect(setProperty).toHaveBeenCalledTimes(1)
-  expect(request).toHaveBeenCalledTimes(1)
+  // Every resize delivery writes the measurement synchronously, with no frame deferral.
   panel.offsetHeight = 222
-  frames[0]?.(16)
+  observer.resize?.()
   expect(setProperty).toHaveBeenLastCalledWith('--privacy-overlay-space', '246px')
   observer.resize?.()
-  frames[1]?.(32)
-  expect(setProperty).toHaveBeenCalledTimes(2)
-  observer.resize?.()
+  expect(setProperty).toHaveBeenCalledTimes(3)
   if (typeof dispose !== 'function') throw new Error('Missing privacy measurement cleanup')
   dispose()
-  expect(cancel).toHaveBeenCalledWith(3)
   expect(disconnect).toHaveBeenCalledOnce()
-  expect(removeProperty).toHaveBeenCalledWith('--privacy-overlay-space')
-  expect(values.has('--privacy-overlay-space')).toBe(false)
+  expect(removeProperty).toHaveBeenCalledExactlyOnceWith('--privacy-overlay-space')
 })

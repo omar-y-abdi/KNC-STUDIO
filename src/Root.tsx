@@ -35,12 +35,13 @@ function AdminFallback(): JSX.Element {
   return <div class="bb-status bb-muted">Laddar …</div>
 }
 
-/** This boundary must load before CmsRoute so it can recover a failed route-module request. */
+/** The one lazy boundary on the Studio path: its loading state covers this route module, and its
+ *  error state (with the reload) also receives a failed Studio chunk thrown by CmsRoute. */
 function CmsEntry(): JSX.Element {
   return (
     <LazySurface
-      loadingLabel="Laddar adminpanelen …"
-      errorLabel="Kunde inte ladda adminpanelen."
+      loadingLabel="Laddar Studio…"
+      errorLabel="Studion kunde inte öppnas."
       retryLabel="Ladda om"
       minHeight="100vh"
     >

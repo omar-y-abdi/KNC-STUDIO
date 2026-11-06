@@ -57,7 +57,8 @@ function frameStyle(overlay: boolean, minHeight: string): JSX.CSSProperties {
     : base
 }
 
-function LoadingMessage(props: {
+/** The `LazySurface` loading state, for a consumer that must match it without a boundary. */
+export function LazyLoadingMessage(props: {
   readonly label: string
   readonly overlay: boolean
   readonly minHeight: string
@@ -118,7 +119,7 @@ export function LazySurface(props: LazySurfaceProps): JSX.Element {
     >
       <Suspense
         fallback={
-          <LoadingMessage label={props.loadingLabel} overlay={overlay} minHeight={minHeight} />
+          <LazyLoadingMessage label={props.loadingLabel} overlay={overlay} minHeight={minHeight} />
         }
       >
         {props.children}
