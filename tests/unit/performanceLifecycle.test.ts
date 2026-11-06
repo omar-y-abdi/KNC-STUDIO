@@ -179,7 +179,7 @@ describe('public performance lifecycles', () => {
     },
   )
 
-  it('coalesces mobile scrolls into one frame, reads the latest position, and cancels pending work on disposal', () => {
+  it('coalesces mobile scrolls into one frame, folds the sticky panel by that distance, and cancels pending work on disposal', () => {
     const callbacks: FrameRequestCallback[] = []
     const frame = vi.fn((callback: FrameRequestCallback) => {
       callbacks.push(callback)
@@ -206,7 +206,7 @@ describe('public performance lifecycles', () => {
     )
     vi.stubGlobal('requestAnimationFrame', frame)
     vi.stubGlobal('cancelAnimationFrame', cancel)
-    const tree = render(() =>
+    const site = () =>
       MobileSite({
         mode: 'light',
         lang: 'sv',
@@ -229,8 +229,17 @@ describe('public performance lifecycles', () => {
         homepageLogo: DEFAULT_CHROME.homepageLogo,
         aboutScale: 'md',
         bookingPopupText: bookingStrings('sv'),
-      }),
+      })
+    const fold = (tree: ReturnType<typeof site>, part: string) => {
+      const node = nodes(tree).find((node) => node.props['data-knc-fold'] === part)
+      if (!node) throw new Error(`Missing mobile fold ${part}`)
+      return node.props.style as Record<string, unknown>
+    }
+    const tree = render(site)
+    expect(fold(tree, 'panel')).toEqual(
+      expect.objectContaining({ position: 'sticky', top: 0, height: 'calc(100dvh - 0px)' }),
     )
+    expect(fold(tree, 'spacer')).toEqual({ height: '0px' })
     const root = Object.assign(new EventTarget(), { scrollTop: 0, querySelector: () => null })
     // The mobile scroll root element ref.
     ref(0, root)
@@ -246,6 +255,21 @@ describe('public performance lifecycles', () => {
     root.scrollTop = 200
     callbacks[0]?.(16)
     expect(hooks.values[0]).toEqual({ collapse: 200, viewportHeight: 800 })
+    // The panel itself shrinks by the scrolled distance; its hero content is never translated.
+    const folded = render(site)
+    expect(fold(folded, 'panel')).toEqual(
+      expect.objectContaining({
+        position: 'sticky',
+        top: 0,
+        height: 'calc(100dvh - 200px)',
+        transition: 'border-radius .3s ease',
+      }),
+    )
+    expect(fold(folded, 'spacer')).toEqual({ height: '200px' })
+    expect(fold(folded, 'hero')).toEqual(
+      expect.objectContaining({ justifyContent: 'center', opacity: undefined }),
+    )
+    expect(fold(folded, 'hero')).not.toHaveProperty('translate')
     const unchanged = hooks.values[0]
     onScroll()
     expect(frame).toHaveBeenCalledTimes(2)

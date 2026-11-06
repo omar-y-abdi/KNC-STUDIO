@@ -94,6 +94,18 @@ async function values(fields, expected) {
   for (const [index, value] of Object.values(expected).entries())
     await expect(fields.nth(index)).toHaveValue(value)
 }
+// Desktop keeps the booking flow and its selections mounted while the fold is closed. Closing the
+// details sheet, folding home and entering booking again is the remaining list trigger short of a
+// completed booking; the selected slot then reopens the sheet with that entry's hint state.
+async function reenterDesktopBooking(page, state, listCalls) {
+  await page.getByRole('dialog').getByRole('button', { name: 'Stäng', exact: true }).click()
+  const book = page.getByRole('button', { name: 'Boka tid', exact: true }).first()
+  await book.click()
+  await book.click()
+  await expect.poll(() => state.listCalls).toBe(listCalls)
+  await page.getByRole('button', { name: '10:00', exact: true }).click()
+  return page.getByRole('dialog').locator('input:not([type="hidden"])')
+}
 
 for (const width of [390, 1280]) {
   test(`booking contact returns after submission and reload (${width})`, async ({
@@ -120,7 +132,7 @@ for (const width of [390, 1280]) {
   })
 }
 
-test('late device hydration preserves edits; withdrawal clears only untouched hints and ignores the pending response', async ({
+test('late device hydration preserves edits; withdrawal clears only untouched hints without a list', async ({
   page,
   context,
 }) => {
@@ -136,21 +148,14 @@ test('late device hydration preserves edits; withdrawal clears only untouched hi
   release()
   state.hold = null
   await values(fields, { ...contact, name: 'My edit' })
-  // Focus revalidates the shared receipt. Withdrawal during that request must win.
-  state.hold = new Promise((resolve) => {
-    release = resolve
-  })
-  const calls = state.listCalls
-  await page.evaluate(() => globalThis.dispatchEvent(new globalThis.Event('focus')))
-  await expect.poll(() => state.listCalls).toBeGreaterThan(calls)
+  // Withdrawal clears the untouched hints through the consent callback alone; no list follows.
   await page.evaluate(async () =>
     (await import('/modules/public-web/src/site/storageConsent.ts')).saveStoragePreferences({
       functional: false,
     }),
   )
-  release()
-  state.hold = null
   await values(fields, { name: 'My edit', phone: '', email: '' })
+  expect(state.listCalls).toBe(2)
   await page.reload()
   await values(await details(page), { name: '', phone: '', email: '' })
 })
@@ -162,17 +167,17 @@ test('rejected optional storage never prefills device hints', async ({ page, con
   expect(state.contact).toBeUndefined()
 })
 
-test('receipt revocation clears untouched hints when the booking tab regains focus', async ({
+test('receipt revocation clears untouched hints on the next booking entry', async ({
   page,
   context,
 }) => {
   const state = await setup(context, { remembered: true })
   await page.goto(harnessOrigin)
-  const fields = await details(page)
+  let fields = await details(page)
   await values(fields, contact)
   await fields.nth(0).fill('Keep this edit')
   state.contact = undefined
-  await page.evaluate(() => globalThis.dispatchEvent(new globalThis.Event('focus')))
+  fields = await reenterDesktopBooking(page, state, 3)
   await values(fields, { name: 'Keep this edit', phone: '', email: '' })
 })
 
@@ -202,13 +207,13 @@ test('mailbox-link selection clears the prior device hint before its list resolv
   await listed
 })
 
-test('focus revalidation does not cancel an in-flight email-link exchange or replace its verified profile', async ({
+test('a booking re-entry does not cancel an in-flight email-link exchange or replace its verified profile', async ({
   page,
   context,
 }) => {
   const state = await setup(context, { remembered: true })
   await page.goto(harnessOrigin)
-  const fields = await details(page)
+  let fields = await details(page)
   await values(fields, contact)
   let release
   const gate = new Promise((resolve) => {
@@ -225,7 +230,9 @@ test('focus revalidation does not cancel an in-flight email-link exchange or rep
     globalThis.location.hash = `booking_access=${'b'.repeat(64)}`
   })
   await expect.poll(() => exchanging).toBe(true)
-  await page.evaluate(() => globalThis.dispatchEvent(new globalThis.Event('focus')))
+  // The entry list resolves with the device hint while the exchange is still pending.
+  fields = await reenterDesktopBooking(page, state, 3)
+  await values(fields, contact)
   const verified = { name: 'Verified Other', phone: '0709999999', email: 'other@example.test' }
   state.listOverride = {
     ok: true,
@@ -261,7 +268,7 @@ test('confirmation retains submitted contact while the next-booking refresh is p
     return route.fulfill({ json: { ok: false, error: 'access_denied' } })
   })
   await page.getByRole('dialog').getByRole('button', { name: 'Boka tid', exact: true }).click()
-  await expect.poll(() => afterSubmitReads).toBeGreaterThan(1)
+  await expect.poll(() => afterSubmitReads).toBe(2)
   const confirmation = page.getByRole('dialog')
   const refreshed = page.waitForResponse(
     (response) =>
@@ -293,15 +300,13 @@ test('withdrawing and re-enabling storage cannot resurrect a revoked in-flight r
 }) => {
   const state = await setup(context, { remembered: true })
   await page.goto(harnessOrigin)
-  const fields = await details(page)
+  let fields = await details(page)
   await values(fields, contact)
   let release
   state.hold = new Promise((resolve) => {
     release = resolve
   })
-  const reads = state.listCalls
-  await page.evaluate(() => globalThis.dispatchEvent(new globalThis.Event('focus')))
-  await expect.poll(() => state.listCalls).toBeGreaterThan(reads)
+  fields = await reenterDesktopBooking(page, state, 3)
   await page.evaluate(async () =>
     (await import('/modules/public-web/src/site/storageConsent.ts')).saveStoragePreferences({
       functional: false,
@@ -374,20 +379,16 @@ for (const { refreshDuringRevocation, verified } of [
       return route.fulfill({ json: { ok: true } })
     })
     await page.goto(harnessOrigin)
-    const fields = await details(page)
+    let fields = await details(page)
     await expect.poll(() => forgetStarted).toBe(true)
-    await expect.poll(() => state.listCalls).toBeGreaterThanOrEqual(2)
+    await expect.poll(() => state.listCalls).toBe(2)
     if (!verified)
       await page.evaluate(async () =>
         (await import('/modules/public-web/src/site/storageConsent.ts')).saveStoragePreferences({
           functional: true,
         }),
       )
-    if (refreshDuringRevocation) {
-      const reads = state.listCalls
-      await page.evaluate(() => globalThis.dispatchEvent(new globalThis.Event('focus')))
-      await expect.poll(() => state.listCalls).toBeGreaterThan(reads)
-    }
+    if (refreshDuringRevocation) fields = await reenterDesktopBooking(page, state, 3)
     if (refreshDuringRevocation || verified) {
       const revoked = page.waitForResponse(
         (response) =>

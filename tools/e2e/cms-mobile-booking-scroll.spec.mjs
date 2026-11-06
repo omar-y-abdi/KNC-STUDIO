@@ -18,7 +18,7 @@ test('captured booking opens at its content and folds reversibly in the editing 
     return doc.querySelector('[data-knc-surface="mobile-booking"] [data-knc-fold="panel"]').id
   }, booking.content.sv.html)
   // The editor owns ID-based rules. Its existing transform/contain/style choices survive
-  // the private runtime carrier and the real capture -> editing-canvas round trip.
+  // the real capture -> editing-canvas round trip on the sticky folding panel.
   const ownerCss = `#${panelId}{background-color:rgb(230,220,200)!important;transform:translateX(2px)!important;contain:layout style}`
   booking.content.sv.css.light += ownerCss
   await context.route(
@@ -47,8 +47,8 @@ test('captured booking opens at its content and folds reversibly in the editing 
       [...root.querySelectorAll('[data-knc-fold="panel"] [data-knc-source]')].map((node) =>
         node.getAttribute('data-knc-source'),
       )
-    if (captured.querySelector('[data-knc-fold="carrier"],[data-knc-fold="header-carrier"]'))
-      throw new Error('Private carrier leaked into capture')
+    if (captured.querySelector('[data-knc-brand-runtime],[data-knc-brand-baseline]'))
+      throw new Error('Private brand runtime leaked into capture')
     if (JSON.stringify(ids(source)) !== JSON.stringify(ids(captured)))
       throw new Error('Native identities changed in capture')
     const canvas = nativeCanvas({ html, css: { light: ownerCss, dark: ownerCss } }, 'light')
@@ -118,5 +118,4 @@ test('captured booking opens at its content and folds reversibly in the editing 
     .toBe(0)
   await page.evaluate(() => globalThis.disposeBookingCanvas())
   await expect(frame.locator('#cms-canvas-behavior')).toHaveCount(0)
-  await expect(frame.locator('[data-knc-fold="carrier"]')).toHaveCount(0)
 })

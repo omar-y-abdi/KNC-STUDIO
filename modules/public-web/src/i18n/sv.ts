@@ -75,7 +75,6 @@ export const appSv: AppStrings = {
   cancelLink: 'Avbokning',
   lazyBookingLoading: 'Laddar bokning …',
   lazyBookingError: 'Kunde inte ladda bokningen.',
-  lazyMyBookingsLoading: 'Laddar bokningar …',
   lazyMyBookingsError: 'Kunde inte ladda bokningarna.',
   lazyReload: 'Ladda om',
 }
