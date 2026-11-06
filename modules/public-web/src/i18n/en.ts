@@ -115,6 +115,10 @@ export const aboutEn: AboutStrings = {
   reviewsLoading: 'Loading published reviews …',
   reviewsEmpty: 'No published reviews yet.',
   reviewsUnavailable: 'Reviews cannot be loaded right now.',
+  reviewPagesLabel: 'Review pages',
+  reviewPageLabel: 'Page {n}',
+  reviewPagesPrevious: 'Previous pages',
+  reviewPagesNext: 'More pages',
   reviewPhone: 'Phone number',
   reviewPhonePh: '07X XXX XX XX',
   reviewPhoneHint:

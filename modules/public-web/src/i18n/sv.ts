@@ -115,6 +115,10 @@ export const aboutSv: AboutStrings = {
   reviewsLoading: 'Hämtar publicerade omdömen …',
   reviewsEmpty: 'Inga publicerade omdömen ännu.',
   reviewsUnavailable: 'Omdömen kan inte hämtas just nu.',
+  reviewPagesLabel: 'Sidor med omdömen',
+  reviewPageLabel: 'Sida {n}',
+  reviewPagesPrevious: 'Föregående sidor',
+  reviewPagesNext: 'Fler sidor',
   reviewPhone: 'Telefonnummer',
   reviewPhonePh: '07X XXX XX XX',
   reviewPhoneHint:

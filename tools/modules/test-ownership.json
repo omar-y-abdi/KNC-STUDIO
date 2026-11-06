@@ -1855,6 +1855,11 @@
     "owners": ["backend-contracts", "public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
+  "tests/unit/reviewPages.test.ts": {
+    "kind": "unit",
+    "owners": ["public-web"],
+    "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
+  },
   "tests/unit/reviewValidation.test.ts": {
     "kind": "unit",
     "owners": ["public-web"],
@@ -2401,6 +2406,11 @@
     "owners": ["public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Public rendering, staff behavior and visual contracts"
   },
+  "tools/e2e/my-bookings-challenge.spec.mjs": {
+    "kind": "public",
+    "owners": ["public-web"],
+    "reason": "Public My Bookings lookup challenge starts on the first email input, not on open"
+  },
   "tools/e2e/network-guard.spec.mjs": {
     "kind": "public",
     "owners": ["public-web", "staff-admin", "content-contracts", "backend-contracts"],
@@ -2410,6 +2420,11 @@
     "kind": "public",
     "owners": ["public-web", "staff-admin", "content-contracts", "backend-contracts"],
     "reason": "Public rendering, staff behavior and visual contracts"
+  },
+  "tools/e2e/review-pages.spec.mjs": {
+    "kind": "public",
+    "owners": ["public-web"],
+    "reason": "Public About reviews page five at a time; the page row holds still and is absent at five or fewer; long words wrap"
   },
   "tools/e2e/review-recovery.spec.mjs": {
     "kind": "public",

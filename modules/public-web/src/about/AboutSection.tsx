@@ -12,7 +12,7 @@ import { PreviewPorts } from '../cms/PreviewPorts'
 // fallback neither persists nor invents a review.
 
 import type { JSX } from 'preact'
-import { useEffect, useRef, useState } from 'preact/hooks'
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import { buildBookingStyles, palette, systemRed } from '../booking/bookingStyles'
 import { Turnstile, turnstileConfigured } from '../booking/Turnstile'
 import { FOCUS_CLS } from '../ui/pseudo'
@@ -31,6 +31,7 @@ import { emptyReviewDraft } from './reviews/domain'
 import { defaultReviewsPort } from './reviews/adapters/index'
 import type { ReviewsPort } from './reviews/port'
 import { NO_REVIEW_ERRORS, parseReview } from './reviewValidation'
+import { PAGE_BUTTONS, clampPage, pageCount, pageItems, pageRow } from './reviewPages'
 import type { ReviewFieldErrors } from './reviewValidation'
 import { aboutContentIsMock, defaultAboutContentPort } from './content/index'
 import type { AboutContentPort, AboutOverlay } from './content/port'
@@ -65,6 +66,19 @@ export interface AboutSectionProps {
   readonly mobile?: boolean
   /** Contact scope from the server-verified customer session; never an authorization secret. */
   readonly customerPhone?: string
+}
+
+/** The element that scrolls `node`: the nearest scrolling ancestor, else the document. */
+function scrollContainerOf(node: HTMLElement): Element {
+  for (let parent = node.parentElement; parent !== null; parent = parent.parentElement) {
+    const { overflowY } = window.getComputedStyle(parent)
+    if (
+      (overflowY === 'auto' || overflowY === 'scroll') &&
+      parent.scrollHeight > parent.clientHeight
+    )
+      return parent
+  }
+  return document.scrollingElement ?? document.documentElement
 }
 
 export function AboutSection(props: AboutSectionProps): JSX.Element {
@@ -171,6 +185,22 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
   // Reviews list: server-published entries only. The offline fallback is intentionally empty.
   const [reviews, setReviews] = useState<readonly Review[]>([])
   const [reviewsState, setReviewsState] = useState<'loading' | 'ready' | 'error'>('loading')
+  // Five reviews per page, newest first. The page row moves only through its arrows and never
+  // changes the page being read (reviewPages.ts); a fresh list or a new review returns to page 1.
+  const [reviewPage, setReviewPage] = useState(1)
+  const [pageRowStart, setPageRowStart] = useState(1)
+  const reviewPagesRef = useRef<HTMLElement>(null)
+  // Where the page row sat when a page button was pressed. A page of longer or shorter reviews
+  // moves the row; before paint, scroll by that difference so the pressed button stays put.
+  const pageRowTop = useRef<number | null>(null)
+  useLayoutEffect(() => {
+    const before = pageRowTop.current
+    const row = reviewPagesRef.current
+    pageRowTop.current = null
+    if (before === null || row === null) return
+    const shift = row.getBoundingClientRect().top - before
+    if (shift !== 0) scrollContainerOf(row).scrollBy({ top: shift, behavior: 'instant' })
+  }, [reviewPage])
   useEffect(() => {
     if (!dataActive) return
     let live = true
@@ -180,6 +210,8 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
       .then((published) => {
         if (!live) return
         setReviews(published)
+        setReviewPage(1)
+        setPageRowStart(1)
         setReviewsState('ready')
       })
       .catch(() => {
@@ -258,6 +290,8 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
       const result = await port.submit(parsed.value, turnstileToken)
       if (result.ok) {
         setReviews((prev) => [result.review, ...prev])
+        setReviewPage(1)
+        setPageRowStart(1)
         typedPhone.current = false
         setDraft({ ...emptyReviewDraft, phone: props.customerPhone ?? '' })
         setErrors(NO_REVIEW_ERRORS)
@@ -275,6 +309,36 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
   }
   const onSubmitClick = (): void => {
     void submit()
+  }
+
+  const reviewPages = pageCount(reviews.length)
+  const currentReviewPage = clampPage(reviewPage, reviewPages)
+  const visibleReviews = pageItems(reviews, currentReviewPage)
+  const reviewRow = pageRow(pageRowStart, reviewPages)
+  const previousRowStart = reviewRow.previousStart
+  const nextRowStart = reviewRow.nextStart
+  // With more pages than buttons both arrows keep their slot even when hidden, so no button
+  // shifts sideways as the row moves.
+  const arrowSlots = reviewPages > PAGE_BUTTONS
+  const showReviewPage = (page: number): void => {
+    if (page === currentReviewPage) return
+    pageRowTop.current = reviewPagesRef.current?.getBoundingClientRect().top ?? null
+    setReviewPage(page)
+  }
+  const moveReviewRow = (
+    start: number,
+    edge: 'first' | 'last',
+    event: JSX.TargetedMouseEvent<HTMLButtonElement>,
+  ): void => {
+    const hadFocus = event.currentTarget === document.activeElement
+    setPageRowStart(start)
+    // The arrow just pressed is gone once the row reaches that end; keep keyboard focus in the row.
+    window.requestAnimationFrame(() => {
+      const row = reviewPagesRef.current
+      if (!hadFocus || row === null || row.contains(document.activeElement)) return
+      const buttons = row.querySelectorAll('button')
+      buttons.item(edge === 'first' ? 0 : buttons.length - 1).focus({ preventScroll: true })
+    })
   }
 
   // --- styles (composed from the booking palette so the section matches the site exactly) ---
@@ -365,6 +429,37 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
     gap: '12px',
     marginBottom: '24px',
   }
+  // The page row is the grid's last row, so the review form keeps its place (and CMS slot id).
+  const reviewPagesStyle: JSX.CSSProperties = {
+    gridColumn: '1 / -1',
+    display: 'flex',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '8px',
+    marginTop: '4px',
+  }
+  // A fixed 40px slot per button (three digits fit), so the row never changes width.
+  const pageSlotStyle: JSX.CSSProperties = { flex: 'none', width: '40px', height: '40px' }
+  // Same chip as the booking time slots: the page being read takes the accent fill.
+  const pageButtonStyle = (current: boolean): JSX.CSSProperties => ({
+    ...pageSlotStyle,
+    padding: 0,
+    boxSizing: 'border-box',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    border: current ? '1px solid ' + c.accent : '0.5px solid ' + c.inputLine,
+    borderRadius: '9px',
+    background: current ? c.accent : c.card,
+    color: current ? c.accentText : c.text,
+    fontFamily: 'inherit',
+    fontSize: '14px',
+    fontWeight: current ? 600 : 500,
+    fontVariantNumeric: 'tabular-nums',
+    cursor: current ? 'default' : 'pointer',
+    transition: 'background .12s',
+  })
   const formCardStyle: JSX.CSSProperties = {
     background: c.card,
     border: '0.5px solid ' + c.line,
@@ -651,7 +746,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
             </p>
           ) : null}
           {reviewsState === 'ready'
-            ? reviews.map((r) => (
+            ? visibleReviews.map((r) => (
                 <div key={r.id} style={reviewCardStyle}>
                   <div
                     style={{
@@ -661,19 +756,85 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
                       gap: '10px',
                     }}
                   >
-                    <span style={{ fontWeight: 600, fontSize: '14px' }}>{r.name}</span>
+                    <span
+                      style={{
+                        fontWeight: 600,
+                        fontSize: '14px',
+                        minWidth: 0,
+                        overflowWrap: 'anywhere',
+                      }}
+                    >
+                      {r.name}
+                    </span>
                     <StarDisplay
                       rating={r.rating}
                       c={c}
                       label={tx.ratingValueLabel.replace('{n}', String(r.rating))}
                     />
                   </div>
-                  <p style={{ fontSize: '13.5px', lineHeight: 1.5, opacity: 0.7, margin: 0 }}>
+                  <p
+                    style={{
+                      fontSize: '13.5px',
+                      lineHeight: 1.5,
+                      opacity: 0.7,
+                      margin: 0,
+                      overflowWrap: 'anywhere',
+                    }}
+                  >
                     {r.text}
                   </p>
                 </div>
               ))
             : null}
+          {reviewsState === 'ready' && reviewPages > 1 ? (
+            <nav
+              key="review-pages"
+              ref={reviewPagesRef}
+              aria-label={tx.reviewPagesLabel}
+              style={reviewPagesStyle}
+            >
+              {previousRowStart === null ? (
+                arrowSlots ? (
+                  <span aria-hidden="true" style={pageSlotStyle} />
+                ) : null
+              ) : (
+                <button
+                  type="button"
+                  aria-label={tx.reviewPagesPrevious}
+                  onClick={(event) => moveReviewRow(previousRowStart, 'first', event)}
+                  style={pageButtonStyle(false)}
+                >
+                  <img src="/icons/chevron.left.svg" alt="" style={s.navIconStyle} />
+                </button>
+              )}
+              {reviewRow.pages.map((page) => (
+                <button
+                  key={page}
+                  type="button"
+                  aria-label={tx.reviewPageLabel.replace('{n}', String(page))}
+                  aria-current={page === currentReviewPage ? 'page' : undefined}
+                  onClick={() => showReviewPage(page)}
+                  style={pageButtonStyle(page === currentReviewPage)}
+                >
+                  {page}
+                </button>
+              ))}
+              {nextRowStart === null ? (
+                arrowSlots ? (
+                  <span aria-hidden="true" style={pageSlotStyle} />
+                ) : null
+              ) : (
+                <button
+                  type="button"
+                  aria-label={tx.reviewPagesNext}
+                  onClick={(event) => moveReviewRow(nextRowStart, 'last', event)}
+                  style={pageButtonStyle(false)}
+                >
+                  <img src="/icons/chevron.right.svg" alt="" style={s.navIconStyle} />
+                </button>
+              )}
+            </nav>
+          ) : null}
         </div>
 
         {/* Leave a review */}

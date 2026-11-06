@@ -585,7 +585,10 @@ for (const stored of [false, true])
     const compact = frames.findIndex((frame) => frame.height <= 112.5)
     expect(compact).toBeGreaterThan(0)
     expect(frames[compact].at).toBeGreaterThanOrEqual(250)
-    for (const frame of frames.slice(compact)) expect(Math.round(frame.height)).toBe(112)
+    // Firefox and WebKit snap the tweened height to eighth pixels, so the compact frame can land on
+    // exactly 112.5, which Math.round would carry to 113; hold the compact threshold itself.
+    for (const frame of frames.slice(compact))
+      expect(Math.abs(frame.height - 112)).toBeLessThanOrEqual(0.5)
     expect(
       frames.some(
         (frame) => frame.properties.includes('height') && frame.durations.includes('0.66s'),
