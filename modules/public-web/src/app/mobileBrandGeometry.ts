@@ -171,9 +171,6 @@ export function observeMobileBrandGeometry(root: HTMLElement, repaint: () => voi
     schedule()
   }
   const observer = new ResizeObserver(schedule)
-  // An uploaded logo <img> carries an explicit height only, so it measures 0 px wide until its
-  // bytes arrive; the rejected geometry observes nothing but root, hence the capture-phase load.
-  root.addEventListener('load', schedule, true)
   root.ownerDocument.fonts?.addEventListener('loadingdone', fontReady)
   void root.ownerDocument.fonts?.ready.then(fontReady)
   refresh()
@@ -181,7 +178,6 @@ export function observeMobileBrandGeometry(root: HTMLElement, repaint: () => voi
     disposed = true
     win.cancelAnimationFrame(frame)
     observer.disconnect()
-    root.removeEventListener('load', schedule, true)
     root.ownerDocument.fonts?.removeEventListener('loadingdone', fontReady)
     geometries.delete(root)
   }

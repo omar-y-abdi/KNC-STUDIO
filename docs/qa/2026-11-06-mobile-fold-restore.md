@@ -7,7 +7,8 @@ customer-data change or Cloudflare binding change. Restored mechanism: `be2c0a4`
 
 - Folding panel `position: sticky; top: 0; height: calc(100dvh - collapse px)`, one `collapse` state
   from `mobileFold(scrollTop, viewportHeight)`; hero centered in the shrinking panel, spacer keeping
-  the document position (`MobileSite.tsx`). No transform or translate writes, no touch, wheel or
+  the document position (`MobileSite.tsx`). No transform or translate writes on the panel, spacer
+  or hero box (the kept morph still translates the controls row and its glyphs), no touch, wheel or
   non-passive listeners, no carriers, no priming; `mobileFoldLayout.tsx` deleted.
 - "Boka tid" from the mounted hero: scroll jumps to the fold limit while the panel tweens to 112px
   over `height .66s cubic-bezier(.32,.72,0,1)` and the hero fades over `opacity .34s ease`; the
@@ -21,14 +22,16 @@ customer-data change or Cloudflare binding change. Restored mechanism: `be2c0a4`
 
 `mobileLayoutViewportHeight` with the root ResizeObserver and the relative panel header (`8b986f9`),
 `paintViewport` sampling the panel, `monogramPaths.ts`, Safari corner colours, the booking flow,
-gallery, cards and consent files, the image-load and font-ready remeasure signals of the morph.
+gallery, cards and consent files, the font-ready remeasure of the morph (the hero logo box is
+explicit in both axes, so the former image-load remeasure is dropped).
 
 ## Withdrawn
 
 Sticky carrier, translate writes and tween removal (`809160b`); instant booking entry (`5c6d9b8`);
 carriers, priming and listeners (`b39a21b`); `data-knc-brand-part` markers (`bd65445`; desktop
 logo markup is `be2c0a4` again); window-focus and dialog-close `/api/customer-bookings` re-lists;
-the full-screen "Laddar bokningar …" surface (chunk lazy, awaited before the dialog opens; failed
+the full-screen "Laddar bokningar …" surface (chunk lazy; the button awaits it before the dialog
+opens, the `/my-bookings` and link paths open at once and render nothing until it resolves; a failed
 import opens the dialog so its error and retry show). New: `overflow-anchor: none` on the scroll
 root, because the entry tween shrinks the panel above a fixed scroll position.
 

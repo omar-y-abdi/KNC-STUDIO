@@ -120,12 +120,14 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     scrollFrame.current = requestAnimationFrame(() => {
       scrollFrame.current = null
       syncCollapse()
-      // A pan during the entry tween hands the height back to the scroll position at once.
+      // A pan during the entry tween hands the height back to the scroll position at once. A
+      // fractional viewport height or a clamped offset can read back a hair below the limit, so
+      // only a real pan counts.
       const root = scrollRoot.current
       if (
         stopEntering.current !== null &&
         root !== null &&
-        root.scrollTop < mobileFold(Infinity, mobileLayoutViewportHeight(root)).collapse
+        root.scrollTop < mobileFold(Infinity, mobileLayoutViewportHeight(root)).collapse - 1
       )
         stopEntering.current()
     })
@@ -136,7 +138,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     const limit = mobileFold(Infinity, mobileLayoutViewportHeight(root)).collapse
     // A direct booking URL or a CMS booking scene mounts folded. From the mounted hero the scroll
     // position jumps now while the panel height tweens down to meet it.
-    const tween = mounted.current && !reduceMotion && root.scrollTop < limit
+    const tween = mounted.current && !reduceMotion && root.scrollTop < limit - 1
     root.scrollTop = limit
     syncCollapse()
     if (!tween) return
