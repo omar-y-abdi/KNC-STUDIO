@@ -1,6 +1,6 @@
 // The public Data API client. The public pages only read tables and call RPCs anonymously, so a bare
 // PostgREST client is enough: none of the auth, storage or functions code of the full client. That
-// client stays in `supabaseClient.ts`, for the admin.
+// client is the admin's `adminClient.ts`.
 //
 // Effects (creating the client) are isolated here at the edge; the adapters take a ready client from
 // `getPublicRest()` and stay a pure transform of its responses.
