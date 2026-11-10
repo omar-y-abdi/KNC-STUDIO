@@ -45,6 +45,7 @@
         background: var(--bb-surface);
         font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
         font-size: 0.88em;
+        overflow-wrap: anywhere;
       }
       hr {
         margin: 3rem 0;
@@ -62,7 +63,7 @@
       <p class="lang">Svenska</p>
       <h1>Integritetspolicy</h1>
       <p class="updated">
-        <span data-business-name>salongen</span> · Senast uppdaterad 4 november 2026
+        <span data-business-name>salongen</span> · Senast uppdaterad 10 november 2026
       </p>
 
       <p>
@@ -79,7 +80,16 @@
         När du bokar behandlar vi namn, telefonnummer, e-postadress, vald behandling, barberare och
         bokad tid för att kunna skapa och administrera bokningen, skicka bekräftelse eller
         påminnelse och hantera avbokning. Bokningsuppgifter lagras i Supabase. Boknings- och
-        transaktionsmejl skickas via Resend. Vi använder inte bokningsuppgifter för annonsering.
+        transaktionsmejl skickas via Resend. Har barberaren du bokar hos ett eget barberarkonto på
+        webbplatsen får barberaren ett mejl när bokningen görs eller avbokas, med ditt namn, ditt
+        telefonnummer och din e-postadress samt datum, tid, behandling, längd och pris. Vi använder
+        inte bokningsuppgifter för annonsering. Lämnar du ett omdöme visas det öppet på webbplatsen
+        med ditt betyg, din text och namnet från bokningen, förkortat till det första namnet och
+        första bokstaven i nästa (till exempel Anna S.). Telefonnumret du anger används för att
+        kontrollera omdömet mot bokningen och visas inte. Omdömet finns kvar även när bokningen har
+        raderats. Salongens ägare kan dölja ett omdöme, som då sparas men inte längre visas på
+        webbplatsen, eller ta bort det. Vill du att ditt omdöme tas bort, kontakta salongen via
+        <a href="/contact">kontaktsidan</a>.
       </p>
       <p>
         När webbplatsen skickar ett mejl, till exempel en bokningsbekräftelse, påminnelse, avbokning
@@ -93,11 +103,13 @@
       </p>
       <p>
         Mina bokningar använder en säker, e-postkopplad åtkomstlänk som skickas till bokningens
-        e-postadress. Länken har ingen tidsgräns, men en ny begäran om länk för samma e-postadress
-        ersätter och återkallar den tidigare länken. När en giltig länk har öppnats utfärdar servern
-        en nödvändig, ogenomskinlig HttpOnly- och Secure-cookie för en tidsbegränsad session. Den
-        innehåller inte namn, telefonnummer, mejladress eller mejllänkens token och kan inte läsas
-        av JavaScript.
+        e-postadress. Länken har ingen fast tidsgräns. Den slutar fungera när den tas bort av
+        rensningen som beskrivs under Ansvar, rättslig grund och dina rättigheter nedan, och en ny
+        begäran om länk för samma e-postadress ersätter och återkallar den tidigare länken. När en
+        giltig länk har öppnats utfärdar servern en nödvändig, ogenomskinlig HttpOnly- och
+        Secure-cookie för en tidsbegränsad session. Den innehåller inte namn, telefonnummer,
+        mejladress eller mejllänkens token och kan inte läsas av JavaScript. Servern avslutar
+        sessionen när tiden har gått ut och kan återkalla den innan dess.
       </p>
 
       <h2>Cookies och annan webblagring</h2>
@@ -108,20 +120,25 @@
       </p>
       <p id="webblagring">
         Webbplatsen använder inga analys- eller annonscookies. Ditt lagringsval sparas i upp till
-        ett år. Om du godkänner valfri lagring får den här enheten en säker HttpOnly-cookie som ger
-        åtkomst till nya bokningar du gör här. Den innehåller inga kontaktuppgifter och gäller i
-        högst 30 dagar. Den ger inte åtkomst till äldre bokningar genom inskrivet mejl eller
-        telefon. Du kan återkalla valet via Integritet på startsidan eller länken längst ned i Om
-        oss. Kontaktuppgifter från den senaste bokningen på enheten kan fyllas i vid nästa bokning.
-        När du återkallar valet tas enhetsåtkomsten och denna förifyllning bort, medan bokningarna
-        finns kvar.
+        ett år i cookien <code>bladeblend_storage_preferences</code>. Om du godkänner valfri lagring
+        får den här enheten en säker HttpOnly-cookie,
+        <code>__Host-bladeblend_booking_receipts</code>, som ger åtkomst till nya bokningar du gör
+        här. Den innehåller inga kontaktuppgifter och gäller i högst 30 dagar. Den ger inte åtkomst
+        till äldre bokningar genom inskrivet mejl eller telefon. Du kan återkalla valet via
+        Integritet på startsidan eller länken längst ned i Om oss. Kontaktuppgifter från den senaste
+        bokningen på enheten kan fyllas i vid nästa bokning. När du återkallar valet tas
+        enhetsåtkomsten och denna förifyllning bort, medan bokningarna finns kvar.
       </p>
       <p>
-        Efter giltig e-postlänk används en separat, nödvändig HttpOnly-sessioncookie i högst 30
-        dagar. Kundens namn, telefon, e-post och tidigare bokningsuppgifter hämtas från servern
-        efter autentisering. Inga kunduppgifter eller åtkomstbevis sparas i localStorage eller
-        sessionStorage, och JavaScript kan inte läsa åtkomstcookies. Om webbläsaren blockerar
-        cookies kan den säkra inloggningen inte sparas.
+        Efter giltig e-postlänk används en separat, nödvändig HttpOnly-sessioncookie,
+        <code>__Host-bladeblend_customer_session</code>, i högst 30 dagar. Kundens namn, telefon,
+        e-post och tidigare bokningsuppgifter hämtas från servern efter autentisering. Inga
+        kunduppgifter eller kunders åtkomstbevis sparas i localStorage eller sessionStorage, och
+        JavaScript kan inte läsa åtkomstcookies. Om webbläsaren blockerar cookies kan den säkra
+        inloggningen inte sparas. Personalens administration använder däremot webbläsarens lagring
+        på personalens egen enhet: inloggningen sparas i localStorage eller sessionStorage under
+        namnet <code>knc-admin-auth</code>, och navigeringsläge och redigeringsutkast sparas i
+        sessionStorage och IndexedDB.
       </p>
 
       <h2>Publika formulär och bot-skydd (Cloudflare Turnstile)</h2>
@@ -137,7 +154,12 @@
           target="_blank"
           rel="noopener noreferrer"
           >Cloudflares Turnstile Privacy Addendum</a
-        >.
+        >. För att begränsa antalet försök sparar webbplatsen också en saltad hash av din IP-adress
+        när du bokar, skickar ett omdöme eller begär en länk till Mina bokningar eller en koppling
+        mellan e-postadresser. För omdömen sparas dessutom en saltad hash av telefonnumret, och för
+        begäran om länk eller koppling en saltad hash av e-postadressen. Posterna raderas när de är
+        äldre än två dygn: för bokningar en gång i timmen, för övriga i samband med nästa sådana
+        förfrågan som godkänns.
       </p>
 
       <h2>Drift och besöksstatistik</h2>
@@ -216,11 +238,21 @@
         behandling.
       </p>
       <p>
-        Bokningshistorik ligger kvar tills salongen raderar den. Salongen behöver bedöma fortsatt
-        behov för kundservice, reklamationer och eventuella rättsliga skyldigheter. Tekniska
-        åtkomstbevis rensas separat efter sin giltighetstid. Sparade kopior av skickade mejl raderas
-        automatiskt 30 dagar efter det första sändningsförsöket. Krypterade säkerhetskopior har en
-        separat rullande lagringstid.
+        En bokning raderas automatiskt när det har gått mer än 12 månader sedan den bokade tiden
+        slutade. Rensningen körs en gång per dygn. En bokning vars bekräftelse- eller avbokningsmejl
+        fortfarande väntar på att skickas raderas först när mejlet inte längre väntar. Salongens
+        ägare, och en barberare för sina egna bokningar, kan radera avbokade och avslutade bokningar
+        tidigare. Salongen behöver bedöma fortsatt behov för kundservice, reklamationer och
+        eventuella rättsliga skyldigheter. Tekniska åtkomstbevis rensas separat efter sin
+        giltighetstid. Åtkomstlänken till Mina bokningar, med e-postadress och telefonnummer, och
+        kopplingen mellan dina e-postadresser tas bort av en nattlig rensning när varken
+        e-postadressen eller någon e-postadress som är kopplad till den längre har någon bokning,
+        och ingen av dem används för inloggning, enhetsåtkomst, en åtkomstlänk som väntar på att
+        skickas eller en begäran om koppling mellan e-postadresser. Sparade kopior av skickade mejl
+        raderas automatiskt 30 dagar efter det första sändningsförsöket. Krypterade säkerhetskopior
+        av databasen och uppladdade filer lagras hos GitHub och raderas automatiskt efter 30 dagar.
+        Uppgifter som har raderats kan därför finnas kvar i en säkerhetskopia tills den har
+        raderats.
       </p>
       <p>
         Du kan begära tillgång, rättelse, radering, begränsning eller överföring av dina uppgifter,
@@ -236,8 +268,9 @@
       <p>
         Supabase, Cloudflare och Resend behandlar uppgifter för databas, säker drift och
         mejlleverans. Google får bokningsuppgifter när ansvarig barberare har anslutit sin kalender.
-        Dessa leverantörer kan behandla uppgifter utanför EU/EES. Kontakta salongen för information
-        om tillämpliga överföringsskydd och personuppgiftsbiträden.
+        GitHub lagrar de krypterade säkerhetskopiorna. Dessa leverantörer kan behandla uppgifter
+        utanför EU/EES. Kontakta salongen för information om tillämpliga överföringsskydd och
+        personuppgiftsbiträden.
       </p>
       <p>
         <a href="/#privacy-preferences">Ändra cookieinställningar</a> ·
@@ -251,7 +284,7 @@
         <p class="lang">English</p>
         <h2>Privacy Policy</h2>
         <p class="updated">
-          <span data-business-name>salongen</span> · Last updated 4 November 2026
+          <span data-business-name>salongen</span> · Last updated 10 November 2026
         </p>
 
         <p>
@@ -268,7 +301,17 @@
           When you book, we process your name, phone number, email address, selected service, barber
           and appointment time to create and administer the booking, send confirmation or reminder
           email, and handle cancellation. Booking data is stored in Supabase. Booking and
-          transactional email is sent through Resend. We do not use booking data for advertising.
+          transactional email is sent through Resend. If the barber you book with has a barber
+          account of their own on the website, the barber receives an email when the booking is made
+          or cancelled, with your name, your phone number and your email address, and the date,
+          time, service, duration and price. We do not use booking data for advertising. If you
+          leave a review, it is shown openly on the website with your rating, your text and the name
+          from the booking, shortened to the first name and the first letter of the next (for
+          example Anna S.). The phone number you enter is used to check the review against the
+          booking and is not shown. The review remains even after the booking has been deleted. The
+          salon owner can hide a review, which is then stored but no longer shown on the website, or
+          remove it. If you want your review removed, contact the salon through the
+          <a href="/contact?lang=en">contact page</a>.
         </p>
         <p>
           When the website sends an email, for example a booking confirmation, reminder,
@@ -283,12 +326,13 @@
         </p>
         <p>
           My appointments uses a secure, email-scoped access link sent to the email address on the
-          booking. The link has no time limit, but a new link request for the same email address
-          replaces and revokes the previous link. After a valid link is opened, the server sets a
-          necessary opaque HttpOnly and Secure session cookie. It contains no name, phone number,
-          email address or email-link token; cookies disabled means automatic sign-in is
-          unavailable. The server expires and can revoke the session and resolves prior contact and
-          booking details for booking-flow convenience.
+          booking. The link has no fixed time limit. It stops working when it is removed by the
+          cleanup described under Responsibility and your rights below, and a new link request for
+          the same email address replaces and revokes the previous link. After a valid link is
+          opened, the server sets a necessary opaque HttpOnly and Secure session cookie. It contains
+          no name, phone number, email address or email-link token; cookies disabled means automatic
+          sign-in is unavailable. The server expires and can revoke the session and resolves prior
+          contact and booking details for booking-flow convenience.
         </p>
 
         <h2>Cookies and other browser storage</h2>
@@ -299,18 +343,24 @@
         </p>
         <p id="browser-storage">
           This website uses no analytics or advertising cookies. Your storage choice is remembered
-          for up to one year. With functional storage enabled, a secure HttpOnly cookie gives this
-          device access to new bookings created here for up to 30 days. It contains no contact
-          details and does not grant earlier history based on entered email or phone. You can
-          withdraw your choice through Privacy on the home page or the link at the bottom of About.
-          Contact details from the latest booking on this device may prefill your next booking.
-          Withdrawal removes device access and this prefill while preserving your bookings.
+          for up to one year in the cookie <code>bladeblend_storage_preferences</code>. With
+          functional storage enabled, a secure HttpOnly cookie,
+          <code>__Host-bladeblend_booking_receipts</code>, gives this device access to new bookings
+          created here for up to 30 days. It contains no contact details and does not grant earlier
+          history based on entered email or phone. You can withdraw your choice through Privacy on
+          the home page or the link at the bottom of About. Contact details from the latest booking
+          on this device may prefill your next booking. Withdrawal removes device access and this
+          prefill while preserving your bookings.
         </p>
         <p>
-          A valid email link establishes a separate, necessary HttpOnly session for up to 30 days.
-          No customer contact data or access credentials are stored in localStorage or
-          sessionStorage; JavaScript cannot read the access cookies. Blocking browser cookies
-          prevents the secure sign-in from being saved.
+          A valid email link establishes a separate, necessary HttpOnly session for up to 30 days,
+          in the cookie <code>__Host-bladeblend_customer_session</code>. No customer contact data or
+          customer access credentials are stored in localStorage or sessionStorage; JavaScript
+          cannot read the access cookies. Blocking browser cookies prevents the secure sign-in from
+          being saved. The staff administration does use browser storage on the staff member's own
+          device: the sign-in is stored in localStorage or sessionStorage under the name
+          <code>knc-admin-auth</code>, and navigation state and editing drafts are stored in
+          sessionStorage and IndexedDB.
         </p>
 
         <h2>Public forms and bot protection (Cloudflare Turnstile)</h2>
@@ -327,7 +377,12 @@
             target="_blank"
             rel="noopener noreferrer"
             >Cloudflare's Turnstile Privacy Addendum</a
-          >.
+          >. To limit the number of attempts, the website also stores a salted hash of your IP
+          address when you book, submit a review, or request a My appointments link or a connection
+          between email addresses. For reviews a salted hash of the phone number is stored as well,
+          and for link or connection requests a salted hash of the email address. These records are
+          deleted once they are older than two days: for bookings once an hour, for the others when
+          the next such request is accepted.
         </p>
 
         <h2>Google data we access</h2>
@@ -407,10 +462,20 @@
           processing.
         </p>
         <p>
-          Booking history remains until the salon deletes it. The salon must assess continued need
-          for customer service, complaints and legal obligations. Access credentials expire
-          separately. Stored copies of sent email are deleted automatically 30 days after the first
-          send attempt. Encrypted backups have their own rolling retention period.
+          A booking is deleted automatically once more than 12 months have passed since the
+          appointment ended. The cleanup runs once a day. A booking whose confirmation or
+          cancellation email is still waiting to be sent is deleted only when that email is no
+          longer waiting. The salon owner, and a barber for their own bookings, can delete cancelled
+          and finished bookings sooner. The salon must assess continued need for customer service,
+          complaints and legal obligations. Access credentials expire separately. The access link to
+          My appointments, with its email address and phone number, and the connection between your
+          email addresses are removed by a nightly cleanup once neither the email address nor any
+          email address connected to it has a booking, and none of them is used for a sign-in,
+          device access, an access link waiting to be sent or a request to connect email addresses.
+          Stored copies of sent email are deleted automatically 30 days after the first send
+          attempt. Encrypted backups of the database and uploaded files are stored with GitHub and
+          deleted automatically after 30 days. Data that has been deleted can therefore remain in a
+          backup until that backup has been deleted.
         </p>
         <p>
           You may request access, correction, deletion, restriction or portability, and object to
@@ -424,9 +489,9 @@
         </p>
         <p>
           Supabase, Cloudflare and Resend process data for the database, secure operation and email.
-          Google receives booking details when the assigned barber connects a calendar. These
-          providers may process data outside the EU/EEA. Ask the salon about applicable transfer
-          safeguards and processors.
+          Google receives booking details when the assigned barber connects a calendar. GitHub
+          stores the encrypted backups. These providers may process data outside the EU/EEA. Ask the
+          salon about applicable transfer safeguards and processors.
         </p>
         <p>
           <a href="/#privacy-preferences">Change cookie settings</a> ·
