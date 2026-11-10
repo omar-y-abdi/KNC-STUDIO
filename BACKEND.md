@@ -58,7 +58,8 @@ device receipts keep their original exact-booking/exact-parent-email boundary.
 
 The `external_action_jobs` outbox covers Calendar actions, Storage cleanup, customer-access email, and
 Auth user lifecycle actions. Booking email delivery has its separate
-`booking_email_delivery_jobs` ledger; Auth email sends directly through Resend; and `upload-image`
+`booking_email_delivery_jobs` ledger; Auth email sends directly through Resend (`send-auth-email`,
+Auth's Send Email hook, for recovery and email change); and `upload-image`
 is synchronous while its managed Storage cleanup is durable. Cron retries failed outbox actions,
 preserves Calendar event identifiers until Google deletion succeeds, and reconciles managed Storage
 bytes left unreferenced for 30 minutes after a failed upload compensation path. `upload-image`
@@ -149,7 +150,8 @@ npx supabase secrets set \
   GOOGLE_OAUTH_CLIENT_SECRET=<google-client-secret> \
   CALENDAR_STATE_SECRET=<different-random-long-value> \
   CUSTOMER_GATEWAY_SECRET=<same-random-long-value-as-Worker> \
-  WEBHOOK_SECRET=<random-long-value>
+  WEBHOOK_SECRET=<random-long-value> \
+  SEND_EMAIL_HOOK_SECRET='v1,whsec_<base64-secret-of-the-auth-send-email-hook>'
 ```
 
 Database Vault must contain:
@@ -195,10 +197,29 @@ npx supabase config push --yes
 ```
 
 Public signup remains disabled. Owner creates barber accounts from admin. Each barber receives a
-single-use invitation and sets a personal password before first login. Password reset email uses
-Supabase Auth through Resend. Nothing sets `profiles.must_change_password` any more and no screen
-clears it. The admin refuses a profile that has it set, as it refuses a disabled account; clear it
-in the database (`update public.profiles set must_change_password = false where id = …`).
+single-use invitation and sets a personal password before first login. Nothing sets
+`profiles.must_change_password` any more and no screen clears it. The admin refuses a profile that
+has it set, as it refuses a disabled account; clear it in the database
+(`update public.profiles set must_change_password = false where id = …`).
+
+### Auth emails (Send Email hook)
+
+Password recovery and email change are requested from Supabase Auth. Auth hands each email to the
+`send-auth-email` Edge Function through its Send Email hook; the function sends it through Resend
+with the owner's template and logs it. Enable the hook in this order, so Auth never calls a
+function that cannot answer:
+
+1. Deploy `send-auth-email`.
+2. In the Supabase dashboard open Authentication → Hooks → Send Email, choose HTTPS, enter
+   `https://<project-ref>.supabase.co/functions/v1/send-auth-email` and generate a secret. Do not
+   enable the hook yet. The secret has the form `v1,whsec_<base64>`.
+3. Store that exact value as the function secret:
+   `npx supabase secrets set SEND_EMAIL_HOOK_SECRET='v1,whsec_<base64>'`.
+4. Enable the hook. Request a password reset from `/login` and check Mejl → Leveransstatus for
+   the `auth_recovery` row.
+
+Until the hook is enabled, Auth sends these two emails itself over the SMTP settings above with
+the Swedish templates in `supabase/templates/`. See `docs/operations/EMAIL_DELIVERY.md`.
 
 ## Verification
 

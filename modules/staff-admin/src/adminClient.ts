@@ -157,7 +157,7 @@ export function getAdminClient(): AdminClient {
   return protectedData?.client ?? getAdminAuthClient()
 }
 
-/** Password responses must not persist or broadcast a session after its UI owner has left. */
+/** Account-update responses must not persist or broadcast a session after its UI owner has left. */
 export function createAdminAuthOperationClient(): SupabaseClient['auth'] {
   return createAdminClient(false).auth
 }

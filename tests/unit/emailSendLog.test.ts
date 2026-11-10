@@ -24,7 +24,7 @@ import {
   type EmailSendLogClient,
   type PreparedEmail,
 } from '../../supabase/functions/_shared/emailSendLog'
-import { requestSchema as emailChangeRequest } from '../../supabase/functions/send-email-change/request'
+import { requestSchema as authEmailRequest } from '../../supabase/functions/send-auth-email/request'
 import {
   emptyDocument,
   validateCompleteDocument,
@@ -239,15 +239,17 @@ describe('delivery log subject bound', () => {
     return `${local}@${domain}.test`
   }
 
-  /** The address check send-email-change/index.ts applies after its request schema. */
+  /** send-auth-email takes the new address from Auth's payload unchanged once normalized. */
   function emailChangeAccepts(value: string): boolean {
-    const parsed = emailChangeRequest.safeParse({ new_email: value, lang: 'sv' })
-    return (
-      parsed.success &&
-      parsed.data.new_email === value &&
-      /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) &&
-      value.length <= 254
-    )
+    const parsed = authEmailRequest.safeParse({
+      user: {
+        id: '7d0c4f1e-6d1f-4a55-9c0a-2f5f3f1b8a10',
+        email: 'staff@example.test',
+        new_email: value,
+      },
+      email_data: { email_action_type: 'email_change', token_hash: 'hash', redirect_to: '' },
+    })
+    return parsed.success && parsed.data.user.new_email === value
   }
 
   /** Studio publishes this subject: the complete-document validator accepts it. */
@@ -798,7 +800,6 @@ describe('every Edge email sender records its delivery', () => {
       'supabase/functions/send-auth-email/index.ts',
       'supabase/functions/send-auth-email/index.ts',
       'supabase/functions/send-confirmation/index.ts',
-      'supabase/functions/send-email-change/index.ts',
     ])
     for (const call of found) expect(call.args, call.path).toBe(4)
   })
@@ -806,7 +807,6 @@ describe('every Edge email sender records its delivery', () => {
   it.each([
     ['supabase/functions/send-auth-email/index.ts', 'auth_recovery'],
     ['supabase/functions/send-auth-email/index.ts', 'auth_email_change'],
-    ['supabase/functions/send-email-change/index.ts', 'auth_email_change'],
     ['supabase/functions/admin-create-barber/index.ts', 'auth_invite'],
     ['supabase/functions/_shared/externalActions.ts', 'customer_booking_access'],
     ['supabase/functions/_shared/customerEmailLink.ts', 'customer_email_link'],

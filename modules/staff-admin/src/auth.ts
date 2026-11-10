@@ -215,21 +215,45 @@ async function updatePasswordForCurrentSession(
   }
 }
 
-/** Request an email change that the user confirms from the new address. */
+/**
+ * Request an email change that the user confirms from the new address. Auth sends the confirmation
+ * and writes the session of the client that asked, so the request runs in an isolated client like a
+ * password update. `email` is the account the Settings form was rendered for.
+ */
 export async function requestOwnEmailChange(
+  email: string,
   newEmail: string,
   lang: 'sv' | 'en',
 ): Promise<AdminResult<void>> {
+  const isolated = createAdminAuthOperationClient()
   try {
-    const { data, error } = await getAdminClient().functions.invoke('send-email-change', {
-      body: { new_email: newEmail, lang },
-    })
-    if (error !== null || typeof data !== 'object' || data === null || data.ok !== true) {
+    const { data, error } = await getAdminClient().auth.getSession()
+    const session = data.session
+    const current = session?.user.email?.toLowerCase()
+    // Auth answers an unchanged address with success and sends nothing.
+    if (
+      error !== null ||
+      session === null ||
+      current !== email.toLowerCase() ||
+      current === newEmail.trim().toLowerCase()
+    ) {
       return err('validation', EMAIL_UPDATE_FAILED)
     }
+    const seeded = await isolated.setSession({
+      access_token: session.access_token,
+      refresh_token: session.refresh_token,
+    })
+    if (seeded.error !== null) return err('validation', EMAIL_UPDATE_FAILED)
+    const updated = await isolated.updateUser(
+      { email: newEmail },
+      { emailRedirectTo: `https://bladeblendstudio.se/auth/confirm?lang=${lang}` },
+    )
+    if (updated.error !== null) return err('validation', EMAIL_UPDATE_FAILED)
     return ok(undefined)
   } catch {
     return err('network', NETWORK_ERROR)
+  } finally {
+    await isolated.dispose()
   }
 }
 

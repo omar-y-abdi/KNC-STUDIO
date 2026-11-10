@@ -195,27 +195,68 @@ describe('admin account settings auth', () => {
     expect(passwordMocks.updateUser).not.toHaveBeenCalled()
   })
 
-  it('requests a confirmed email change', async () => {
-    authMocks.invoke.mockResolvedValue({ data: { ok: true }, error: null })
+  it('requests a confirmed email change from Auth in an isolated client', async () => {
+    passwordMocks.updateUser.mockResolvedValue({ data: { user: { id: 'user-1' } }, error: null })
 
-    const result = await requestOwnEmailChange('new@example.com', 'sv')
+    const result = await requestOwnEmailChange('staff@example.com', 'new@example.com', 'sv')
 
     expect(result).toEqual({ ok: true, value: undefined })
-    expect(authMocks.invoke).toHaveBeenCalledWith('send-email-change', {
-      body: { new_email: 'new@example.com', lang: 'sv' },
+    expect(passwordMocks.setSession).toHaveBeenCalledWith({
+      access_token: 'original-token',
+      refresh_token: 'original-refresh',
     })
+    expect(passwordMocks.updateUser).toHaveBeenCalledExactlyOnceWith(
+      { email: 'new@example.com' },
+      { emailRedirectTo: 'https://bladeblendstudio.se/auth/confirm?lang=sv' },
+    )
+    expect(authMocks.updateUser).not.toHaveBeenCalled()
+    expect(authMocks.invoke).not.toHaveBeenCalled()
+    expect(passwordMocks.dispose).toHaveBeenCalledOnce()
   })
 
-  it('surfaces an email-change provider rejection', async () => {
-    authMocks.invoke.mockResolvedValue({
-      data: { ok: false, error: 'generate_failed' },
-      error: null,
+  it('surfaces an email-change rejection from Auth', async () => {
+    passwordMocks.updateUser.mockResolvedValue({
+      data: { user: null },
+      error: { message: 'A user with this email address has already been registered' },
     })
 
-    const result = await requestOwnEmailChange('taken@example.com', 'en')
+    const result = await requestOwnEmailChange('staff@example.com', 'taken@example.com', 'en')
 
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.error.kind).toBe('validation')
+    expect(passwordMocks.updateUser).toHaveBeenCalledExactlyOnceWith(
+      { email: 'taken@example.com' },
+      { emailRedirectTo: 'https://bladeblendstudio.se/auth/confirm?lang=en' },
+    )
+    expect(passwordMocks.dispose).toHaveBeenCalledOnce()
+  })
+
+  it.each([
+    [
+      'an unchanged address, which Auth would accept without sending',
+      'staff@example.com',
+      ' Staff@Example.com ',
+    ],
+    [
+      'an old Settings form of a different current staff account',
+      'other@example.com',
+      'new@example.com',
+    ],
+  ])('never asks Auth to change the email for %s', async (_name, email, newEmail) => {
+    const result = await requestOwnEmailChange(email, newEmail, 'sv')
+
+    expect(result).toMatchObject({ ok: false, error: { kind: 'validation' } })
+    expect(passwordMocks.setSession).not.toHaveBeenCalled()
+    expect(passwordMocks.updateUser).not.toHaveBeenCalled()
+  })
+
+  it('reports an unreachable Auth server as a network error for an email change', async () => {
+    passwordMocks.updateUser.mockRejectedValue(new TypeError('Failed to fetch'))
+
+    const result = await requestOwnEmailChange('staff@example.com', 'new@example.com', 'sv')
+
+    expect(result).toMatchObject({ ok: false, error: { kind: 'network' } })
+    expect(passwordMocks.dispose).toHaveBeenCalledOnce()
   })
 
   it('sends the password-recovery Turnstile token to the Edge function', async () => {

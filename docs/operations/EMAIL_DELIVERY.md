@@ -11,8 +11,7 @@ The Edge Functions attempt to write one `public.email_send_log` row per message 
 | `customer_confirmation`, `barber_confirmation`   | `send-confirmation` (booking confirmed)   |
 | `customer_cancellation`, `barber_cancellation`   | `send-confirmation` (booking cancelled)   |
 | `customer_reminder`                              | `send-confirmation` (reminder sweep)      |
-| `auth_recovery`                                  | `send-recovery-email`                     |
-| `auth_email_change`                              | `send-email-change`                       |
+| `auth_recovery`, `auth_email_change`             | `send-auth-email` (Auth Send Email hook)  |
 | `auth_invite`                                    | `admin-create-barber`                     |
 | `customer_booking_access`, `customer_email_link` | `external-cleanup` (customer link outbox) |
 
@@ -20,7 +19,7 @@ Each row stores the time, kind, recipient address, subject, status (`sent` or `f
 
 - **Credential links are never stored.** Password recovery, email change, invite, Mina bokningar (booking confirmation, reminder, access email) and the customer email-link proof all carry a working login or access key in their button link. The stored copy is rendered by the same renderer with that link replaced by `[dold länk]`; everything else is identical to the outgoing message, except a subject cut to the bound above. The message's idempotency key is stored only as its SHA-256 (`dedupe_key`), because auth keys embed part of the token.
 - **One row per email.** While the row is `failed`, a recorded retry replaces the attempted message and outcome, increments `attempt_count`, and updates `last_attempt_at`. `created_at` remains the first recorded attempt. Once a recorded attempt reaches `sent`, the entire row is final: later attempts change neither its copy nor its status, counters or timestamps. Attempts whose log write failed are not counted.
-- **What is not in the log.** Failures before the provider call (missing configuration or a message that could not be built) have no row. Terminal booking delivery jobs appear in the failed list below. A failed log write may also leave a provider attempt absent. Emails Supabase Auth sends itself are excluded: Auth delivers them over its own SMTP settings (`[auth.email.smtp]` in `supabase/config.toml`) with no send-email hook, so a recovery or email-change email triggered outside the app, from the Supabase dashboard or by a direct call to the Auth API such as `/auth/v1/recover`, never passes the Edge Functions. The app's own recovery, email-change and invite flows use `generateLink` and the logged sender.
+- **What is not in the log.** Failures before the provider call (missing configuration or a message that could not be built) have no row. Terminal booking delivery jobs appear in the failed list below. A failed log write may also leave a provider attempt absent. Password recovery and email change are emails of Supabase Auth: with its Send Email hook enabled, Auth hands them to `send-auth-email`, so they are logged wherever they were requested (the app, the Supabase dashboard or a direct call to the Auth API such as `/auth/v1/recover`). While the hook is not enabled in a project, Auth delivers them itself over its SMTP settings (`[auth.email.smtp]` and the templates in `supabase/templates/`), outside the log. Invitations use `generateLink` and the logged sender in `admin-create-barber`; Auth sends no email for them.
 - **Retention.** The daily cron job `email-send-log-purge` (03:29 UTC) deletes rows strictly older than 30 days from their first recorded attempt. A row exactly at the cutoff remains until a later run; the daily cadence can leave an expired row visible until the next purge. Deleting a booking keeps its rows until then, with `booking_id` cleared; an email whose booking was deleted while it was being sent is recorded without a booking.
 - **Logging.** A failed log write is reported as `email send log write failed` with the email kind and a database error code or caught exception name. The sender waits up to 3 seconds for the log RPC, then reports `timeout` and continues; the outstanding RPC may still complete later. A logging failure never changes the provider outcome or prevents the booking dispatch from persisting a reached recipient. The log helper never prints recipients, subjects, bodies or credential links.
 
@@ -92,10 +91,24 @@ Deploy this change in order: compatible frontend, migrations
 `admin-create-barber`. The migration also updates both invitation-language notes to say the link
 can only be used once. Send new staff invitations only after the entire rollout is verified.
 
+### Auth emails through the Send Email hook
+
+`send-recovery-email` asks Auth for the recovery email once the Turnstile check has passed, and the admin panel asks Auth for an email change directly. With the Send Email hook enabled, Auth calls `send-auth-email` for each of them. The function verifies Auth's signature, allows one email a minute per address (recovery) or account (email change, and only for an enabled staff account), renders the owner's template in the language the app put on the redirect (`?lang=`), sends through Resend and logs the send. It answers Auth within 3.5 seconds. Any other Auth email type is refused, so Auth reports an error instead of sending nothing silently.
+
+- **Recovery always answers success.** Auth calls the hook only for an existing account, so the function reports success to Auth even when the address is rate limited or the send failed; the reason is in the function log. Auth then treats its new link as sent, which ends the validity of a link it issued earlier.
+- **Email change reports failures.** A disabled account, the rate limit or a failed send makes Auth answer an error, and Settings shows "Kunde inte skicka bekräftelsen. Försök igen."
+
+The two states of a project:
+
+- **Hook not enabled.** Auth sends recovery and email-change emails itself: Swedish static template, working link, outside the log and without the per-address limit or the account check.
+- **Hook enabled.** `send-auth-email` must already be deployed and hold `SEND_EMAIL_HOOK_SECRET` (see `BACKEND.md`). If it is missing or the secret differs, Auth gets an error and no email is sent: a recovery request from the app still shows its neutral confirmation, an email change shows the failure above.
+
+The previous `send-email-change` function is no longer in the repository. An admin panel tab opened before this release keeps calling the deployed copy until it reloads; delete the deployed function once the new panel is live (`npx supabase functions delete send-email-change`).
+
 ### Delivery log rollout
 
 1. Migrations `20261028100000_email_send_log.sql` and `20261028101000_email_send_log_deleted_booking.sql`, ordered after the shipped `20261027173553` migration. `admin_list_failed_booking_email_deliveries` only gains keys (`customer_name`, `customer_email`, `customer_phone`, `booking_start_at`, `barber_name`, `barber_email`, `sent_kinds`); the deployed frontend ignores unknown keys.
-2. Edge Functions `send-confirmation`, `send-recovery-email`, `send-email-change`, `admin-create-barber` and `external-cleanup`. They call `internal_record_email_send`, so the migrations must be applied first. Before that, sends retain their provider outcome but each attempted log write reports `email send log write failed`.
+2. Edge Functions `send-confirmation`, `send-auth-email`, `admin-create-barber` and `external-cleanup`. They call `internal_record_email_send`, so the migrations must be applied first. Before that, sends retain their provider outcome but each attempted log write reports `email send log write failed`.
 3. The frontend with Leveransstatus.
 
 A merge deploys the migrations, Edge Functions and frontend within about 90 seconds, in no enforced order, so both orders must be safe:

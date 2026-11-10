@@ -423,10 +423,6 @@ verify_jwt = false
 enabled = true
 verify_jwt = false
 
-[functions.send-email-change]
-enabled = true
-verify_jwt = true
-
 # submit-booking: the PUBLIC booking gateway — invoked by the Worker's /api/bookings relay, which
 # carries no Supabase user JWT -> verify_jwt = false. It has no CORS and accepts only requests signed
 # by the Worker; it self-protects with server-side Turnstile + per-IP/per-phone backstops before

@@ -38,7 +38,7 @@ in no enforced order:
    the Worker's bounded Contact read. A Worker that deploys before it reads the whole publication,
    as before, and serves the same page.
 
-The logged senders `send-confirmation`, `send-recovery-email`, `send-email-change`,
+The logged senders `send-confirmation`, `send-auth-email`,
 `admin-create-barber` and `external-cleanup` write to the email send log those two migrations
 create; the [email rollout](operations/EMAIL_DELIVERY.md) describes a sender that deploys first. The authority
 migration and `cms-studio` are safe in either order, and the frontend waits for the matching

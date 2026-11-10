@@ -6,7 +6,7 @@ import { requestSchema as cmsStudio } from '../../supabase/functions/cms-studio/
 import { requestSchema as externalCleanup } from '../../supabase/functions/external-cleanup/request.ts'
 import { requestSchema as publicBookingActions } from '../../supabase/functions/public-booking-actions/request.ts'
 import { parseRequest as sendConfirmation } from '../../supabase/functions/send-confirmation/request.ts'
-import { requestSchema as sendEmailChange } from '../../supabase/functions/send-email-change/request.ts'
+import { requestSchema as sendAuthEmail } from '../../supabase/functions/send-auth-email/request.ts'
 import { requestSchema as sendRecoveryEmail } from '../../supabase/functions/send-recovery-email/request.ts'
 import { requestSchema as submitBooking } from '../../supabase/functions/submit-booking/request.ts'
 import {
@@ -151,23 +151,57 @@ describe('external-cleanup request', () => {
   })
 })
 
-describe('send-email-change request', () => {
-  it('accepts a valid body and normalizes the address', () => {
-    expect(parse(sendEmailChange, { new_email: ' New@Mail.se ', lang: 'en' })).toEqual({
+describe('send-auth-email request', () => {
+  const payload = {
+    user: { id: ID, aud: 'authenticated', email: ' Staff@Mail.se ', new_email: 'New@Mail.se' },
+    email_data: {
+      token: '12345678',
+      token_hash: 'hash',
+      token_hash_new: '',
+      redirect_to: 'https://bladeblendstudio.se/auth/confirm?lang=en',
+      email_action_type: 'email_change',
+      site_url: 'https://bladeblendstudio.se',
+    },
+  }
+
+  it('reads its fields from the Auth hook payload and normalizes the addresses', () => {
+    expect(parse(sendAuthEmail, payload)).toEqual({
       ok: true,
-      data: { new_email: 'new@mail.se', lang: 'en' },
+      data: {
+        user: { id: ID, email: 'staff@mail.se', new_email: 'new@mail.se' },
+        email_data: {
+          token_hash: 'hash',
+          redirect_to: 'https://bladeblendstudio.se/auth/confirm?lang=en',
+          email_action_type: 'email_change',
+        },
+      },
     })
   })
 
-  it('reads a non-text address as empty and any other language as Swedish', () => {
-    expect(parse(sendEmailChange, { new_email: 5, lang: 'fr' })).toEqual({
-      ok: true,
-      data: { new_email: '', lang: 'sv' },
+  it('reads a missing redirect as empty and leaves an absent new address out', () => {
+    const parsed = parse(sendAuthEmail, {
+      user: { id: ID, email: 'staff@mail.se' },
+      email_data: { token_hash: 'hash', email_action_type: 'recovery' },
     })
+    expect(parsed).toEqual({
+      ok: true,
+      data: {
+        user: { id: ID, email: 'staff@mail.se' },
+        email_data: { token_hash: 'hash', email_action_type: 'recovery', redirect_to: '' },
+      },
+    })
+    expect(parsed.ok && 'new_email' in parsed.data.user).toBe(false)
   })
 
-  it.each([{ new_email: 'a@b.se', extra: 1 }, 'text', null, ['a@b.se']])('rejects %j', (raw) => {
-    expect(parse(sendEmailChange, raw).ok).toBe(false)
+  it.each([
+    { ...payload, user: { ...payload.user, id: 'not-a-uuid' } },
+    { ...payload, user: { ...payload.user, email: 5 } },
+    { ...payload, email_data: { ...payload.email_data, token_hash: '' } },
+    { user: payload.user },
+    'text',
+    null,
+  ])('rejects %j', (raw) => {
+    expect(parse(sendAuthEmail, raw).ok).toBe(false)
   })
 })
 

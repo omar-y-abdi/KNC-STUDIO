@@ -188,7 +188,7 @@ and opens page metadata in the right inspector; fit considers viewport height as
 Email preview imports `packages/content-contracts/src/email-render.ts`, the same pure renderer re-exported by
 `supabase/functions/_shared/email.ts`. It expands sample variables and shows actual booking rows,
 sender and subject. It never sends mail. When that shared renderer changes, deploy all importing
-entrypoints: `send-confirmation`, `send-recovery-email`, `send-email-change`, `admin-create-barber`,
+entrypoints: `send-confirmation`, `send-auth-email`, `admin-create-barber`,
 `admin-manage-barber`, `external-cleanup` and `upload-image` (the last three import external actions).
 Preserve each function's existing JWT configuration; the CMS release stamp does not cover emails.
 A complete published native document opens directly; source scenes are recaptured only for missing
