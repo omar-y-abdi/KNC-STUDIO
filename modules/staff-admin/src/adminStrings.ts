@@ -42,13 +42,11 @@ export interface AdminStrings {
   readonly profileReplace: string
   readonly profileUploading: string
   readonly profileRemove: string
-  readonly profileRemoving: string
   readonly profileNoPhoto: string
   readonly profileUploadedOk: string
   readonly profileRemovedOk: string
   readonly profileRemovalPending: string
   readonly profileLoading: string
-  readonly profileError: string
   readonly profileDeleteTitle: string
   readonly profileDeleteBody: string
   // Services (per-barber menu) view.
@@ -257,7 +255,6 @@ export interface AdminStrings {
   readonly reserveServiceName: string
   readonly reserveErrPhone: string
   readonly reserveErrPrice: string
-  readonly reserveOk: string
   // Unavailability ↔ booking conflict (block day / veckoschema / ledighet that clashes with bookings)
   readonly unavailTitle: string
   readonly unavailLead: string
@@ -457,13 +454,11 @@ const SV: AdminStrings = {
   profileReplace: 'Byt bild',
   profileUploading: 'Laddar upp …',
   profileRemove: 'Ta bort bild',
-  profileRemoving: 'Tar bort …',
   profileNoPhoto: 'Ingen bild uppladdad ännu.',
   profileUploadedOk: 'Bilden är uppladdad.',
   profileRemovedOk: 'Bilden är borttagen.',
   profileRemovalPending: 'Bilden är dold. Lagringsrensning försöks igen automatiskt.',
   profileLoading: 'Laddar profil …',
-  profileError: 'Kunde inte spara. Försök igen.',
   profileDeleteTitle: 'Ta bort profilbild?',
   profileDeleteBody: 'Bilden tas bort och platshållaren visas igen på hemsidan.',
   servicesTitle: 'Tjänster',
@@ -651,7 +646,6 @@ const SV: AdminStrings = {
   reserveServiceName: 'Reserverad tid',
   reserveErrPhone: 'Ogiltigt telefonnummer',
   reserveErrPrice: 'Ange ett giltigt pris (t.ex. 199 eller 199.99).',
-  reserveOk: 'Kunden är bokad.',
   unavailTitle: 'Kunder är bokade',
   unavailLead: 'Följande kunder är bokade under tiden du vill vara borta:',
   unavailExplainCancel: 'Avboka kunder – avbokar kunderna nedan och gör dig ledig.',
@@ -846,13 +840,11 @@ const EN: AdminStrings = {
   profileReplace: 'Replace photo',
   profileUploading: 'Uploading …',
   profileRemove: 'Remove photo',
-  profileRemoving: 'Removing …',
   profileNoPhoto: 'No photo uploaded yet.',
   profileUploadedOk: 'The photo is uploaded.',
   profileRemovedOk: 'The photo is removed.',
   profileRemovalPending: 'The photo is hidden. Storage cleanup will retry automatically.',
   profileLoading: 'Loading profile …',
-  profileError: 'Could not save. Please try again.',
   profileDeleteTitle: 'Remove profile photo?',
   profileDeleteBody: 'The photo is removed and the placeholder shows again on the site.',
   servicesTitle: 'Services',
@@ -1040,7 +1032,6 @@ const EN: AdminStrings = {
   reserveServiceName: 'Reserved time',
   reserveErrPhone: 'Invalid phone number',
   reserveErrPrice: 'Enter a valid price (for example 199 or 199.99).',
-  reserveOk: 'The customer is booked.',
   unavailTitle: 'Customers are booked',
   unavailLead: 'These customers are booked during the time you want off:',
   unavailExplainCancel: 'Cancel customers – cancels the customers below and frees you up.',
