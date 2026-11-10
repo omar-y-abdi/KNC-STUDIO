@@ -92,6 +92,17 @@ describe('Calendar OAuth HTTP boundary', () => {
           p_calendar_id: 'primary',
         },
       ],
+      // The admin log entry of the connect, under the staff account read for the barber id.
+      [
+        'internal_record_admin_action',
+        {
+          p_actor: 'staff',
+          p_action: 'insert',
+          p_target_table: 'barber_calendar_tokens',
+          p_target_id: 'destination-barber',
+          p_detail: null,
+        },
+      ],
       ['calendar_backfill_source', { p_barber_id: 'destination-barber' }],
       ['queue_calendar_event_sync', { p_booking_id: UNMAPPED }],
     ])

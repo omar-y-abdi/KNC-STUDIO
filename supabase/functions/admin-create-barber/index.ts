@@ -17,6 +17,12 @@
 // PII, or auth tokens appear in any response. verify_jwt = true (config.toml) means Supabase also
 // validates the JWT at the gateway before this function runs.
 //
+// ADMIN LOG: once the invite is delivered, the profile and invitation rows this function wrote with
+// the service role are recorded in the admin log under the owner's id (_shared/adminAudit.ts). A
+// request that fails, or whose new account is removed again, records nothing. One failure leaves a
+// change behind and is recorded: a re-sent invite whose mail fails has already replaced the stored
+// invitation, so the earlier link no longer works.
+//
 // CORS: the admin panel is served from Cloudflare (different origin); CORS headers + OPTIONS preflight
 // handling (from _shared/http.ts) are required for browser-originated requests.
 //
@@ -24,6 +30,8 @@
 // Run locally: npx supabase functions serve admin-create-barber --env-file supabase/functions/.env
 
 import { createClient } from '@supabase/supabase-js'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import { recordOrLogAdminAction, withinAdminLogBound } from '../_shared/adminAudit.ts'
 import {
   loadEmailBusiness,
   loadEmailTemplate,
@@ -34,6 +42,68 @@ import { json, parse } from '../_shared/http.ts'
 import { staffCors } from '../_shared/staffCors.ts'
 import { requestSchema } from './request.ts'
 import { hashStaffInvitationToken, newStaffInvitationToken } from '../_shared/staffInvitation.ts'
+
+/**
+ * Whether an invitation is already stored for the account, read before a re-sent invite stores its
+ * digest: the admin log says "changed" for a replaced invitation and "created" for a first one.
+ * `null` when that could not be read. The invite itself does not depend on the answer, so this never
+ * throws and never waits past the admin log's bound.
+ */
+async function hasStoredInvitation(
+  service: SupabaseClient,
+  userId: string,
+): Promise<boolean | null> {
+  try {
+    const answer = await withinAdminLogBound(() =>
+      service.from('staff_invitations').select('user_id').eq('user_id', userId).maybeSingle(),
+    )
+    if (answer.timedOut) {
+      console.error('admin-create-barber: invitation precheck failed:', 'timeout')
+      return null
+    }
+    const stored = answer.value
+    if (stored.error) {
+      console.error('admin-create-barber: invitation precheck failed:', stored.error.code)
+      return null
+    }
+    return stored.data !== null
+  } catch (error) {
+    console.error(
+      'admin-create-barber: invitation precheck failed:',
+      error instanceof Error ? error.name : 'unknown',
+    )
+    return null
+  }
+}
+
+/**
+ * Whether the auth user already has a profile, read when a profile could not be inserted for it:
+ * an account that has one existed before this request and is not this request's to remove. `null`
+ * when that could not be read within the same bound. Never throws.
+ */
+async function hasProfile(service: SupabaseClient, userId: string): Promise<boolean | null> {
+  try {
+    const answer = await withinAdminLogBound(() =>
+      service.from('profiles').select('id').eq('id', userId).maybeSingle(),
+    )
+    if (answer.timedOut) {
+      console.error('admin-create-barber: profile lookup failed:', 'timeout')
+      return null
+    }
+    const found = answer.value
+    if (found.error) {
+      console.error('admin-create-barber: profile lookup failed:', found.error.code)
+      return null
+    }
+    return found.data !== null
+  } catch (error) {
+    console.error(
+      'admin-create-barber: profile lookup failed:',
+      error instanceof Error ? error.name : 'unknown',
+    )
+    return null
+  }
+}
 
 // --- HTTP handler -----------------------------------------------------------------------------
 
@@ -185,6 +255,13 @@ async function handle(req: Request): Promise<Response> {
 
     if (insertError) {
       console.error('admin-create-barber: profiles insert failed:', insertError.message)
+      // The invite link can resolve to an account that already exists: the address of an invited,
+      // unconfirmed account of another barber. That account has a profile, which is why this insert
+      // failed, and the cleanup below must never remove it. When it cannot be known, nothing is
+      // removed either.
+      const alreadyLinked = await hasProfile(service, newUserId)
+      if (alreadyLinked === null) return json({ ok: false, error: 'link_failed' }, 500)
+      if (alreadyLinked) return json({ ok: false, error: 'email_taken' }, 409)
       // Best-effort cleanup — do not propagate this error (the real error is the insert failure).
       const { error: deleteError } = await service.auth.admin.deleteUser(newUserId)
       if (deleteError) {
@@ -200,6 +277,32 @@ async function handle(req: Request): Promise<Response> {
     }
   }
 
+  // For the admin log. A new account has no invitation yet: an invitation row belongs to its
+  // profile, which was inserted just above.
+  const invitationStored = isNewAccount ? false : await hasStoredInvitation(service, newUserId)
+
+  // ADMIN LOG: the invitation row this request stored, under the owner: a first invitation is a
+  // new row, a replaced one a changed digest. Nothing when the earlier state could not be read.
+  const recordInvitation = async (): Promise<void> => {
+    if (invitationStored === false) {
+      await recordOrLogAdminAction('admin-create-barber', service, {
+        actorId: callerId,
+        action: 'insert',
+        table: 'staff_invitations',
+        targetId: newUserId,
+      })
+    } else if (invitationStored === true) {
+      await recordOrLogAdminAction('admin-create-barber', service, {
+        actorId: callerId,
+        action: 'update',
+        table: 'staff_invitations',
+        targetId: newUserId,
+        changedColumns: ['token_hash', 'created_at'],
+      })
+    }
+  }
+
+  let invitationWritten = false
   try {
     const invitationToken = newStaffInvitationToken()
     const tokenHash = await hashStaffInvitationToken(invitationToken)
@@ -212,6 +315,7 @@ async function handle(req: Request): Promise<Response> {
       { onConflict: 'user_id' },
     )
     if (stored.error) throw new Error('Could not persist staff invitation')
+    invitationWritten = true
     const copy = await loadEmailTemplate(service, 'auth_invite', lang)
     const business = await loadEmailBusiness(service)
     const link = `https://bladeblendstudio.se/invite#staff_invite=${invitationToken}`
@@ -221,7 +325,6 @@ async function handle(req: Request): Promise<Response> {
       null,
     )
     await sendViaResend(message, resendKey, `auth-invite/${tokenHash.slice(0, 48)}`, service)
-    return json({ ok: true }, 200)
   } catch (error) {
     console.error(
       'admin-create-barber: invite delivery failed:',
@@ -242,9 +345,29 @@ async function handle(req: Request): Promise<Response> {
           console.error('admin-create-barber: durable auth cleanup queue failed')
         }
       }
+    } else if (invitationWritten) {
+      // The account stays, and the invitation stored above has replaced the earlier one: the link
+      // the barber already holds is dead although no new one arrived. That change is recorded; the
+      // answer is the same.
+      await recordInvitation()
     }
     return json({ ok: false, error: 'invite_send_failed' }, 502)
   }
+
+  // ADMIN LOG: the invite is delivered, so the outcome is final. These writes were made with the
+  // service role, which the database cannot attribute to the owner by itself; say who made them.
+  // The rows exist whether or not an entry can be written: a failure is logged and the answer is
+  // the same. It runs after the block above, so it can never reach the cleanup there.
+  if (isNewAccount) {
+    await recordOrLogAdminAction('admin-create-barber', service, {
+      actorId: callerId,
+      action: 'insert',
+      table: 'profiles',
+      targetId: newUserId,
+    })
+  }
+  await recordInvitation()
+  return json({ ok: true }, 200)
 }
 
 Deno.serve(staffCors(Deno.env.get('CMS_ALLOWED_ORIGINS'), handle))

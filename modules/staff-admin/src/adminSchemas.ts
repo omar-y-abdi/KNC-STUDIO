@@ -261,6 +261,75 @@ export const emailSendLogCopy = emailSendLogEntryFields
   .refine(failureMatchesStatus)
   .nullable()
 
+// --- reviews (owner moderation) ------------------------------------------------------------------
+
+/** One `admin_list_reviews` entry: a published or a hidden review, with no contact data. */
+const adminReviewRow = z.object({
+  id: z.guid(),
+  created_at: isoTimestamp,
+  name: z.string().min(1),
+  rating: z.number().int().min(1).max(5),
+  text: z.string().min(1),
+  published: z.boolean(),
+})
+export type AdminReviewRow = z.infer<typeof adminReviewRow>
+export const adminReviewPage = z.object({
+  entries: z.array(adminReviewRow),
+  has_more: z.boolean(),
+})
+/** `admin_set_review_published` and `admin_delete_review` answer alike. */
+export const reviewModerationResponse = z.discriminatedUnion('ok', [
+  z.object({ ok: z.literal(true) }),
+  z.object({ ok: z.literal(false), error: z.enum(['invalid', 'not_found']) }),
+])
+
+// --- admin_audit_log (owner read) ----------------------------------------------------------------
+
+/** A role or an action as the database names it: never empty, and short. */
+const auditName = z.string().min(1).max(64)
+const KNOWN_AUDIT_ACTIONS: readonly string[] = ['insert', 'update', 'delete']
+
+const auditLogEntryFields = {
+  id: z.guid(),
+  created_at: isoTimestamp,
+  actor_id: z.guid(),
+  // Both are null once the staff account is gone. A role a later migration adds is shown under a
+  // general label, so any name parses.
+  actor_role: auditName.nullable(),
+  actor_barber_id: z.string().nullable(),
+  // A table a later migration starts to log is shown by its stored name, so any name parses.
+  target_table: z.string().min(1),
+  target_id: z.string().min(1),
+}
+/**
+ * One `admin_list_audit_log` entry. An update names the columns it changed and an insert or a delete
+ * names none, as the table's own check has it; a row that says otherwise matches neither member.
+ * An action a later migration starts to log is shown by its stored name with the columns it names,
+ * if any: one entry the panel has no words for must not hide the rest of the page.
+ */
+const auditLogEntryRow = z.union([
+  z.object({
+    ...auditLogEntryFields,
+    action: z.literal('update'),
+    changed_columns: z.array(z.string().min(1)).min(1),
+  }),
+  z.object({
+    ...auditLogEntryFields,
+    action: z.enum(['insert', 'delete']),
+    changed_columns: z.null(),
+  }),
+  z.object({
+    ...auditLogEntryFields,
+    action: auditName.refine((name) => !KNOWN_AUDIT_ACTIONS.includes(name)),
+    changed_columns: z.array(z.string().min(1)).nullable(),
+  }),
+])
+export type AuditLogEntryRow = z.infer<typeof auditLogEntryRow>
+export const auditLogPage = z.object({
+  entries: z.array(auditLogEntryRow),
+  has_more: z.boolean(),
+})
+
 // --- barber_photos (Task 2 §3) -------------------------------------------------------------------
 
 export const barberPhotoRowT = z.object({

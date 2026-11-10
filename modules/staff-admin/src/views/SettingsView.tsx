@@ -14,6 +14,7 @@ import { orderedAdminOperation } from '../orderedOperations'
 import { validateNewPassword } from '../passwordPolicy'
 import { DEFAULT_SITE_SETTINGS } from '@bladeblend/public-web/site-chrome'
 import type { AdminProfile } from '../types'
+import { AuditLogSection } from './AuditLogSection'
 import {
   afterEmailChange,
   checkEmailChange,
@@ -21,6 +22,7 @@ import {
   passwordFieldAria,
   type EmailFormStatus,
 } from './emailChangeForm'
+import { ReviewModerationSection } from './ReviewModerationSection'
 import type { AdminStylesBundle } from './viewTypes'
 
 const defaultPort = { list: listSiteSettings, save: saveSiteSetting }
@@ -397,6 +399,15 @@ export function SettingsView(props: SettingsViewProps): JSX.Element {
                     : 'Save'}
               </button>
             </form>
+            <hr style={dividerStyle} />
+            <ReviewModerationSection
+              dark={props.dark}
+              lang={props.lang}
+              s={s}
+              headingStyle={subheadingStyle}
+            />
+            <hr style={dividerStyle} />
+            <AuditLogSection lang={props.lang} s={s} headingStyle={subheadingStyle} />
           </>
         ) : null}
       </div>

@@ -3,6 +3,7 @@ import { handleCmsUpload, CmsMediaUnavailable } from './cmsUpload.ts'
 import { createClient } from '@supabase/supabase-js'
 import { initializeImageMagick } from 'npm:@imagemagick/magick-wasm@0.0.42'
 import { ImageValidationError, processImage } from './processImage.ts'
+import { recordOrLogAdminAction } from '../_shared/adminAudit.ts'
 import {
   executeExternalAction,
   ExternalActionError,
@@ -237,6 +238,15 @@ async function handle(req: Request): Promise<Response> {
       return json({ ok: false, error: 'not_found' }, 404)
     }
 
+    // ADMIN LOG: the photo row is deleted, with the service role, which the database cannot
+    // attribute to the caller by itself. A failed entry is logged and the answer is the same.
+    await recordOrLogAdminAction('upload-image', service, {
+      actorId: callerData.user.id,
+      action: 'delete',
+      table: 'barber_photos',
+      targetId: deletion.barberId,
+    })
+
     const removed = await removeObject(
       queued.data.bucket,
       queued.data.path,
@@ -376,6 +386,26 @@ async function handle(req: Request): Promise<Response> {
       },
       response.status,
     )
+  }
+
+  // ADMIN LOG: the photo row is written, with the service role, which the database cannot attribute
+  // to the caller by itself: a first photo is a new row, a replaced one a changed path. A failed
+  // entry is logged and the answer is the same.
+  if (replaced.data.previous_path === null) {
+    await recordOrLogAdminAction('upload-image', service, {
+      actorId: callerData.user.id,
+      action: 'insert',
+      table: 'barber_photos',
+      targetId: upload.barberId,
+    })
+  } else {
+    await recordOrLogAdminAction('upload-image', service, {
+      actorId: callerData.user.id,
+      action: 'update',
+      table: 'barber_photos',
+      targetId: upload.barberId,
+      changedColumns: ['storage_path'],
+    })
   }
 
   let cleanupPending = false
