@@ -37,7 +37,7 @@ const sourceChromePort: SiteChromePort = { load: (lang) => defaultSiteChromePort
 import { DesktopSite } from './DesktopSite'
 import { MobileSite } from './MobileSite'
 import type { Mode, View } from './shared'
-import { MOBILE_MQ, chromeIcon, mobBtnBg, mobMuted, shellPalette } from './shared'
+import { EASE, MOBILE_MQ, chromeIcon, mobBtnBg, mobMuted, shellPalette } from './shared'
 
 function setMeta(selector: string, content: string): void {
   document.querySelector<HTMLMetaElement>(selector)?.setAttribute('content', content)
@@ -501,7 +501,7 @@ export function App({
     alignItems: 'center',
     justifyContent: 'center',
     boxShadow: '0 1px 2px rgba(0,0,0,.3)',
-    transition: 'left .32s ' + 'cubic-bezier(.32,.72,0,1)',
+    transition: 'left .32s ' + EASE,
   }
   const themeKnobIconStyle: JSX.CSSProperties = { width: '14px', height: '14px', opacity: 0.92 }
   // Split into two full literals (rather than a computed `[dark?'left':'right']` key) so the
