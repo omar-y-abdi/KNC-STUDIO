@@ -21,7 +21,12 @@ import { NativeRegion, type NativeInstanceOptions } from '../cms/NativeSurface'
 import { createInstanceScope } from '../cms/instanceScope'
 import { Dialog } from '../ui/Dialog'
 import { FOCUS_CLS } from '../ui/pseudo'
-import { buildBookingStyles, palette, systemRed } from '../booking/bookingStyles'
+import {
+  buildBookingStyles,
+  palette,
+  sheetBackdropStyle,
+  systemRed,
+} from '../booking/bookingStyles'
 import { parseEmail } from '../booking/validation'
 import { Turnstile, turnstileConfigured } from '../booking/Turnstile'
 import type { Lang } from '../i18n/index'
@@ -35,8 +40,7 @@ import { CustomerEmailLink } from './CustomerEmailLink'
 type Mode = 'light' | 'dark'
 type Step = 'loading' | 'lookup' | 'sent' | 'list'
 
-const BACKDROP_STYLE =
-  'position:fixed;inset:0;box-sizing:border-box;background:rgba(10,10,12,.42);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:20px 16px;z-index:60;animation:kncOverlay .2s ease both;overflow:hidden;'
+const BACKDROP_STYLE = sheetBackdropStyle(60)
 
 export interface MyBookingsDialogProps {
   readonly mode: Mode

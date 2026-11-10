@@ -55,6 +55,12 @@ export function palette(dark: boolean): Palette {
   return dark ? DARK : LIGHT
 }
 
+/** Backdrop of the sheet dialogs (details, confirmation, Mina bokningar); they differ only in
+ * stacking order. */
+export function sheetBackdropStyle(zIndex: number): string {
+  return `position:fixed;inset:0;box-sizing:border-box;background:rgba(10,10,12,.42);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:20px 16px;z-index:${zIndex};animation:kncOverlay .2s ease both;overflow:hidden;`
+}
+
 /** Icon sizing/filter helper. */
 function makeIc(c: Palette): (sz: number, op?: number) => JSX.CSSProperties {
   return (sz, op) => ({
@@ -134,6 +140,27 @@ export function buildBookingStyles(
 ): BookingStyles {
   const ic = makeIc(c)
   const red = systemRed(dark)
+  const inputStyle: JSX.CSSProperties = {
+    border: '.5px solid ' + c.inputLine,
+    borderRadius: '9px',
+    padding: '10px 12px',
+    fontFamily: 'inherit',
+    outline: 'none',
+    background: c.input,
+    color: c.text,
+  }
+  const resetBtnStyle: JSX.CSSProperties = {
+    width: '100%',
+    padding: '12px',
+    border: 'none',
+    background: c.accent,
+    color: c.accentText,
+    borderRadius: '10px',
+    fontSize: '15px',
+    fontWeight: 600,
+    fontFamily: 'inherit',
+    cursor: 'pointer',
+  }
   return {
     badgeStyle: {
       display: 'flex',
@@ -255,15 +282,7 @@ export function buildBookingStyles(
       gap: '8px',
     },
     dividerStyle: { height: '.5px', background: c.line, margin: '2px 0' },
-    inputStyle: {
-      border: '.5px solid ' + c.inputLine,
-      borderRadius: '9px',
-      padding: '10px 12px',
-      fontFamily: 'inherit',
-      outline: 'none',
-      background: c.input,
-      color: c.text,
-    },
+    inputStyle,
     bookBtnStyle: {
       width: '100%',
       padding: '13px',
@@ -311,41 +330,19 @@ export function buildBookingStyles(
       fontWeight: 500,
     },
     calIconStyle: ic(18, 0.8),
-    resetBtnStyle: {
-      width: '100%',
-      padding: '12px',
-      border: 'none',
-      background: c.accent,
-      color: c.accentText,
-      borderRadius: '10px',
-      fontSize: '15px',
-      fontWeight: 600,
-      fontFamily: 'inherit',
-      cursor: 'pointer',
-    },
+    resetBtnStyle,
     secondaryBtnStyle: {
-      width: '100%',
-      padding: '12px',
+      ...resetBtnStyle,
       border: '.5px solid ' + c.line,
       background: c.subtle,
       color: c.text,
-      borderRadius: '10px',
-      fontSize: '15px',
-      fontWeight: 600,
-      fontFamily: 'inherit',
-      cursor: 'pointer',
     },
     // Invalid-input variant: identical geometry to `inputStyle` (same .5px width, radius, padding,
     // font, background, text color) so flagging a field causes NO layout shift — only the border
     // COLOR swaps to the system red, plus a subtle red focus-style ring (mirrors FOCUS_CLS).
     inputErrorStyle: {
+      ...inputStyle,
       border: '.5px solid ' + red,
-      borderRadius: '9px',
-      padding: '10px 12px',
-      fontFamily: 'inherit',
-      outline: 'none',
-      background: c.input,
-      color: c.text,
       boxShadow: '0 0 0 3px ' + (dark ? 'rgba(255,69,58,.28)' : 'rgba(255,59,48,.28)'),
     },
     // Note under an invalid field: same geometry as the field labels (12px / weight 600) but full
