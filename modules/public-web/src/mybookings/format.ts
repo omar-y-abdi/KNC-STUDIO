@@ -28,16 +28,14 @@ export function formatRowLabel(lang: Lang, date: Date, sep: string): string {
 /**
  * Split a flat booking list into upcoming/past around `now`: upcoming soonest-first, past
  * most-recent-first. A booking counts as past once its start is at/before `now`. Pure (injected
- * `now`), and it copies the arrays before sorting so the input is never mutated.
+ * `now`); it sorts the filtered copies, so the input is never mutated.
  */
 export function splitByTime(all: readonly MyBooking[], now: Date): MyBookings {
   const nowMs = now.getTime()
-  const upcoming = all.filter((b) => b.start.getTime() > nowMs)
-  const past = all.filter((b) => b.start.getTime() <= nowMs)
   const byStartAsc = (a: MyBooking, b: MyBooking): number => a.start.getTime() - b.start.getTime()
   const byStartDesc = (a: MyBooking, b: MyBooking): number => b.start.getTime() - a.start.getTime()
   return {
-    upcoming: [...upcoming].sort(byStartAsc),
-    past: [...past].sort(byStartDesc),
+    upcoming: all.filter((b) => b.start.getTime() > nowMs).sort(byStartAsc),
+    past: all.filter((b) => b.start.getTime() <= nowMs).sort(byStartDesc),
   }
 }

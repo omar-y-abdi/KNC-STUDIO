@@ -20,6 +20,22 @@ import type {
   MyBookingsPort,
 } from '../port'
 
+/** Prove the browser retained the HttpOnly cookie: a cookie-only read must return the same verified
+ * session. Null when it did, otherwise the error to report. */
+async function sessionCookieError(
+  sessionProof: string,
+): Promise<'system' | 'cookies_disabled' | null> {
+  const session = await invokePublicBookingAction({ action: 'list' })
+  if (session.failed) return 'system'
+  const confirmed = parseWith(listCustomerBookingsResponse, session.data)
+  if (!confirmed.ok) return 'system'
+  return confirmed.value.ok &&
+    confirmed.value.authority === 'verified' &&
+    confirmed.value.session_proof === sessionProof
+    ? null
+    : 'cookies_disabled'
+}
+
 export const supabaseMyBookingsAdapter: MyBookingsPort = {
   async requestEmailLink(email, lang, sourceEmail) {
     const result = await invokePublicBookingAction({
@@ -65,17 +81,8 @@ export const supabaseMyBookingsAdapter: MyBookingsPort = {
       const parsed = parseWith(customerAccessExchangeResponse, data)
       if (!parsed.ok) return { ok: false, error: 'system' }
       if (!parsed.value.ok) return { ok: false, error: parsed.value.error }
-      const session = await invokePublicBookingAction({ action: 'list' })
-      if (session.failed) return { ok: false, error: 'system' }
-      const confirmed = parseWith(listCustomerBookingsResponse, session.data)
-      if (!confirmed.ok) return { ok: false, error: 'system' }
-      if (
-        !confirmed.value.ok ||
-        confirmed.value.authority !== 'verified' ||
-        confirmed.value.session_proof !== parsed.value.session_proof
-      ) {
-        return { ok: false, error: 'cookies_disabled' }
-      }
+      const error = await sessionCookieError(parsed.value.session_proof)
+      if (error !== null) return { ok: false, error }
       return { ok: true, accessToken: '' }
     } catch {
       return { ok: false, error: 'system' }
@@ -99,17 +106,8 @@ export const supabaseMyBookingsAdapter: MyBookingsPort = {
       // Prove the browser retained the HttpOnly cookie before discarding the email credential.
       if (params.accessToken !== '') {
         if (parsed.value.authority !== 'verified') return { ok: false, error: 'access_denied' }
-        const session = await invokePublicBookingAction({ action: 'list' })
-        if (session.failed) return { ok: false, error: 'system' }
-        const confirmed = parseWith(listCustomerBookingsResponse, session.data)
-        if (!confirmed.ok) return { ok: false, error: 'system' }
-        if (
-          !confirmed.value.ok ||
-          confirmed.value.authority !== 'verified' ||
-          confirmed.value.session_proof !== parsed.value.session_proof
-        ) {
-          return { ok: false, error: 'cookies_disabled' }
-        }
+        const error = await sessionCookieError(parsed.value.session_proof)
+        if (error !== null) return { ok: false, error }
       }
 
       const sep = myBookingsStrings(params.lang).atSep
