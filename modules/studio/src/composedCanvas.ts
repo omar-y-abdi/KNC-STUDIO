@@ -41,18 +41,18 @@ function bookingSceneRoot(doc: Document, scene: (typeof bookingStages)[number]):
 
 /** Show the stored stage in its actual page shell without copying its native identity. */
 function composeBookingScene(
-  content: { html: string; css: string },
+  html: string,
   scene: (typeof bookingStages)[number],
   device: CanvasDevice,
-): { html: string; css: string } {
-  const doc = new DOMParser().parseFromString(content.html, 'text/html')
+): string {
+  const doc = new DOMParser().parseFromString(html, 'text/html')
   const shell = doc.querySelector(`[data-knc-surface="${device.toLowerCase()}-booking"]`)
   const flow = shell?.querySelector('[data-knc-fold="booking-flow"]')
   const flowContent = flow?.firstElementChild
   if (!flow || !flowContent) throw new Error('Bokningsvyns fullständiga sidmall kunde inte läsas.')
   flowContent.appendChild(bookingSceneRoot(doc, 'booking-options'))
   if (scene !== 'booking-options') flow.appendChild(bookingSceneRoot(doc, scene))
-  return { ...content, html: doc.body.innerHTML }
+  return doc.body.innerHTML
 }
 
 /** Return editor-only stage placements to their single stored roots before saving. */
@@ -92,10 +92,8 @@ export function* composedCanvasPasses(
 ): Generator<void, ComposedCanvasTree> {
   const content = nativeCanvasTree(page.content[lang], mode)
   yield
-  if (page.path === '/booking' && isBookingStage(scene)) {
-    const booking = composeBookingScene({ html: content.html, css: '' }, scene, device)
-    return { ...content, html: booking.html }
-  }
+  if (page.path === '/booking' && isBookingStage(scene))
+    return { ...content, html: composeBookingScene(content.html, scene, device) }
   if (page.path !== '/') return content
   const about = presentation.pages.find((item) => item.path === '/about')
   if (!about) return content
@@ -144,7 +142,9 @@ export function* composedCanvasPasses(
         slot.replaceChildren(...[...copy.body.childNodes].map((node) => node.cloneNode(true)))
     }
   }
-  deduplicateUnlayeredRules(css)
+  // Home and both About copies share source rules. Import each identical rule once.
+  // Layer declarations establish order on first occurrence, so retain them verbatim.
+  if (!hasLayer(css)) deduplicateRules(css)
   return {
     html: doc.body.innerHTML,
     sheet: css,
@@ -506,12 +506,6 @@ function hasLayer(tree: CssNode): boolean {
   return layered
 }
 
-function deduplicateUnlayeredRules(combined: CssNode): void {
-  // Home and both About copies share source rules. Import each identical rule once.
-  // Layer declarations establish order on first occurrence, so retain them verbatim.
-  if (!hasLayer(combined)) deduplicateRules(combined)
-}
-
 /** Static comparison consumers still receive both responsive surfaces. */
 export function composedCanvas(
   page: CmsPage,
@@ -530,37 +524,9 @@ export function composedCanvas(
   return { html: content.html, css: (projectStyles && content.projectStyles?.(css)) || css }
 }
 
-/** Install the deferred tree once, before either idle completion or the first ownership move. */
-export function installHomeAboutPreview(editor: Editor, create: () => string): void {
-  const wrapper = editor.getWrapper()
-  const slot = wrapper
-    ?.find('[data-knc-slot]')
-    .find((candidate) =>
-      candidate
-        .components()
-        .some(
-          (child: Component) =>
-            child.get('tagName') === 'section' && child.getAttributes()['aria-labelledby'],
-        ),
-    )
-  if (!slot) return
-  const preview = create()
-  editor.UndoManager.skip(() => {
-    slot.components(preview)
-    const configure = (component: Component): void => {
-      configureComponent(component, { silent: true })
-      component.components().forEach(configure)
-    }
-    slot.components().forEach(configure)
-  })
-}
-
-/** Only ownership moves on a Home device switch; both responsive trees already exist. */
-export function moveHomeAbout(editor: Editor, device: CanvasDevice): boolean {
-  const wrapper = editor.getWrapper()
-  const from = wrapper?.find('[data-editor-about-slot]')[0]
-  const surface = wrapper?.find(`[data-knc-surface="${device.toLowerCase()}-home"]`)[0]
-  const to = surface
+/** The runtime slot under `root` that holds the named About section. */
+function aboutSlot(root: Component | undefined): Component | undefined {
+  return root
     ?.find('[data-knc-slot]')
     .find((slot) =>
       slot
@@ -570,6 +536,29 @@ export function moveHomeAbout(editor: Editor, device: CanvasDevice): boolean {
             child.get('tagName') === 'section' && child.getAttributes()['aria-labelledby'],
         ),
     )
+}
+
+function configureTree(component: Component): void {
+  configureComponent(component, { silent: true })
+  component.components().forEach(configureTree)
+}
+
+/** Install the deferred tree once, before either idle completion or the first ownership move. */
+export function installHomeAboutPreview(editor: Editor, create: () => string): void {
+  const slot = aboutSlot(editor.getWrapper())
+  if (!slot) return
+  const preview = create()
+  editor.UndoManager.skip(() => {
+    slot.components(preview)
+    slot.components().forEach(configureTree)
+  })
+}
+
+/** Only ownership moves on a Home device switch; both responsive trees already exist. */
+export function moveHomeAbout(editor: Editor, device: CanvasDevice): boolean {
+  const wrapper = editor.getWrapper()
+  const from = wrapper?.find('[data-editor-about-slot]')[0]
+  const to = aboutSlot(wrapper?.find(`[data-knc-surface="${device.toLowerCase()}-home"]`)[0])
   const owner = from?.components().at(0)
   const preview = to?.components().at(0)
   if (
@@ -614,11 +603,7 @@ export function moveBookingScene(editor: Editor, scene: CmsScene, device: Canvas
       stages[0]?.move(content)
       if (scene !== 'booking-options') stages[bookingStages.indexOf(scene)]?.move(flow)
     }
-    const configure = (component: Component): void => {
-      configureComponent(component, { silent: true })
-      component.components().forEach(configure)
-    }
-    for (const stage of stages) if (stage) configure(stage)
+    for (const stage of stages) if (stage) configureTree(stage)
     configureComponent(content, { silent: true })
     configureComponent(flow, { silent: true })
   })
