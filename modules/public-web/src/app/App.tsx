@@ -26,10 +26,10 @@ import { scheduleIdle } from '../ui/idle'
 import { LazySurface } from '../ui/LazySurface'
 import {
   SKIP_LINK_CLASS,
-  focusIsStranded,
   focusIsWithin,
   focusQuietly,
   mainLandmark,
+  viewChangeStrandsFocus,
 } from '../ui/pageFocus'
 import { usePrivacyPreferences } from '../site/usePrivacyPreferences'
 import { PrivacyBanner } from '../site/PrivacyBanner'
@@ -520,7 +520,8 @@ export function App({
   useEffect(() => {
     if (focusedView.current === state.view) return
     focusedView.current = state.view
-    if (preview || !focusIsStranded(document.activeElement, document.body)) return
+    if (preview || !viewChangeStrandsFocus(document.activeElement, document.body, state.view))
+      return
     const viewStart = document.querySelector<HTMLElement>(
       state.view === 'booking'
         ? '[data-testid="fold-booking"]'

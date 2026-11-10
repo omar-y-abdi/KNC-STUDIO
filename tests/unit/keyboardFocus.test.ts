@@ -12,6 +12,7 @@ import {
   focusIsStranded,
   focusIsWithin,
   hasSkipLink,
+  viewChangeStrandsFocus,
 } from '../../modules/public-web/src/ui/pageFocus'
 import { mount, nodes, ref, render, reset } from './helpers/fakeHooks'
 import { matchesSelector, type SelectorSubject } from './helpers/fakeSelector'
@@ -788,6 +789,37 @@ describe('focusIsStranded', () => {
   it('is not while a usable control holds it: the desktop "Boka tid" toggle keeps the focus', () => {
     const toggle = page.body.add(button())
     expect(focusIsStranded(toggle, page.body)).toBe(false)
+  })
+})
+
+describe('viewChangeStrandsFocus', () => {
+  it('is on the way to booking while the focus rests in the mobile hero, not yet inert', () => {
+    const hero = page.body.add(box({ 'data-knc-fold': 'hero' }))
+    const book = hero.add(button())
+    const about = hero.add(box({ style: 'display:contents' })).add(link())
+    expect(viewChangeStrandsFocus(book, page.body, 'booking')).toBe(true)
+    expect(viewChangeStrandsFocus(about, page.body, 'booking')).toBe(true)
+  })
+
+  it('is not on the way home, which unfolds the hero, nor for a control outside the hero', () => {
+    const panel = page.body.add(box({ 'data-knc-fold': 'panel' }))
+    const language = panel.add(button())
+    const hero = panel.add(box({ 'data-knc-fold': 'hero' }))
+    const about = hero.add(link())
+    const desktopToggle = page.body.add(button())
+    expect(viewChangeStrandsFocus(about, page.body, 'home')).toBe(false)
+    expect(viewChangeStrandsFocus(language, page.body, 'booking')).toBe(false)
+    expect(viewChangeStrandsFocus(desktopToggle, page.body, 'booking')).toBe(false)
+  })
+
+  it('is, either way, while the focus is already stranded', () => {
+    const fold = page.body.add(box({ inert: '' }))
+    const closed = fold.add(button())
+    for (const view of ['home', 'booking'] as const) {
+      expect(viewChangeStrandsFocus(null, page.body, view)).toBe(true)
+      expect(viewChangeStrandsFocus(page.body, page.body, view)).toBe(true)
+      expect(viewChangeStrandsFocus(closed, page.body, view)).toBe(true)
+    }
   })
 })
 

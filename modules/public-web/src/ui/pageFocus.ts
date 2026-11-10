@@ -27,6 +27,19 @@ export function focusIsStranded(
   return active === null || active === body || active.closest('[inert]') !== null
 }
 
+/** Whether a change to `view` strands keyboard focus: as `focusIsStranded`, or in the mobile hero
+ * that booking folds, which turns inert only in a later render. */
+export function viewChangeStrandsFocus(
+  active: { closest(selector: string): unknown } | null,
+  body: unknown,
+  view: 'home' | 'booking',
+): boolean {
+  return (
+    focusIsStranded(active, body) ||
+    (view === 'booking' && active !== null && active.closest('[data-knc-fold="hero"]') !== null)
+  )
+}
+
 /** Whether keyboard focus rests on `part` or inside it (null: no such part). A part that is about
  * to be hidden drops the focus it holds to the `body`. */
 export function focusIsWithin(
