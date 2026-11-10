@@ -145,9 +145,7 @@ export const supabaseSiteChromeAdapter: SiteChromePort = {
       const channel = realtime
         .channel(`site-chrome:${lang}`)
         .on('system', {}, (payload) => {
-          if (!awaitingPostgresReady || !isPostgresChangesReady(payload)) return
-          awaitingPostgresReady = false
-          reload()
+          if (awaitingPostgresReady && isPostgresChangesReady(payload)) changed()
         })
         .on(
           'postgres_changes',
