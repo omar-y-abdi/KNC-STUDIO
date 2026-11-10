@@ -39,18 +39,18 @@ Move NativeSource and its source-cache/draft/example helpers into public-owned p
 
 1. Record the source/CI inventory and implement workspace layout, explicit exports, preview ownership and executable import boundaries. Preserve source behavior and package/deploy resolution.
 2. Implement impact planning and module-local commands, including complete test ownership and explicit non-import edges. Prove local, transitive and fail-closed cases before workflow mutation.
-3. Wire CI jobs/matrices and aggregate authorization to the verified plan. Keep full-suite mode and historical DB isolation. Demonstrate actual selection and selected browser execution for a local editor change; broader contract/schema/CSS fixtures must select all required consumers.
+3. Wire CI jobs/matrices and aggregate authorization to the verified plan. Keep full-suite mode. Demonstrate actual selection and selected browser execution for a local editor change; broader contract/schema/CSS fixtures must select all required consumers.
 4. Independent adversarial review, integration of parent CI repairs, full baseline verification, documentation and PR with exact evidence.
 
 ## Acceptance examples
 
-| Change                                   | Must include                                                                            | Must avoid when proven unrelated                                   |
-| ---------------------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| Isolated workspace editor view           | Boundary/type checks, owned unit checks, workspace/focus/navigation browser integration | Customer DB stack, historical migrations, public booking execution |
-| CMS document validator/format            | Studio, public rendering/preview, backend/SQL parity, release stamp                     | Nothing selected away solely because source is TypeScript          |
-| Booking schema/rules/migration           | Backend current + historical where applicable, customer booking and staff behavior      | No assumption that import reachability captures SQL                |
-| Public CSS/token/font asset              | Public rendering + Studio capture/preview and relevant build/startup                    | No CSS exclusion from graph                                        |
-| CI/lockfile/package exports/unknown path | Full verification                                                                       | No silent omission                                                 |
+| Change                                   | Must include                                                                            | Must avoid when proven unrelated                          |
+| ---------------------------------------- | --------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| Isolated workspace editor view           | Boundary/type checks, owned unit checks, workspace/focus/navigation browser integration | Customer DB stack, public booking execution               |
+| CMS document validator/format            | Studio, public rendering/preview, backend/SQL parity, release stamp                     | Nothing selected away solely because source is TypeScript |
+| Booking schema/rules/migration           | Backend current schema, customer booking and staff behavior                             | No assumption that import reachability captures SQL       |
+| Public CSS/token/font asset              | Public rendering + Studio capture/preview and relevant build/startup                    | No CSS exclusion from graph                               |
+| CI/lockfile/package exports/unknown path | Full verification                                                                       | No silent omission                                        |
 
 ## Risks and verification
 

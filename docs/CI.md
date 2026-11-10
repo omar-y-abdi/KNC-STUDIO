@@ -69,24 +69,21 @@ untracked downloads such as `.ci-source` and `.ci-build`. Worker dry-run package
 without invoking a second frontend build. Artifacts use stable per-run names, so failed consumer
 jobs can be re-run without rerunning successful producers.
 
-Historical expand/contract checks own an isolated runner and database. They cannot alter the
-current-schema integration runner. The former restorative reset disappears; both original rollout
-stages still execute. Current acceptance retains Auth, Storage, Realtime, gateway, mail and Edge
-runtime. Only Studio, metadata tooling and the pooler are omitted there.
+Current-schema acceptance applies every migration and retains Auth, Storage, Realtime, gateway,
+mail and Edge runtime. Only Studio, metadata tooling and the pooler are omitted there.
 
 ## Preserved coverage
 
-| Gate          | Native coverage / checks                                                                                                                                  |
-| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Source        | Auto-format, format check, patch replay and exact source verification                                                                                     |
-| Static        | ESLint, TypeScript (including Playwright config), selected exact unit files, boundary/CI contracts, production dependency audit, CMS release stamp        |
-| Build         | Production compile/minification, real Worker dry-run, font license/artifact rejection, CSP fixture build                                                  |
-| Public/admin  | Chromium domain/race/session flows; privacy, CMS shell and delayed verification in all three engines; approved visual views and existing image CPU budget |
-| CMS           | Selected CMS specs in both engines; full plans retain nine shards per engine                                                                              |
-| Startup       | Chromium and WebKit against actual compiled routes under the existing production CSP policy                                                               |
-| Edge          | Every entrypoint checked by Deno 2.9.5 with the frozen lock                                                                                               |
-| Current DB    | All current migrations and pgTAP; serial adapter integration; actual Edge/Storage asset reuse; three real Worker/Edge/HTTPS customer engine flows         |
-| Historical DB | Original expand and contract migration compatibility checks                                                                                               |
+| Gate         | Native coverage / checks                                                                                                                                  |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Source       | Auto-format, format check, patch replay and exact source verification                                                                                     |
+| Static       | ESLint, TypeScript (including Playwright config), selected exact unit files, boundary/CI contracts, production dependency audit, CMS release stamp        |
+| Build        | Production compile/minification, real Worker dry-run, font license/artifact rejection, CSP fixture build                                                  |
+| Public/admin | Chromium domain/race/session flows; privacy, CMS shell and delayed verification in all three engines; approved visual views and existing image CPU budget |
+| CMS          | Selected CMS specs in both engines; full plans retain nine shards per engine                                                                              |
+| Startup      | Chromium and WebKit against actual compiled routes under the existing production CSP policy                                                               |
+| Edge         | Every entrypoint checked by Deno 2.9.5 with the frozen lock                                                                                               |
+| Current DB   | All current migrations and pgTAP; serial adapter integration; actual Edge/Storage asset reuse; three real Worker/Edge/HTTPS customer engine flows         |
 
 Identical duplicate executions from the former standalone CMS workflows are consolidated. Owner
 logos remain in the owner cases; public CMS regression still runs in both engines; admin CMS

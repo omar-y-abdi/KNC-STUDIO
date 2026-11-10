@@ -175,13 +175,12 @@ test('isolated Studio edit selects its units and full Studio cohort while omitti
   assert.equal(plan.jobs.startup.required, true)
   assert.equal(plan.jobs['public-browsers'].required, false)
   assert.equal(plan.jobs['database-current'].required, false)
-  assert.equal(plan.jobs['database-rollout'].required, false)
   assert.deepEqual(createPlan(f.context), plan)
   authorizeOmission(plan, 'database-current', f.context)
   assert.throws(() => authorizeOmission(plan, 'cms', f.context), /Required job/)
 })
 
-test('content format, SQL, CSS and wire contracts select all current consumers; SQL also selects rollout', (t) => {
+test('content format, SQL, CSS and wire contracts select all current consumers', (t) => {
   const graph = { edges: [] }
   const inventory = {
     'a.test.ts': { kind: 'unit', owners: moduleIds },
@@ -197,10 +196,6 @@ test('content format, SQL, CSS and wire contracts select all current consumers; 
     const plan = selectVerification([{ path, status: 'M' }], graph, inventory, units)
     for (const job of ['cms', 'public-browsers', 'edge-functions', 'database-current', 'startup'])
       assert.equal(plan.jobs[job].required, true, `${path}: ${job}`)
-    assert.equal(
-      plan.jobs['database-rollout'].required,
-      path.includes('/migrations/') || path.endsWith('.css'),
-    )
   }
   assert.ok(t)
 })

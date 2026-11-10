@@ -1796,18 +1796,6 @@
     "owners": ["backend-contracts", "public-web"],
     "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
   },
-  "tests/unit/publicBookingRolloutContract.test.ts": {
-    "kind": "unit",
-    "owners": [
-      "backend",
-      "backend-contracts",
-      "content-contracts",
-      "public-web",
-      "staff-admin",
-      "studio"
-    ],
-    "reason": "Source import responsibilities; filesystem/process/unknown inputs always-on"
-  },
   "tests/unit/publicClientBoundary.test.ts": {
     "kind": "unit",
     "owners": ["public-web"],

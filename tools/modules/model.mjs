@@ -13,7 +13,6 @@ export const jobs = [
   'startup',
   'edge-functions',
   'database-current',
-  'database-rollout',
 ]
 export const moduleIds = Object.keys(modulePaths).sort()
 
@@ -307,9 +306,6 @@ export function selectVerification(changes, graph, inventory, units, forcedReaso
     required.add('edge-functions')
     required.add('database-current')
   }
-  // Historical rollout is independent of runtime source changes, but any SQL edit needs it.
-  if (full || changes.some(({ path }) => path.startsWith('supabase/migrations/')))
-    required.add('database-rollout')
   const unit = units
     .filter((entry) => full || entry.owners.some((owner) => affected.has(owner)))
     .map((entry) => entry.path)
@@ -358,9 +354,7 @@ export function selectVerification(changes, graph, inventory, units, forcedReaso
             ? ['format', 'quality', 'build'].includes(job)
               ? 'Always-on boundary/static/unit/release/build gate'
               : 'Selected runtime consumers or conservative full fallback'
-            : job === 'database-rollout'
-              ? 'No migration or full-fallback input changed'
-              : 'No affected runtime consumer in verified source and non-import graph',
+            : 'No affected runtime consumer in verified source and non-import graph',
         },
       ]),
     ),

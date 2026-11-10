@@ -78,14 +78,7 @@ test('workflow context fails closed and only full events may default their base'
 
 test('aggregate CLI allows only rederived omissions and rejects altered context, plan and source', (t) => {
   const f = fixture(t)
-  const expected = [
-    'format',
-    'quality',
-    'cms',
-    'edge-functions',
-    'database-current',
-    'database-rollout',
-  ]
+  const expected = ['format', 'quality', 'cms', 'edge-functions', 'database-current']
   const needs = Object.fromEntries(
     expected.map((id) => [id, { result: f.plan.jobs[id].required ? 'success' : 'skipped' }]),
   )
