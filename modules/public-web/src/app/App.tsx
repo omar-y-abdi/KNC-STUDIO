@@ -65,9 +65,7 @@ function updateDocumentMetadata(chrome: SiteChrome, lang: Lang): void {
     document.head.appendChild(canonicalElement)
   }
 
-  const canonical = document
-    .querySelector<HTMLLinkElement>('link[rel="canonical"]')
-    ?.getAttribute('href')
+  const canonical = canonicalElement.getAttribute('href')
   const siteUrl = canonical?.startsWith('http')
     ? canonical.replace(/\/$/, '')
     : window.location.origin
