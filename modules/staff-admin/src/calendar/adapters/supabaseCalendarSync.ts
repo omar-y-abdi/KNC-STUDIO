@@ -15,8 +15,8 @@ import { parseCalendarStatus } from '../status'
 
 const GENERIC = 'Något gick fel med kalendern. Försök igen.'
 
-/** supabase-js v2 may return the typed body even on non-2xx; read `data.ok` first, then fall back to
- *  the error. Returns the parsed body object when present. */
+/** supabase-js v2 may return the typed body even on non-2xx, so only `data.ok === true` is success;
+ *  every other reply maps to the same generic error. Returns the parsed body object when present. */
 function readBody(data: unknown): Record<string, unknown> | null {
   return data !== null && typeof data === 'object' ? (data as Record<string, unknown>) : null
 }
@@ -35,15 +35,13 @@ export const supabaseCalendarSyncPort: CalendarSyncPort = {
 
   connectUrl: async (): Promise<AdminResult<string>> => {
     try {
-      const { data, error } = await getAdminClient().functions.invoke('calendar-oauth-start', {
+      const { data } = await getAdminClient().functions.invoke('calendar-oauth-start', {
         body: {},
       })
       const body = readBody(data)
       if (body !== null && body['ok'] === true && typeof body['url'] === 'string') {
         return ok(body['url'])
       }
-      if (body !== null && body['ok'] === false) return err('network', GENERIC)
-      if (error !== null) return err('network', GENERIC)
       return err('network', GENERIC)
     } catch {
       return err('network', GENERIC)
@@ -52,13 +50,11 @@ export const supabaseCalendarSyncPort: CalendarSyncPort = {
 
   disconnect: async (): Promise<AdminResult<void>> => {
     try {
-      const { data, error } = await getAdminClient().functions.invoke('calendar-disconnect', {
+      const { data } = await getAdminClient().functions.invoke('calendar-disconnect', {
         body: {},
       })
       const body = readBody(data)
       if (body !== null && body['ok'] === true) return ok(undefined)
-      if (body !== null && body['ok'] === false) return err('network', GENERIC)
-      if (error !== null) return err('network', GENERIC)
       return err('network', GENERIC)
     } catch {
       return err('network', GENERIC)
