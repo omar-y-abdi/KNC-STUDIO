@@ -54,18 +54,16 @@ export function createSiteChromeVisibilityLifecycle(
     })
   }
 
+  const start = (): void => {
+    options.load()
+    startSubscription()
+  }
+
   return {
-    start: () => {
-      options.load()
-      startSubscription()
-    },
+    start,
     visibilityChanged: () => {
-      if (options.isHidden()) {
-        stopSubscription()
-        return
-      }
-      options.load()
-      startSubscription()
+      if (options.isHidden()) stopSubscription()
+      else start()
     },
     stop: () => {
       stopped = true
