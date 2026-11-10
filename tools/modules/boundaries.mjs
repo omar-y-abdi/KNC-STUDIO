@@ -111,9 +111,11 @@ export function dependenciesOf(path, text) {
       ts.isPropertyAccessExpression(node.expression) &&
       isImportMeta(node.expression.expression)
     ) {
-      unsupported.push(
-        `${path}: unsupported import.meta dependency operation ${node.expression.name.text}`,
-      )
+      if (node.expression.name.text === 'resolve') add(node.arguments[0], 'import.meta.resolve')
+      else
+        unsupported.push(
+          `${path}: unsupported import.meta dependency operation ${node.expression.name.text}`,
+        )
     } else if (
       ts.isNewExpression(node) &&
       ts.isIdentifier(node.expression) &&

@@ -42,13 +42,27 @@ test('TypeScript syntax analysis ignores strings/comments and captures every dep
     import y = require('./legacy'); require('./runtime');
     new Worker(new URL('./worker.ts', import . meta . url));
     import(name); import.meta.glob('./**/*.ts');
+    import.meta.resolve('./resolved'); import.meta.resolve(name);
   `,
   )
   assert.deepEqual(
     result.dependencies.map((entry) => entry.specifier),
-    ['./types', './export', './lazy', './shape', './legacy', './runtime', './worker.ts'],
+    [
+      './types',
+      './export',
+      './lazy',
+      './shape',
+      './legacy',
+      './runtime',
+      './worker.ts',
+      './resolved',
+    ],
   )
-  assert.equal(result.unsupported.length, 2)
+  assert.deepEqual(result.unsupported, [
+    'a.ts: nonliteral dynamic import',
+    'a.ts: unsupported import.meta dependency operation glob',
+    'a.ts: nonliteral import.meta.resolve',
+  ])
 })
 
 test('boundaries reject private/undeclared/forbidden production imports and missing workers', (t) => {
