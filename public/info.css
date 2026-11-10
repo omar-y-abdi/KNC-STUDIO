@@ -60,3 +60,53 @@ body {
   margin: 0 0 0.75rem;
   overflow-wrap: anywhere;
 }
+/* The skip link, a .bb-btn (/tokens.css) that is the first focusable element of a document: above
+   the viewport until it has focus, so it changes nothing on screen before that. */
+.bb-skip {
+  position: absolute;
+  top: 0.75rem;
+  left: 0.75rem;
+  max-width: calc(100% - 1.5rem);
+  transform: translateY(-200%);
+}
+.bb-skip:focus {
+  transform: none;
+  outline: 3px solid var(--bb-text);
+  outline-offset: 4px;
+}
+/* The link's target takes focus so that Tab goes on from the content. It is not a control, so it
+   shows no ring around the whole document. */
+.bb-doc:focus {
+  outline: none;
+}
+/* On paper: black on white whatever scheme the screen shows, without the skip link and the
+   document's own breadcrumb and footer links (its direct children: a nav or footer further in is
+   content), and with the address after each link to the site or the web (a mail or phone link
+   already shows its address). Nothing below applies on screen. */
+@media print {
+  :root {
+    --bb-bg: #fff;
+    --bb-text: #000;
+    --bb-muted: #000;
+    --bb-line: #000;
+    --bb-surface: #fff;
+  }
+  .bb-doc {
+    max-width: none;
+    padding: 0;
+  }
+  .bb-skip,
+  .bb-doc > nav,
+  .bb-doc > footer {
+    display: none;
+  }
+  .bb-doc a[href^='/']::after {
+    content: ' (bladeblendstudio.se' attr(href) ')';
+  }
+  .bb-doc a[href^='http']::after {
+    content: ' (' attr(href) ')';
+  }
+}
+@page {
+  margin: 2cm;
+}

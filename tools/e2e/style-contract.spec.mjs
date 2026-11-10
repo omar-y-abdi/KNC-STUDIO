@@ -29,6 +29,8 @@ const APP = '.bb-page, .bb-status'
 const DOC = ':root'
 const PAGES = [
   { url: '/404.html', ready: 'h1', surface: DOC },
+  { url: '/500.html', ready: 'h1', surface: DOC },
+  { url: '/maintenance.html', ready: 'h1', surface: DOC },
   { url: '/no-such-page', ready: 'h1', surface: APP },
   { url: '/login', ready: 'text=Laddar', surface: APP, holdAdminChunk: true },
   { url: '/login', ready: '#admin-email', surface: APP },
@@ -41,6 +43,19 @@ const PAGES = [
   { url: '/terms', ready: 'h1', surface: DOC, presentation: 'upgraded' },
   { url: '/privacy', ready: 'h1', surface: DOC, presentation: 'upgraded' },
   { url: '/contact', ready: 'h1', surface: DOC, presentation: 'upgraded' },
+]
+// The static documents that carry the skip link of public/info.css in their own markup.
+const SKIP_DOCUMENTS = ['/404.html', '/500.html', '/maintenance.html', '/google-calendar.html']
+// Every static document built on public/info.css, as the preview build serves the file. Contact and
+// /terms.html are the two with both a breadcrumb and a footer.
+const PRINT_DOCUMENTS = [
+  '/404.html',
+  '/500.html',
+  '/maintenance.html',
+  '/contact.html',
+  '/terms.html',
+  '/privacy.html',
+  '/google-calendar.html',
 ]
 
 let rendering
@@ -122,6 +137,39 @@ const tokenSurface = (page, selector) =>
     return { background: style.backgroundColor, font, seen: seen ?? null }
   }, selector)
 
+/** What the paper styles of public/info.css decide, as the page computes it under the current
+ * media: the root's background, the colour of every element of main.bb-doc that holds text of its
+ * own, every painted background there, the display of the skip link and of the document's own
+ * breadcrumb and footer (its direct children), and the generated address after the first link to
+ * the site that sits outside them. */
+const paper = (page) =>
+  page.evaluate(() => {
+    const OWN_NAVIGATION = '.bb-doc > nav, .bb-doc > footer'
+    const computed = (element, pseudo) => globalThis.getComputedStyle(element, pseudo)
+    const main = globalThis.document.querySelector('main.bb-doc')
+    const elements = [main, ...main.querySelectorAll('*')]
+    const worded = (element) =>
+      [...element.childNodes].some((node) => node.nodeType === 3 && node.data.trim() !== '')
+    const link = [...main.querySelectorAll('a[href^="/"]')].find(
+      (item) => !item.closest(OWN_NAVIGATION),
+    )
+    return {
+      root: computed(globalThis.document.documentElement).backgroundColor,
+      text: [...new Set(elements.filter(worded).map((element) => computed(element).color))],
+      backgrounds: [
+        ...new Set(elements.map((element) => computed(element).backgroundColor)),
+      ].filter((color) => color !== 'transparent' && !/^rgba\(.*,\s*0\)$/.test(color)),
+      hidden: [
+        ...new Set(
+          [...globalThis.document.querySelectorAll(`.bb-skip, ${OWN_NAVIGATION}`)].map(
+            (element) => computed(element).display,
+          ),
+        ),
+      ],
+      address: link ? computed(link, '::after').content : null,
+    }
+  })
+
 for (const scheme of ['light', 'dark']) {
   test.describe(`OS ${scheme}`, () => {
     test.use({ colorScheme: scheme })
@@ -171,5 +219,66 @@ for (const scheme of ['light', 'dark']) {
           })
       })
     }
+
+    for (const url of SKIP_DOCUMENTS)
+      test(`${url} shows its skip link only while it has focus`, async ({ page, context }) => {
+        await installPublicBackend(context)
+        await page.goto(`${publicOrigin}${url}`)
+        await page.evaluate(() => globalThis.document.fonts.ready)
+        const skip = page.locator('a.bb-skip')
+        await expect(skip).not.toBeInViewport()
+        // The link is the first stop of the tab order.
+        const first = await page.evaluate(
+          () =>
+            globalThis.document.querySelector(
+              'a[href], button, input, select, textarea, summary, [tabindex]:not([tabindex="-1"])',
+            )?.className,
+        )
+        expect(first, `${url}: first focusable element`).toBe('bb-skip bb-btn')
+        // Focused by script rather than Tab: WebKit on macOS leaves links out of the Tab order.
+        await skip.focus()
+        await expect(skip).toBeInViewport({ ratio: 1 })
+        const result = await audit(page)
+        expect(result.violations, `${url}: axe wcag2aa with the skip link shown`).toEqual([])
+        expect(result.minContrast, `${url}: lowest text contrast`).toBeGreaterThanOrEqual(4.5)
+        // Following it goes to the main content and takes the link off the screen again.
+        await skip.press('Enter')
+        await expect(page).toHaveURL(`${publicOrigin}${url}#main`)
+        await expect(skip).not.toBeInViewport()
+      })
   })
 }
+
+// One test for every document and both schemes: the paper styles are CSS logic, and a test for
+// each document and scheme would open a browser context apiece on every engine.
+test('the static documents print black on white without their navigation', async ({
+  page,
+  context,
+}) => {
+  await installPublicBackend(context)
+  for (const url of PRINT_DOCUMENTS) {
+    await page.goto(`${publicOrigin}${url}`)
+    await page.locator('h1').first().waitFor()
+    for (const scheme of ['light', 'dark']) {
+      const label = `${url} (OS ${scheme})`
+      await page.emulateMedia({ media: null, colorScheme: scheme })
+      const screen = await paper(page)
+      expect(screen.root, `${label}: screen surface`).toBe(SURFACE[scheme])
+      expect(screen.address, `${label}: no link address on screen`).not.toContain(
+        'bladeblendstudio.se',
+      )
+      await page.emulateMedia({ media: 'print' })
+      const printed = await paper(page)
+      expect(printed.root, `${label}: paper`).toBe('rgb(255, 255, 255)')
+      expect(printed.text, `${label}: text colours`).toEqual(['rgb(0, 0, 0)'])
+      expect(
+        printed.backgrounds.filter((color) => color !== 'rgb(255, 255, 255)'),
+        `${label}: painted backgrounds`,
+      ).toEqual([])
+      expect(printed.hidden, `${label}: skip link, breadcrumb and footer`).toEqual(['none'])
+      expect(printed.address, `${label}: address after a link to the site`).toContain(
+        'bladeblendstudio.se',
+      )
+    }
+  }
+})
