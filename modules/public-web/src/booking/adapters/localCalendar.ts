@@ -94,11 +94,10 @@ const MOCK_BLOCK_LENGTHS = [45, 60, 90] as const
 /**
  * ONE deterministic "existing booking" for the demo, derived purely from (day-of-month, barber index)
  * so the offline grid shows tight packing right after it — and reproduces byte-for-byte in the visual
- * baseline. An unknown barber (index < 0) yields no block (a clean, fully-open grid). The single
- * interval always sits inside the working window (start 540..870, length ≤ 90 → end ≤ 960).
+ * baseline. The single interval always sits inside the working window (start 540..870, length
+ * ≤ 90 → end ≤ 960). `barberIdx` is the unsigned `barberSeed`, so it is never negative.
  */
 function mockBlocked(day: number, barberIdx: number): readonly BlockedInterval[] {
-  if (barberIdx < 0) return []
   const startStep = (day * 5 + barberIdx * 7) % 12 // 0..11 → a 30-min-grid start across the morning
   const start = MOCK_OPEN_MIN + startStep * 30 // 540..870
   const len = MOCK_BLOCK_LENGTHS[(day + barberIdx) % 3] ?? 45 // 45 | 60 | 90
