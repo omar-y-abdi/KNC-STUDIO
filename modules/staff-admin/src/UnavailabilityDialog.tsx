@@ -11,7 +11,12 @@ import { Dialog } from '@bladeblend/public-web/dialog'
 import { palette } from '@bladeblend/public-web/booking-styles'
 import { formatWhenLabel } from '@bladeblend/public-web/calendar'
 import { stockholmWallClockDate } from '@bladeblend/public-web/scheduling-time'
-import { buildAdminStyles } from './adminStyles'
+import {
+  buildAdminStyles,
+  DIALOG_BACKDROP_STYLE,
+  dialogCardStyle,
+  dialogTitleStyle,
+} from './adminStyles'
 import type { Lang } from '@bladeblend/public-web/localization'
 import { adminText } from './adminStrings'
 import type { AdminBooking } from './types'
@@ -38,23 +43,6 @@ export function UnavailabilityDialog(props: UnavailabilityDialogProps): JSX.Elem
   const s = buildAdminStyles(c, props.dark)
   const t = adminText(props.lang)
 
-  const backdropStyle =
-    'position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;' +
-    'padding:20px;background:rgba(0,0,0,.42);'
-  const cardStyle: JSX.CSSProperties = {
-    width: '100%',
-    maxWidth: '420px',
-    maxHeight: '86vh',
-    overflowY: 'auto',
-    background: c.bg,
-    color: c.text,
-    border: '0.5px solid ' + c.line,
-    borderRadius: '16px',
-    padding: '20px 22px',
-    boxShadow: '0 24px 60px rgba(0,0,0,.4)',
-    fontFamily: "'Inter Variable',-apple-system,system-ui,sans-serif",
-  }
-
   const onBackdropClick = (e: JSX.TargetedMouseEvent<HTMLDivElement>): void => {
     if (e.target === e.currentTarget && !props.busy) props.onAbort()
   }
@@ -72,20 +60,12 @@ export function UnavailabilityDialog(props: UnavailabilityDialogProps): JSX.Elem
       titleId={TITLE_ID}
       onClose={props.onAbort}
       onBackdropClick={onBackdropClick}
-      backdropStyle={backdropStyle}
+      backdropStyle={DIALOG_BACKDROP_STYLE}
       backdropClass="knc-admin-unavail-backdrop"
-      cardStyle={cardStyle}
+      cardStyle={dialogCardStyle(c, '420px', true)}
       cardClass="knc-admin-unavail-card"
     >
-      <h2
-        id={TITLE_ID}
-        style={{
-          fontFamily: "'Inter Variable',-apple-system,system-ui,sans-serif",
-          fontSize: '17px',
-          fontWeight: 700,
-          margin: '0 0 4px',
-        }}
-      >
+      <h2 id={TITLE_ID} style={dialogTitleStyle('4px')}>
         {t.unavailTitle}
       </h2>
       <p style={{ margin: '0 0 12px', fontSize: '13px', opacity: 0.6, lineHeight: 1.45 }}>
