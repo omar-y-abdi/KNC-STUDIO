@@ -400,16 +400,6 @@ const SV = {
   forgotPwSubmit: 'Skicka återställningslänk',
   forgotPwChallengeError: 'Säkerhetskontrollen misslyckades. Försök igen.',
   forgotPwRetryChallenge: 'Försök igen',
-  // ForcedPasswordChange (forced first-login change)
-  forcedPwSubtitle: 'Byt ditt lösenord',
-  forcedPwIntro:
-    'Ditt konto har ett tillfälligt lösenord. Du måste välja ett nytt för att komma åt panelen.',
-  forcedPwNewPassword: 'Nytt lösenord',
-  forcedPwConfirmPassword: 'Bekräfta nytt lösenord',
-  /** Soft failure: the password changed but the flag-clear RPC failed. */
-  forcedPwClearError: 'Lösenordet är ändrat, men ett nätverksfel inträffade. Kontakta ägaren.',
-  forcedPwSaving: 'Sparar …',
-  forcedPwSubmit: 'Byt lösenord',
   // ResetPasswordPage (`/reset` recovery landing)
   resetPwSubtitle: 'Återställ lösenord',
   resetPwIntro: 'Fortsätt för att kontrollera länken och välja ett nytt lösenord.',
@@ -794,14 +784,6 @@ const EN: AdminStrings = {
   forgotPwSubmit: 'Send reset link',
   forgotPwChallengeError: 'The security check failed. Please try again.',
   forgotPwRetryChallenge: 'Try again',
-  forcedPwSubtitle: 'Change your password',
-  forcedPwIntro:
-    'Your account has a temporary password. You must choose a new one to access the panel.',
-  forcedPwNewPassword: 'New password',
-  forcedPwConfirmPassword: 'Confirm new password',
-  forcedPwClearError: 'Your password was changed, but a network error occurred. Contact the owner.',
-  forcedPwSaving: 'Saving …',
-  forcedPwSubmit: 'Change password',
   resetPwSubtitle: 'Reset password',
   resetPwIntro: 'Continue to verify the link and choose a new password.',
   resetPwContinue: 'Continue',

@@ -19,9 +19,6 @@ import { LazySurface } from '@bladeblend/public-web/lazy-surface'
 const AdminShell = lazy(() =>
   import('./AdminShell').then((module) => ({ default: module.AdminShell })),
 )
-const ForcedPasswordChange = lazy(() =>
-  import('./ForcedPasswordChange').then((module) => ({ default: module.ForcedPasswordChange })),
-)
 
 export function AdminApp(): JSX.Element {
   const theme = useTheme()
@@ -30,25 +27,6 @@ export function AdminApp(): JSX.Element {
 
   const c = palette(theme.dark)
   const t = adminText(theme.lang)
-
-  // Forced first-login gate — blocks the panel until the barber picks a real password.
-  if (gate.kind === 'forced_change') {
-    return (
-      <LazySurface
-        loadingLabel={t.lazyLoading}
-        errorLabel={t.lazyError}
-        retryLabel={t.lazyReload}
-        minHeight="100vh"
-      >
-        <ForcedPasswordChange
-          key={gate.profile.userId}
-          lang={theme.lang}
-          onDone={revalidate}
-          onSignOut={onSignOut}
-        />
-      </LazySurface>
-    )
-  }
 
   if (gate.kind !== 'authed') {
     // A minimal, on-brand placeholder while resolving / redirecting (never a flash of admin UI).

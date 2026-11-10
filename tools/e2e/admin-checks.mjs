@@ -2037,7 +2037,6 @@ async function verifyAdminSession(page, scenario) {
   const finished = { profile: gate(), password: gate() }
   const state = {
     enabled: true,
-    mustChangePassword: true,
     networkFailure: false,
     calls: [],
     errors: [],
@@ -2123,20 +2122,12 @@ async function verifyAdminSession(page, scenario) {
           if (held) finished.password.release()
           return
         }
-        if (url.pathname === '/auth/v1/user') {
-          const held = request.method() === 'PUT' && scenario === 'late-password'
-          if (held) await holds.password.promise
-          await reply(adminSession(who ?? AUTH_USER_A).user)
-          if (held) finished.password.release()
-          return
-        }
+        if (url.pathname === '/auth/v1/user') return reply(adminSession(who ?? AUTH_USER_A).user)
         if (url.pathname === '/rest/v1/profiles') {
           const snapshot = {
             role: 'owner',
             barber_id: null,
-            must_change_password:
-              ['late-password', 'password-completes'].includes(scenario) &&
-              state.mustChangePassword,
+            must_change_password: scenario === 'password-flag',
             account_enabled: state.enabled,
           }
           if (scenario === 'late-profile') await holds.profile.promise
@@ -2182,10 +2173,6 @@ async function verifyAdminSession(page, scenario) {
           ])
         }
         if (url.pathname === '/rest/v1/site_content') return reply([])
-        if (url.pathname === '/rest/v1/rpc/set_own_password_changed') {
-          state.mustChangePassword = false
-          return reply(null)
-        }
         if (url.pathname === '/rest/v1/site_settings') {
           if (request.method() === 'GET')
             return reply([...state.settings].map(([key, value]) => ({ key, value })))
@@ -2292,36 +2279,17 @@ async function verifyAdminSession(page, scenario) {
         await page.evaluate(() => globalThis.localStorage.getItem('knc-admin-auth') === null),
         'Auth storage survived sign-out',
       )
-    } else if (scenario === 'late-password' || scenario === 'password-completes') {
-      await page.locator('#fp-next').fill('Synthetic-new-password-123!')
-      await page.locator('#fp-confirm').fill('Synthetic-new-password-123!')
-      await page.locator('form button[type="submit"]').click()
-      await waitCall((call) => call.path === '/auth/v1/user' && call.method === 'PUT')
-      if (scenario === 'password-completes') {
-        await data.waitFor()
-        assert(
-          !state.mustChangePassword,
-          'Successful password flow never cleared the forced-change flag',
-        )
-        assert(count('/auth/v1/logout') === 0, 'Forced change signed out the active staff member')
-      } else {
-        await signOut()
-        holds.password.release()
-        await finished.password.promise
-        await page.clock.runFor(100)
-        assert(
-          !state.calls.some((call) => call.path === '/rest/v1/rpc/set_own_password_changed'),
-          'Unmounted forced-change form continued with a later session',
-        )
-        assert(
-          (await page.locator('.knc-admin-shell').count()) === 0,
-          'Late password result reopened protected UI',
-        )
-        assert(
-          await page.evaluate(() => globalThis.localStorage.getItem('knc-admin-auth') === null),
-          'Late password result restored the signed-out session in storage',
-        )
-      }
+    } else if (scenario === 'password-flag') {
+      await page.waitForFunction(() => globalThis.location.pathname === '/login')
+      assert(
+        (await page.locator('.knc-admin-shell').count()) === 0,
+        'A profile flagged for a password change opened the protected shell',
+      )
+      assert(count('/rest/v1/bookings') === 0, 'A flagged profile read protected data')
+      assert(
+        await page.evaluate(() => globalThis.localStorage.getItem('knc-admin-auth') === null),
+        'A flagged profile kept its session in storage',
+      )
     } else if (scenario === 'late-settings-password') {
       await page.locator('#settings-current-password').fill('Synthetic-old-password-123!')
       await page.locator('#settings-new-password').fill('Synthetic-new-password-123!')

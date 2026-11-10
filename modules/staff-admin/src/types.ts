@@ -23,9 +23,6 @@ export interface AdminProfile {
   readonly role: AdminRole
   /** The barber this account acts as (null for an owner). */
   readonly barberId: AdminBarberId | null
-  /** Legacy compatibility gate for accounts provisioned before single-use invitations.
-   * Cleared by `set_own_password_changed()` after the change. */
-  readonly mustChangePassword: boolean
 }
 
 export type BarberAccountState = 'enabled' | 'disabled'
