@@ -2,6 +2,7 @@ import type EmblaFactory from 'embla-carousel'
 import type { EmblaCarouselType } from 'embla-carousel'
 import type AutoScrollFactory from 'embla-carousel-auto-scroll'
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
+import { prefersReducedMotion } from '../ui/reducedMotion'
 
 interface UseBarberMarqueeOptions {
   readonly enabled: boolean
@@ -60,14 +61,6 @@ export function passFloor(
     : Math.max(estimate, gaplessLoopFloor(view, slides.length))
 }
 
-function reducedMotionPreference(): boolean {
-  return (
-    typeof window !== 'undefined' &&
-    typeof window.matchMedia === 'function' &&
-    window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  )
-}
-
 /** Attach Embla to the existing About section and stylist-grid nodes, preserving native identities. */
 export function useBarberMarquee({
   enabled,
@@ -77,7 +70,7 @@ export function useBarberMarquee({
   trackRef,
 }: UseBarberMarqueeOptions) {
   const [selected, setSelected] = useState<string | null>(null)
-  const [reducedMotion, setReducedMotion] = useState(reducedMotionPreference)
+  const [reducedMotion, setReducedMotion] = useState(prefersReducedMotion)
   const [engineFailed, setEngineFailed] = useState(false)
   const carousel = useRef<EmblaCarouselType | null>(null)
   const focusWithin = useRef(false)

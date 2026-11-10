@@ -19,15 +19,8 @@ import { useNativeChild } from '../cms/NativeSurface'
 import type { JSX } from 'preact'
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import type { Palette } from '../booking/bookingStyles'
+import { prefersReducedMotion } from '../ui/reducedMotion'
 import type { GalleryPhoto } from './gallery/port'
-
-function prefersReducedMotion(): boolean {
-  return (
-    typeof window !== 'undefined' &&
-    typeof window.matchMedia === 'function' &&
-    window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  )
-}
 
 const TILE_W = 210
 const TILE_GAP = 14

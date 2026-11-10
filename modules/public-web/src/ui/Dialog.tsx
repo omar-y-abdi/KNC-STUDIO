@@ -13,17 +13,10 @@ import type { ComponentChildren, JSX } from 'preact'
 import { useEffect, useRef } from 'preact/hooks'
 import { useNativeSurface } from '../cms/NativeSurface'
 import type { CmsLang, CmsMode } from '@bladeblend/content-contracts/cms'
+import { prefersReducedMotion } from './reducedMotion'
 
 const FOCUSABLE =
   'a[href],button:not([disabled]),textarea,input,select,[tabindex]:not([tabindex="-1"])'
-
-function prefersReducedMotion(): boolean {
-  return (
-    typeof window !== 'undefined' &&
-    typeof window.matchMedia === 'function' &&
-    window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  )
-}
 
 export interface DialogProps {
   readonly cms?: { surface: string; lang: CmsLang; mode: CmsMode }
