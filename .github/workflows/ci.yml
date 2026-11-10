@@ -36,7 +36,7 @@ jobs:
         run: bash tools/ci/format.sh
       - name: Record the exact tested source
         run: node tools/ci/build-artifact.mjs source "$RUNNER_TEMP"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           # Stable per-run names let failed consumers be re-run independently.
           name: ci-source-${{ github.run_id }}
@@ -103,7 +103,7 @@ jobs:
             npm run build -- --outDir "$RUNNER_TEMP/ci-build/startup" --emptyOutDir
           cp -a "$RUNNER_TEMP/ci-build/startup" "$RUNNER_TEMP/ci-build/public"
           node tools/ci/build-artifact.mjs record "$RUNNER_TEMP/ci-build"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ci-build-${{ github.run_id }}
           path: ${{ runner.temp }}/ci-build
@@ -148,7 +148,7 @@ jobs:
         run: |
           node tools/ci/verify-playwright-report.mjs .ci-expected.json test-results/results.json
           node tools/ci/build-artifact.mjs verify-source .ci-source
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: public-browsers-${{ matrix.shard }}-${{ github.run_attempt }}
@@ -189,7 +189,7 @@ jobs:
         run: |
           node tools/ci/verify-playwright-report.mjs .ci-expected.json test-results/results.json
           node tools/ci/build-artifact.mjs verify-source .ci-source
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: cms-${{ matrix.engine }}-${{ matrix.shard }}-${{ github.run_attempt }}
@@ -240,7 +240,7 @@ jobs:
         run: |
           node tools/ci/verify-playwright-report.mjs .ci-expected.json test-results/results.json
           node tools/ci/build-artifact.mjs verify-source .ci-source
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: startup-${{ matrix.engine }}-${{ github.run_attempt }}
@@ -324,7 +324,7 @@ jobs:
         run: |
           node tools/ci/verify-playwright-report.mjs "$RUNNER_TEMP/expected.json" test-results/results.json
           node tools/ci/build-artifact.mjs verify-source .ci-source
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: customer-browser-${{ github.run_attempt }}
