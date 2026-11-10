@@ -1,6 +1,3 @@
-// Unit tests for the pure decisions of the review moderation list in Settings (no mocks, no DOM):
-// the action a row offers, the rows after an answered action, the status line and the button names.
-
 import { readdirSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import type { AdminReview } from '../../modules/staff-admin/src/adapters/reviewsAdmin'
@@ -22,7 +19,7 @@ const LANGS = ['sv', 'en'] as const
 const ACTIONS = ['hide', 'publish', 'delete'] as const
 
 // Direction marks, by their code points: written out they would be invisible here.
-/** FIRST STRONG ISOLATE and POP DIRECTIONAL ISOLATE: what a name is set between. */
+/** FIRST STRONG ISOLATE and POP DIRECTIONAL ISOLATE. */
 const FSI = String.fromCodePoint(0x2068)
 const PDI = String.fromCodePoint(0x2069)
 /** RIGHT-TO-LEFT OVERRIDE: reverses the text after it. */
@@ -173,8 +170,6 @@ describe.each(LANGS)('review status line (%s)', (lang) => {
     for (const sentence of sentences) expect(sentence.trim()).not.toBe('')
   })
 
-  // One sentence follows a failed hide, publish and delete alike, so it may name none of them: a
-  // failed delete must not say that the review could not be "updated" or "shown".
   it('names no action in a sentence that follows all three', () => {
     const actionWords =
       lang === 'sv'
@@ -257,7 +252,6 @@ describe('review button names', () => {
 
   it('keeps a direction mark in the name from reaching the words after it', () => {
     const name = reviewActionName('delete', review('a', true, `${RLO}Anna`), 'sv', sv)
-    // The mark stands between the two isolates, and the date after both.
     expect(name).toBe(`Ta bort recensionen från ${FSI}${RLO}Anna${PDI}, 10 november 2026, 14:05`)
   })
 
@@ -299,7 +293,7 @@ describe('customer name inside a sentence of the panel', () => {
     const name = `A${marks[3]}n${marks[0]}n${marks[1]}a${marks[2]}`
 
     expect(isolatedName(name)).toBe(`${FSI}Anna${PDI}`)
-    // The marks next to the four, on either side, are not isolates and stay.
+    // U+2065 and U+206A border the four isolates but are not isolates: they stay.
     const neighbours = `${String.fromCodePoint(0x2065)}${String.fromCodePoint(0x206a)}`
     expect(isolatedName(neighbours)).toBe(`${FSI}${neighbours}${PDI}`)
   })
@@ -327,7 +321,6 @@ describe('customer name inside a sentence of the panel', () => {
 
 describe.each(LANGS)('review delete question (%s)', (lang) => {
   const t = adminText(lang)
-  // The sentence around the name, as the panel's strings have it.
   const [before = '', after = ''] = t.reviewsDeleteBody.split('{name}')
 
   it('has the name once, with words on both sides of it', () => {
@@ -360,9 +353,8 @@ describe.each(LANGS)('review delete question (%s)', (lang) => {
   })
 })
 
-// What hiding and deleting mean for the customer depends on the booking: a review belongs to one
-// booking, a booking takes one review, and a booking is removed after twelve months while its
-// review stays. So each sentence is true only with its condition, and the two must not be swapped.
+// A booking takes one review and is removed after twelve months while its review stays, so each
+// sentence holds only with its condition.
 describe.each([
   ['sv', 'om bokningen finns kvar', 'inte skriva en ny recension', 'sedan skriva en ny recension'],
   ['en', 'if the booking still exists', 'cannot write a new review', 'can then write a new review'],
@@ -399,9 +391,8 @@ describe('one review for each booking, and a review that outlives its booking', 
     .join('\n')
 
   it('holds in the database, which is what the two sentences rest on', () => {
-    // One review for each booking: a review that is kept, hidden or not, blocks a new one.
+    // A kept review, hidden or not, blocks a new one.
     expect(sql).toMatch(/ADD CONSTRAINT "reviews_one_per_booking" UNIQUE \("booking_id"\)/)
-    // The review stays when its booking is removed, and is then tied to no booking.
     expect(sql).toMatch(
       /ADD CONSTRAINT "reviews_booking_id_fkey" FOREIGN KEY \("booking_id"\) REFERENCES "public"\."bookings"\("id"\) ON DELETE SET NULL/,
     )

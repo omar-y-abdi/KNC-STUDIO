@@ -1,51 +1,10 @@
--- Orphaned customer contact data (checklist item 68, gap 2).
---
--- A customer's e-mail address is stored in three places besides the bookings themselves: the
--- permanent access token (customer_booking_access_tokens, which also holds a phone number), the
--- profile membership (customer_profile_emails) and the profile (customer_profiles). When the last
--- booking of an address is deleted, by the owner or by the retention job, nothing removed those
--- rows. The nightly customer-booking-access-cleanup job now does.
---
--- An e-mail address is IN USE while any of these exists:
---   * a booking with that address, whatever its status or date,
---   * an access session for it that has not expired,
---   * an unused, unexpired access challenge for it (a requested access link whose e-mail is still
---     to be sent; see "Access requests that can no longer be sent" below),
---   * an unexpired device receipt that names it as the parent address,
---   * a customer_email_links row that names it as source or target. Every stored link counts, not
---     only a pending one: the existing statement in this function removes a link one day after it
---     expires, and the foreign keys from a link to customer_profile_emails forbid deleting an
---     address a stored link names.
--- Addresses that share a profile (the customer linked them) are one group: the access functions
--- give each address in a group the bookings of all of them. A group is in use while any address in
--- it is in use. An address without a profile row is a group of its own.
---
--- The job deletes, for a group that is not in use: its access tokens, its profile memberships, and
--- then the profile once it has no membership left. It deletes nothing of a group that is in use, so
--- a customer with at least one booking keeps the token, the membership and the profile. Phone
--- numbers are not an access key in this schema; a token is found by its e-mail address only.
---
--- Access requests that can no longer be sent. When a customer asks for an access link, the request
--- stores a challenge (e-mail address, phone number, token hash) that never expires and queues the
--- e-mail as an external_action_jobs row. Sending the e-mail deletes the challenge, and so does the
--- next request for the same address. Without either it stayed for ever: when the e-mail could not
--- be delivered (the job is blocked, and the ten-minute cleanup_customer_access_email_actions then
--- deletes the job only), or the job ended without sending (at dispatch the customer had no
--- confirmed booking left), the challenge kept the address, with its token row and phone number,
--- in use.
--- The rule now: an unused, unexpired challenge is kept only while its e-mail is still to be sent,
--- that is, while a job for it is pending (waiting for its first attempt or for a retry) or
--- dispatching (being sent right now). Once its job is blocked or no longer exists, the nightly job
--- deletes the challenge before it looks for unused addresses, so from the run that deletes it the
--- address is in use only if something else in the list above uses it. One run deletes the dead
--- challenges of at most 200 addresses and skips an address whose lock or row is held; those wait
--- for a later night. cleanup_customer_access_email_actions is not changed.
---
--- Deployment order: old application code calls nothing that changes here, and nothing here needs
--- new application code. The cron schedule and the grants of the function are not touched.
+-- The nightly customer-booking-access-cleanup job now also deletes access challenges whose e-mail
+-- can no longer be sent, and the tokens, profile memberships and profiles of addresses no longer in
+-- use (a linked group only when none of it is). Its first run removes what earlier booking
+-- deletions left behind, at most 200 profiles a night.
 
--- Every normalised e-mail address that is in use, as defined above. Internal: callable by no API
--- role; it runs with the rights of the cleanup function that calls it.
+-- Normalised addresses in use. Every stored link counts, expired or not: its foreign keys forbid
+-- deleting the memberships it names.
 create or replace function public.customer_emails_in_use()
 returns setof text
 language sql
@@ -81,19 +40,10 @@ $$;
 revoke all on function public.customer_emails_in_use()
   from public, anon, authenticated, service_role;
 
--- The first four statements are the baseline's, unchanged. The baseline ended with
--- "return v_count + v_deleted;"; that sum is now kept in v_count and the orphan steps follow.
---
--- The orphan steps run in a block of their own. If anything in them raises, that block alone is
--- rolled back, a warning that carries only the SQLSTATE is logged (an error message can quote an
--- e-mail address), and the function returns what the four statements above deleted. The nightly
--- expiry of challenges, sessions, receipts and links therefore never depends on the new steps.
---
--- One race is left open, because closing it would mean taking a lock in the booking path: a booking
--- that commits for an address while this run is deleting that address's rows can leave the address
--- without its access token, its profile membership and its profile. The booking is untouched and
--- is still found by its address; the token is written again by the next confirmation, cancellation
--- or access e-mail for the address, and the profile the next time the address is booked or linked.
+-- The orphan steps run in their own block: a failure rolls back only them and logs the SQLSTATE
+-- alone (a message can quote an address). Left open, to keep locks out of the booking path: a
+-- booking committing during the run can lose its address's token, membership and profile; the next
+-- e-mail to the address writes the token again, the next booking or link the profile.
 create or replace function public.cleanup_customer_booking_access()
 returns integer
 language plpgsql
@@ -121,22 +71,12 @@ begin
   v_count := v_count + v_deleted;
 
   begin
-    -- Orphaned contact data. Each step is its own statement, so each sees what was committed
-    -- before it started; the locks taken in steps 0, 1 and 2 keep the functions that take the same
-    -- locks out until this transaction ends, and every delete decides again from its own, later
-    -- view. The worker that consumes a challenge after a send and the legacy exchange take no such
-    -- lock; step 0 skips a row either of them holds.
+    -- Steps 0 to 2 take the locks the request, link and token functions take; each later delete
+    -- re-checks from its own, later snapshot.
 
-    -- Step 0. Access requests whose e-mail can no longer be sent.
-    -- A challenge is dead when it is unused and unexpired (it still counts as in use) and no access
-    -- e-mail job for it is pending or dispatching: the job is blocked, or there is none. A job is
-    -- created only together with its challenge, in one transaction
-    -- (rotate_customer_booking_access_token), and no caller queues a job again for a challenge
-    -- that already exists, so a challenge that is dead stays dead.
-    --
-    -- First take the per-address lock, the key of lock_customer_access_emails, for up to 200
-    -- addresses that have a dead challenge. An address whose lock is held (a request for it is
-    -- running right now) is skipped, never waited for; a later run handles it.
+    -- Step 0. Challenges whose e-mail can no longer be sent: a job is only ever queued together
+    -- with its challenge (rotate_customer_booking_access_token), so such a challenge stays so.
+    -- Address lock: lock_customer_access_emails' key; a held address is left to a later run.
     for v_email in
       select d.email
       from (
@@ -161,18 +101,8 @@ begin
       end if;
     end loop;
 
-    -- Then delete the dead challenges of the locked addresses, in one statement that starts after
-    -- the locks are held and decides again from its own view. No request can lose its challenge:
-    --   * A request takes the address lock before it writes. Either it committed before this
-    --     statement began, and then this statement sees its new challenge together with the
-    --     pending job of the same transaction, and its earlier challenge already deleted; or it
-    --     has not got the lock yet and waits until this transaction ends.
-    --   * The ten-minute job cleanup deletes jobs only: blocked ones and those whose challenge is
-    --     gone. A blocked job and a missing job read the same here, so its timing does not matter,
-    --     and this statement never removes the challenge of a pending or dispatching job, so that
-    --     cleanup deletes exactly the jobs it deleted before.
-    --   * A challenge row another transaction is working on (the worker deleting it after a send,
-    --     a legacy exchange marking it used) is skipped, never waited for.
+    -- Re-checked under the address locks: a request that committed first is seen with its pending
+    -- job; a row another transaction holds (send worker, legacy exchange) is skipped.
     with dead as (
       select c.id
       from public.customer_booking_access_challenges c
@@ -194,11 +124,8 @@ begin
     get diagnostics v_deleted = row_count;
     v_orphaned := v_orphaned + v_deleted;
 
-    -- Step 1. Lock up to 200 profiles none of whose addresses is in use. A profile another
-    -- transaction holds (a customer is linking or merging addresses right now) is skipped, never
-    -- waited for. request_customer_email_link and confirm_customer_email_link take the same row
-    -- lock before they add a link or move an address, so from here on no link can appear for a
-    -- locked profile and no address can join or leave it.
+    -- Step 1. request_customer_email_link and confirm_customer_email_link take the same row lock,
+    -- so a locked profile gains no link and no address joins or leaves it.
     with locked as (
       select p.id
       from public.customer_profiles p
@@ -215,11 +142,8 @@ begin
     select coalesce(pg_catalog.array_agg(locked.id), '{}'::uuid[]) into v_profiles
     from locked;
 
-    -- Step 2. Take the per-address lock the token functions take (lock_customer_access_emails) for
-    -- up to 400 addresses: those of the locked profiles, and those of unused tokens that have no
-    -- profile row. An address whose lock is held (its token is being issued or rotated right now)
-    -- is skipped, never waited for. While this transaction holds the lock, no token for the
-    -- address can be created, replaced or rotated.
+    -- Step 2. The same address lock, for the locked profiles' addresses and unused tokens without a
+    -- profile row: while it is held, no token for the address can be written.
     for v_email in
       select c.email
       from (
@@ -245,9 +169,7 @@ begin
       end if;
     end loop;
 
-    -- A profile is handled whole or not at all. Take out of this run every locked profile that has
-    -- an address whose lock step 2 did not obtain: its token is being written right now, or the
-    -- address fell outside the 400 of this run. A later run handles the profile.
+    -- A profile is handled whole or not at all: drop those with an address step 2 did not lock.
     v_profiles := array(
       select p.id
       from pg_catalog.unnest(v_profiles) as p(id)
@@ -259,11 +181,7 @@ begin
       )
     );
 
-    -- Step 3. Delete the access token of an address when, as seen now:
-    --   the address is locked by step 2, and
-    --   the address is not in use, and
-    --   the address has no profile row, or its profile is still in this run's list and no address
-    --   of that profile is in use.
+    -- Step 3. Tokens of locked, unused addresses whose profile, if any, is in this run and unused.
     with in_use as materialized (
       select u.email from public.customer_emails_in_use() as u(email)
     )
@@ -287,11 +205,8 @@ begin
     get diagnostics v_deleted = row_count;
     v_orphaned := v_orphaned + v_deleted;
 
-    -- Step 4. Delete the profile membership of an address when, as seen now:
-    --   the address is locked by step 2 and its profile is still in this run's list, and
-    --   no address of that profile (this one included) is in use.
-    -- A stored link keeps both of its addresses in use, so no deleted membership is referenced by
-    -- customer_email_links, and step 1 keeps a new link from appearing before this commits.
+    -- Step 4. Memberships of those profiles. A stored link keeps its addresses in use and step 1
+    -- blocks new links, so no deleted membership is referenced by customer_email_links.
     with in_use as materialized (
       select u.email from public.customer_emails_in_use() as u(email)
     )
@@ -307,7 +222,7 @@ begin
     get diagnostics v_deleted = row_count;
     v_orphaned := v_orphaned + v_deleted;
 
-    -- Step 5. Delete a profile of this run's list that has no membership left.
+    -- Step 5. Profiles left without a membership.
     delete from public.customer_profiles p
     where p.id = any (v_profiles)
       and not exists (
@@ -316,7 +231,7 @@ begin
     get diagnostics v_deleted = row_count;
     v_orphaned := v_orphaned + v_deleted;
 
-    -- Nothing after this line can raise, so the count is added only for steps that are kept.
+    -- Last in the block, so a rolled-back block adds nothing.
     v_count := v_count + v_orphaned;
   exception when others then
     raise warning 'orphaned customer contact data was not cleaned in this run (SQLSTATE %)', sqlstate;
@@ -326,7 +241,5 @@ begin
 end;
 $$;
 
--- CREATE OR REPLACE keeps the owner and the privileges of the existing function; the baseline
--- grants it to no API role. Stated again so a re-run ends in the same place.
 revoke all on function public.cleanup_customer_booking_access()
   from public, anon, authenticated, service_role;

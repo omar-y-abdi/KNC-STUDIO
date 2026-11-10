@@ -1,9 +1,3 @@
-// The two owner sections of Settings (review moderation, admin log) rendered with the fake hooks:
-// nothing is read until the owner opens a section, a row shows its new state without a new read, a
-// refused action leaves the row, an action whose outcome is not known reads the list again, "show
-// more" continues from the cursor of the page that was read, every read and write waits for the one
-// before it, and after each answer the focus is asked to a place that still exists.
-
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { palette } from '../../modules/public-web/src/booking/bookingStyles'
 import { adminText } from '../../modules/staff-admin/src/adminStrings'
@@ -32,7 +26,7 @@ const api = vi.hoisted(() => ({
   listAuditLog: vi.fn(),
   listSettings: vi.fn(),
   saveSetting: vi.fn(),
-  /** Stands in for the page: the sections say where the focus goes, and nothing here has a page. */
+  /** The sections only say where the focus goes; nothing here has a page. */
   moveFocus: vi.fn(),
 }))
 
@@ -69,8 +63,7 @@ const s = buildAdminStyles(palette(false), false)
 const sv = adminText('sv')
 const en = adminText('en')
 
-// The two marks a customer's name is set between inside a sentence, by their code points: written
-// out they would be invisible here.
+// The isolates around a name, by code point: written out they would be invisible here.
 const FSI = String.fromCodePoint(0x2068)
 const PDI = String.fromCodePoint(0x2069)
 
@@ -104,17 +97,12 @@ const page = (entries: readonly unknown[], hasMore = false) => ok({ entries, has
 const NO_ROWS = page([])
 const DONE = ok(undefined)
 
-/** Let the queued reads and writes of the section answer. */
 const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0))
 
-/** What the test at hand has left unanswered; see `held`. */
 const unanswered: (() => void)[] = []
 
-/**
- * An answer the test gives when it chooses. One it never gives is given as `atTheEnd` once the
- * test is over: the sections queue their reads and writes behind one another, and a request left
- * open would hold up those of the next test.
- */
+/** An answer the test gives when it chooses, or `atTheEnd` after the test: the sections queue
+ *  their requests, so one left open would hold up the next test's. */
 function held(atTheEnd: unknown) {
   let give: (answer: unknown) => void = () => undefined
   const promise = new Promise<unknown>((resolve) => {
@@ -134,7 +122,6 @@ function textOf(value: unknown): string {
     : ''
 }
 
-/** Render a component node the way the renderer would: call it with its props. */
 function expand(node: RenderedNode): RenderedNode[] {
   const component = node.type
   if (typeof component !== 'function') throw new Error('Not a component node')
@@ -159,11 +146,9 @@ const alertText = (tree: readonly RenderedNode[]): string =>
   textOf(tree.find((node) => node.props['role'] === 'alert'))
 const dialog = (tree: readonly RenderedNode[]): RenderedNode | undefined =>
   tree.find((node) => node.type === ConfirmDialog)
-/** The two buttons of a review row: hide or publish again, and delete. */
 const rowButtons = (tree: readonly RenderedNode[], index: number): RenderedNode[] =>
   buttons(nodes(rows(tree)[index]))
 
-/** Where the section last asked the focus to go. */
 const focusTarget = (): unknown => api.moveFocus.mock.calls.at(-1)?.[0]
 const onRow = (id: string, control: 'first' | 'visibility' | 'delete') => ({
   place: 'row',
@@ -171,9 +156,8 @@ const onRow = (id: string, control: 'first' | 'visibility' | 'delete') => ({
   control,
 })
 
-/** A section and, while it is open, the list inside it. */
 function sectionUi(section: () => unknown) {
-  /** Render, then run the effects the render calls for, as the renderer does after each render. */
+  /** Renders, then runs the effects, as the renderer does after each render. */
   const render = () => {
     const outer = nodes(renderWithHooks(section))
     const list = outer.find((node) => typeof node.type === 'function')
@@ -181,12 +165,10 @@ function sectionUi(section: () => unknown) {
     commit()
     return { outer, inner }
   }
-  /** Press the section's own button, which opens it or closes it, and render what follows. */
   const toggle = (label: string) => {
     press(button(render().outer, label))
     return render()
   }
-  /** Open the section, let its first read answer and render what it shows. */
   const open = async (label: string) => {
     toggle(label)
     await flush()
@@ -249,7 +231,6 @@ describe('Settings as the owner opens it', () => {
     expect(
       tree.slice(reviews).filter((node) => ['form', 'input', 'h3'].includes(String(node.type))),
     ).toEqual([])
-    // The one read Settings made before is the one it makes now.
     expect(api.listSettings).toHaveBeenCalledOnce()
     expect(api.listReviews).not.toHaveBeenCalled()
     expect(api.listAuditLog).not.toHaveBeenCalled()
@@ -298,8 +279,6 @@ describe('review moderation section', () => {
     )
     const stars = nodes(first).find((node) => node.props['role'] === 'img')
     expect(stars?.props['aria-label']).toBe('Betyg 4 av 5')
-    // Each button says whose review it acts on, the name kept apart from the words around it;
-    // hiding points at its explanation.
     const [hide, remove] = buttons(nodes(first))
     expect(hide?.props['aria-label']).toBe(
       `Dölj recensionen från ${FSI}Anna S.${PDI}, 10 november 2026, 14:05`,
@@ -310,9 +289,7 @@ describe('review moderation section', () => {
     const help = view.inner.find((node) => node.props['id'] === hide?.props['aria-describedby'])
     expect(textOf(help)).toBe(sv.reviewsHideHelp)
     expect(buttons(nodes(second))[0]?.props['aria-describedby']).toBeUndefined()
-    // Nothing more to read: no "show more".
     expect(button(view.inner, sv.ownerListLoadMore)).toBeUndefined()
-    // Opening moves no focus: it stays on the button that was pressed.
     expect(api.moveFocus).not.toHaveBeenCalled()
   })
 
@@ -321,7 +298,7 @@ describe('review moderation section', () => {
 
     const view = await reviewsUi().open(sv.reviewsOpen)
 
-    // The list itself takes the focus when no row can, and is no stop of its own for the Tab key.
+    // The list takes the focus when no row can, and is no Tab stop.
     expect(view.inner[0]?.props['tabIndex']).toBe(-1)
     const [first, second] = rows(view.inner)
     expect(first?.props).toMatchObject(rowMark('r1'))
@@ -342,7 +319,6 @@ describe('review moderation section', () => {
     press(rowButtons(opened.inner, 0)[0])
     await flush()
 
-    // While the write runs, no second action can start.
     expect(api.setReviewPublished.mock.calls).toEqual([['r1', false]])
     expect(buttons(ui.render().inner).map((node) => node.props['disabled'])).toEqual([
       true,
@@ -368,10 +344,8 @@ describe('review moderation section', () => {
       false,
     ])
     expect(api.listReviews).toHaveBeenCalledOnce()
-    // The button that was pressed now holds "publish again": the focus is asked back to it.
     expect(api.moveFocus).toHaveBeenCalledOnce()
     expect(focusTarget()).toEqual(onRow('r1', 'visibility'))
-    // A later render asks for nothing more.
     ui.render()
     expect(api.moveFocus).toHaveBeenCalledOnce()
   })
@@ -434,7 +408,6 @@ describe('review moderation section', () => {
     await flush()
 
     expect(api.setReviewPublished.mock.calls).toEqual([['r1', false]])
-    // Once it is answered the next action starts as usual.
     press(rowButtons(ui.render().inner, 1)[0])
     await flush()
     expect(api.setReviewPublished.mock.calls).toEqual([
@@ -471,7 +444,6 @@ describe('review moderation section', () => {
     const deleting = dialog(ui.render().inner)
 
     expect(api.deleteReview.mock.calls).toEqual([['r1']])
-    // While the delete runs the question says so, and cannot be closed under it.
     expect(deleting?.props['busy']).toBe(true)
     press(deleting, 'onClose')
     expect(dialog(ui.render().inner)).toBeDefined()
@@ -486,7 +458,6 @@ describe('review moderation section', () => {
     expect(dialog(view.inner)).toBeUndefined()
     expect(statusLine(view.inner)).toBe(sv.reviewsDeletedOk)
     expect(api.listReviews).toHaveBeenCalledOnce()
-    // The row is gone: the focus goes to the row that now stands in its place.
     expect(focusTarget()).toEqual(onRow('r2', 'first'))
   })
 
@@ -527,7 +498,6 @@ describe('review moderation section', () => {
     expect(rows(view.inner)).toHaveLength(2)
     expect(statusLine(view.inner)).toBe(sv.ownerListForbidden)
     expect(buttons(view.inner).every((node) => node.props['disabled'] === false)).toBe(true)
-    // The row's delete button, which opened the question.
     expect(focusTarget()).toEqual(onRow('r1', 'delete'))
   })
 
@@ -578,7 +548,6 @@ describe('review moderation section', () => {
         press(rowButtons(opened.inner, 0)[0])
         await flush()
 
-        // The list is being read again, and until it is no action can start.
         expect(api.listReviews.mock.calls).toEqual([[null], [null]])
         const reading = ui.render()
         expect(buttons(reading.inner).every((node) => node.props['disabled'] === true)).toBe(true)
@@ -635,7 +604,6 @@ describe('review moderation section', () => {
         expect(rows(failed.inner)).toEqual([])
         expect(statusLine(failed.inner)).toBe(sv.reviewsOutcomeUnknown)
         expect(alertText(failed.inner)).toBe(sv.reviewsLoadError)
-        // The button that was pressed is gone with the row: the list itself takes the focus.
         expect(focusTarget()).toEqual({ place: 'list' })
 
         press(button(failed.inner, sv.ownerListRetry))
@@ -692,7 +660,6 @@ describe('review moderation section', () => {
       expect.stringContaining('Bo K.'),
     ])
     expect(button(view.inner, sv.ownerListLoadMore)).toBeUndefined()
-    // The button is gone: the focus goes to the first row that arrived.
     expect(focusTarget()).toEqual(onRow('r2', 'first'))
   })
 
@@ -711,7 +678,6 @@ describe('review moderation section', () => {
 
     expect(api.listReviews).toHaveBeenCalledTimes(2)
     expect(rows(view.inner)).toHaveLength(2)
-    // Once it is answered the next page can be asked for.
     press(button(view.inner, sv.ownerListLoadMore))
     await flush()
     expect(api.listReviews.mock.calls[2]).toEqual([
@@ -734,7 +700,6 @@ describe('review moderation section', () => {
     expect(rows(view.inner)).toHaveLength(1)
     expect(statusLine(view.inner)).toBe(sv.reviewsLoadError)
     expect(button(view.inner, sv.ownerListLoadMore)?.props['disabled']).toBe(false)
-    // The button is still there to be pressed again, and holds the focus.
     expect(focusTarget()).toEqual({ place: 'more' })
   })
 
@@ -778,7 +743,6 @@ describe('review moderation section', () => {
       expect(alertText(view.inner)).toBe(sentence)
       expect(textOf(view.inner)).not.toContain('adapter text')
       expect(rows(view.inner)).toEqual([])
-      // Nothing is read again until the owner asks for it.
       ui.render()
       await flush()
       expect(api.listReviews).toHaveBeenCalledOnce()
@@ -788,7 +752,6 @@ describe('review moderation section', () => {
       ui.render()
       const reading = ui.render()
 
-      // The button leaves with the failure: the list takes the focus while it reads.
       expect(button(reading.inner, sv.ownerListRetry)).toBeUndefined()
       expect(focusTarget()).toEqual({ place: 'list' })
 
@@ -813,7 +776,6 @@ describe('review moderation section', () => {
     await flush()
     const view = ui.render()
 
-    // What the ended session's request answered is not shown.
     expect(rows(view.inner)).toEqual([])
     expect(alertText(view.inner)).toBe(sv.ownerListSessionExpired)
   })
@@ -831,8 +793,7 @@ describe('review moderation section', () => {
     expect(api.listReviews).toHaveBeenCalledOnce()
   })
 
-  // What a closed list still has under way must change nothing: its state is gone, and a later
-  // list must not be written to by an earlier one's answer.
+  // A closed list's pending answers must not reach a later list.
   describe('once it is closed', () => {
     it('ignores the first page when it arrives', async () => {
       const read = held(NO_ROWS)
@@ -921,7 +882,6 @@ describe('review moderation section', () => {
       await flush()
       const waiting = ui.render()
 
-      // The earlier list's page is not this list's: it still waits for its own.
       expect(rows(waiting.inner)).toEqual([])
       expect(textOf(waiting.inner.find((node) => node.props['role'] === 'status'))).toBe(
         sv.reviewsLoading,
@@ -934,8 +894,7 @@ describe('review moderation section', () => {
     })
   })
 
-  // Every read and write of the reviews waits for the one before it, also across a list that was
-  // closed: what a list shows is never older than a write that was still running when it read.
+  // A list never shows data older than a write still running when it read.
   describe('order of its reads and writes', () => {
     it('reads a list that is opened again only after a write that is still running', async () => {
       const write = held(DONE)
@@ -952,7 +911,6 @@ describe('review moderation section', () => {
       ui.toggle(sv.reviewsOpen)
       await flush()
 
-      // The write has not answered: the new list has not read yet.
       expect(api.listReviews).toHaveBeenCalledOnce()
 
       write.answer(DONE)
@@ -1021,7 +979,7 @@ describe('review moderation section', () => {
       await flush()
       press(button(opened.inner, sv.ownerListLoadMore))
 
-      // The write answers nothing that can be read: the list is to be read again, after the page.
+      // An unreadable write answer: the list is read again, after the page.
       write.answer(err('network', 'adapter text'))
       await flush()
 
@@ -1155,7 +1113,6 @@ describe('admin log section', () => {
 
     expect(rows(failed.inner)).toHaveLength(1)
     expect(statusLine(failed.inner)).toBe(sv.auditLoadError)
-    // The button is still there to be pressed again, and holds the focus.
     expect(focusTarget()).toEqual({ place: 'more' })
 
     press(button(failed.inner, sv.ownerListLoadMore))
@@ -1166,7 +1123,6 @@ describe('admin log section', () => {
     expect(rows(view.inner)).toHaveLength(2)
     expect(statusLine(view.inner)).toBe('')
     expect(button(view.inner, sv.ownerListLoadMore)).toBeUndefined()
-    // The button is gone: the focus goes to the first entry that arrived.
     expect(focusTarget()).toEqual(onRow('a2', 'first'))
   })
 
@@ -1223,7 +1179,6 @@ describe('admin log section', () => {
 
       expect(alertText(refused.inner)).toBe(sentence)
       expect(textOf(refused.inner)).not.toContain('adapter text')
-      // Nothing is read again until the owner asks for it.
       ui.render()
       await flush()
       expect(api.listAuditLog).toHaveBeenCalledOnce()
@@ -1233,7 +1188,6 @@ describe('admin log section', () => {
       ui.render()
       const reading = ui.render()
 
-      // The button leaves with the failure: the list takes the focus while it reads.
       expect(button(reading.inner, sv.ownerListRetry)).toBeUndefined()
       expect(focusTarget()).toEqual({ place: 'list' })
 
@@ -1258,7 +1212,6 @@ describe('admin log section', () => {
     await flush()
     const view = ui.render()
 
-    // What the ended session's request answered is not shown.
     expect(rows(view.inner)).toEqual([])
     expect(alertText(view.inner)).toBe(sv.ownerListSessionExpired)
   })
@@ -1317,7 +1270,6 @@ describe('admin log section', () => {
       await flush()
       const view = ui.render()
 
-      // The new log shows its own first page, and nothing of the old log's further page.
       expect(api.listAuditLog.mock.calls).toEqual([[null], [cursor], [null]])
       expect(rows(view.inner).map(textOf)).toEqual([expect.stringContaining('Barberare Hassan')])
     })

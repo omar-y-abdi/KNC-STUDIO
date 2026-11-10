@@ -48,7 +48,7 @@ beforeEach(async () => {
     from: () => ({ select: () => ({ eq: () => ({ single: api.profile }) }) }),
     rpc: api.rpc,
   }
-  // No `auth.signOut` here: it reports a refused revocation as success, so the function must not use it.
+  // No `auth.signOut`: it reports a refused revocation as success.
   const reauth = { auth: { signInWithPassword: api.signIn, admin: { signOut: api.signOut } } }
   api.createClient.mockReset().mockImplementation((_url: string, key: string) => {
     if (key === 'unit-service') return service
@@ -100,7 +100,6 @@ const refusedSignIn = (status: number | undefined, code: string | undefined) => 
   error: { status, code, message: 'Auth refused the sign-in' },
 })
 
-/** Nothing that leaves the function, by reply or by log, may hold the password. */
 async function expectPasswordKeptIn(response: Response): Promise<void> {
   const logged = JSON.stringify(vi.mocked(console.error).mock.calls)
   expect(await response.clone().text()).not.toContain(PASSWORD.trim())
@@ -115,9 +114,9 @@ describe('email change requires the current password', () => {
     expect(api.createClient).toHaveBeenCalledWith('https://db.example.test', 'unit-anon', {
       auth: { autoRefreshToken: false, persistSession: false },
     })
-    // The caller's address comes from the verified token; the password is passed on as typed.
+    // The address comes from the verified token; the password is passed on untrimmed.
     expect(api.signIn.mock.calls).toEqual([[{ email: 'staff@example.test', password: PASSWORD }]])
-    // Only the session the check opened is revoked: the caller's own session stays.
+    // Only the check's own session is revoked.
     expect(api.signOut.mock.calls).toEqual([[TEMPORARY, 'local']])
     expect(api.generateLink).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -146,8 +145,6 @@ describe('email change requires the current password', () => {
     await expectPasswordKeptIn(response)
   })
 
-  // A banned or unconfirmed account, a CAPTCHA demand or an answer without a code is not a wrong
-  // password: the panel must not tell the user to retype it.
   it.each(['user_banned', 'email_not_confirmed', 'captcha_failed', 'validation_failed', undefined])(
     'does not call another refusal of the sign-in (%s) a wrong password',
     async (code) => {

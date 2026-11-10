@@ -322,8 +322,6 @@ describe('booking receipt registration', () => {
     },
   )
 
-  // The gateway's own two refusals keep their names as kinds, so the flow can tell them apart
-  // without reading a text; every other refusal is the generic submit error.
   it.each([
     ['invalid_contact', 'submit', 'errSubmit'],
     ['invalid', 'submit', 'errSubmit'],
@@ -341,8 +339,7 @@ describe('booking receipt registration', () => {
     })
   })
 
-  // No answer that says what happened: the request may have reached the server and booked the
-  // time. The message says so, and the kind lets the flow remember the doubt.
+  // The request may have reached the server and booked the time.
   it.each([
     [
       'the request fails on the way',

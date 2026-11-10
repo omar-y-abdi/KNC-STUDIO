@@ -1,18 +1,5 @@
-// Review moderation and the admin log (migrations 20261110120100_review_moderation and
-// 20261110120200_admin_audit_log), through the panel's own adapters against the real database.
-//
-// This is where the parameter names the adapters send meet the functions that receive them:
-//   * as the owner: list every review, page by cursor, hide one and read it gone from every
-//     anonymous read, publish it again, delete it; then read the admin log and find the entries the
-//     database wrote for those three changes, with column names and no review text;
-//   * the entry an Edge Function writes for a service-role change (_shared/adminAudit.ts), for
-//     every table and column the staff functions name;
-//   * as a barber, and with no session: each of the four RPCs is refused and nothing changes. A
-//     barber is refused as "not the owner"; a request without a session is answered with HTTP 401,
-//     which the adapters report as an ended session.
-//
-// The tests of a block run in order and build on each other: one review is taken through its whole
-// life.
+// Review moderation and the admin log through the panel's own adapters against the real database.
+// The tests of a block run in order: one review is taken through its whole life.
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -64,15 +51,12 @@ describe.skipIf(!adminBackendReady())('review moderation and admin log (integrat
   let ownerId: string
   /** Unique to this run: the review texts carry it, so a leak into the log would be found. */
   const marker = uniqueReviewMarker()
-  /** The names of the two reviews this run seeds: what tells its reviews from every other. */
   const reviewName = (label: 'older' | 'newer'): string => `${marker} ${label}`
   /** The newest review of the table, taken through hide, publish again and delete. */
   let newer: SeededReview
   /** The second newest; it is never changed. */
   let older: SeededReview
-  /** The ids of the reviews this run seeded, for the admin log rows about them. */
   const seededIds: string[] = []
-  /** The ids of the admin log rows the service-role block wrote; removed afterwards. */
   const recordedEntryIds: string[] = []
 
   /** Insert a published review `daysAhead` days in the future, so it sorts before every other. */
@@ -98,7 +82,6 @@ describe.skipIf(!adminBackendReady())('review moderation and admin log (integrat
     return { id, name, rating, text }
   }
 
-  /** The id of every admin log row about a table a staff function records for. */
   async function serviceRecordedEntryIds(): Promise<readonly string[]> {
     return withClient(env.dbUrl, async (client) => {
       const found = await client.query<{ id: string }>(
@@ -120,7 +103,6 @@ describe.skipIf(!adminBackendReady())('review moderation and admin log (integrat
     })
   }
 
-  /** Whether a client without a session can read the review at all. */
   async function anonymouslyReadable(id: string): Promise<boolean> {
     const { data, error } = await anon.from('reviews').select('id,name,rating,text').eq('id', id)
     if (error !== null) throw new Error(`Anonymous review read failed: ${error.message}`)
@@ -164,19 +146,15 @@ describe.skipIf(!adminBackendReady())('review moderation and admin log (integrat
     newer = await seedReview('newer', 5, 2)
   })
 
-  // `beforeAll` can fail part-way, with one review seeded or none: what is removed here is found
-  // by what this run named and noted, never by a value that only a complete `beforeAll` sets. A
-  // seeded review is published and dated in the future, so it must not be left behind.
+  // `beforeAll` can fail part-way: clean up only by what this run named and noted. A seeded review
+  // is published and dated in the future, so it must not be left behind.
   afterAll(async () => {
-    // Nothing was written: the stack was not found to be local.
     if (seededIn === null) return
     await withClient(seededIn.dbUrl, async (client) => {
       // By name: a review whose insert was made but whose id never arrived is removed as well.
       await client.query('delete from public.reviews where name = any($1::text[])', [
         [reviewName('older'), reviewName('newer')],
       ])
-      // The admin log rows of this run and no others: those about its reviews, and those the
-      // service-role block wrote, by their ids.
       await client.query(
         `delete from public.admin_audit_log
          where (target_table = 'reviews' and target_id = any($1::text[]))
@@ -311,10 +289,8 @@ describe.skipIf(!adminBackendReady())('review moderation and admin log (integrat
         { kind: 'owner' },
         { kind: 'owner' },
       ])
-      // Nothing was done to the other review, so the log does not name it.
       expect(log.value.entries.map((entry) => entry.targetId)).not.toContain(older.id)
 
-      // The answer as the database sends it, and the rows as they are stored: no review text.
       const raw = await getAdminClient().rpc('admin_list_audit_log', {
         p_before: null,
         p_before_id: null,
@@ -401,8 +377,7 @@ describe.skipIf(!adminBackendReady())('review moderation and admin log (integrat
           targetId: BARBER_LINK_ID,
           changedColumns: ['disconnect_requested_at'],
         }),
-        // calendar-oauth-callback: a first connect, a reconnect that writes the whole link, and
-        // renewed access for a link the store keeps.
+        // calendar-oauth-callback: first connect, reconnect, renewed access.
         await recordAdminAction(service, {
           actorId: ownerId,
           action: 'insert',
@@ -431,8 +406,7 @@ describe.skipIf(!adminBackendReady())('review moderation and admin log (integrat
           changedColumns: ['refresh_token', 'calendar_id', 'updated_at', 'last_sync_error'],
         }),
       ]
-      // Noted before anything is asserted: the rows that are there now and were not before are the
-      // ones written above (the integration files run one at a time), and are removed afterwards.
+      // Noted before any assertion, so afterAll removes them; integration files run one at a time.
       recordedEntryIds.push(
         ...(await serviceRecordedEntryIds()).filter((id) => !earlier.includes(id)),
       )
@@ -506,7 +480,6 @@ describe.skipIf(!adminBackendReady())('review moderation and admin log (integrat
     })
 
     it('answers a refused service-role entry with the database error code', async () => {
-      // No profile has this id, so there is no member of staff to name.
       expect(
         await recordAdminAction(service, {
           actorId: crypto.randomUUID(),
@@ -536,7 +509,6 @@ describe.skipIf(!adminBackendReady())('review moderation and admin log (integrat
 
   describe('without a session', () => {
     beforeAll(async () => {
-      // The barber of the block above signs out: the panel's client now carries no session.
       const { error } = await getAdminClient().auth.signOut()
       if (error !== null) throw new Error(`Sign-out failed: ${error.message}`)
     })
@@ -552,8 +524,7 @@ describe.skipIf(!adminBackendReady())('review moderation and admin log (integrat
         const { data, error, status } = await call
         expect(error).not.toBeNull()
         expect(data).toBeNull()
-        // The status is what tells this refusal from that of a signed-in barber: the error code
-        // can be the same 42501 for both.
+        // Only the status tells this from a barber's refusal: both can carry error code 42501.
         expect(status).toBe(401)
       }
 

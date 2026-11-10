@@ -1,8 +1,3 @@
-// calendar-oauth-callback and the admin log. Google sends the barber's browser here without a JWT
-// and the function stores the token with the service role, so it says itself who connected: the
-// one staff account of the barber id in the signed state, once, after the token is stored, and
-// never for a token that was not stored. A failed entry changes no answer.
-
 import type * as CalendarModule from '../../supabase/functions/_shared/calendar'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AdminActionRecord } from '../../supabase/functions/_shared/adminAudit'
@@ -43,8 +38,7 @@ const AUDIT = 'internal_record_admin_action'
 const STORE = 'calendar_store_token'
 const BACKFILL = 'calendar_backfill_source'
 
-/** A column the admin log helper accepts for a calendar link: a name the table does not have is a
- *  compile error here, as it is in the function. */
+/** A calendar link column the admin log helper accepts; any other name fails the type check. */
 type LinkColumn = Extract<
   AdminActionRecord,
   { table: 'barber_calendar_tokens'; action: 'update' }
@@ -65,12 +59,11 @@ const REPLACED: readonly LinkColumn[] = [
   'disconnect_requested_at',
 ]
 
-/** The answers with the app origin in the signed state: a redirect back into the panel. */
 const CONNECTED = [303, [['location', `${SITE}/admin?calendar=connected`]], '']
 const FAILED = [303, [['location', `${SITE}/admin?calendar=error`]], '']
 
 let handler: (request: Request) => Promise<Response>
-/** What `calendar_store_token` and the admin log answer in the test at hand. */
+/** Per-test answers of `calendar_store_token` and the admin log. */
 let stored: () => unknown
 let audited: () => unknown
 
@@ -116,7 +109,6 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-/** Let everything that can run without a further answer run. */
 const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0))
 
 function callback(): Promise<Response> {
@@ -132,7 +124,6 @@ const answer = async (response: Response) => [
   [...response.headers],
   await response.text(),
 ]
-/** The admin log call for the barber's calendar link, under the barber's own account. */
 const entry = (action: 'insert' | 'update', detail: { changed: readonly string[] } | null) => [
   AUDIT,
   {
@@ -161,8 +152,7 @@ describe('calendar-oauth-callback admin log', () => {
       entry('insert', null),
       [BACKFILL, { p_barber_id: 'victor' }],
     ])
-    // The account is the one the access check reads for the barber id of the signed state; the
-    // admin log reads no account of its own.
+    // These are the access check's reads; the admin log reads no account of its own.
     expect(api.where.mock.calls).toEqual([
       ['profiles', 'role', 'barber'],
       ['profiles', 'barber_id', 'victor'],
@@ -194,7 +184,6 @@ describe('calendar-oauth-callback admin log', () => {
       { ok: true, cleanup_pending: false, repair_pending: true },
       [STORE, AUDIT, BACKFILL],
     ],
-    // The store found a row that the function's own earlier read did not see.
     [
       'appeared after the function looked for one',
       null,
@@ -293,9 +282,7 @@ describe('calendar-oauth-callback admin log', () => {
 
       expect(actual).toEqual(expected)
       expect(expected[0]).toBe(status)
-      // What follows the entry still happens.
       expect(rpcNames()).toEqual(names)
-      // The function and the error code: no id of the barber or of the account.
       expect(logged.mock.calls).toEqual([
         ['calendar-oauth-callback: admin log write failed:', code],
       ])
@@ -314,8 +301,6 @@ describe('calendar-oauth-callback admin log', () => {
     void response.then(answered)
     await settle()
 
-    // The entry is on its way and the function waits for it: nothing after it has started, and the
-    // entry does not outlive the request.
     expect(rpcNames()).toEqual([STORE, AUDIT])
     expect(answered).not.toHaveBeenCalled()
 
@@ -328,7 +313,7 @@ describe('calendar-oauth-callback admin log', () => {
     const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     audited = () => new Promise(() => undefined)
     const answered = vi.fn()
-    // Only the clock of the admin log bound is faked; the request and its answer run as they do.
+    // Fakes only the clock of the admin log bound; the request runs as it does.
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
 
     const response = callback()
@@ -339,7 +324,6 @@ describe('calendar-oauth-callback admin log', () => {
     vi.useRealTimers()
 
     expect(await answer(await response)).toEqual(CONNECTED)
-    // What follows the entry still happens.
     expect(rpcNames()).toEqual([STORE, AUDIT, BACKFILL])
     expect(logged.mock.calls).toEqual([
       ['calendar-oauth-callback: admin log write failed:', 'timeout'],

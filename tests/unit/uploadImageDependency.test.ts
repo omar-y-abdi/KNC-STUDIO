@@ -15,7 +15,6 @@ const media = vi.hoisted(() => {
     storedPath: '',
     upload: vi.fn(),
     rpc: vi.fn(),
-    /** The barber's photo row before an upload: none for a first photo. */
     previousPhoto: vi.fn(),
     initialize: vi.fn(),
     readWasm: vi.fn(),
@@ -219,7 +218,6 @@ describe('upload-image HTTP paths', () => {
           p_expected_path: null,
           p_new_path: media.storedPath,
         })
-        // A first photo is a new row; the admin log names the caller, the barber and no value.
         expect(media.rpc.mock.calls.map(([name]) => name)).toEqual([
           'internal_replace_barber_photo',
           'internal_record_admin_action',
@@ -358,10 +356,6 @@ describe('upload-image HTTP paths', () => {
     },
   )
 
-  // --- admin log ---------------------------------------------------------------------------------
-  // The photo row is written with the service role, so the function itself says in the admin log
-  // who changed it: after the row is written, and never for a request that changed no row.
-
   const AUDIT = 'internal_record_admin_action'
   const auditCalls = () => media.rpc.mock.calls.filter(([name]) => name === AUDIT)
 
@@ -394,7 +388,6 @@ describe('upload-image HTTP paths', () => {
     )
   }
 
-  /** The database's answers for a barber who has a photo: a replace and a delete both find it. */
   function withExistingPhoto(audit: () => unknown): void {
     media.previousPhoto.mockResolvedValue({
       data: { storage_path: 'hassan/photo.webp' },
@@ -477,8 +470,7 @@ describe('upload-image HTTP paths', () => {
     media.rpc.mockImplementation(async (name: string) => {
       if (name === 'internal_replace_barber_photo')
         return { data: { ok: false, error: 'conflict' }, error: null }
-      // What becomes of the uploaded object is not this test's subject: answered as retained, the
-      // function leaves it alone.
+      // Answered as retained, so the function leaves the uploaded object alone.
       if (name === 'internal_cms_media_retained') return { data: true, error: null }
       throw new Error(`Unexpected RPC: ${name}`)
     })
@@ -508,7 +500,7 @@ describe('upload-image HTTP paths', () => {
   ])(
     'answers an upload and a delete exactly the same when the admin log %s',
     async (_, failure, code) => {
-      // The object path is random; hold it still so the two answers can be compared byte for byte.
+      // Fixes the random object path so the two answers compare byte for byte.
       vi.spyOn(crypto, 'randomUUID').mockReturnValue('54000000-0000-4000-8000-000000000009')
       const answers = async () => {
         const uploaded = await uploadPhoto()
@@ -527,8 +519,7 @@ describe('upload-image HTTP paths', () => {
 
       expect(actual).toEqual(expected)
       expect(expected.map(([status]) => status)).toEqual([200, 202])
-      // The claim of the queued object deletion is unanswered in both runs and logs its own line;
-      // the admin log adds the function and the error code, and nothing of the row.
+      // The unanswered deletion claim logs its own line; only the admin log lines are compared.
       expect(logged.mock.calls.filter(([text]) => String(text).includes('admin log'))).toEqual([
         ['upload-image: admin log write failed:', code],
         ['upload-image: admin log write failed:', code],
@@ -537,7 +528,6 @@ describe('upload-image HTTP paths', () => {
     },
   )
 
-  /** The database's answers for a barber who has no photo: an upload stores the first one. */
   function withNoPhoto(audit: () => unknown): void {
     media.rpc.mockImplementation(async (name: string) => {
       if (name === 'internal_replace_barber_photo')
@@ -547,8 +537,7 @@ describe('upload-image HTTP paths', () => {
     })
   }
 
-  // Whether the row was created or changed is what the write itself answered. The read before it
-  // can be stale: another request may have stored or removed the photo in between.
+  // The write's answer says whether the row was created or changed: the read before can be stale.
   it.each([
     [
       'a changed path when the write found a photo the earlier read did not see',
@@ -591,11 +580,7 @@ describe('upload-image HTTP paths', () => {
 
   /** One real turn of the event loop, also while `setTimeout` is faked. */
   const turn = (): Promise<void> => new Promise((resolve) => setImmediate(resolve))
-  /**
-   * Wait until the function has asked for its admin log entry. It reads the request body on the
-   * way, which answers after an unknown number of turns; two seconds is given up on, and the
-   * assertions that follow say what is missing.
-   */
+  /** Polls until the admin log entry is asked for: the body read takes unknown turns. */
   async function untilTheEntryIsAsked(): Promise<void> {
     const deadline = Date.now() + 2000
     while (auditCalls().length === 0 && Date.now() < deadline) await turn()
@@ -635,7 +620,6 @@ describe('upload-image HTTP paths', () => {
       await untilTheEntryIsAsked()
       await turn()
 
-      // The entry is on its way: nothing after it has started, and the answer waits.
       expect(media.rpc.mock.calls.map(([name]) => name)).toEqual(asked)
       expect(answered).not.toHaveBeenCalled()
 
@@ -650,7 +634,7 @@ describe('upload-image HTTP paths', () => {
   ])(
     'answers %s exactly the same after 3 seconds when the admin log never answers',
     async (_, arrange, request, status) => {
-      // The object path is random; hold it still so the two answers can be compared byte for byte.
+      // Fixes the random object path so the two answers compare byte for byte.
       vi.spyOn(crypto, 'randomUUID').mockReturnValue('54000000-0000-4000-8000-000000000009')
       const read = async (response: Response) => [
         response.status,
@@ -663,7 +647,7 @@ describe('upload-image HTTP paths', () => {
       media.rpc.mockClear()
       arrange(() => new Promise(() => undefined))
       const answered = vi.fn()
-      // Only the clock of the admin log bound is faked; the request and its answer run as they do.
+      // Fakes only the clock of the admin log bound; the request runs as it does.
       vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
 
       const response = request()

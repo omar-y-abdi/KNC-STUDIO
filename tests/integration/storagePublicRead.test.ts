@@ -1,14 +1,5 @@
-// Storage listing (checklist item 14b, migration 20261110120500_storage_public_listing).
-//
-// `gallery` and `barber-photos` are public buckets: an object is served to anyone who has its URL.
-// Until that migration two row-level-security policies also let anyone holding the anon key list
-// every object of both buckets. The policies are gone. This suite proves on the real Storage API:
-//   (a) the public URL of an object in each bucket still answers 200 with the stored bytes, with no
-//       credential at all, and
-//   (b) neither the anon key nor a signed-in owner session gets a single row when listing a bucket.
-// The service role lists the same folder and finds the object, so an empty listing for the client
-// roles is a refusal and not a wrong folder name. A listing call that fails is never counted as a
-// refusal: it fails the test.
+// Migration 20261110120500 on the real Storage API. The service role lists the same folder, so an
+// empty client listing is a refusal, not a wrong path.
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -44,13 +35,8 @@ describe.skipIf(!adminBackendReady())('public Storage buckets (integration)', ()
   }
 
   /**
-   * Names a client sees when it lists `prefix` of `bucket`.
-   *
-   * The Storage API answers a listing with 200 and the rows `storage.search` returns under the
-   * caller's database role (supabase/storage: `routes/object/listObjects.ts`, `database/pg.ts`).
-   * Row-level security hides rows from that query and raises nothing, so a role with no SELECT
-   * policy gets an empty array and no error. Any error therefore means the call itself failed
-   * (Storage down, wrong bucket name, bad key) and must not pass as "lists nothing": it throws.
+   * Row-level security hides rows without an error, so an error means the call itself failed
+   * (Storage down, wrong bucket name, bad key): it throws rather than pass as "lists nothing".
    */
   async function listedNames(
     client: SupabaseClient,

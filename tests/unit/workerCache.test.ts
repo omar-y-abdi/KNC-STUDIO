@@ -16,8 +16,8 @@ import {
 import worker, { PublicContent, isCmsPagePath, renderCmsPage } from '../../supabase/worker/index'
 
 // E2 (worker-cache): non-page requests skip the CMS, independent reads overlap, the presentation is
-// versioned and cached per revision, an empty description gives way to its route's default or to no
-// description tags at all, and the static layer serves icons and info.css as assets.
+// versioned and cached per revision, empty descriptions fall back to a route default or none, and
+// the static layer serves icons and info.css as assets.
 const SITE = 'https://bladeblendstudio.se'
 const SHELL = readFileSync(new URL('../../index.html', import.meta.url), 'utf8')
 const DISCOVERY = { settings: {}, barbers: [], services: [], schedules: [] }
@@ -508,7 +508,6 @@ describe('native shells', () => {
 
   it.each([
     ['/', business.seo.sv.description],
-    // The booking page has a default of its own, not the homepage's.
     ['/booking', bookingDescription('sv', business)],
   ])(
     'gives %s its default description when the CMS page has none and replaces it otherwise',

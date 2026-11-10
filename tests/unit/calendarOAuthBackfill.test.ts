@@ -92,7 +92,6 @@ describe('Calendar OAuth HTTP boundary', () => {
           p_calendar_id: 'primary',
         },
       ],
-      // The admin log entry of the connect, under the staff account read for the barber id.
       [
         'internal_record_admin_action',
         {

@@ -8,8 +8,6 @@ import {
 } from '../../modules/public-web/src/booking/validation'
 import { aboutStrings, bookingStrings } from '../../modules/public-web/src/i18n/index'
 
-// The two "invalid phone number" errors tell the customer what to type. Each format they show must
-// be one the parser accepts, in both languages.
 describe('the phone error states formats the parser accepts', () => {
   const SHOWN_FORMATS = ['07X XXX XX XX', '+46 7X XXX XX XX']
 

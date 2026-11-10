@@ -1,7 +1,4 @@
-// Rasterise public/favicon.svg into the raster icons the pages and public/site.webmanifest link:
-// public/favicon.ico (32 px), public/apple-touch-icon.png (180 px on the light theme colour) and
-// public/icons/icon-192.png and icon-512.png. Chromium paints the SVG's own markup, as
-// tools/og/render.mjs paints the social card; nothing is redrawn.
+// Rasterises public/favicon.svg into the icons the pages and public/site.webmanifest link.
 // Usage: node tools/brand/render-icons.mjs
 import { readFileSync, writeFileSync } from 'node:fs'
 import { chromium } from 'playwright'
@@ -14,9 +11,8 @@ const SURFACE =
     readFileSync(new URL('../../index.html', import.meta.url), 'utf8'),
   )?.[1]
 if (SURFACE === undefined) throw new Error('index.html has no light theme-color')
-// `mark` is the share of the canvas that the SVG's 64-unit box takes. iOS shows the touch icon as
-// an opaque rounded tile, so it gets the site surface and a margin around the pole; the others stay
-// transparent and keep the favicon's own framing.
+// `mark`: share of the canvas the SVG's 64-unit box takes. iOS shows the touch icon as an opaque
+// rounded tile, so it gets the site surface and a margin; the others stay transparent.
 const ICONS = [
   { path: 'favicon.ico', size: 32, mark: 1, background: null },
   { path: 'apple-touch-icon.png', size: 180, mark: 0.8, background: SURFACE },
@@ -62,7 +58,6 @@ try {
     const container = path.endsWith('.ico')
     writeFileSync(file(path), container ? ico(png, size) : png)
     await ctx.close()
-    // Reported from the written file, not from the request above.
     const written = readFileSync(file(path))
     console.log(
       `${path}: ${dimensions(written, container ? ICO_HEADER_BYTES : 0)}, ${written.length} bytes`,

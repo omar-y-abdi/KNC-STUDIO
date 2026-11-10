@@ -58,7 +58,7 @@ function start(origin: string | null, authorization = 'Bearer barber-token'): Pr
   )
 }
 
-/** The origin the callback would redirect to: `return_to` of the signed state in the consent URL. */
+/** `return_to` of the signed state in the consent URL. */
 async function returnTo(response: Response): Promise<string | undefined> {
   expect(response.status).toBe(200)
   const body: unknown = await response.json()

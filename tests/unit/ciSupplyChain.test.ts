@@ -70,8 +70,6 @@ describe('CI supply-chain pins', () => {
     const dependabot = readFileSync('.github/dependabot.yml', 'utf8').split('\n')
     const entry = dependabot.indexOf('  - package-ecosystem: github-actions')
     expect(entry).toBeGreaterThan(-1)
-    // The entry's own list: it ends at the first line that is not a list item, and no other
-    // entry starts before it.
     const start = dependabot.indexOf('    directories:', entry)
     expect(start).toBeGreaterThan(entry)
     expect(dependabot.slice(entry + 1, start).filter((line) => line.startsWith('  - '))).toEqual([])

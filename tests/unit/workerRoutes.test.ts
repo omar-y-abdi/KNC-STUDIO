@@ -348,7 +348,6 @@ describe('Worker route policy', () => {
         const body = url.includes('public_cms_page_metadata')
           ? {
               revision: 2,
-              // Each page has a title of its own, as the database answers per path.
               title: `CMS title ${(JSON.parse(String(init?.body)) as { p_path: string }).p_path}`,
               description: 'CMS description',
             }
@@ -866,11 +865,8 @@ describe('metadata byte compatibility', () => {
   })
 })
 
-// W2-5: every other spelling of a URL the site answers gets one 308 to the URL that is answered:
-// the apex host, the route's own path, the query as sent. A fixed route (a native page, a static
-// page, a staff route) folds letter case, trailing slashes and its file name. A created page does
-// when the publication holds it. Below /admin/ the letters are the app's. A file, an /api/ path and
-// an unknown path keep their letters, and a customer link keeps its credential as written.
+// A fixed route (native, static or staff page) folds letter case, trailing slashes and its file
+// name; a created page does when the publication holds it. Other paths keep their letters.
 describe('one redirect to the canonical URL (W2-5)', () => {
   const APEX = 'https://bladeblendstudio.se'
   const WWW = 'https://www.bladeblendstudio.se'
@@ -965,8 +961,7 @@ describe('one redirect to the canonical URL (W2-5)', () => {
     },
   }
 
-  /** One request to the Worker in front of a publication that holds /offers (`readable` false: the
-   * publication cannot be read). Returns the answer, the RPCs it read and the assets it fetched. */
+  /** One request in front of a publication holding /offers (unreadable if `readable` is false). */
   const visit = async (method: string, url: string, readable = true) => {
     const rpcs: string[] = []
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
@@ -1050,7 +1045,7 @@ describe('one redirect to the canonical URL (W2-5)', () => {
       expect(first.body).toBe('')
       expect(first.rpcs).toEqual(['public_cms_presentation'])
       expect(first.assets).toEqual([])
-      // The page answers under its own path. HEAD: this file's assets hold no base stylesheet.
+      // HEAD, since this file's assets hold no base stylesheet.
       const second = await visit('HEAD', to)
       expect(second.response.status).toBe(200)
       expect(second.rpcs).toEqual(['public_cms_presentation'])

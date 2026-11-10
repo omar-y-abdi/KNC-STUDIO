@@ -17,7 +17,6 @@ vi.mock('../../modules/public-web/src/booking/BookingFlow', () => ({
   },
 }))
 vi.mock('../../modules/public-web/src/about/AboutSection', () => ({ AboutSection: () => null }))
-// A stand-in "Mina bokningar" island that records what it was mounted with.
 const myBookings = vi.hoisted(() => ({ mounts: [] as Readonly<Record<string, unknown>>[] }))
 vi.mock('../../modules/public-web/src/mybookings/MyBookingsDialog', () => ({
   MyBookingsDialog: (props: Readonly<Record<string, unknown>>) => {
@@ -84,8 +83,7 @@ describe('CMS runtime islands', () => {
     expect(mountBookingIsland('dark', false).last()?.mode).toBe('dark')
   })
 
-  // The islands load no site settings, and the shipped defaults are not the owner's: a dialog
-  // given the default 24 hours would hide a cancel button that works under a shorter deadline.
+  // The islands load no site settings: a default 24 h deadline could wrongly hide a cancel button.
   it('tells the "Mina bokningar" island that the cancellation deadline is unknown', () => {
     myBookings.mounts.length = 0
     vi.stubGlobal('document', { documentElement: { lang: 'sv' } })

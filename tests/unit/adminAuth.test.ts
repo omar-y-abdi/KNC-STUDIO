@@ -292,7 +292,7 @@ describe('admin account settings auth', () => {
   })
 
   it('leaves the wording of the Settings form out of the session path', () => {
-    // src/CmsRoute.tsx loads auth.ts through useAdminSession; the string table stays out of it.
+    // src/CmsRoute.tsx loads auth.ts through useAdminSession.
     const source = readFileSync('modules/staff-admin/src/auth.ts', 'utf8')
     expect(source).not.toMatch(/from '\.\/adminStrings'/)
   })

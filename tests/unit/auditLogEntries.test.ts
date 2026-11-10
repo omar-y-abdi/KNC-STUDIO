@@ -1,6 +1,3 @@
-// Unit tests for the pure decisions of the admin log list in Settings (no mocks, no DOM): how a
-// table is named, who an entry says acted and what its lines read.
-
 import { readdirSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import type {
@@ -18,7 +15,7 @@ import {
 const sv = adminText('sv')
 const en = adminText('en')
 
-/** Every table the log can name, with the words the panel uses for one row of it. */
+/** Each table the log can name, with the panel's Swedish and English word for one row. */
 const TABLES = [
   ['bookings', 'bokning', 'booking'],
   ['barbers', 'barberare', 'barber'],
@@ -33,7 +30,6 @@ const TABLES = [
   ['staff_invitations', 'inbjudan', 'invitation'],
   ['barber_photos', 'profilbild', 'profile photo'],
   ['barber_calendar_tokens', 'kalenderkoppling', 'calendar connection'],
-  // One publish from CMS Studio; the row id is the revision number.
   ['cms_revisions', 'publicering av webbplatsen', 'site publication'],
 ] as const
 
@@ -42,7 +38,6 @@ const roster = [
   { id: 'victor', name: 'Victor' },
 ]
 
-/** Every migration, oldest first, as one text. */
 const migrationSql = (): string =>
   readdirSync('supabase/migrations')
     .filter((name) => name.endsWith('.sql'))
@@ -70,7 +65,7 @@ describe('admin log table names', () => {
     expect(auditTargetLabel('gift_cards', sv)).toBe('gift_cards')
     expect(auditTargetLabel('gift_cards', en)).toBe('gift_cards')
     expect(auditTargetLabel('', sv)).toBe('')
-    // Names an object would answer to are table names like any other.
+    // Object.prototype keys are unknown table names too.
     expect(auditTargetLabel('constructor', sv)).toBe('constructor')
     expect(auditTargetLabel('toString', en)).toBe('toString')
   })
@@ -151,7 +146,6 @@ describe('admin log actor', () => {
     expect(auditActorLabel({ kind: 'unknown', role: 'manager' }, roster, en)).toBe(
       'Staff (manager)',
     )
-    // The stored name is taken literally.
     expect(auditActorLabel({ kind: 'unknown', role: '$& {role}' }, roster, sv)).toBe(
       'Personal ($& {role})',
     )
@@ -182,7 +176,6 @@ describe('admin log action', () => {
     const merge: AuditChange = { action: 'unknown', name: 'merge', changedColumns: [] }
     expect(auditActionLabel(merge, sv)).toBe('Okänd åtgärd (merge):')
     expect(auditActionLabel(merge, en)).toBe('Unknown action (merge):')
-    // The stored name is taken literally.
     expect(
       auditActionLabel({ action: 'unknown', name: '$& {action}', changedColumns: [] }, en),
     ).toBe('Unknown action ($& {action}):')
@@ -269,8 +262,7 @@ describe('admin log entry lines', () => {
 })
 
 describe('admin log retention line', () => {
-  // The purge function deletes an entry once it is older than this many months; the newest
-  // definition is the one in force.
+  // The purge function's retention in months; the newest definition is the one in force.
   const months = [
     ...migrationSql().matchAll(
       /create or replace function public\.internal_purge_admin_audit_log\(\)[\s\S]*?interval '(\d+) months'/g,
@@ -283,8 +275,7 @@ describe('admin log retention line', () => {
     expect(en.auditRetention).toContain(`kept for ${months} months`)
   })
 
-  // An entry holds the id of the row, which for a booking or a review is the id of a customer's
-  // row: the line names what is absent and does not say that nothing of a customer is there.
+  // A booking or review entry holds a customer row's id, so the line names only what is absent.
   it.each([
     ['sv', sv.auditRetention, 'kunduppgifter', ['kundnamn', 'telefonnummer', 'e-postadresser']],
     [

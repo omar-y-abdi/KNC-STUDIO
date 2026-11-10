@@ -41,8 +41,7 @@ const answer = (
   ...extra,
 })
 
-// The tags production serves in this order: structured data, the built entry, a preload and the
-// inline script Cloudflare appends.
+// Production's head order, ending with the inline script Cloudflare appends.
 const HOME_HTML = [
   '<!doctype html><html lang="sv"><head>',
   '<script id="business-json-ld" type="application/ld+json">{}</script>',
@@ -65,7 +64,6 @@ const HEALTHY: Readonly<Record<string, PageResponse>> = {
   [SCRIPT]: answer(200, 'text/javascript'),
 }
 
-/** A site that answers from a table and records what was asked. A URL outside the table gets no response. */
 function fakeSite(responses: Readonly<Record<string, PageResponse>>) {
   const requested: string[] = []
   const get: GetPage = async (url) => {
@@ -78,7 +76,6 @@ function fakeSite(responses: Readonly<Record<string, PageResponse>>) {
   return { get, requested }
 }
 
-/** Runs every site check against a table of answers. */
 async function run(responses: Readonly<Record<string, PageResponse>>) {
   const { get, requested } = fakeSite(responses)
   const results: { name: string; pass: boolean; detail: string }[] = []
@@ -410,7 +407,6 @@ describe('live smoke time limits', () => {
 
 describe('live smoke run', () => {
   const verdict = (pass: boolean) => async () => ({ pass, detail: pass ? 'fine' : 'broken' })
-  /** Runs a list of checks and keeps the reported lines. */
   async function report(checks: Parameters<typeof runChecks>[0]) {
     const lines: string[] = []
     const result = await runChecks(checks, (line) => {
@@ -431,8 +427,7 @@ describe('live smoke run', () => {
       'direct lookup_booking RPC (anon -> 404)',
       ...sitePageChecks(ORIGIN, get).map(([name]) => name),
     ])
-    // The six backend checks send real requests and are not run here; the site checks of the same
-    // list use the page getter that was handed in.
+    // The first six are the backend checks, which send real requests.
     const { result } = await report(checks.slice(6))
     expect(result).toEqual({ total: 11, failures: 0 })
     expect([...new Set(requested)].sort()).toEqual(Object.keys(HEALTHY).sort())
@@ -581,7 +576,6 @@ describe('moduleScriptUrl', () => {
 describe('live smoke workflow', () => {
   const source = readFileSync('.github/workflows/live-smoke.yml', 'utf8')
   const lines = source.split('\n')
-  /** The indented lines under a top-level key, up to the next blank or top-level line. */
   const block = (key: string): string[] => {
     const rest = lines.slice(lines.indexOf(`${key}:`) + 1)
     const end = rest.findIndex((line) => !line.startsWith(' '))
@@ -604,7 +598,7 @@ describe('live smoke workflow', () => {
     expect(block('permissions')).toEqual(['  contents: read'])
     expect(source.match(/permissions:/g)).toHaveLength(1)
     expect(source).not.toContain('${{')
-    // The script sends nothing after 6 minutes; the job leaves the two setup steps the rest.
+    // The script stops at 6 minutes; the two setup steps get the rest.
     const [, minutes] = /^ {4}timeout-minutes: (\d+)$/m.exec(source) ?? []
     expect(Number(minutes)).toBeGreaterThanOrEqual(8)
     expect(block('concurrency')).toEqual([
@@ -665,7 +659,7 @@ describe('live smoke workflow', () => {
       '          node tools/smoke-live.mjs | tee "$RUNNER_TEMP/live-smoke.log"',
       `          grep -qx '${allGreen}' "$RUNNER_TEMP/live-smoke.log"`,
     ])
-    // That block is the only command of the workflow, in bash, and no step may fail quietly or be skipped.
+    // That block is the workflow's only command, in bash; no step may fail quietly or be skipped.
     expect(lines.filter((line) => /^\s+(?:run|shell):/.test(line))).toEqual([
       '  run:',
       '    shell: bash',

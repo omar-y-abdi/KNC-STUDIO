@@ -46,8 +46,7 @@ const PAGES = [
 ]
 // The static documents that carry the skip link of public/info.css in their own markup.
 const SKIP_DOCUMENTS = ['/404.html', '/500.html', '/maintenance.html', '/google-calendar.html']
-// Every static document built on public/info.css, as the preview build serves the file. Contact and
-// /terms.html are the two with both a breadcrumb and a footer.
+// Every static document on public/info.css; contact and terms have both a breadcrumb and a footer.
 const PRINT_DOCUMENTS = [
   '/404.html',
   '/500.html',
@@ -137,11 +136,7 @@ const tokenSurface = (page, selector) =>
     return { background: style.backgroundColor, font, seen: seen ?? null }
   }, selector)
 
-/** What the paper styles of public/info.css decide, as the page computes it under the current
- * media: the root's background, the colour of every element of main.bb-doc that holds text of its
- * own, every painted background there, the display of the skip link and of the document's own
- * breadcrumb and footer (its direct children), and the generated address after the first link to
- * the site that sits outside them. */
+/** What the paper styles of public/info.css decide, as computed under the current media. */
 const paper = (page) =>
   page.evaluate(() => {
     const OWN_NAVIGATION = '.bb-doc > nav, .bb-doc > footer'
@@ -227,7 +222,6 @@ for (const scheme of ['light', 'dark']) {
         await page.evaluate(() => globalThis.document.fonts.ready)
         const skip = page.locator('a.bb-skip')
         await expect(skip).not.toBeInViewport()
-        // The link is the first stop of the tab order.
         const first = await page.evaluate(
           () =>
             globalThis.document.querySelector(
@@ -241,7 +235,6 @@ for (const scheme of ['light', 'dark']) {
         const result = await audit(page)
         expect(result.violations, `${url}: axe wcag2aa with the skip link shown`).toEqual([])
         expect(result.minContrast, `${url}: lowest text contrast`).toBeGreaterThanOrEqual(4.5)
-        // Following it goes to the main content and takes the link off the screen again.
         await skip.press('Enter')
         await expect(page).toHaveURL(`${publicOrigin}${url}#main`)
         await expect(skip).not.toBeInViewport()
@@ -249,8 +242,7 @@ for (const scheme of ['light', 'dark']) {
   })
 }
 
-// One test for every document and both schemes: the paper styles are CSS logic, and a test for
-// each document and scheme would open a browser context apiece on every engine.
+// One test for all: a test per document and scheme would open a context apiece on every engine.
 test('the static documents print black on white without their navigation', async ({
   page,
   context,

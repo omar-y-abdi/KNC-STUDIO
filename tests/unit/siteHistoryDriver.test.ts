@@ -11,7 +11,7 @@ const home: AddressedState = { view: 'home', myBookingsOpen: false, lang: 'sv' }
 const booking: AddressedState = { view: 'booking', myBookingsOpen: false, lang: 'sv' }
 const dialog: AddressedState = { view: 'home', myBookingsOpen: true, lang: 'sv' }
 
-/** This document among those of the session history. */
+/** This document's id in the session history. */
 const DOCUMENT = 1
 
 type ScrollRestoration = 'auto' | 'manual'
@@ -24,10 +24,8 @@ interface Entry {
   scrollRestoration: ScrollRestoration
 }
 
-// A session history a test can step through: entries with their state and scroll restoration, the
-// index the address rests on, and timers that fire only when told to. `history.back()` is
-// asynchronous in a browser, so the fake only counts the call: `arrive` moves the address and
-// `popstate` delivers the event.
+// A fake session history. `history.back()` is asynchronous in a browser, so the fake only counts
+// the call: `arrive` moves the address and `popstate` delivers the event.
 function drive(
   start: string,
   initial: AddressedState,
@@ -100,8 +98,7 @@ function drive(
     () => state,
     (address) => addresses.push(address),
   )
-  /** The app's "Mina bokningar" button: the entry first, then the state that shows the dialog. Its
-   * render follows at once; the effect that tells the driver comes later (`effect`). */
+  /** The "Mina bokningar" button; the effect that tells the driver comes later (`effect`). */
   const pressDialogButton = (): void => {
     driver.enterDialog(state.lang)
     state = { ...state, myBookingsOpen: true }
@@ -114,20 +111,16 @@ function drive(
     urls: (): string[] => entries.map((each) => each.url),
     scrollRestorations: (): ScrollRestoration[] => entries.map((each) => each.scrollRestoration),
     address: (): string => entry().url,
-    /** The visitor chooses a state: the app renders it and its effect tells the driver. */
     choose: (next: AddressedState): void => {
       state = next
       driver.follow(next)
     },
     pressDialogButton,
-    /** The effect of the latest render tells the driver the state showing. */
     effect: (): void => driver.follow(state),
-    /** The button, and the effect of the render that shows the dialog. */
     openDialog: (): void => {
       pressDialogButton()
       driver.follow(state)
     },
-    /** The address moves along the session history, as after Back, Forward or `history.back()`. */
     arrive: (delta: number): void => {
       index += delta
     },
@@ -135,7 +128,6 @@ function drive(
     visit: (url: string): void => {
       push(url, null)
     },
-    /** The `popstate` event: the app shows what the driver answers. */
     popstate: (): ReturnType<typeof driver.traversed> => {
       const next = driver.traversed(state)
       if (next !== null) state = { ...next, lang: state.lang }
@@ -192,8 +184,7 @@ describe('a change the visitor makes', () => {
 
 describe('the document the driver starts in', () => {
   it('gives scroll restoration back to an entry a dialog was opened from and never returned to', () => {
-    // The visitor left the site from the dialog and came back to this entry by a document load:
-    // no popstate tells the driver.
+    // The visitor came back to this entry by a document load, so no popstate tells the driver.
     const site = drive('/booking', booking, null, 'manual')
     expect(site.history.scrollRestoration).toBe('auto')
     expect(site.history.replaceState).not.toHaveBeenCalled()
@@ -303,8 +294,7 @@ describe('the dialog a button opens', () => {
 })
 
 describe('the dialog reopened while the step back from it is under way', () => {
-  // Escape, then Enter on the button before the popstate of `history.back()` has arrived: the
-  // address still rests on the entry of the dialog that was closed.
+  // Escape, then Enter on the button, before the popstate of `history.back()` has arrived.
   const reopened = (): ReturnType<typeof drive> => {
     const site = drive('/', home)
     site.openDialog()
@@ -329,9 +319,7 @@ describe('the dialog reopened while the step back from it is under way', () => {
     expect(site.address()).toBe('/my-bookings')
     expect(site.scrollRestorations()).toEqual(['manual', 'manual'])
     expect(site.history.replaceState).not.toHaveBeenCalled()
-    // The address is the one it was before the step: the head has nothing to follow.
     expect(site.addresses).toEqual(['/my-bookings'])
-    // Back from the new entry is a step within the site.
     site.arrive(-1)
     expect(site.popstate()).toEqual({ view: 'home', myBookingsOpen: false })
     expect(site.address()).toBe('/')
@@ -360,7 +348,6 @@ describe('the dialog reopened while the step back from it is under way', () => {
     expect(site.address()).toBe('/my-bookings')
     expect(site.history.pushState).toHaveBeenCalledOnce()
     expect(site.history.replaceState).not.toHaveBeenCalled()
-    // Closing it later is one step back again.
     site.choose(home)
     expect(site.history.back).toHaveBeenCalledTimes(2)
   })
@@ -377,8 +364,7 @@ describe('the dialog reopened while the step back from it is under way', () => {
 })
 
 describe('a state rendered before the button was pressed', () => {
-  // "Mina bokningar" while its chunk loads, then "Boka tid": the chunk resolves, the entry is
-  // pushed, and only then does the effect of the booking render reach the driver.
+  // "Mina bokningar" while its chunk loads, then "Boka tid": the booking effect arrives last.
   it('does not replace the entry the dialog was just given', () => {
     const site = drive('/', home)
     site.pressDialogButton()
@@ -388,8 +374,7 @@ describe('a state rendered before the button was pressed', () => {
     site.choose({ ...booking, myBookingsOpen: true })
     expect(site.urls()).toEqual(['/', '/my-bookings'])
     expect(site.history.pushState).toHaveBeenCalledOnce()
-    // Once the dialog has shown, a state without it is the visitor closing it: the entry was
-    // pushed from the start view, so it becomes the booking view's.
+    // Closing the dialog now gives its entry, pushed from the start view, to the booking view.
     site.choose(booking)
     expect(site.urls()).toEqual(['/', '/booking'])
     expect(site.history.replaceState).toHaveBeenCalledOnce()
@@ -431,7 +416,6 @@ describe('a step through the session history', () => {
     site.arrive(1)
     expect(site.popstate()).toEqual({ view: 'booking', myBookingsOpen: true })
     expect(site.urls()).toEqual(['/booking', '/my-bookings'])
-    // The entry that holds the dialog stays without it.
     expect(site.scrollRestorations()).toEqual(['auto', 'manual'])
   })
 

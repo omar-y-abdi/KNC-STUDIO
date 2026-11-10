@@ -68,7 +68,6 @@ describe('public customer input semantics', () => {
       { type: 'tel', autoComplete: 'tel', inputMode: 'tel' },
       { type: 'email', autoComplete: 'email', inputMode: 'email' },
     ])
-    // All three are required to book, and say so to assistive technology.
     expect(fields.map((field) => field['aria-required'])).toEqual(['true', 'true', 'true'])
   })
 

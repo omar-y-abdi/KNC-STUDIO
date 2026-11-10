@@ -1,14 +1,4 @@
 -- pgTAP: admin audit log (migration 20261110120200).
---   * the table is closed to every API role; the trigger function and the service-role RPC are its
---     only writers, and the owner RPC its only reader
---   * a change is recorded only when the request carries the JWT of a staff profile; writes with no
---     JWT, a service-role JWT, malformed claims or a subject that is not staff record nothing and
---     are never refused
---   * a row holds who, what, which table, which primary key and column NAMES; no value of a changed
---     row can be stored, by the table's columns and constraints and by what the writers accept
---   * a publish from CMS Studio (service role, no staff JWT) is recorded once, from the revision row
---     that names the publishing owner; revision rows that are not a staff publish record nothing
---   * owner-only keyset reads; 12-month retention with exact boundaries; one daily purge job
 begin;
 select plan(109);
 
@@ -280,7 +270,6 @@ select ok((select 'value' = any(l.changed_columns) from public.admin_audit_log l
     and l.action = 'update'),
   'the setting change is recorded with the name of the changed column');
 
--- The legacy single-claim setting names the subject too, exactly as auth.uid() reads it.
 select set_config('request.jwt.claims', '', true);
 select set_config('request.jwt.claim.sub', '79000000-0000-4000-8000-000000000001', true);
 update public.barbers set ig = 'auditbar_ig' where id = 'auditbar';
@@ -295,7 +284,6 @@ select ok(not exists (select 1 from public.admin_audit_log l
     || '|Hemlig orsak|Privat anledning|recensionstext|Kund K|hemligt|Barberaren|Nytt Namn|auditbar_ig')),
   'no customer name, phone number, e-mail address or other row value appears in any entry');
 
--- The table itself refuses what the writers never produce.
 select throws_ok($$insert into public.admin_audit_log
   (actor_id, action, target_table, target_id, changed_columns) values
   ('79000000-0000-4000-8000-000000000001', 'update', 'bookings',
@@ -363,9 +351,7 @@ select throws_ok($$insert into public.admin_audit_log
   '23514', null, 'a revision target must be a revision number');
 
 -- ---- a publish from CMS Studio: one entry, written from the revision row -----------------------
--- The gateway publishes with the service role and no staff JWT, so the capture on barbers and
--- site_settings, which the publish rewrites, records nothing. In a database that has no revision
--- yet the publish also stores a snapshot of the state before it; that row must not count.
+-- With no revision yet, the publish also stores a snapshot row, which must not count.
 delete from public.admin_audit_log;
 select set_config('test.cms_state',
   public.internal_cms_state('79000000-0000-4000-8000-000000000001')::text, true);
@@ -612,7 +598,6 @@ select throws_ok($$select public.admin_list_audit_log(
 reset role;
 select set_config('request.jwt.claims', '', true);
 
--- The page size is capped at 100 rows.
 insert into public.admin_audit_log (actor_id, action, target_table, target_id)
 select '79000000-0000-4000-8000-000000000001', 'insert', 'barbers', 'auditbar'
 from pg_catalog.generate_series(1, 120);
@@ -647,7 +632,6 @@ select is((select pg_catalog.array_agg(l.target_id order by l.target_id) from pu
   array['r-11', 'r-12-exact', 'r-12-newer', 'r-now'],
   'the exact 12-month cutoff and every newer row remain');
 
--- The scheduling block is idempotent: run twice more, one job with the same schedule and command.
 select set_config('test.cron_before', (select j.schedule || ' ' || j.command from cron.job j
   where j.jobname = 'admin-audit-log-purge'), true);
 do $$

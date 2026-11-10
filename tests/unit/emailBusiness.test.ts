@@ -86,7 +86,7 @@ describe('transactional email business data', () => {
     expect(message.html).not.toContain('barberarpanelen hos Blade &amp; Blend Studio')
   })
 
-  // The setting allows 1 to 168: the wording must read right for one hour as for many.
+  // The setting allows 1 to 168 hours, so the wording must also read right for one.
   it.each([
     ['sv', '36', 'senast 36 h före den bokade tiden', 'Därefter kontaktar du oss direkt.'],
     ['sv', '1', 'senast 1 h före den bokade tiden', 'Därefter kontaktar du oss direkt.'],
@@ -112,7 +112,6 @@ describe('transactional email business data', () => {
           business,
         }).text
       for (const template of ['customer_confirmation', 'customer_reminder'] as const) {
-        // The place is named as the site names it.
         expect(text(template)).toContain(`"${appStrings(lang).myBookings}"`)
         expect(text(template)).toContain(rule)
         expect(text(template)).not.toMatch(/avbokningsvillkor|cancellation policy|\{[a-z_]+\}/i)

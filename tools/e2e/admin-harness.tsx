@@ -366,8 +366,7 @@ let setCustomerCode: ((code: string | null | undefined) => void) | undefined
 let activeCustomerPort: CustomerPortKey = 'a'
 let activeCustomerCode: string | null | undefined
 
-/** A list result reaches the page as JSON, where each booking's `start` is a string; the dialog
- * compares it with its clock, so make it the `Date` the port contract promises. */
+/** Over JSON a booking's `start` is a string; restore the `Date` the port contract promises. */
 function revivedList(result: MyBookingsResult): MyBookingsResult {
   if (!result.ok) return result
   const revive = (booking: MyBooking): MyBooking => ({ ...booking, start: new Date(booking.start) })

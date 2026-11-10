@@ -11,8 +11,7 @@ import { matchesSelector, type SelectorSubject } from './helpers/fakeSelector'
 const ORIGIN = 'https://salong.example'
 const indexable = 'index, follow, max-image-preview:large'
 
-// A stand-in for the document head: its tags in document order. A selector the code asks with is
-// applied to them for real (helpers/fakeSelector.ts).
+// A fake document head; selectors run against its tags for real (helpers/fakeSelector.ts).
 
 class FakeTag implements SelectorSubject {
   readonly tag: string
@@ -28,7 +27,6 @@ class FakeTag implements SelectorSubject {
     this.attributes.set(name, value)
   }
 
-  /** Puts the tag last among `tags`, as `appendChild` does. */
   appendTo(tags: FakeTag[]): this {
     this.siblings = tags
     tags.push(this)
@@ -44,7 +42,6 @@ class FakeTag implements SelectorSubject {
 interface FakeHead {
   readonly page: Document
   readonly title: () => string
-  /** The tags that match, in document order, as plain attribute records. */
   readonly all: (selector: string) => Record<string, string>[]
   readonly first: (selector: string) => FakeTag | undefined
   readonly count: () => number
@@ -76,7 +73,6 @@ function head(...initial: FakeTag[]): FakeHead {
   }
 }
 
-/** The texts and the social tags every served document carries. */
 const texts = (): FakeTag[] => [
   meta('name', 'description', 'Served description'),
   meta('property', 'og:title', 'Served title'),
@@ -85,14 +81,12 @@ const texts = (): FakeTag[] => [
   meta('name', 'twitter:description', 'Served description'),
 ]
 
-/** Links of the shell that are not the route's: a stylesheet, and an alternate that is no language
- * version. */
+/** Shell links that are not the route's, among them an alternate that is no language version. */
 const otherLinks = (): FakeTag[] => [
   link({ rel: 'stylesheet', href: '/tokens.css' }),
   link({ rel: 'alternate', type: 'application/rss+xml', href: '/feed.xml' }),
 ]
 
-/** The head the Worker serves for the Swedish homepage. */
 const servedHomepage = (): FakeHead =>
   head(
     ...texts(),
@@ -107,8 +101,6 @@ const servedHomepage = (): FakeHead =>
     ...otherLinks(),
   )
 
-/** The head the Worker serves for the Swedish account page: out of the index, without a canonical
- * and without language alternates. */
 const servedAccount = (): FakeHead =>
   head(
     ...texts(),
@@ -134,7 +126,6 @@ describe('writeRouteIdentity', () => {
     expect(document.all(LANGUAGE_ALTERNATES)).toEqual([])
     expect(content(document, 'meta[property="og:locale"]')).toBe('sv_SE')
     expect(content(document, 'meta[property="og:locale:alternate"]')).toBe('en_US')
-    // The other links of the shell stay.
     expect(document.all('link')).toEqual([
       { rel: 'stylesheet', href: '/tokens.css' },
       { rel: 'alternate', type: 'application/rss+xml', href: '/feed.xml' },
@@ -217,7 +208,7 @@ describe('writeRouteTexts', () => {
     expect(content(document, 'meta[property="og:description"]')).toBe('Välj en tid.')
     expect(content(document, 'meta[name="twitter:title"]')).toBe('Boka tid – Salong')
     expect(content(document, 'meta[name="twitter:description"]')).toBe('Välj en tid.')
-    // The identity of the address is not the texts'.
+    // Tags other than the texts stay as served.
     expect(content(document, 'meta[property="og:url"]')).toBe('https://salong.example/')
     expect(content(document, 'meta[name="robots"]')).toBe(indexable)
   })

@@ -1,45 +1,8 @@
--- Admin audit log (checklist item 109), kept for 12 months.
---
--- One row per change a member of staff makes to a staff-managed table: when, who, which action,
--- which table, which row (its primary key as text) and, for an update, the NAMES of the columns
--- whose value changed. Values are never stored. A row therefore cannot hold a customer's name,
--- phone number, e-mail address, token or free text:
---   * actor_id is a staff profile id,
---   * action and target_table are closed lists,
---   * target_id is a primary key of one of those tables (a UUID, a barber slug, a barber slug with a
---     weekday, a settings key, or a revision number), and its shape is checked per table,
---   * changed_columns holds identifier-shaped column names only.
--- No bookings column is a primary key except id, so nothing a customer typed can reach target_id.
---
--- Three writers, all SECURITY DEFINER; no API role can write the table directly:
---   1. the trigger function below, attached to the staff-managed tables. It records a change only
---      when the request carries the JWT of a staff profile. A customer booking, the public gateway
---      (service role, no subject), cron jobs and Edge Functions acting with the service role record
---      nothing.
---   2. internal_record_admin_action, for Edge Functions that change staff-managed data with the
---      service role on behalf of a signed-in member of staff. They call it through
---      supabase/functions/_shared/adminAudit.ts. The call is:
---        service.rpc('internal_record_admin_action', {
---          p_actor: <auth user id of the signed-in staff member>,
---          p_action: 'insert' | 'update' | 'delete',
---          p_target_table: 'profiles' | 'staff_invitations' | 'barber_photos' | 'barber_calendar_tokens',
---          p_target_id: <profiles.id / staff_invitations.user_id as a UUID, or the barber id>,
---          p_detail: null, or for an update { changed: ['column_name', ...] }
---        })
---   3. the trigger on cms_revisions. A publish from CMS Studio rewrites barbers, site_settings and
---      the content tables with the service role, so writer 1 records nothing for it. The publish
---      stores who published in cms_revisions.actor_id; that row gives one entry per publish:
---      action 'insert', target_table 'cms_revisions', target_id the revision number.
---
--- Old application code keeps working (nothing it uses is changed), and nothing here needs new
--- application code.
+-- Admin audit log: who changed which row of a staff-managed table and, for an update, the names of
+-- the changed columns. Values are never stored: no customer name, phone, e-mail address or text.
 
--- CREATE TRIGGER takes a lock on its table that blocks every write to it, and keeps the lock until
--- this migration commits. The triggers are therefore the last statements of the file and are
--- created in this order: the tables only staff write, then reviews, then bookings. Every wait for
--- another transaction happens before a table that customers write is locked, except the wait for
--- bookings itself, during which reviews is held. Each wait is bounded: after five seconds this
--- migration fails and changes nothing, instead of queueing bookings behind it.
+-- CREATE TRIGGER blocks writes to its table until commit, so the triggers come last and bookings
+-- last of all (see the end of the file); a lock wait over 5 s fails the migration.
 set lock_timeout = '5s';
 
 create table if not exists public.admin_audit_log (
@@ -92,7 +55,6 @@ create table if not exists public.admin_audit_log (
         ~ '^[a-z_][a-z0-9_]{0,62}(,[a-z_][a-z0-9_]{0,62})*$'
     )
   ),
-  -- An update names what changed; an insert or a delete concerns the whole row.
   constraint admin_audit_log_changed_matches_action check (
     (action = 'update') = (changed_columns is not null)
   )
@@ -104,27 +66,8 @@ create index if not exists admin_audit_log_listing_idx
 alter table public.admin_audit_log enable row level security;
 revoke all on table public.admin_audit_log from public, anon, authenticated, service_role;
 
--- The trigger function. Its arguments are the primary-key columns of the table it is attached to.
---
--- It must never make a write fail that would otherwise succeed, least of all a customer's booking.
--- Every statement, and why it cannot raise:
---   1. current_setting(name, true): returns NULL for a setting that is not set.
---   2. pg_input_is_valid: returns false for text that is not JSON / not a UUID; the casts that
---      follow run only on text it accepted.
---   3. jsonb ->> 'sub': NULL when the claims are not an object or have no subject.
---      Without a UUID subject the function returns here. That is every request that is not a
---      signed-in session: no table has been read and nothing has been written.
---   4. The profiles lookup by primary key: an ordinary read. No row, no audit entry.
---   5. to_jsonb(row), jsonb_each, array_agg, the regular expression and the string concatenation
---      are total for any row.
---   6. The insert. actor_id is the profile just found. action is lower(tg_op) of a row trigger for
---      insert, update or delete. target_table is one of the tables this migration attaches the
---      trigger to, all of which the table constraint lists. target_id is built from primary-key
---      columns, which are never NULL and whose shape the source tables constrain exactly as
---      admin_audit_log_target_id_check does. changed_columns is NULL unless the action is an
---      update, and then it is a non-empty list of names that passed the same pattern the
---      constraint applies.
--- No network call, no dynamic SQL, and no dependence on a JWT being present.
+-- Arguments: the primary-key columns of the table. Records only requests with a staff JWT, and must
+-- never fail the write it observes (least of all a booking): every statement here is total.
 create or replace function public.internal_audit_staff_change()
 returns trigger
 language plpgsql
@@ -171,7 +114,6 @@ begin
     from pg_catalog.jsonb_each(v_row) as n(key, value)
     where n.value is distinct from (v_old -> n.key)
       and n.key ~ '^[a-z_][a-z0-9_]{0,62}$';
-    -- An update that changed no value is not a change.
     if v_changed is null then
       return null;
     end if;
@@ -192,26 +134,8 @@ $$;
 revoke all on function public.internal_audit_staff_change()
   from public, anon, authenticated, service_role;
 
--- The trigger function for cms_revisions: one entry per publish from CMS Studio.
---
--- internal_cms_publish is the only code that inserts a revision. For a publish it inserts one row
--- with the publishing owner in actor_id and the request in request_id. The first publish of a
--- database also inserts a snapshot of the content as it was before (the revision it started from,
--- without a request id); that row is not a publish and records nothing, so a publish is always
--- exactly one entry. The entry outlives the revision, which the nightly prune removes after 30 days.
---
--- Like the capture above it must never make the insert, and with it the publish, fail. Every
--- statement, and why it cannot raise:
---   1. The tests on new.request_id, new.actor_id and new.revision are total. A revision whose text
---      is not 1 to 18 digits records nothing, so the target id always satisfies
---      admin_audit_log_target_id_check (cms_revisions_revision_check forbids a negative one, and
---      19 digits is beyond any real count).
---   2. The profiles lookup by primary key: an ordinary read. An actor that is not a staff profile
---      records nothing.
---   3. The insert: actor_id is the profile just found, action is 'insert', target_table is in the
---      table constraint's list, target_id is the digits just tested, changed_columns stays NULL as
---      an insert requires.
--- No network call, no dynamic SQL, and it reads no JWT.
+-- One entry per CMS Studio publish, which writes with the service role, unseen by the staff
+-- trigger. A row without request_id is the first publish's snapshot, not a publish.
 create or replace function public.internal_audit_cms_publish()
 returns trigger
 language plpgsql
@@ -235,10 +159,8 @@ $$;
 revoke all on function public.internal_audit_cms_publish()
   from public, anon, authenticated, service_role;
 
--- Explicit record for staff actions an Edge Function performs with the service role, where the
--- database sees no staff JWT. The same rules as the trigger, enforced on the arguments: the actor
--- is a staff profile, the target is a row of a staff table the Edge Functions write, and the
--- detail can only name real columns of that table.
+-- For Edge Functions acting with the service role for a signed-in staff member, where the database
+-- sees no staff JWT. Called through supabase/functions/_shared/adminAudit.ts.
 create or replace function public.internal_record_admin_action(
   p_actor uuid,
   p_action text,
@@ -317,7 +239,6 @@ begin
     end if;
   end if;
 
-  -- An update names its columns; an insert or a delete carries no detail.
   if (p_action = 'update') <> (v_changed is not null) then
     raise exception using errcode = '22023', message = 'invalid detail';
   end if;
@@ -332,9 +253,7 @@ revoke all on function public.internal_record_admin_action(uuid, text, text, tex
 grant execute on function public.internal_record_admin_action(uuid, text, text, text, jsonb)
   to service_role;
 
--- Owner-only read, newest first, with the same (created_at, id) keyset pages as the e-mail log.
--- actor_role and actor_barber_id are read from the profile as it is now; both are null once the
--- account is gone.
+-- actor_role and actor_barber_id are the profile as it is now; null once the account is gone.
 create or replace function public.admin_list_audit_log(
   p_before timestamptz default null,
   p_limit integer default 50,
@@ -432,7 +351,6 @@ revoke all on function public.admin_list_audit_log(timestamptz, integer, uuid)
 grant execute on function public.admin_list_audit_log(timestamptz, integer, uuid)
   to authenticated;
 
--- Retention: an entry is deleted once it is more than 12 months old.
 create or replace function public.internal_purge_admin_audit_log()
 returns integer
 language plpgsql
@@ -466,11 +384,8 @@ select cron.schedule(
   'select public.internal_purge_admin_audit_log()'
 );
 
--- The triggers come last so their table locks are held for the shortest time, in the order the
--- comment at the top of this file explains: first the tables only staff write (a CMS publish and
--- the nightly revision prune hold several of them for as long as they run), then reviews, and
--- bookings as the very last, so that nothing is waited for while bookings is locked. CREATE OR
--- REPLACE makes a re-run a no-op. Each argument list is the table's primary key.
+-- Lock order: the tables only staff write first, then the two customers write (reviews, bookings),
+-- so no lock wait happens while bookings is held.
 create or replace trigger admin_audit_log_capture
   after insert or update or delete on public.barbers
   for each row execute function public.internal_audit_staff_change('id');
@@ -507,7 +422,6 @@ create or replace trigger admin_audit_log_capture_publish
   after insert on public.cms_revisions
   for each row execute function public.internal_audit_cms_publish();
 
--- Customers write the next two.
 create or replace trigger admin_audit_log_capture
   after insert or update or delete on public.reviews
   for each row execute function public.internal_audit_staff_change('id');
@@ -516,5 +430,4 @@ create or replace trigger admin_audit_log_capture
   after insert or update or delete on public.bookings
   for each row execute function public.internal_audit_staff_change('id');
 
--- The setting above is for the session; leave the next migration what it would have had.
 reset lock_timeout;

@@ -1,12 +1,4 @@
 -- pgTAP: booking retention (migration 20261110120400).
--- internal_purge_expired_bookings() deletes a booking when its appointment ended more than 12
--- months before the transaction time and none of its confirmation or cancellation e-mails is
--- pending or being sent. A failed e-mail of such a booking is dismissed first (its job becomes
--- 'skipped') and no longer holds the booking; a failed e-mail of a younger booking stays failed.
--- Cancelled and confirmed bookings are treated alike; a run deletes at most 500, oldest first, and
--- held bookings do not use up that batch. Each boundary has a row just inside and a row just
--- outside. What a purge leaves of the rows that hang off a booking is compared with what the
--- owner's own delete (admin_delete_bookings) leaves.
 begin;
 select plan(41);
 
@@ -60,7 +52,6 @@ select is((select j.username::text from cron.job j where j.jobname = 'booking-re
    where p.oid = 'public.internal_purge_expired_bookings()'::regprocedure),
   'the job runs as the owner of the function, the only role that may execute it');
 
--- The predicate reads three columns. None can be NULL, so there is no NULL case to decide.
 select is((select pg_catalog.array_agg(c.relname || '.' || a.attname order by c.relname, a.attname)
   from pg_catalog.pg_attribute a
   join pg_catalog.pg_class c on c.oid = a.attrelid
@@ -74,7 +65,7 @@ select is((select pg_catalog.array_agg(c.relname || '.' || a.attname order by c.
   'every column the purge decides on is NOT NULL');
 
 -- ---- fixtures ---------------------------------------------------------------------------------
--- The purge works on the whole table: start from an empty one (everything here is rolled back).
+-- The purge works on the whole table: start empty (all of it is rolled back).
 update public.booking_email_delivery_jobs
 set status = 'delivered', completed_at = pg_catalog.now()
 where status in ('pending', 'dispatching', 'failed');
@@ -86,8 +77,7 @@ $$;
 create function pg_temp.hash(p_seed text) returns text language sql immutable as $$
   select md5(p_seed) || md5(p_seed || ':2')
 $$;
--- A 30-minute booking that ends at p_end. A cancelled one was cancelled two years before its end,
--- so the time of cancellation is always far older than 12 months.
+-- A cancelled booking was cancelled two years before its end, far beyond the 12-month cutoff.
 create function pg_temp.add_booking(
   p_n integer, p_barber text, p_end timestamptz, p_status text, p_method text, p_email text
 ) returns void language sql as $$
@@ -101,7 +91,6 @@ create function pg_temp.add_booking(
      p_email, 'sv', p_status,
      case when p_status = 'cancelled' then p_end - interval '2 years' end)
 $$;
--- The numbers of the bookings that exist, in order.
 create function pg_temp.survivors() returns bigint[] language sql stable as $$
   select coalesce(array_agg(s.n order by s.n), '{}')
   from (select right(b.id::text, 12)::bigint as n from public.bookings b) s
@@ -192,9 +181,7 @@ where id = pg_temp.bid(20);
 update public.bookings set start_at = pg_catalog.now() - interval '2 years'
 where id = pg_temp.bid(23);
 
--- Every booking got a pending confirmation job from its insert trigger. Mark them delivered, then
--- give 11 to 16 and 24 to 27 one state each and leave 22 pending. A failed job carries what the
--- delivery worker leaves on it: the time it failed and an error code.
+-- The insert trigger gave every booking a pending confirmation job; 22's is left as it is.
 update public.booking_email_delivery_jobs
 set status = 'delivered', completed_at = pg_catalog.now()
 where booking_id <> pg_temp.bid(22);
@@ -210,13 +197,10 @@ where j.booking_id = pg_temp.bid(s.n);
 -- As after the 90-day job cleanup: no job row at all.
 delete from public.booking_email_delivery_jobs
 where booking_id in (pg_temp.bid(2), pg_temp.bid(4), pg_temp.bid(5));
--- 17 and 27 are cancelled and their cancellation e-mail has not gone out. The confirmation of 17
--- was delivered; that of 27 failed.
 insert into public.booking_email_delivery_jobs (booking_id, event, status)
 values (pg_temp.bid(17), 'booking_cancelled', 'pending'),
        (pg_temp.bid(27), 'booking_cancelled', 'pending');
 
--- 18 and 22: a review, an e-mail log row, a reminder, a device-receipt grant and a calendar event.
 insert into public.reviews (name, rating, text, published, booking_id)
 select 'Retention', 5, 'Retention review ' || n, true, pg_temp.bid(n)
 from unnest(array[18, 22]) as n;
@@ -344,9 +328,7 @@ select is(pg_temp.survivors(), array[1, 3, 6, 7, 8, 9, 10, 20, 23, 26]::bigint[]
   'only bookings that ended within 12 months or have not ended remain');
 
 -- ---- bounded batches, oldest first; held bookings do not use up the batch ----------------------
--- 500 bookings older than every other one, each held by the pending e-mail its insert queued. A
--- purge that took its 500 oldest candidates first and looked at their e-mails afterwards would
--- find only these and delete nothing.
+-- 500 bookings older than every other one, each held by the pending e-mail its insert queued.
 insert into public.bookings
   (id, barber_id, service_id, service_name, price, duration_min, start_at, end_at,
    customer_name, method, phone, email, lang, status, cancelled_at)

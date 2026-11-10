@@ -8,11 +8,9 @@ const api = vi.hoisted(() => ({
   insert: vi.fn(),
   remove: vi.fn(),
   rpc: vi.fn(),
-  /** The profile already linked to the barber: none for a new account, one for a re-sent invite. */
   linkedProfile: vi.fn(),
-  /** The invitation stored for the account before a re-sent invite stores its own. */
   storedInvitation: vi.fn(),
-  /** The profile of the auth user the invite link resolved to, read when its insert failed. */
+  /** The profile of the auth user the invite link resolved to, read after a failed insert. */
   existingProfile: vi.fn(),
   deleteUser: vi.fn(),
 }))
@@ -97,18 +95,13 @@ afterEach(() => {
 
 /** One real turn of the event loop, also while `setTimeout` is faked. */
 const turn = (): Promise<void> => new Promise((resolve) => setImmediate(resolve))
-/**
- * Wait until the function has come as far as `reached` says. It hashes the invitation token on the
- * way, which answers after an unknown number of turns; two seconds is given up on, and the
- * assertions that follow say what is missing.
- */
+/** Polls until `reached`: hashing the invitation token takes an unknown number of turns. */
 async function until(reached: () => boolean): Promise<void> {
   const deadline = Date.now() + 2000
   while (!reached() && Date.now() < deadline) await turn()
 }
-/** An answer that never comes. */
 const never = (): Promise<never> => new Promise(() => undefined)
-/** Only the clock of the admin log bound is faked; the request and its answer run as they do. */
+/** Fakes only the clock of the admin log bound; the request runs as it does. */
 const fakeTheBound = () => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
 
 function invite(): Promise<Response> {
@@ -150,12 +143,6 @@ it('does not mail an invitation that was not persisted', async () => {
   expect(api.rpc).not.toHaveBeenCalled()
 })
 
-// --- admin log -----------------------------------------------------------------------------------
-// The profile and invitation rows are written with the service role, so the function itself says in
-// the admin log that the owner made them: once the invite is delivered, and never for a request
-// that failed or whose new account was removed again.
-
-/** One `internal_record_admin_action` call as the function must make it. */
 const entry = (action: string, table: string, detail: { changed: string[] } | null = null) => [
   'internal_record_admin_action',
   {
@@ -203,10 +190,8 @@ it('records nothing when the profile could not be linked', async () => {
   expect(api.rpc).not.toHaveBeenCalled()
 })
 
-// --- a profile that cannot be inserted ------------------------------------------------------------
-// The invite link can resolve to an auth user that existed before the request: the address of an
-// invited, unconfirmed account of another barber. Its profile is why the insert fails, and the
-// cleanup after a failed insert must never remove such an account.
+// The invite link can resolve to an auth user that existed before, whose profile fails the insert:
+// the cleanup after a failed insert must never remove such an account.
 
 it('removes the account it created when the profile insert fails and no profile exists for it', async () => {
   api.insert.mockResolvedValue({ error: { message: 'duplicate key' } })
@@ -216,7 +201,6 @@ it('removes the account it created when the profile insert fails and no profile 
 
   expect(response.status).toBe(500)
   expect(await response.json()).toEqual({ ok: false, error: 'link_failed' })
-  // Read after the failed insert, and only then removed.
   expect(api.existingProfile).toHaveBeenCalledOnce()
   expect(api.insert.mock.invocationCallOrder[0]).toBeLessThan(
     api.existingProfile.mock.invocationCallOrder[0] ?? 0,
@@ -238,7 +222,6 @@ it('removes nothing and says the address is taken when the account already has a
   expect(await response.json()).toEqual({ ok: false, error: 'email_taken' })
   expect(api.deleteUser).not.toHaveBeenCalled()
   expect(api.remove).not.toHaveBeenCalled()
-  // Neither an admin log entry nor a queued removal of the account.
   expect(api.rpc).not.toHaveBeenCalled()
   expect(api.store).not.toHaveBeenCalled()
   expect(api.send).not.toHaveBeenCalled()
@@ -315,7 +298,6 @@ it.each([
   expect(await response.text()).toBe(expectedBody)
   expect([...response.headers]).toEqual([...expected.headers])
   expect(expectedBody).toBe('{"ok":true}')
-  // The function and the error code: no id, address, token or name of the rows.
   expect(logged.mock.calls).toEqual([
     ['admin-create-barber: admin log write failed:', code],
     ['admin-create-barber: admin log write failed:', code],
@@ -370,8 +352,7 @@ it.each([
   },
 )
 
-// A re-sent invite whose mail fails has already replaced the stored invitation: the link the barber
-// holds is dead. That change is recorded although the request failed; the answer is the same.
+// A re-send whose mail fails has already replaced the stored invitation, so the change is recorded.
 it.each([
   [
     'a changed invitation',
@@ -398,7 +379,6 @@ it.each([
     expect(api.remove).not.toHaveBeenCalled()
     expect(api.deleteUser).not.toHaveBeenCalled()
     expect(api.rpc.mock.calls).toEqual([recorded])
-    // Recorded once the mail has failed, not before it was tried.
     expect(api.send.mock.invocationCallOrder[0]).toBeLessThan(
       api.rpc.mock.invocationCallOrder[0] ?? 0,
     )
@@ -451,9 +431,7 @@ it.each([
   },
 )
 
-// --- the admin log is waited for, and not for long -------------------------------------------------
-
-/** Admin log answers that wait until the test lets each of them go, in the order they were asked. */
+/** Holds each admin log answer until the test releases it, in call order. */
 function heldAdminLog(): (() => void)[] {
   const releases: (() => void)[] = []
   api.rpc.mockImplementation(
@@ -474,7 +452,6 @@ it('answers a delivered invite only once both of its entries are written, one af
   await until(() => api.rpc.mock.calls.length >= 1)
   await turn()
 
-  // The first entry is on its way: the second has not started and the answer waits.
   expect(api.rpc.mock.calls).toEqual([entry('insert', 'profiles')])
   expect(answered).not.toHaveBeenCalled()
 

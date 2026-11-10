@@ -14,21 +14,16 @@
 //   6. lookup_booking RPC    — the direct lookup function does not exist (HTTP 404); booking
 //                              lookup goes through the gateway only.
 //
-// Then reads the deployed site itself. These checks send GET only and follow no redirect:
+// Then reads the deployed site, GET only, following no redirect:
 //
-//   7. /, /booking, /contact, /privacy, /terms — HTTP 200 with content-type text/html.
-//   8. an unknown path       — HTTP 404, never a successful page.
-//   9. /robots.txt, /sitemap.xml, /llms.txt — HTTP 200 with a content-type other than text/html:
-//                              an HTML page answering in a file's place is not the file.
-//  10. www host              — permanent redirect (301 or 308) to the apex host.
-//  11. homepage entry script — the homepage HTML names a module script under /assets/ and that
-//                              URL answers HTTP 200 with a content-type other than text/html.
+//   7. /, /booking, /contact, /privacy, /terms — 200 text/html.
+//   8. an unknown path       — 404.
+//   9. /robots.txt, /sitemap.xml, /llms.txt — 200, not text/html.
+//  10. www host              — 301 or 308 to the apex host.
+//  11. homepage entry script — named under /assets/, and 200, not text/html.
 //
 // Each check logs PASS/FAIL with the key value it observed. Process exits 1 if ANY
 // check fails, 0 only when every check passes (so CI can gate on it).
-//
-// Every request has a 10-second limit and the whole run a 6-minute budget, so a backend that
-// hangs FAILs its checks and the run still ends with a verdict.
 //
 // No dependencies — uses the global `fetch` (Node 20+). No browser.
 //
@@ -45,11 +40,8 @@ const SUPABASE_URL = process.env.SUPABASE_URL
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY
 const SITE_ORIGIN = process.env.SITE_ORIGIN
 
-// True for `node tools/smoke-live.mjs`. tests/unit/smokeLive.test.ts imports this file for the
-// pure page-check functions; an import needs no configuration, never exits and never reaches the
-// network. Node resolves symlinks for the entry module's URL, so the started path is resolved the
-// same way: a mismatch would skip every check and still exit 0. A process started without a path,
-// or with one that names no file, did not start this file.
+// An import (tests/unit/smokeLive.test.ts) never exits or reaches the network. Node resolves
+// symlinks in the entry module's URL, so the started path is too; a mismatch skips every check.
 function startedModuleUrl() {
   try {
     return pathToFileURL(realpathSync(process.argv[1])).href
@@ -65,7 +57,6 @@ if (runDirectly && (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SITE_ORIGIN)) {
   process.exit(1)
 }
 
-// Configuration exists for a direct run only; nothing reads these two on an import.
 const baseUrl = runDirectly ? SUPABASE_URL.replace(/\/+$/, '') : undefined // tolerate a trailing slash
 const siteOrigin = runDirectly ? new URL(SITE_ORIGIN).origin : undefined
 
@@ -90,10 +81,8 @@ const REQUEST_TIMEOUT_MS = 10_000
 const RUN_BUDGET_MS = 6 * 60_000
 
 /**
- * The time limit of a request that starts `elapsedMs` into the run: the per-request limit, or what
- * is left of the run's budget when that is less. Null once the budget is used up.
  * @param {number} elapsedMs
- * @returns {number | null}
+ * @returns {number | null} null once the run's budget is used up
  */
 export function requestTimeLimit(elapsedMs) {
   const left = RUN_BUDGET_MS - elapsedMs
@@ -102,9 +91,8 @@ export function requestTimeLimit(elapsedMs) {
 
 const runStartedAt = Date.now()
 
-// The clock edge of every request. The limit covers the response body too. Once the budget is used
-// up this throws instead of sending, so each remaining check FAILs at once and the run still
-// prints its verdict.
+// The limit covers the response body too. Past the budget this throws instead of sending, so each
+// remaining check FAILs at once and the run still ends with a verdict.
 function requestSignal() {
   const limit = requestTimeLimit(Date.now() - runStartedAt)
   if (limit === null)
@@ -300,12 +288,10 @@ async function checkDirectLookupContract() {
 
 // --- Deployed site: read-only page checks -----------------------------------------------------
 //
-// Pure functions decide what to request and whether an answer passes. `getPage` is the only
-// place these checks reach the network. Exported for tests/unit/smokeLive.test.ts.
+// Pure except `getPage`, their only network edge; exported for tests/unit/smokeLive.test.ts.
 
 /**
- * What a response must look like. `html` is a page: 200 with content-type text/html. `file` is
- * anything else that is served: 200 with any other content-type.
+ * `html`: 200 with content-type text/html. `file`: 200 with any other content-type.
  * @typedef {{ kind: 'html' }
  *   | { kind: 'file' }
  *   | { kind: 'status', status: number }
@@ -313,12 +299,10 @@ async function checkDirectLookupContract() {
  */
 /** @typedef {{ name: string, url: string, expect: PageExpectation }} PageCheck */
 /**
- * A response body: read, or the reason it could not be read after the headers had arrived.
  * @typedef {{ kind: 'read', text: string } | { kind: 'unread', reason: string }} PageBody
  */
 /**
- * The parts of a response the checks read. A header that was not sent is null. Only the entry
- * script lookup needs the body; every other check passes or fails on the status and headers.
+ * A header that was not sent is null.
  * @typedef {{
  *   status: number,
  *   contentType: string | null,
@@ -332,8 +316,7 @@ async function checkDirectLookupContract() {
  * @typedef {Omit<PageResponse, 'body'> & { text: () => Promise<string> }} PageHead
  */
 /**
- * What one GET produced: a response (`retriedAfter` holds the first attempt's failure when a second
- * attempt was needed), or no response in either attempt.
+ * `retriedAfter`: the first attempt's failure, when a second attempt was needed.
  * @typedef {{ kind: 'response', response: PageResponse, retriedAfter: string | null }
  *   | { kind: 'unreachable', reasons: [string, string] }} PageOutcome
  */
@@ -381,14 +364,12 @@ export function pageChecks(siteOrigin) {
 
 const mediaType = (contentType) => (contentType ?? '').split(';')[0].trim().toLowerCase()
 
-// The origin a Location header points at, resolved against the URL that answered.
 function locationOrigin(location, requestUrl) {
   return location !== null && URL.canParse(location, requestUrl)
     ? new URL(location, requestUrl).origin
     : null
 }
 
-// Whether a response meets a check, and the requirement in words for the failure line.
 function requirement(check, response) {
   const { expect } = check
   if (expect.kind === 'html')
@@ -412,8 +393,6 @@ function requirement(check, response) {
 }
 
 /**
- * The PASS/FAIL line of one check. It always carries the URL and the status, and on a failure
- * what was required.
  * @param {Pick<PageCheck, 'url' | 'expect'>} check
  * @param {PageOutcome} outcome
  * @returns {Verdict}
@@ -463,7 +442,6 @@ export function moduleScriptUrl(html, pageUrl) {
 }
 
 /**
- * The homepage must name its entry script, and that script must be served.
  * @param {string} siteOrigin
  * @param {GetPage} get
  * @returns {Promise<Verdict>}
@@ -490,7 +468,6 @@ async function homepageModuleScript(siteOrigin, get) {
 }
 
 /**
- * Every site check as a [name, run] entry for smokeChecks(). `get` is their only effect.
  * @param {string} siteOrigin
  * @param {GetPage} get
  * @returns {[string, () => Promise<Verdict>][]}
@@ -512,7 +489,7 @@ function failureReason(err) {
 }
 
 /**
- * The response a head belongs to. A body that cannot be read is part of that response.
+ * A body that cannot be read is still part of the response.
  * @param {PageHead} head
  * @returns {Promise<PageResponse>}
  */
@@ -525,10 +502,8 @@ async function withBody({ text, ...head }) {
 }
 
 /**
- * At most two attempts. The second happens only when the first produced no response headers
- * (connection failure or timeout before them). Once headers arrive, that response is the answer,
- * whatever its status and whether or not its body can be read, so a retry cannot turn an error
- * page into a pass.
+ * Retries once, only when the first attempt got no response headers: a retry must never turn an
+ * error page into a pass.
  * @param {(url: string) => Promise<PageHead>} request
  * @returns {GetPage}
  */
@@ -552,14 +527,12 @@ export function retryingOnce(request) {
   }
 }
 
-// Names this client in the site's logs. No personal data.
 const PAGE_REQUEST_HEADERS = {
   'User-Agent': 'bladeblend-live-smoke/1 (scheduled read-only check of the deployed site)',
   Accept: 'text/html,*/*;q=0.8',
 }
 
-// The network edge of the page checks: one GET with a time limit. A redirect is returned, not
-// followed, so a page cannot pass by redirecting to another page that answers 200.
+// A redirect is returned, not followed, so a page cannot pass by redirecting to a 200 page.
 async function requestPage(url) {
   const response = await fetch(url, {
     method: 'GET',
@@ -579,8 +552,7 @@ async function requestPage(url) {
 const getPage = retryingOnce(requestPage)
 
 /**
- * Every check of a run, in order, as [name, run] entries. `get` is the only effect of the site
- * checks; the six before them reach the network through postJson.
+ * The six backend checks reach the network through postJson, the site checks only through `get`.
  * @param {string} siteOrigin
  * @param {GetPage} get
  * @returns {[string, () => Promise<Verdict>][]}
@@ -601,8 +573,7 @@ export function smokeChecks(siteOrigin, get) {
 }
 
 /**
- * Runs the checks one after another and reports each as it finishes. A check that throws (a
- * request that failed or ran out of time) is a failure of that check, never the end of the run.
+ * A check that throws fails alone; the run goes on.
  * @param {[string, () => Promise<Verdict>][]} checks
  * @param {(line: string) => void} report
  * @returns {Promise<{ total: number, failures: number }>}
@@ -624,8 +595,6 @@ export async function runChecks(checks, report) {
 }
 
 /**
- * The closing lines of a run and its exit status. Only a run without a failure gets the
- * all-green line and status 0.
  * @param {{ total: number, failures: number }} result
  * @returns {{ lines: [string, string], exitCode: 0 | 1 }}
  */

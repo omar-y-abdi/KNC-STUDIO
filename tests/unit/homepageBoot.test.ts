@@ -217,7 +217,7 @@ describe('presentation read retry (PERF-5)', () => {
 const ROOT = fileURLToPath(new URL('../../', import.meta.url))
 const SCRIPT = /\.(?:[cm]?[jt]sx?)$/
 
-/** Each workspace of the root manifest by package name, with its directory and `exports` map. */
+/** The workspaces of the root manifest, keyed by package name. */
 function workspaces(): Map<string, { dir: string; exports: Record<string, string> }> {
   const { workspaces: dirs } = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as {
     workspaces: string[]
@@ -235,13 +235,8 @@ function workspaces(): Map<string, { dir: string; exports: Record<string, string
   )
 }
 
-/**
- * The repository files `entry` reaches through import and export declarations, and the bare
- * packages they name. A whole-clause `import type` / `export type` is erased by the compiler and is
- * not followed; every other declaration is, an inline `{ type X }` included (under
- * verbatimModuleSyntax it may survive as an import). `import()` is not followed: it is the edge to a
- * lazy chunk.
- */
+/** Files and bare packages `entry` reaches statically. Whole-clause `import type` / `export type`
+ *  (erased) and `import()` (a lazy chunk) are not followed; an inline `{ type X }` is. */
 function staticClosure(entry: string): { files: Set<string>; packages: Set<string> } {
   const manifests = workspaces()
   const files = new Set<string>()
@@ -294,7 +289,7 @@ function staticClosure(entry: string): { files: Set<string>; packages: Set<strin
 describe('boot JavaScript (audit E 15a)', () => {
   it('reaches no css-tree through static imports from the public entry', () => {
     const { files, packages } = staticClosure('src/main.tsx')
-    // The walk follows the public render path: the entry reaches the native surfaces and Preact.
+    // The walk does reach the public render path.
     expect(files).toContain('modules/public-web/src/cms/NativeSurface.tsx')
     expect(files).toContain('modules/public-web/src/app/App.tsx')
     expect(packages).toContain('preact')
@@ -303,8 +298,7 @@ describe('boot JavaScript (audit E 15a)', () => {
   })
 })
 
-/** The rev-56 presentation the public browser suites serve: its /about en sheets carry the legacy
- * `@media (max-width:1440px)` rules. */
+/** The browser suites' presentation; its /about en sheets carry legacy `max-width:1440px` rules. */
 function storedPresentation(): CmsPresentation {
   const response: unknown = JSON.parse(
     gunzipSync(readFileSync(join(ROOT, 'tools/e2e/fixtures/presentation.json.gz'))).toString(
@@ -319,7 +313,6 @@ function storedPresentation(): CmsPresentation {
 
 const SURFACE_PATHS = ['/', '/about', '/booking', '/my-bookings']
 
-/** Every sheet a native surface renders (`useNativeSurface`), in page, language and mode order. */
 function surfaceSheets(presentation: CmsPresentation): string[] {
   return presentation.pages
     .filter((page) => SURFACE_PATHS.includes(page.path))
@@ -337,7 +330,7 @@ function readyPresentation(presentation: CmsPresentation, load: DesktopRepairLoa
   return result.presentation
 }
 
-/** `presentation` with the light sheet of one language of one page replaced. */
+/** Replaces the light sheet of one page and language. */
 function withSheet(
   presentation: CmsPresentation,
   path: string,
@@ -371,12 +364,10 @@ describe('Desktop breakpoint repair on demand (audit E 15a)', () => {
     expect(surfaceSheets(repaired)).toEqual(
       surfaceSheets(stored).map((css) => repairDesktopCss(css)),
     )
-    // The fixture really exercises the repair: both /about en sheets change and lose the breakpoint.
     for (const mode of ['light', 'dark'] as const) {
       expect(about(repaired).content.en.css[mode]).not.toBe(about(stored).content.en.css[mode])
       expect(about(repaired).content.en.css[mode]).not.toMatch(/max-width\s*:\s*1440px/)
     }
-    // Everything else keeps its identity: other pages, and the Swedish /about variant.
     expect(about(repaired).content.sv).toBe(about(stored).content.sv)
     for (const [index, page] of repaired.pages.entries())
       if (page.path !== '/about') expect(page).toBe(stored.pages[index])

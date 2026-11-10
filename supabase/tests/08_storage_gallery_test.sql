@@ -4,12 +4,9 @@
 -- public-read / gateway-upload, so the structural guarantees live inside the green test gate.
 --
 -- Enforcement model proven here:
---   * public READ  : bucket.public = true. An object is served by its public URL, which the
---                    Storage API answers without row-level security. No SELECT policy exists on
---                    storage.objects (migration 20261110120500 removed gallery_public_read and
---                    barber_photos_public_read), so anon and authenticated cannot list a bucket.
---                    That the public URL still answers is proven against the real Storage API in
---                    tests/integration/storagePublicRead.test.ts.
+--   * public READ  : bucket.public = true; the public URL bypasses RLS and no SELECT policy lets a
+--                    client role list a bucket. tests/integration/storagePublicRead.test.ts checks
+--                    the URL against the real Storage API.
 --   * gateway WRITE: direct authenticated INSERT/UPDATE policies are absent; upload-image writes
 --                    validated WebP output and durable deletion through service_role.
 
@@ -51,7 +48,6 @@ select is(
   0, 'no policy under any name lets a client role read storage.objects'
 );
 
--- Behaviour, with one object in each bucket: the client roles see no row, the service role does.
 insert into storage.objects (bucket_id, name) values
   ('gallery', 'listing-check/a.webp'),
   ('barber-photos', 'listing-check/b.webp');

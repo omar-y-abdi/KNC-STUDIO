@@ -322,8 +322,6 @@ describe('a created page stored with a frozen header by main', () => {
   )
 })
 
-// W2-8: the skip link of a created page leads to its content below the site header: the wrapper
-// renderSitePage puts around the page's stored body.
 describe('the skip link of a created page (W2-8)', () => {
   afterEach(() => {
     vi.restoreAllMocks()
@@ -332,8 +330,6 @@ describe('the skip link of a created page (W2-8)', () => {
   const SKIP_WORDS = { sv: 'Hoppa till innehållet', en: 'Skip to content' } as const
   const words = (node: Element): string =>
     node.childNodes.map((child) => ('value' in child ? child.value : '')).join('')
-  /** The served document: every element in document order, the two elements its body opens with,
-   * and its skip links. */
   const view = (html: string) => {
     const all = descendants(parse(html))
     const body = all.find((node) => node.tagName === 'body')
@@ -346,7 +342,6 @@ describe('the skip link of a created page (W2-8)', () => {
       skipLinks: all.filter((node) =>
         (value(node, 'class') ?? '').split(/\s+/).includes('bb-skip'),
       ),
-      /** The element a link to `#id` leads to: the first with that id. */
       target: (id: string): Element | undefined => all.find((node) => value(node, 'id') === id),
     }
   }
@@ -365,7 +360,7 @@ describe('the skip link of a created page (W2-8)', () => {
       expect(words(link)).toBe(SKIP_WORDS[lang])
       expect(skipLinks).toHaveLength(1)
       expect(value(root, 'id')).toBe('root')
-      // The #root of a created page holds its header too: it is not the target and takes no focus.
+      // #root also holds the header, so it is not the target and takes no focus.
       expect(value(root, 'tabindex')).toBeUndefined()
       const content = target('cms-site-content')
       if (!content) throw new Error('The served page has no content wrapper')
@@ -393,13 +388,10 @@ describe('the skip link of a created page (W2-8)', () => {
     expect(target('cms-site-content')?.parentNode).toBe(root)
     expect(target('root')).toBe(root)
     expect(value(root, 'tabindex')).toBeUndefined()
-    // The owner body is served inside the wrapper as it is stored.
     expect(html).toContain(`<div id="cms-site-content">${body}</div>`)
   })
 
-  // A page still stored with a frozen header has no serving path of its own: it is rendered as any
-  // created page, so its link leads to the wrapper the Worker renders, not to the element the
-  // stored markup names with the same id.
+  // The stored markup has an element with the same id; the link must lead to the Worker's wrapper.
   it.each(['sv', 'en'] as const)(
     'leads a page stored with a frozen header to the wrapper around its stored markup (%s)',
     async (lang) => {

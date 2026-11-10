@@ -1,20 +1,5 @@
--- Review moderation for the owner (checklist item 118).
---
--- Customers publish a review themselves; until now nobody could take one down. The owner gets
--- three RPCs: list every review (published and hidden), hide or re-publish one, and delete one.
--- Public reads are unchanged: they go through the reviews_select_published policy, so a hidden
--- review disappears from every anonymous read the moment its flag is cleared.
---
--- The reviews table holds no phone number and no e-mail address, and these RPCs read nothing else,
--- so the list cannot carry customer contact data. name is the display name the customer RPC derived
--- when the review was written ("Anna S.").
---
--- Hiding keeps the row, and with it reviews_one_per_booking, so the customer cannot review the same
--- booking a second time. Deleting removes the row: the booking itself is untouched, and it becomes
--- reviewable again.
---
--- Nothing here depends on new application code, and old application code keeps working: no existing
--- object is changed.
+-- Owner review moderation. Hiding keeps the row, so reviews_one_per_booking still blocks a second
+-- review of that booking; deleting the review makes the booking reviewable again.
 
 create or replace function public.admin_list_reviews(
   p_before timestamptz default null,
@@ -103,7 +88,7 @@ revoke all on function public.admin_list_reviews(timestamptz, integer, uuid)
 grant execute on function public.admin_list_reviews(timestamptz, integer, uuid)
   to authenticated;
 
--- Hide (false) or re-publish (true) one review. Setting the value it already has succeeds.
+-- Setting the value a review already has succeeds.
 create or replace function public.admin_set_review_published(p_id uuid, p_published boolean)
 returns jsonb
 language plpgsql
@@ -143,7 +128,6 @@ revoke all on function public.admin_set_review_published(uuid, boolean)
 grant execute on function public.admin_set_review_published(uuid, boolean)
   to authenticated;
 
--- Delete one review. Only the reviews row goes; no booking is read or written.
 create or replace function public.admin_delete_review(p_id uuid)
 returns jsonb
 language plpgsql

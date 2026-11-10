@@ -7,13 +7,8 @@ import { bookingStrings } from '../../modules/public-web/src/i18n/index'
 import { installFakePage } from './helpers/fakeFocus'
 import { mount, nodes, render, reset, type RenderedNode } from './helpers/fakeHooks'
 
-// The booking flow with Turnstile configured. A token is single-use: the answer to a submit must
-// make the widget that gave the spent token give a fresh one, and must leave alone the widget of a
-// popup the visitor has opened since, which holds an unspent token of its own.
-
 const reads = vi.hoisted(() => ({ roster: vi.fn(), services: vi.fn() }))
-// Outside the Studio there is no preview context. The real hook answers `undefined` there, and the
-// flow asks for a token only then.
+// Outside the Studio `useContext` answers `undefined`; only then does the flow ask for a token.
 vi.mock('preact/hooks', async () => ({
   ...(await import('./helpers/fakeHooks')),
   useContext: (): undefined => undefined,
@@ -77,26 +72,22 @@ function screen(port: BookingPort) {
   }
 }
 
-/** Let resolved port promises run their handlers. */
 async function flush(): Promise<void> {
   for (let turn = 0; turn < 5; turn++) await Promise.resolve()
 }
 
-/** The details popup as last rendered. */
 function popup(port: BookingPort): RenderedNode {
   const details = screen(port).details
   if (details === undefined) throw new Error('Missing details popup')
   return details
 }
 
-/** The Turnstile widget the open popup was handed. */
 function widget(port: BookingPort): RenderedNode {
   const node = popup(port).props['turnstile']
   if (typeof node !== 'object' || node === null) throw new Error('Missing Turnstile widget')
   return node as RenderedNode
 }
 
-/** What the widget of the open popup does once the visitor has passed its challenge. */
 function giveToken(port: BookingPort, token: string): void {
   ;(widget(port).props['onToken'] as (token: string) => void)(token)
 }
@@ -127,7 +118,6 @@ async function fillDetails(port: BookingPort): Promise<void> {
   type('onEmail', contact.email)
 }
 
-/** Press the book button of the popup as last rendered, and let an answer be handled. */
 async function book(port: BookingPort): Promise<void> {
   ;(popup(port).props['onBook'] as () => void)()
   await flush()
@@ -135,7 +125,6 @@ async function book(port: BookingPort): Promise<void> {
 
 const close = (port: BookingPort): void => (popup(port).props['onClose'] as () => void)()
 
-/** A promise the test settles when it chooses to: an answer that is still on its way. */
 function deferred<T>(): { readonly promise: Promise<T>; readonly resolve: (value: T) => void } {
   let fulfil: (value: T) => void = () => undefined
   const promise = new Promise<T>((resolve) => {
@@ -173,8 +162,7 @@ describe('booking flow: the Turnstile token after a submit', () => {
     expect(submit.mock.calls.map(([booking]) => booking.turnstileToken)).toEqual(['token-1'])
   })
 
-  // The popup that submitted is still the one open: its widget gave the token that was sent, so
-  // it must give a fresh one before the visitor can try again.
+  // A token is single-use, and this popup's widget gave the one that was sent.
   it.each<[string, BookingPort['submit']]>([
     ['is refused for a reason that keeps the popup open', async () => rateLimited],
     [
@@ -200,9 +188,7 @@ describe('booking flow: the Turnstile token after a submit', () => {
     },
   )
 
-  // The visitor closed that popup while the submit was on its way and opened the one for another
-  // time. Its widget is new and holds a token of its own: resetting it would throw that token away
-  // and lock the book button until the challenge has run again.
+  // The new popup's widget holds an unspent token; a reset would discard it and lock booking.
   it.each([
     ['is refused as unavailable', taken],
     ['is refused for another reason', rateLimited],
@@ -230,7 +216,6 @@ describe('booking flow: the Turnstile token after a submit', () => {
 
       expect(popup(port).props['sumWhen']).toContain('10:30')
       expect(widget(port).props['resetNonce']).toBe(0)
-      // The popup still holds its own token: it is what its submit sends.
       expect(popup(port).props['bookDisabled']).toBe(false)
       await book(port)
       expect(submit.mock.calls.map(([booking]) => booking.turnstileToken)).toEqual([

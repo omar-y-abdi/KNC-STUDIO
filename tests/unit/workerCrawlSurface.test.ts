@@ -22,10 +22,6 @@ import worker, {
 } from '../../supabase/worker/index'
 import { withPageReads } from './helpers/cmsPageReads'
 
-// What crawlers and link previews read from the Worker: titles and descriptions per route, the
-// canonical URL with its language alternates, the account page kept out of the index, the generated
-// sitemap, security.txt, and the intro a native route carries until the app has booted.
-
 const SITE = 'https://bladeblendstudio.se'
 const read = (path: string): string =>
   readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8')
@@ -87,7 +83,6 @@ function serve(url: string, method = 'GET', env: TestEnv = createEnv()): Promise
 }
 
 const BARBER = '20000000-0000-4000-8000-000000000001'
-/** Företag & SEO and the schedule, as public_business_discovery answers. */
 const DISCOVERY = {
   settings: {
     business_name: 'Aktuell Salong',
@@ -109,9 +104,7 @@ interface PageMetadata {
   readonly description: string
 }
 
-/** Supabase as a native route reads it. `metadata` answers public_cms_page_metadata per path and
- * language and `discovery` answers public_business_discovery; null is a failed read. Returns the
- * RPC names in call order. */
+/** `metadata` and `discovery` answer the page metadata and business RPCs; null is a failed read. */
 function stubNative(
   metadata: (path: string, lang: 'sv' | 'en') => PageMetadata | null,
   discovery: unknown = DISCOVERY,
@@ -134,8 +127,7 @@ function stubNative(
   return calls
 }
 
-/** Supabase as a CMS page reads it: the publication holding `pages` (null cannot be read), its
- * bounded page reads, and Företag & SEO (null cannot be read). */
+/** The publication holding `pages`, and Företag & SEO as `discovery`; null cannot be read. */
 function stubPublication(pages: readonly CmsPage[] | null, discovery: unknown = null): void {
   vi.spyOn(globalThis, 'fetch').mockImplementation(
     withPageReads(async (input) => {
@@ -186,7 +178,7 @@ const text = (node: Node): string =>
       ? node.childNodes.map(text).join('')
       : ''
 
-/** The served document as a crawler parses it; attribute values and text are entity-decoded. */
+/** The served document as a crawler parses it, entities decoded. */
 function crawled(html: string) {
   const all = elements(parse(html))
   const links = (rel: string): Element[] =>
@@ -209,7 +201,6 @@ function crawled(html: string) {
       all
         .filter((element) => element.tagName === 'meta' && attr(element, key) === value)
         .map((element) => attr(element, 'content')),
-    /** The element children of #root. */
     rootChildren,
   }
 }
@@ -246,7 +237,6 @@ const hrefsIn = (main: Element): (string | undefined)[] =>
   elements(main)
     .filter((element) => element.tagName === 'a')
     .map((link) => attr(link, 'href'))
-/** The intro's section under this heading; undefined when it has none. */
 const sectionOf = (main: Element, heading: string): Element | undefined =>
   elements(main).find(
     (element) =>
@@ -254,7 +244,6 @@ const sectionOf = (main: Element, heading: string): Element | undefined =>
       elements(element).some((item) => item.tagName === 'h2' && text(item) === heading),
   )
 
-/** A cached entrypoint that fails as a CPU-limited or erroring renderer does. */
 function failing(failure: 'response' | 'exception'): WorkerContext {
   return {
     exports: {
@@ -282,13 +271,11 @@ describe('native route titles (A)', () => {
     string | null,
     string,
   ])[] = [
-    // No CMS title, or a blank one.
     ['/about', 'sv', null, null, `Om oss – ${name}`],
     ['/about', 'en', null, 'Home title', `About – ${name}`],
     ['/booking', 'sv', '', 'Hemtitel', `Boka tid – ${name}`],
     ['/booking', 'en', '   ', 'Home title', `Book – ${name}`],
-    // The homepage's title: as the CMS holds it, as the homepage renders it, and as Företag & SEO
-    // holds it when the homepage's own could not be read.
+    // A page title equal to the homepage's (CMS, rendered or Företag & SEO) counts as none.
     ['/my-bookings', 'sv', 'Hemtitel', 'Hemtitel', `Mina bokningar – ${name}`],
     ['/my-bookings', 'en', ' Home title ', 'Home title', `My bookings – ${name}`],
     [
@@ -303,7 +290,6 @@ describe('native route titles (A)', () => {
     // A title of its own stays as the owner wrote it.
     ['/booking', 'sv', 'Boka klippning i Göteborg', 'Hemtitel', 'Boka klippning i Göteborg'],
     ['/about', 'en', 'Our story', null, 'Our story'],
-    // The homepage keeps its own rules, in the page language.
     ['/', 'sv', 'Klippning', null, `${name} – Barbershop i Göteborg | Klippning`],
     ['/', 'en', 'Haircuts', null, `${name} – Barbershop in Göteborg | Haircuts`],
     ['/', 'sv', 'Bästa Barbershop i stan', null, 'Bästa Barbershop i stan'],
@@ -519,7 +505,6 @@ describe('canonical, og:url and language alternates (C, D, E)', () => {
     ['/?lang=en', '/', 'en'],
     ['/booking', '/booking', 'sv'],
     ['/booking?lang=en', '/booking', 'en'],
-    // Only the language enters the URL.
     ['/booking?lang=en&mode=dark&utm_source=x', '/booking', 'en'],
     ['/?lang=de', '/', 'sv'],
   ] as const)(
@@ -531,7 +516,6 @@ describe('canonical, og:url and language alternates (C, D, E)', () => {
       expect(response.headers.has('X-Robots-Tag')).toBe(false)
       const page = crawled(await response.text())
       expect(page.lang).toEqual([lang])
-      // The page's own locale, and the other one as its alternate.
       expect(page.meta('property', 'og:locale')).toEqual([lang === 'sv' ? 'sv_SE' : 'en_US'])
       expect(page.meta('property', 'og:locale:alternate')).toEqual([
         lang === 'sv' ? 'en_US' : 'sv_SE',
@@ -539,7 +523,6 @@ describe('canonical, og:url and language alternates (C, D, E)', () => {
       expect(page.canonical).toEqual([languageUrl(path, lang)])
       expect(page.meta('property', 'og:url')).toEqual([languageUrl(path, lang)])
       expect(page.alternates).toEqual(alternatesOf(path))
-      // The shell's own indexing directive is untouched.
       expect(page.meta('name', 'robots')).toEqual(crawled(SHELL).meta('name', 'robots'))
       expect(page.meta('name', 'robots').join()).not.toContain('noindex')
     },
@@ -601,9 +584,7 @@ describe('canonical, og:url and language alternates (C, D, E)', () => {
     // As Studio seeds /privacy and /terms: one bilingual body stored for both languages.
     const bilingual = variant('Integritet / Privacy')
     // The frozen format an earlier Studio stored (LEGACY_HTML in workerCreatedPages.test.ts), cut
-    // down to the smallest body with the same shape: the page's own header and footer around the
-    // created heading and paragraph, under that format's ids. The sentences are written out, as
-    // stored bytes are.
+    // down to its shape; the sentences are written out, as stored bytes are.
     const frozenBody = (lang: 'sv' | 'en', sentence: string): string =>
       '<div id="cms-site-shell"><header id="cms-site-header"></header><div id="cms-site-content">' +
       `<main id="cms-page-${NEWS}-${lang}-0"><h1 id="cms-page-${NEWS}-${lang}-1">Ny sida</h1>` +
@@ -617,8 +598,7 @@ describe('canonical, og:url and language alternates (C, D, E)', () => {
         en: { ...born.content.en, html: frozenBody('en', 'Write your page here.') },
       },
     }
-    // The document Studio seeds /privacy and /terms with (public/privacy.html, public/terms.html):
-    // Swedish text, then its English part in a section marked as English. Both variants hold it.
+    // As seeded from public/privacy.html and terms.html: Swedish, then an English-marked section.
     const seeded = (swedish: string) => ({
       ...variant(''),
       html:
@@ -670,7 +650,6 @@ describe('canonical, og:url and language alternates (C, D, E)', () => {
         const html = await response.text()
         expect(html).toContain('data-cms-public="1"')
         const served = crawled(html)
-        // The document still answers in the requested language.
         expect(served.lang).toEqual([lang])
         expect(served.canonical).toEqual([`${SITE}${page.path}`])
         expect(served.meta('property', 'og:url')).toEqual([`${SITE}${page.path}`])
@@ -684,7 +663,6 @@ describe('canonical, og:url and language alternates (C, D, E)', () => {
         { ...born, content: { sv: variant('Nyheter hos oss'), en: variant('News from us') } },
       ],
       [
-        // The owner wrote an English version of its own: no part of it is marked as English.
         '/privacy with English that marks no part of itself as English',
         { ...privacy, content: { sv: savedInSwedish.sv, en: variant('Privacy') } },
       ],
@@ -717,9 +695,8 @@ describe('canonical, og:url and language alternates (C, D, E)', () => {
       expect(served.alternates).toEqual(alternatesOf(page.path))
     })
 
-    // Only a paragraph whose whole text is the created sentence is a placeholder: a `<p>` start
-    // tag, the sentence, `</p>`. The last two rows hold the sentence behind a `>` that does not end
-    // a `<p>` start tag.
+    // Only a `<p>` start tag, the created sentence and `</p>` make a placeholder; the last two rows
+    // hold the sentence behind a `>` that ends no `<p>` start tag.
     it.each([
       ['English after the created sentence', '</p>', ' Welcome.</p>'],
       [
@@ -850,8 +827,7 @@ describe('the account page and the presentation data (F)', () => {
     expect(page.canonical).toEqual([])
   })
 
-  // What each native route names when its renderer failed and the deployed shell answers: the path
-  // of its canonical (null for none), whether it has language alternates, whether it is indexed.
+  // Per native route on the unrendered shell: canonical path (null: none), alternates, indexed.
   const UNRENDERED = [
     ['/', '/', true, true],
     ['/booking', '/booking', true, true],
@@ -903,15 +879,13 @@ describe('the account page and the presentation data (F)', () => {
       expect(page.meta('name', 'robots')).toEqual(
         indexed ? crawled(SHELL).meta('name', 'robots') : ['noindex, follow'],
       )
-      // Only the deployed shell was read: no database call, and the default business stays.
       expect(calls).toEqual([])
       expect(env.requested).toEqual(['/index.html'])
       expect(page.title).toEqual(crawled(SHELL).title)
     },
   )
 
-  // The unrendered shell is edited, so the length and validators of the deployed bytes no longer
-  // describe it. Every other header of the deployed shell stays.
+  // The edited shell no longer matches the deployed bytes' length and validators.
   it.each(NATIVE_PATHS)(
     'answers the unrendered %s without the length and validators of the deployed shell',
     async (path) => {
@@ -995,7 +969,6 @@ describe('the sitemap (G)', () => {
     expect(locations(STATIC_SITEMAP)).toEqual(core)
   })
 
-  /** A published page as the sitemap reads one; its Swedish body is written unless given. */
   const written = (path: string, html = '<main><h1>Text</h1></main>') => ({
     kind: 'page' as const,
     path,
@@ -1055,7 +1028,6 @@ describe('the sitemap (G)', () => {
       )
       expect(locations(renderSitemap([renamed]))).toEqual(core)
       expect(locations(renderSitemap([frozen]))).toEqual(core)
-      // The same two pages are listed once something is written.
       expect(locations(renderSitemap([written('/nyheter')]))).toEqual([...core, `${SITE}/nyheter`])
     })
 
@@ -1089,7 +1061,6 @@ describe('the sitemap (G)', () => {
     })
 
     it('keeps every core page, whatever the publication holds for its path', () => {
-      // A core page is listed by its path alone; the created sentence in its body changes nothing.
       const pages = [privacy, terms, contact].map((page) => ({
         ...page,
         content: { ...page.content, sv: born.content.sv },
@@ -1168,7 +1139,6 @@ describe('the sitemap (G)', () => {
       expect(response.headers.get('Content-Type')).toBe('application/xml; charset=utf-8')
       expect(response.headers.get('Cache-Control')).toBe('public, max-age=300')
       expect(await response.text()).toBe('')
-      // Neither the publication nor the static file was read.
       expect(globalThis.fetch).not.toHaveBeenCalled()
       expect(env.requested).toEqual([])
     },
@@ -1281,7 +1251,6 @@ describe('the intro every native route carries (H)', () => {
     const main = introOf(await (await serve('/booking')).text())
     expect(sectionOf(main, 'Öppettider')).toBeUndefined()
     expect(text(main)).not.toContain('Se aktuella tider')
-    // The contact details stay, and the only link to the page itself is the site navigation's.
     expect(sectionOf(main, 'Besöksadress och kontaktuppgifter')).toBeDefined()
     expect(hrefsIn(main)).toContain('mailto:owner@example.test')
     expect(hrefsIn(main).filter((href) => href === '/booking')).toHaveLength(1)
@@ -1352,8 +1321,7 @@ describe('the intro every native route carries (H)', () => {
 })
 
 describe('owner text and the edits of the shell', () => {
-  // Every tag and attribute the route's edits look for, a closing title, and the patterns a
-  // string replacement reads.
+  // Every tag and attribute the route edits, a closing title, and String.replace patterns.
   const HOSTILE =
     '</title><link rel="canonical" href="https://evil.example/">' +
     '<meta name="robots" content="index"><meta property="og:url" content="https://evil.example/">' +
@@ -1372,11 +1340,9 @@ describe('owner text and the edits of the shell', () => {
     const html = await response.text()
     expect(html).toContain('<html lang="sv" data-knc-view="booking" data-cms-revision="7"')
     const page = crawled(html)
-    // The owner's text arrives whole, as text.
     expect(page.title).toEqual([HOSTILE])
     expect(descriptions(page)).toEqual([HOSTILE, HOSTILE, HOSTILE])
     expect(page.meta('property', 'og:site_name')).toEqual([HOSTILE])
-    // One canonical, one og:url, one robots tag: the route's own.
     expect(page.canonical).toEqual([`${SITE}/booking`])
     expect(page.meta('property', 'og:url')).toEqual([`${SITE}/booking`])
     expect(page.alternates).toEqual(alternatesOf('/booking'))
@@ -1397,10 +1363,8 @@ describe('owner text and the edits of the shell', () => {
     expect(page.meta('property', 'og:url')).toEqual([`${SITE}/my-bookings`])
   })
 
-  // The escapes keep owner text from being taken for a tag, so the two tests above hold whichever
-  // comes first: the route's edits or the owner's text. The order shows only in a shell where one
-  // tag is both a tag the route edits and the first slot owner text is written to. The later write
-  // is the one that stays, and it must be the owner's.
+  // The write order shows only where one tag is both edited by the route and the first owner-text
+  // slot; the later write stays, and it must be the owner's.
   const slotShell = (marker: string): string =>
     '<!doctype html><html lang="sv"><head><title id="business-title">old</title>' +
     `<meta id="business-description" ${marker} content="old">` +
@@ -1539,7 +1503,6 @@ describe('security.txt (J)', () => {
     expect(forwarded).toHaveBeenCalledOnce()
     expect(response.status).toBe(200)
     expect(response.headers.get('Content-Type')).toBe('text/plain; charset=utf-8')
-    // What lets the edge keep the answer, as it keeps the sitemap.
     expect(response.headers.get('Cache-Control')).toBe('public, max-age=300')
     expectIssued(await response.text(), 'owner@example.test', before)
     expect(calls).toEqual(['public_business_discovery'])
@@ -1557,7 +1520,6 @@ describe('security.txt (J)', () => {
       expect(response.headers.get('Content-Type')).toBe('text/plain; charset=utf-8')
       expect(response.headers.get('Cache-Control')).toBe('no-store')
       expectIssued(await response.text(), DEFAULT_BUSINESS.email, before)
-      // No deployed file holds security.txt and the business was not read.
       expect(calls).toEqual([])
       expect(env.requested).toEqual([])
     },

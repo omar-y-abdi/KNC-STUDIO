@@ -1,6 +1,3 @@
-// The shared admin log helper of the staff Edge Functions: the exact RPC call for each kind of
-// record, a typed result for every failure, and a log line that holds nothing of the record.
-
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -21,7 +18,6 @@ function serviceAnswering(answer: { error: { code?: string } | null }) {
   return { rpc, service }
 }
 
-/** A database that takes the request and never answers it. */
 const silentService: AdminAuditService = { rpc: () => new Promise(() => undefined) }
 
 afterEach(() => {
@@ -258,7 +254,7 @@ describe('admin log bound', () => {
       const bounded = withinAdminLogBound(() => late)
       await vi.advanceTimersByTimeAsync(3000)
       await expect(bounded).resolves.toEqual({ timedOut: true })
-      // Real timers again: the helper waits one real task for Node to report a rejection.
+      // The helper waits one real task for Node to report a rejection.
       vi.useRealTimers()
       fail(new Error('answered too late'))
     })
@@ -267,9 +263,7 @@ describe('admin log bound', () => {
   })
 })
 
-// The two cases below are enforced by `tsc` on the tests project, not by running them: a client the
-// helper cannot take, or a record the database would refuse, fails the type check. At run time
-// their assertions hold for any value.
+// These cases are checked by `tsc` on the tests project; their run-time assertions always hold.
 describe('admin log record type', () => {
   it('accepts the real service-role client without a cast', () => {
     const asAuditService = (client: SupabaseClient): AdminAuditService => client
@@ -292,7 +286,6 @@ describe('admin log record type', () => {
       // @ts-expect-error a table the database function does not accept
       { ...base, table: 'bookings', action: 'delete' },
     ]
-    // The lines above are checked by the compiler; at run time they are plain objects.
     expect(records).toHaveLength(6)
   })
 })

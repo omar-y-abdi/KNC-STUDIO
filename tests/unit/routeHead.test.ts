@@ -27,15 +27,13 @@ const name = business.name
 const seo = business.seo
 const indexable = 'index, follow, max-image-preview:large'
 
-/** A page of the published presentation, saying the same in both languages. */
 const page = (path: string, title: string, description = ''): RoutePage => ({
   path,
   title: { sv: title, en: title },
   description: { sv: description, en: description },
 })
 
-/** The `<html>` element of a document the Worker rendered, and of the bare shell (the Vite server,
- * a static fallback). */
+/** `<html>` of a Worker-rendered document, and of the bare shell (Vite server, static fallback). */
 const renderedRoot = { hasAttribute: (attribute: string) => attribute === CMS_REVISION_ATTRIBUTE }
 const bareRoot = { hasAttribute: (attribute: string) => attribute === 'lang' }
 
@@ -64,8 +62,6 @@ describe('siteOriginOf', () => {
 })
 
 describe('structured data rebuilt in the browser', () => {
-  // The canonical of /booking has a path and the English one a query: the business is identified
-  // by the site's origin under both.
   it.each(['https://salong.example/booking', 'https://salong.example/?lang=en'])(
     'identifies the business by the site origin under the canonical %s',
     (canonical) => {
@@ -174,9 +170,8 @@ describe('routeTexts', () => {
     },
   )
 
-  // The Worker's rule for the title, case for case as tests/unit/workerCrawlSurface.test.ts holds
-  // `nativePageTitle` to it: the path, the language, the CMS title of the page (null: no such
-  // page), the CMS title of the homepage, and the title served.
+  // The Worker's title rule, case for case as in workerCrawlSurface.test.ts: path, language, CMS
+  // title of the page (null: no such page), CMS title of the homepage, title served.
   const titles: readonly (readonly [
     NativePublicPath,
     'sv' | 'en',
@@ -184,13 +179,11 @@ describe('routeTexts', () => {
     string | null,
     string,
   ])[] = [
-    // No CMS title, or a blank one.
     ['/about', 'sv', null, null, `Om oss – ${name}`],
     ['/about', 'en', null, 'Home title', `About – ${name}`],
     ['/booking', 'sv', '', 'Hemtitel', `Boka tid – ${name}`],
     ['/booking', 'en', '   ', 'Home title', `Book – ${name}`],
-    // The homepage's title: as the CMS holds it, as the homepage renders it, and as Företag & SEO
-    // holds it when the homepage's own could not be read.
+    // A page title equal to the homepage's (CMS, rendered or Företag & SEO) counts as none.
     ['/my-bookings', 'sv', 'Hemtitel', 'Hemtitel', `Mina bokningar – ${name}`],
     ['/my-bookings', 'en', ' Home title ', 'Home title', `My bookings – ${name}`],
     [
@@ -205,7 +198,6 @@ describe('routeTexts', () => {
     // A title of its own stays as the owner wrote it.
     ['/booking', 'sv', 'Boka klippning i Göteborg', 'Hemtitel', 'Boka klippning i Göteborg'],
     ['/about', 'en', 'Our story', null, 'Our story'],
-    // The homepage keeps its own rules, in the page language.
     ['/', 'sv', 'Klippning', null, `${name} – Barbershop i Göteborg | Klippning`],
     ['/', 'en', 'Haircuts', null, `${name} – Barbershop in Göteborg | Haircuts`],
     ['/', 'sv', 'Bästa Barbershop i stan', null, 'Bästa Barbershop i stan'],
@@ -301,7 +293,6 @@ describe('identityWrite', () => {
   it.each(NATIVE_PATHS)(
     'gives %s its identity as soon as the app has navigated, rendered or not',
     (path) => {
-      // No business settings and no CMS page are asked for: nothing the app loads is waited for.
       for (const root of [renderedRoot, bareRoot])
         for (const lang of ['sv', 'en'] as const)
           expect(identityWrite(path, lang, ORIGIN, headDocument(path, root))).toEqual(

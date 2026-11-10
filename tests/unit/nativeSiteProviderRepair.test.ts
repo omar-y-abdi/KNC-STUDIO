@@ -11,12 +11,8 @@ import {
 import { repairDesktopCss } from '../../packages/content-contracts/src/cms-device-css'
 import type * as NativeSurfaceModule from '../../modules/public-web/src/cms/NativeSurface'
 
-// Audit E 15a: css-tree is no longer on the boot path; NativeSiteProvider imports the Desktop
-// breakpoint repair on demand. These renders pin when that import happens, and that the native
-// surfaces never receive a legacy sheet unrepaired: the provider shows its gate until the repair is
-// there. The node environment has no DOMParser, so the <style> elements themselves are exercised by
-// the browser suites (rev-56 fixture); here the provider's output is read as VNodes, as in
-// cmsNativeRegion.test.ts.
+// Node has no DOMParser, so the <style> elements are left to the browser suites; here the
+// provider's output is read as VNodes.
 
 const REPAIR_CHUNK = '@bladeblend/content-contracts/cms-device-css'
 const SURFACE_PATHS = ['/', '/about', '/booking', '/my-bookings']
@@ -35,7 +31,6 @@ function storedPresentation(): CmsPresentation {
 
 const stored = storedPresentation()
 
-/** Each page with both sheets of both languages as the render-time repair returned them. */
 function repairedEverywhere(presentation: CmsPresentation): CmsPresentation {
   const repair = (variant: PageVariant): PageVariant => ({
     ...variant,
@@ -50,7 +45,6 @@ function repairedEverywhere(presentation: CmsPresentation): CmsPresentation {
   }
 }
 
-/** Every sheet a native surface renders, in page, language and mode order. */
 function surfaceSheets(presentation: CmsPresentation | null): string[] {
   return (presentation?.pages ?? [])
     .filter((page) => SURFACE_PATHS.includes(page.path))
@@ -63,7 +57,6 @@ function surfaceSheets(presentation: CmsPresentation | null): string[] {
 
 const repairedSheets = surfaceSheets(repairedEverywhere(stored))
 
-/** One import of the repair chunk, held until the test settles it. */
 interface HeldImport {
   /** Resolves once the provider has asked for the chunk. */
   readonly reached: Promise<void>
@@ -71,7 +64,7 @@ interface HeldImport {
   readonly fail: (reason: unknown) => void
 }
 
-/** Mocks the repair chunk so that every import waits for the next load the test queued. */
+/** Mocks the repair chunk; each import waits for the next load the test queues. */
 function holdRepairChunk() {
   const queued: { readonly arrive: () => void; readonly outcome: Promise<void> }[] = []
   let imports = 0
@@ -106,8 +99,6 @@ async function loadSurface(pathname: string): Promise<typeof NativeSurfaceModule
   return import('../../modules/public-web/src/cms/NativeSurface')
 }
 
-/** What one render of the provider produced: its gate, or the site with the presentation the
- * native surfaces receive. */
 type Frame =
   | { readonly kind: 'gate'; readonly error: boolean; readonly retry: () => void }
   | { readonly kind: 'site'; readonly presentation: CmsPresentation | null }
@@ -127,8 +118,7 @@ type ProviderProps = Parameters<(typeof NativeSurfaceModule)['NativeSiteProvider
 
 const containers: HTMLElement[] = []
 
-/** Renders the provider inside a probe that records every output and returns null, so the node
- * environment needs no host DOM. */
+/** Renders through a probe that records each output and returns null, so no host DOM is needed. */
 function mount(
   Provider: (typeof NativeSurfaceModule)['NativeSiteProvider'],
   props: Omit<ProviderProps, 'children'>,
@@ -146,7 +136,6 @@ function mount(
 
 const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
 
-/** Every site frame rendered the repaired sheets; no frame ever offered the stored legacy ones. */
 function expectOnlyRepairedSites(frames: readonly Frame[]): void {
   const sites = frames.filter((frame) => frame.kind === 'site')
   expect(sites.length).toBeGreaterThan(0)

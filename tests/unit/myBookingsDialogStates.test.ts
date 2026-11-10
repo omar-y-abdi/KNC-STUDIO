@@ -27,13 +27,7 @@ import {
 } from './helpers/fakeHooks'
 import { unhandledRejectionsDuring } from './helpers/unhandledRejections'
 
-// "Mina bokningar" driven through its real component: what a row offers once the online
-// cancellation deadline has passed (and when the mount does not know that deadline), what each
-// cancellation answer leaves on screen, and where keyboard focus goes when an action removes the
-// control that had it.
-
-// The shared fake hooks answer every context with `null`. The Studio marks its example booking
-// through a context, so this file lets a test provide one.
+// The shared fake hooks answer every context with `null`; here a test can provide the Studio's.
 const contexts = vi.hoisted(() => new Map<unknown, unknown>())
 vi.mock('preact/hooks', async () => ({
   ...(await import('./helpers/fakeHooks')),
@@ -49,7 +43,7 @@ const POLICY_HOURS = DEFAULT_BUSINESS.cancellationPolicyHours
 const startingIn = (hours: number): Date => new Date(NOW.getTime() + hours * 3_600_000)
 const deadlineSentence = (hours: number): string =>
   t.cancelClosed.split('{hours}').join(String(hours))
-// The deadline sentence up to its number of hours: how a test finds the note, with or without links.
+// The deadline sentence before its hours: finds the note with or without links.
 const DEADLINE_START = t.cancelClosed.slice(0, t.cancelClosed.indexOf('{hours}'))
 let page: FakePage
 
@@ -72,14 +66,12 @@ interface Rows {
   readonly past?: readonly MyBooking[]
 }
 
-/** A successful list answer holding the given bookings. */
 const listed = (rows: Rows): Listed => ({
   ok: true,
   authority: 'device',
   bookings: { upcoming: rows.upcoming ?? [], past: rows.past ?? [] },
 })
 
-/** A port that lists the given bookings; any call a test did not provide for fails the test. */
 function portWith(rows: Rows, parts: Partial<MyBookingsPort> = {}): MyBookingsPort {
   const unexpected = (): never => {
     throw new Error('Unexpected port call')
@@ -122,7 +114,7 @@ function click(node: RenderedNode | undefined): void {
   ;(node.props['onClick'] as () => void)()
 }
 
-/** Render the dialog's session once and read what it shows. Pass the same props on every call. */
+/** Renders once and reads what the dialog shows; pass the same props on every call. */
 function screen(props: MyBookingsDialogProps) {
   const tree = render(() => {
     const dialog = MyBookingsDialog(props)
@@ -160,12 +152,10 @@ function noteIcon(note: RenderedNode | undefined): RenderedNode | undefined {
   return typeof first === 'object' && first !== null ? (first as RenderedNode) : undefined
 }
 
-/** Let resolved port promises run their handlers. */
 async function flush(): Promise<void> {
   for (let turn = 0; turn < 5; turn++) await Promise.resolve()
 }
 
-/** A promise the test settles when it chooses to: an answer that is still on its way. */
 function deferred<T>(): { readonly promise: Promise<T>; readonly resolve: (value: T) => void } {
   let fulfil: (value: T) => void = () => undefined
   const promise = new Promise<T>((resolve) => {
@@ -174,20 +164,17 @@ function deferred<T>(): { readonly promise: Promise<T>; readonly resolve: (value
   return { promise, resolve: (value) => fulfil(value) }
 }
 
-/** Open the dialog and let its first list read finish. */
 async function openList(props: MyBookingsDialogProps): Promise<void> {
   screen(props)
   mount()
   await flush()
 }
 
-/** Expand a row and return what the dialog then shows. */
 function expand(props: MyBookingsDialogProps, b: MyBooking): ReturnType<typeof screen> {
   click(screen(props).row(b))
   return screen(props)
 }
 
-/** Expand a row, ask to cancel, confirm, and return what the dialog shows after the answer. */
 async function confirmCancel(
   props: MyBookingsDialogProps,
   b: MyBooking,
@@ -198,8 +185,7 @@ async function confirmCancel(
   return screen(props)
 }
 
-/** Stand in for the DOM element a rendered node's ref would receive. A `text` (the default) has no
- * `tabindex` of its own, as the rendered messages have none; a `control` is a button. */
+/** The element a node's ref receives: a `text` has no own `tabindex`, a `control` is a button. */
 function attach(node: RenderedNode | undefined, kind: 'control' | 'text' = 'text'): FakeElement {
   const target = (node as (RenderedNode & { readonly ref?: { current: unknown } }) | undefined)?.ref
   if (target === undefined) throw new Error('Missing ref')
@@ -216,7 +202,6 @@ function runEveryRenderEffects(): void {
   }
 }
 
-/** Move the focus to some other control, as the visitor does. */
 function focusElsewhere(): FakeElement {
   const elsewhere = fakeElement(page, 'control')
   elsewhere.focus()
@@ -261,8 +246,7 @@ describe('my bookings: the online cancellation deadline', () => {
         `tel:${DEFAULT_BUSINESS.phoneTel}`,
         `mailto:${DEFAULT_BUSINESS.email}`,
       ])
-      // The note is a text, not a tab stop: it is focusable only while the dialog has handed it
-      // the focus (see the answer tests below).
+      // The note is not a tab stop; it is focusable only while it holds the focus.
       expect(view.deadlineNotes[0]?.props).not.toHaveProperty('tabIndex')
     },
   )
@@ -342,8 +326,7 @@ describe('my bookings: the online cancellation deadline', () => {
     expect(view.deadlineNotes).toEqual([])
   })
 
-  // The Studio's example scene stores the cancel button. The owner's deadline can be longer than
-  // the time to the example booking; the scene must keep its button all the same.
+  // The Studio's example scene stores the cancel button, so it must render whatever the deadline.
   it('keeps the cancel button on the Studio example booking, whatever the deadline', async () => {
     const business = { ...DEFAULT_BUSINESS, cancellationPolicyHours: 168 }
     const example = booking('example', startingIn(59))
@@ -365,9 +348,8 @@ describe('my bookings: the online cancellation deadline', () => {
   })
 })
 
-// A mount that has not loaded the owner's settings (the CMS island) is told that the deadline is
-// unknown. The shipped default is not the owner's: acting on it would hide a cancel button that
-// works under a shorter deadline, and print a number of hours nobody set.
+// The CMS island has not loaded the owner's settings; the shipped default would hide a cancel
+// button that works and print hours nobody set.
 describe('my bookings: a mount that does not know the cancellation deadline', () => {
   const soon = booking('soon', startingIn(1))
 
@@ -399,10 +381,8 @@ describe('my bookings: a mount that does not know the cancellation deadline', ()
   })
 })
 
-// The server answers `not_found` for every cancel that changed nothing: the deadline has passed by
-// its clock, or the booking is already cancelled, or it is not this customer's. The dialog shows the
-// deadline note only when its own clock agrees; otherwise it says the cancel failed and reads the
-// rows again.
+// The server answers `not_found` for any cancel that changed nothing; the dialog shows the
+// deadline note only when its own clock agrees, else it reports the failure and rereads the rows.
 describe('my bookings: a cancellation the server did not carry out', () => {
   const far = booking('far', startingIn(POLICY_HOURS + 48))
   const other = booking('other', startingIn(POLICY_HOURS + 72))
@@ -419,8 +399,6 @@ describe('my bookings: a cancellation the server did not carry out', () => {
 
     expect(cancel.mock.calls).toEqual([[far, '']])
     expect(list).toHaveBeenCalledTimes(2)
-    // The message is still there after that read, with the question it belongs to. The booking is
-    // still listed, so nothing says it is gone.
     expect(view.alerts.map(text)).toEqual([t.errCancel])
     expect(view.button(t.cancelConfirmYes)).toBeDefined()
     expect(view.text).toContain(t.cancelConfirmQ)
@@ -442,23 +420,20 @@ describe('my bookings: a cancellation the server did not carry out', () => {
     expect(list).toHaveBeenCalledTimes(2)
     expect(view.row(far)).toBeUndefined()
     expect(view.row(other)).toBeDefined()
-    // The row took its question and its error with it. The list's note says what the customer now
-    // sees; it does not claim that this click cancelled the booking, nor that the deadline passed.
+    // The note says the booking is gone, not that this click cancelled it.
     expect(view.statuses.map(text)).toEqual([t.bookingGoneNote])
     expect(t.bookingGoneNote).not.toBe(t.cancelledNote)
     expect(view.alerts).toEqual([])
     expect(view.deadlineNotes).toEqual([])
     expect(view.button(t.cancelConfirmYes)).toBeUndefined()
 
-    // Nothing went through, so the note does not show the checkmark of a success. The icon keeps
-    // its place as the note's first child (the published presentation identifies it by position)
-    // and is neither drawn nor read out.
+    // No checkmark, but the icon stays the first child: the presentation identifies it by position.
     const icon = noteIcon(view.statuses[0])
     expect(icon?.type).toBe('img')
     expect(icon?.props['style']).toMatchObject({ display: 'none' })
     expect(icon?.props['aria-hidden']).toBe('true')
 
-    // The note is written when it is shown: in the language the dialog has then.
+    // Written when shown, in the dialog's language at that time.
     expect(screen({ ...props, lang: 'en' }).statuses.map(text)).toEqual([
       myBookingsStrings('en').bookingGoneNote,
     ])
@@ -474,8 +449,7 @@ describe('my bookings: a cancellation the server did not carry out', () => {
     expect(next.alerts).toEqual([])
   })
 
-  // The cancel is over once the server has answered. While the rows are read again after it, the
-  // question must not say "Avbokar…" beside "could not cancel", and its buttons work.
+  // The cancel is over once answered: no "Avbokar…" beside "could not cancel" during the reread.
   it('releases the question while the rows are read again', async () => {
     const reread = deferred<Listed>()
     const cancel = notFound()
@@ -501,8 +475,6 @@ describe('my bookings: a cancellation the server did not carry out', () => {
     expect(settled.statuses).toEqual([])
   })
 
-  // While the rows are read again the customer can go on. A question they open on another booking
-  // is theirs: the read that finds the first booking gone says so, and leaves that question open.
   it('leaves a question opened on another booking while the rows were read', async () => {
     const reread = deferred<Listed>()
     const cancel = notFound()
@@ -527,8 +499,6 @@ describe('my bookings: a cancellation the server did not carry out', () => {
     expect(view.alerts).toEqual([])
   })
 
-  // The section of earlier bookings is the customer's to open and close: reading the rows again
-  // after a cancel leaves it as they have it.
   it('keeps the history section open through that read', async () => {
     const earlier = booking('earlier', startingIn(-48))
     const cancel = notFound()
@@ -547,8 +517,7 @@ describe('my bookings: a cancellation the server did not carry out', () => {
     expect(view.row(earlier)).toBeDefined()
   })
 
-  // "Använd en annan e-postadress" during a cancel: the customer is at the lookup form when the
-  // answer comes. Reading the rows again would put the list they left back over that form.
+  // Rereading would put the list back over the lookup form the customer moved to.
   it('says nothing and reads nothing once the customer has left the list for the lookup form', async () => {
     const answer = deferred<CancelAnswer>()
     const cancel = vi.fn<MyBookingsPort['cancel']>(() => answer.promise)
@@ -572,8 +541,7 @@ describe('my bookings: a cancellation the server did not carry out', () => {
     expect(view.statuses).toEqual([])
   })
 
-  // A list read started after the cancel was sent (here: another e-mail address was linked) shows
-  // rows newer than the ones the cancel was asked from. That read says what there is to say.
+  // Here another e-mail address was linked after the cancel was sent.
   it('leaves a cancel that a newer list read has overtaken to that read', async () => {
     const answer = deferred<CancelAnswer>()
     const newer = deferred<Listed>()
@@ -605,8 +573,7 @@ describe('my bookings: a cancellation the server did not carry out', () => {
     expect(view.statuses).toEqual([])
   })
 
-  // The follow-up read can be refused: the session really is gone. That takes the customer to the
-  // lookup form with the reason, as any refused read does, and leaves no promise without a handler.
+  // A refused follow-up read leads to the lookup form with its reason, as any refused read does.
   it.each([
     ['access_denied', t.errAccess],
     ['cookies_disabled', t.errCookies],
@@ -704,12 +671,11 @@ describe('my bookings: the answer to a cancellation', () => {
     expect(view.text).toContain(t.upcomingEmpty)
     expect(view.statuses.map(text)).toEqual([t.cancelledNote])
     expect(view.statuses[0]?.props).not.toHaveProperty('tabIndex')
-    // The cancel went through: the note shows its checkmark.
     const icon = noteIcon(view.statuses[0])
     expect(icon?.type).toBe('img')
     expect(icon?.props['style']).not.toHaveProperty('display')
     expect(icon?.props['aria-hidden']).toBeUndefined()
-    // The note is written when it is shown: in the language the dialog has then.
+    // Written when shown, in the dialog's language at that time.
     expect(screen({ ...props, lang: 'en' }).statuses.map(text)).toEqual([
       myBookingsStrings('en').cancelledNote,
     ])
@@ -727,9 +693,7 @@ describe('my bookings: the answer to a cancellation', () => {
     expect([...notice.attributes]).toEqual([])
   })
 
-  // Linking another e-mail address reads the list. A cancel that is answered before that read must
-  // read the rows again (the overtaken read may still hold the cancelled booking), and that second
-  // read must leave the "cancelled" message, and the focus on it, alone.
+  // The overtaken read may still hold the cancelled booking, so the rows are read again.
   it('keeps the "cancelled" message and its focus through the list read that follows', async () => {
     const overtaken = deferred<Listed>()
     const reread = deferred<Listed>()
@@ -778,14 +742,14 @@ describe('my bookings: the answer to a cancellation', () => {
     expect(question.focus).toHaveBeenCalledOnce()
     expect(page.activeElement).toBe(question)
 
-    // The move happens once. A later render leaves the focus where the customer has put it since.
+    // The focus moves once; a later render leaves it where the customer put it.
     const elsewhere = focusElsewhere()
     screen(props)
     runEveryRenderEffects()
     expect(question.focus).toHaveBeenCalledOnce()
     expect(page.activeElement).toBe(elsewhere)
 
-    // The cancel button is a control: it takes the focus as one, with its focus outline.
+    // A control takes the focus with its focus outline.
     click(asking.button(t.cancelConfirmNo))
     const cancelButton = attach(screen(props).button(t.cancelBtn), 'control')
     runEveryRenderEffects()

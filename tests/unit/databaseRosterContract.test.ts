@@ -110,7 +110,7 @@ describe('database-owned public catalog', () => {
             ? useRoster({ listActive: list })
             : useServices(asBarberId('db'), '2040-03-18', { listForBarber: list }),
         )
-      // The dependency list the hook last gave its effect: Preact runs the effect again when it changes.
+      // Deps of the hook's last effect: Preact reruns the effect when they change.
       const effectDeps = (): unknown => (useEffect.mock.calls.at(-1) as readonly unknown[])[1]
       render()
       hooks.effects[0]?.()

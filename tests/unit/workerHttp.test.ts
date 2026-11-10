@@ -11,11 +11,6 @@ import {
 import worker, { PublicContent, maintenanceMode } from '../../supabase/worker/index'
 import { ownHeaders } from '../../supabase/worker/responseHeaders'
 
-// What the Worker's own answers carry as HTTP: the two security headers of public/_headers on every
-// response it builds itself, the failure and maintenance pages, Retry-After on a 503, Allow on a
-// 405, noindex on the outage pages under their own file names, and the limit in front of the
-// customer gateway.
-
 const SITE = 'https://bladeblendstudio.se'
 const read = (path: string): string =>
   readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8')
@@ -57,9 +52,8 @@ interface Vars {
   readonly GATEWAY_RATE_LIMIT?: GatewayRateLimit
 }
 
-/** The Worker's bindings. ASSETS answers as the asset layer does: a deployed file answers GET and
- * HEAD, any other method gets a 405 that names no method, and a path without a file gets 404. A
- * path in `broken` fails as an asset layer that cannot be reached. */
+/** ASSETS answers GET and HEAD for a file, a 405 naming no method otherwise, and 404 without a
+ *  file; a path in `broken` fails as an unreachable asset layer. */
 function createEnv(
   vars: Vars = {},
   files: Readonly<Record<string, string>> = FILES,
@@ -91,8 +85,7 @@ function createEnv(
 type TestEnv = ReturnType<typeof createEnv>
 type WorkerContext = Parameters<typeof worker.fetch>[2]
 
-// For routes that never use the cached public-content export. The Worker answers a call that
-// rejects with its failure page, so every test that passes this asserts the status it expects.
+// For routes that never use PublicContent; a call would show only as the failure page's status.
 const noPublicContent: WorkerContext = {
   exports: {
     PublicContent: {
@@ -101,7 +94,6 @@ const noPublicContent: WorkerContext = {
   },
 }
 
-/** A cached entrypoint that fails as a renderer over its CPU limit does. */
 const brokenPublicContent: WorkerContext = {
   exports: {
     PublicContent: {
@@ -118,8 +110,7 @@ function cached(env: TestEnv): WorkerContext {
   }
 }
 
-/** Supabase as the Worker calls it: the RPC or Edge Function named last in the URL answers what
- * `answers` gives it, and any other call fails. Returns the names in call order. */
+/** The last URL segment picks the answer from `answers`; any other call fails. */
 function stubSupabase(answers: Readonly<Record<string, () => Response>> = {}): string[] {
   const calls: string[] = []
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
@@ -130,8 +121,6 @@ function stubSupabase(answers: Readonly<Record<string, () => Response>> = {}): s
   return calls
 }
 
-/** console.error with nothing printed: the arguments of each call the Worker made to it. A test
- * whose request fails takes it, so the unit run prints no error line. */
 function errorLog() {
   return vi.spyOn(console, 'error').mockImplementation(() => undefined)
 }
@@ -179,7 +168,6 @@ const TOKEN = 'a'.repeat(64)
 const CLIENT = '203.0.113.10'
 const GATEWAY = { CUSTOMER_GATEWAY_SECRET: 'secret'.repeat(8) } as const
 
-/** A request as the app sends it to a gateway path, from the client address `ip`. */
 function gatewayRequest(
   path: '/api/customer-bookings' | '/api/bookings',
   body: unknown,
@@ -194,7 +182,6 @@ function gatewayRequest(
   })
 }
 
-/** A rate limiter that lets `allowed` requests through for each key, and the keys it counted. */
 function limiter(allowed: number): { readonly keys: string[]; readonly binding: GatewayRateLimit } {
   const keys: string[] = []
   return {
@@ -221,8 +208,7 @@ const wranglerConfig = JSON.parse(
   }[]
 }
 
-// No test reaches the network: a read a test does not answer fails, as an unreachable database
-// does.
+// No test reaches the network: an unanswered read fails as an unreachable database does.
 beforeEach(() => {
   stubSupabase()
 })
@@ -450,8 +436,7 @@ describe('the security headers of a response the Worker builds itself (W2-6, W2-
     expectOwnHeaders(response)
   })
 
-  // The content, frame and embedding policies of public/_headers describe a document. A redirect,
-  // a JSON answer and a text answer built from nothing carry none of them (control).
+  // The content, frame and embedding policies of public/_headers describe a document.
   it.each([
     ['a redirect', () => get(`${SITE}/about/`)],
     ['gateway JSON', () => get(`${SITE}/api/customer-bookings`)],
@@ -465,7 +450,6 @@ describe('the security headers of a response the Worker builds itself (W2-6, W2-
   })
 })
 
-/** Bindings whose asset layer cannot be reached for `paths`. */
 function brokenAt(...paths: readonly string[]): TestEnv {
   return createEnv({}, FILES, paths)
 }
@@ -482,12 +466,9 @@ describe('a request whose handling fails (W2-1)', () => {
     expect(await response.text()).toBe(body)
   }
 
-  // Workers Logs get what the Worker caught, once, as the only argument: its message and stack and
-  // nothing of the request, whose path can be a customer's credential. An Error equals another of
-  // the same name and message; a rejection the test makes itself is matched as that very value.
-  /** An error equal to the one the asset layer of createEnv throws. */
+  // Workers Logs get only the caught error, never the request: its path can be a customer's
+  // credential. toEqual matches an Error by name and message.
   const ASSET_FAILURE = new Error('The asset layer cannot be reached')
-  /** A cached entrypoint that rejects with `error`, as a renderer over its CPU limit does. */
   const rejecting = (error: Error): WorkerContext => ({
     exports: { PublicContent: { fetch: () => Promise.reject(error) } },
   })
@@ -510,7 +491,6 @@ describe('a request whose handling fails (W2-1)', () => {
 
   it('answers with the 500 page when a published page cannot get its base stylesheet', async () => {
     const logged = errorLog()
-    // The render of a CMS information page throws when /info.css is not deployed.
     stubSupabase(publication([terms]))
     const files = Object.fromEntries(Object.entries(FILES).filter(([path]) => path !== '/info.css'))
     const response = await worker.fetch(
@@ -561,7 +541,6 @@ describe('a request whose handling fails (W2-1)', () => {
     expect(response.headers.get('Content-Type')).toBe('application/json')
     expect(response.headers.get('Cache-Control')).toBe('no-store')
     expect(await response.json()).toEqual({ ok: false, error: 'system' })
-    // No page is read for a client that reads JSON.
     expect(env.requested).toEqual(['/api/unknown'])
     expect(logged.mock.calls).toEqual([[ASSET_FAILURE]])
   })
@@ -591,7 +570,6 @@ describe('a request whose handling fails (W2-1)', () => {
     expect(response.status).toBe(200)
   })
 
-  // An answer the Worker gives without a failure leaves no trace in the log.
   const answer = (request: Request, env: TestEnv = createEnv()): Promise<Response> =>
     worker.fetch(request, env, noPublicContent)
 
@@ -632,8 +610,7 @@ describe('the maintenance switch (W2-2)', () => {
       expect(maintenanceMode(value), JSON.stringify(value)).toBe('off')
   })
 
-  // The owner closes the site by committing "on" (wrangler.jsonc), so either position passes. A
-  // misspelt value would leave the site open without a word: it fails here.
+  // The owner commits "on" in wrangler.jsonc; a misspelt value would leave the site open silently.
   it('ships set to exactly "on" or "off"', () => {
     expect(['on', 'off']).toContain(wranglerConfig.vars['MAINTENANCE'])
   })
@@ -852,8 +829,7 @@ describe('Retry-After on every 503 (W2-3)', () => {
     expect(calls).toEqual([])
   })
 
-  // The one 503 Edge answers is a function without its secrets; any other answer is relayed as it
-  // was (control rows).
+  // Edge answers 503 only for a function without its secrets; the other rows are controls.
   it.each([
     [503, '300'],
     [500, null],
@@ -1000,9 +976,8 @@ describe('the limit in front of the customer gateway (W2-7)', () => {
     expect(calls).toHaveLength(BOOKING_ACTIONS.length + 1)
   })
 
-  // One customer line usually holds a whole /64: an IPv6 client is counted under its first four
-  // groups, in one spelling whichever way the address is written, and an IPv4 address written as
-  // IPv6 under the IPv4 address, as the plain one is.
+  // One customer line usually holds a whole /64, so IPv6 is counted by its first four groups in one
+  // spelling; IPv4 written as IPv6 is counted as the plain IPv4 address.
   it.each([
     ['2001:db8:85a3:8d3:1319:8a2e:370:7348', '2001:db8:85a3:8d3::/64'],
     ['2001:0DB8:85A3:08D3:1319:8A2E:0370:7348', '2001:db8:85a3:8d3::/64'],
@@ -1101,7 +1076,6 @@ describe('the limit in front of the customer gateway (W2-7)', () => {
     expect(refused.headers.get('X-Robots-Tag')).toBe('noindex, nofollow')
     expect(await refused.json()).toEqual({ ok: false, error: 'rate_limited' })
     expect(calls).toEqual(['public-booking-actions'])
-    // Another action of the same client, and the same action of another client, are counted apart.
     expect((await act({ action: 'cancel' }, binding)).status).toBe(200)
     expect((await act({ action: 'list' }, binding, '198.51.100.7')).status).toBe(200)
   })
@@ -1181,8 +1155,7 @@ describe('the limit in front of the customer gateway (W2-7)', () => {
     )
     expect(action.status).toBe(429)
     expect(keys).toEqual([`cancel:${CLIENT}`])
-    // The submission has its own limiter in the database; a limiter that allows nothing does not
-    // stop it here.
+    // The submission is limited in the database, not by this binding.
     const submission = await worker.fetch(
       gatewayRequest('/api/bookings', { action: 'list' }),
       bindings,

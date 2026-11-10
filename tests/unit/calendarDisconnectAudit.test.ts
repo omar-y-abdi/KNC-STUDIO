@@ -1,7 +1,3 @@
-// calendar-disconnect and the admin log. The function marks the barber's calendar link for
-// disconnect with the service role, so it says itself who asked: the signed-in barber, once, after
-// the mark is set, and never for a request that marked nothing. A failed entry changes no answer.
-
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const api = vi.hoisted(() => ({ getUser: vi.fn(), profile: vi.fn(), rpc: vi.fn() }))
@@ -21,7 +17,7 @@ const AUDIT = 'internal_record_admin_action'
 const PREPARE = 'prepare_calendar_disconnect'
 
 let handler: (request: Request) => Promise<Response>
-/** What `prepare_calendar_disconnect` and the admin log answer in the test at hand. */
+/** Per-test answers of `prepare_calendar_disconnect` and the admin log. */
 let prepared: () => unknown
 let audited: () => unknown
 
@@ -63,11 +59,9 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-/** Let everything that can run without a further answer run. */
 const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0))
-/** An answer that never comes. */
 const never = (): Promise<never> => new Promise(() => undefined)
-/** Only the clock of the admin log bound is faked; the request and its answer run as they do. */
+/** Fakes only the clock of the admin log bound; the request runs as it does. */
 const fakeTheBound = () => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
 
 function disconnect(authorization = 'Bearer barber-token'): Promise<Response> {
@@ -164,7 +158,6 @@ describe('calendar-disconnect admin log', () => {
     expect(actual).toEqual(expected)
     expect(expected[0]).toBe(200)
     expect(expected[2]).toBe('{"ok":true,"pending":true}')
-    // The function and the error code: no id of the barber or of the account.
     expect(logged.mock.calls).toEqual([['calendar-disconnect: admin log write failed:', code]])
   })
 
@@ -210,7 +203,6 @@ describe('calendar-disconnect admin log', () => {
     void response.then(answered)
     await settle()
 
-    // The entry is on its way and the function waits for it: it does not outlive the request.
     expect(auditCalls()).toHaveLength(1)
     expect(answered).not.toHaveBeenCalled()
 

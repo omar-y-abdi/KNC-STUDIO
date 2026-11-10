@@ -1,6 +1,3 @@
-// Unit tests for the pure decisions of the Settings email form (no mocks, no DOM). The view only
-// stores what these functions return, so the form's rules are pinned here.
-
 import { describe, expect, it } from 'vitest'
 import { adminText } from '../../modules/staff-admin/src/adminStrings'
 import type { EmailChangeOutcome } from '../../modules/staff-admin/src/auth'
@@ -23,7 +20,7 @@ describe.each(LANGS)('Settings email form (%s)', (lang) => {
     ['   ', 'current-password'],
     ['not-an-address', 'current-password'],
     ['two words@example.test', 'current-password'],
-    // The address is judged first: an empty password does not hide a bad address.
+    // The address is judged before the password.
     ['not-an-address', ''],
   ])('refuses the address %j before anything is sent', (newEmail, password) => {
     expect(checkEmailChange({ newEmail, password }, CURRENT, t)).toEqual({
@@ -54,7 +51,7 @@ describe.each(LANGS)('Settings email form (%s)', (lang) => {
     expect(
       checkEmailChange({ newEmail: '  New@Example.TEST ', password: ' Pass Word ' }, CURRENT, t),
     ).toEqual({ ok: true, email: 'new@example.test', password: ' Pass Word ' })
-    // A password of spaces is a password: only the server can say whether it is the right one.
+    // A password of spaces is a password; only the server can judge it.
     expect(checkEmailChange({ newEmail: 'new@example.test', password: ' ' }, CURRENT, t)).toEqual({
       ok: true,
       email: 'new@example.test',

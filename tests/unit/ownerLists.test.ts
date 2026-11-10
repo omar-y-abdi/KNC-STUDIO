@@ -1,7 +1,3 @@
-// Unit tests for the pure decisions shared by the two owner lists in Settings (no mocks, no DOM):
-// where the next page starts, what the list holds after a page, what a failed call says and how a
-// stored instant reads.
-
 import { describe, expect, it } from 'vitest'
 import { adminText } from '../../modules/staff-admin/src/adminStrings'
 import type { AdminError } from '../../modules/staff-admin/src/types'

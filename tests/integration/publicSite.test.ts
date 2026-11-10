@@ -49,7 +49,7 @@ async function runSql(env: AdminStackEnv, sql: string, params: readonly unknown[
   }
 }
 
-/** The times the real adapter offers. A failed read fails the test: it is not "no times". */
+/** A failed read fails the test: it is not "no times". */
 async function availableTimes(params: AvailabilityParams): Promise<readonly string[]> {
   const result = await supabaseBookingAdapter.availability(params)
   if (!result.ok) throw new Error('The availability read failed')

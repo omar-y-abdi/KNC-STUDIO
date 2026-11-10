@@ -598,7 +598,7 @@ describe('submit-booking gateway', () => {
     [new Error('customer@example.test'), 'Error'],
     [new TypeError('customer@example.test'), 'TypeError'],
     [{ code: 'Customer 0701234567' }, 'object'],
-    // A code is five to eight characters; a longer value is not one, whatever it holds.
+    // A database code has five to eight characters; any other value is not one.
     [{ code: '0701234567' }, 'object'],
     [{ code: 'PGRST3011' }, 'object'],
     [{ code: 'P000' }, 'object'],

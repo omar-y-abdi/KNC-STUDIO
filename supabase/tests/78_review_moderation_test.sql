@@ -1,14 +1,7 @@
 -- pgTAP: owner review moderation (migration 20261110120100).
---   * only an enabled owner who is not awaiting a forced password change may list, hide or delete
---   * the list carries published and hidden reviews with exactly six keys and no contact data
---   * a hidden review is gone from every public read (the table through RLS is the only one)
---   * a hidden review still blocks a second review of its booking; a deleted one frees the booking
---   * deleting a review leaves its booking untouched
---   * a page that holds exactly the remaining rows reports no more; a page never exceeds 100 rows
 begin;
 select plan(64);
 
--- Only the staff session role may call the three RPCs; the owner check is inside them.
 select ok(not pg_catalog.has_function_privilege('anon',
   'public.admin_list_reviews(timestamptz,integer,uuid)', 'execute'), 'anon cannot list reviews');
 select ok(not pg_catalog.has_function_privilege('anon',
@@ -38,7 +31,7 @@ select ok((select pg_catalog.bool_and(p.prosecdef and p.proconfig = array['searc
                   'public.admin_delete_review(uuid)'::regprocedure)),
   'the three RPCs are security definer with an empty search path');
 
--- Fixtures. Reviews left by anything else would disturb the exact list assertions below.
+-- Other reviews would disturb the exact lists below.
 delete from public.reviews;
 insert into public.barbers (id, name) values ('recmod', 'Rec Mod');
 insert into auth.users (id, email) values
@@ -52,7 +45,6 @@ insert into public.profiles (id, role, barber_id, account_enabled, must_change_p
   ('78000000-0000-4000-8000-000000000003', 'owner', null, true, true),
   ('78000000-0000-4000-8000-000000000004', 'owner', null, false, false);
 
--- Two finished bookings of one customer and one of another.
 insert into public.bookings
   (id, barber_id, service_id, service_name, price, duration_min, start_at, end_at,
    customer_name, method, phone, email, lang)
@@ -75,7 +67,6 @@ insert into public.reviews (id, name, rating, text, published, created_at, booki
   ('78000000-0000-4000-8000-0000000000d1', 'Dan D.', 1, 'T-hidden', false,
    pg_catalog.now() - interval '1 hour', null);
 
--- Nobody but the owner the Studio accepts gets past the gate, and nothing changes when they try.
 set local role anon;
 select throws_ok($$select public.admin_list_reviews()$$, '42501', null, 'anon is refused the list');
 select throws_ok($$select public.admin_set_review_published(
@@ -117,7 +108,6 @@ select is((select pg_catalog.array_agg(r.text || ':' || r.published order by r.t
   array['T-anna:true', 'T-hidden:false', 'T-tie-high:true', 'T-tie-low:true'],
   'the refused callers changed no review');
 
--- The owner lists everything, newest first, with (created_at, id) keyset pages.
 set local role authenticated;
 select set_config('request.jwt.claims',
   json_build_object('sub', '78000000-0000-4000-8000-000000000001')::text, true);
@@ -165,7 +155,6 @@ select throws_ok($$select public.admin_list_reviews(
   p_before_id => '78000000-0000-4000-8000-0000000000c2')$$,
   '22023', null, 'a cursor id without its time is rejected');
 
--- Hiding: typed outcomes, and the flag is the only thing that changes.
 select is(public.admin_set_review_published(null, false),
   '{"ok": false, "error": "invalid"}'::jsonb, 'a missing review id is invalid');
 select is(public.admin_set_review_published('78000000-0000-4000-8000-0000000000a1', null),
@@ -186,7 +175,6 @@ select is((select r.name || '|' || r.rating || '|' || r.text || '|' || r.booking
   'Anna A.|5|T-anna|78000000-0000-4000-8000-0000000000b1',
   'hiding changed nothing but the flag');
 
--- The table through RLS is the only public read path, and the hidden review is gone from it.
 set local role anon;
 select set_config('request.jwt.claims', '', true);
 select is((select pg_catalog.array_agg(r.text order by r.text) from public.reviews r),
@@ -215,7 +203,6 @@ select is((select pg_catalog.count(*)::int from pg_catalog.pg_publication_tables
   where t.schemaname = 'public' and t.tablename = 'reviews'), 0,
   'reviews are not broadcast over realtime');
 
--- A hidden review still occupies its booking: the customer cannot review it a second time.
 set local role service_role;
 select is(public.create_review_with_access(repeat('a', 64), '0707800001', 4, 'En gång till')->>'error',
   'no_booking', 'the customer cannot write a second review for a booking whose review is hidden');
@@ -224,7 +211,6 @@ select throws_ok($$insert into public.reviews (name, rating, text, booking_id)
   values ('Anna A.', 4, 'T-second', '78000000-0000-4000-8000-0000000000b1')$$,
   '23505', null, 'the one-review-per-booking constraint still holds for a hidden review');
 
--- Publishing again restores the public read.
 set local role authenticated;
 select set_config('request.jwt.claims',
   json_build_object('sub', '78000000-0000-4000-8000-000000000001')::text, true);
@@ -237,7 +223,6 @@ select is((select pg_catalog.array_agg(r.text order by r.text) from public.revie
   array['T-anna', 'T-tie-high', 'T-tie-low'], 'a re-published review is public again');
 reset role;
 
--- Deleting removes the review only: the booking is byte-for-byte what it was.
 select set_config('test.booking_before', (select pg_catalog.to_jsonb(b)::text from public.bookings b
   where b.id = '78000000-0000-4000-8000-0000000000b1'), true);
 set local role authenticated;
@@ -262,13 +247,12 @@ select is((select pg_catalog.to_jsonb(b)::text from public.bookings b
 select is((select pg_catalog.count(*)::int from public.reviews
   where id <> '78000000-0000-4000-8000-0000000000a1'), 3, 'no other review was deleted');
 
--- Unlike hiding, deleting frees the booking: the customer may review it again.
 set local role service_role;
 select is(public.create_review_with_access(repeat('a', 64), '0707800001', 4, 'Ny recension')->>'ok',
   'true', 'after the owner deleted the review the customer can review that booking again');
 reset role;
 
--- The page size is capped at 100 rows. The rows are added last, so no list above sees them.
+-- Added last, so no list above sees these rows.
 select set_config('request.jwt.claims', '', true);
 insert into public.reviews (name, rating, text)
 select 'Kund K.', 5, 'T-bulk-' || g::text

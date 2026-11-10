@@ -960,7 +960,6 @@ describe('Worker CMS Contact Open Graph identity (A.R05)', () => {
   const canonical = (html: string): string | undefined =>
     /<link\b[^>]*rel="canonical"[^>]*href="([^"]*)"/i.exec(html)?.[1]
 
-  // The English page is its own canonical; the colour scheme never enters a URL.
   it.each([
     ['/contact', 'https://bladeblendstudio.se/contact'],
     ['/contact?lang=en', 'https://bladeblendstudio.se/contact?lang=en'],
@@ -1009,11 +1008,8 @@ describe('CMS shell metadata byte compatibility', () => {
   )
 })
 
-// W2-8: a keyboard visitor of an information page reaches a skip link first, whichever way the
-// Worker serves the page. The deployed file gets the link and its target, <main id="main"
-// tabindex="-1">, as public/404.html carries them in its own markup. The CMS render gets the
-// Worker's own link in front of the shell's #root, which holds the page and takes the focus: no
-// owner markup is searched or edited.
+// The deployed file gets the skip target public/404.html carries; the CMS render targets the
+// shell's #root, so no owner markup is searched or edited.
 type TreeNode = DefaultTreeAdapterMap['node']
 type TreeElement = DefaultTreeAdapterMap['element']
 const treeElements = (node: TreeNode): TreeElement[] => [
@@ -1031,18 +1027,16 @@ const treeText = (node: TreeNode | undefined): string =>
         ? node.childNodes.map((child) => treeText(child)).join('')
         : ''
 
-/** A served document as a parser and a keyboard meet it. */
 function keyboardView(html: string) {
   const all = treeElements(parse(html))
   const body = all.find((element) => element.tagName === 'body')
   if (!body) throw new Error('The served document has no body')
   return {
-    /** The elements inside the body, in the order Tab walks them. */
     inBody: treeElements(body).slice(1),
     skipLinks: all.filter((element) =>
       (attribute(element, 'class') ?? '').split(/\s+/).includes('bb-skip'),
     ),
-    /** Every element with this id, in document order: a fragment link leads to the first. */
+    /** In document order: a fragment link leads to the first. */
     withId: (id: string): TreeElement[] => all.filter((item) => attribute(item, 'id') === id),
     bodyStyles: treeElements(body).filter((element) => element.tagName === 'style').length,
   }
@@ -1066,8 +1060,7 @@ const deployed = {
     },
   },
 }
-/** `path` while the publication cannot be read: the deployed file answers. Företag & SEO answers
- * `discovery`, or cannot be read either. */
+/** `path` with the publication unreadable; Företag & SEO answers `discovery` or fails too. */
 async function serveDeployed(path: string, discovery: unknown = null): Promise<string> {
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) =>
     String(input).endsWith('/rpc/public_business_discovery') && discovery !== null
@@ -1107,7 +1100,6 @@ describe('the skip link of a deployed information page (W2-8)', () => {
       expect(targets[0]?.tagName).toBe('main')
       expect(attribute(targets[0], 'tabindex')).toBe('-1')
       expect(attribute(targets[0], 'class')).toBe('bb-doc')
-      // Without the link and the two attributes it is the deployed file, byte for byte.
       expect(html.replace(fileLink(BILINGUAL_SKIP), '').replace(FILE_TARGET, '')).toBe(
         publicFile(`${path}.html`),
       )
@@ -1128,7 +1120,6 @@ describe('the skip link of a deployed information page (W2-8)', () => {
     expect(targets[0]?.tagName).toBe('main')
     expect(attribute(targets[0], 'tabindex')).toBe('-1')
     expect(attribute(targets[0], 'data-business-contact-page')).toBe('1')
-    // Without the link and the two attributes it is the page as it was rendered before.
     expect(html.replace(fileLink(SKIP_SV), '').replace(FILE_TARGET, '')).toBe(
       renderContactMetadata(contactSource, DEFAULT_BUSINESS),
     )
@@ -1255,7 +1246,7 @@ describe('the skip link of a CMS information page (W2-8)', () => {
     expect(skip).toBeGreaterThan(html.lastIndexOf('<style id="cms-page-'))
     expect(skip).toBeGreaterThan(html.lastIndexOf('<style id="cms-theme'))
     expect(skip).toBeLessThan(html.indexOf('</head>'))
-    // Without white space and leading zeros, so 0.75rem and .75rem compare as the same length.
+    // Drops white space and leading zeros, so 0.75rem and .75rem compare equal.
     const compact = (css: string): string =>
       css.replace(/\s+/g, '').replace(/(^|[^0-9.])0\./g, '$1.')
     const rule = (css: string, selector: string): string[] => {
@@ -1266,7 +1257,6 @@ describe('the skip link of a CMS information page (W2-8)', () => {
     }
     const served = compact(sheet(html, 'cms-skip'))
     const file = rule(compact(publicFile('/info.css')), '.bb-skip')
-    // Everything /info.css declares for the link at rest, the Worker's sheet declares too.
     expect(file).toContain('transform:translateY(-200%)')
     for (const declaration of file) expect(rule(served, '.bb-skip')).toContain(declaration)
     expect(rule(served, '.bb-skip:focus')).toContain('transform:none')
@@ -1299,12 +1289,10 @@ describe('the skip link of a CMS information page (W2-8)', () => {
     expect(root).toBe(view.inBody[1])
     expect(attribute(root, 'data-cms-public')).toBe('1')
     expect(attribute(root, 'tabindex')).toBe('-1')
-    // The stored body is the whole content of the #root, as stored.
     expect(html).toContain(`tabindex="-1">${body}</div>`)
   })
 
   const TERMS_URL = 'https://bladeblendstudio.se/terms'
-  /** renderCmsPage as the handler calls it for `page`, in `html`, with a skip target. */
   const renderWithTarget = (html: string, page: CmsPage, target: SkipTarget): string =>
     renderCmsPage(
       html,
@@ -1355,7 +1343,7 @@ describe('the skip link of a CMS information page (W2-8)', () => {
     expect(html).toContain('data-cms-public="1"')
     expect(html).not.toContain('bb-skip')
     expect(html).not.toContain('tabindex')
-    // With a head, the same call adds both (control).
+    // Control: with a head, the same call adds both.
     const whole = renderWithTarget(shell, terms, 'root')
     expect(whole).toContain('<a class="bb-skip bb-btn" href="#root">Hoppa till innehållet</a>')
     expect(whole).toContain('<style id="cms-skip">')
@@ -1385,7 +1373,6 @@ describe('the image description of the deployed Contact (W2-10)', () => {
       expect(tags.map((tag) => [attribute(tag, 'id'), attribute(tag, 'content')])).toEqual([
         ['contact-image-alt', name],
       ])
-      // The title is still the one element with its id, and names the business too.
       const titles = treeElements(parse(html)).filter(
         (element) => attribute(element, 'id') === 'contact-meta-title',
       )

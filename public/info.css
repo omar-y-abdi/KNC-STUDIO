@@ -60,8 +60,7 @@ body {
   margin: 0 0 0.75rem;
   overflow-wrap: anywhere;
 }
-/* The skip link, a .bb-btn (/tokens.css) that is the first focusable element of a document: above
-   the viewport until it has focus, so it changes nothing on screen before that. */
+/* The skip link, styled by .bb-btn in /tokens.css: above the viewport until it has focus. */
 .bb-skip {
   position: absolute;
   top: 0.75rem;
@@ -74,15 +73,12 @@ body {
   outline: 3px solid var(--bb-text);
   outline-offset: 4px;
 }
-/* The link's target takes focus so that Tab goes on from the content. It is not a control, so it
-   shows no ring around the whole document. */
+/* The skip target takes focus only so Tab goes on from there; it is no control and gets no ring. */
 .bb-doc:focus {
   outline: none;
 }
-/* On paper: black on white whatever scheme the screen shows, without the skip link and the
-   document's own breadcrumb and footer links (its direct children: a nav or footer further in is
-   content), and with the address after each link to the site or the web (a mail or phone link
-   already shows its address). Nothing below applies on screen. */
+/* Only the document's own nav and footer are hidden: in a CMS page a nested one is content. A mail
+   or phone link already shows its address. */
 @media print {
   :root {
     --bb-bg: #fff;

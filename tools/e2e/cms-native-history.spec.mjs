@@ -1,6 +1,3 @@
-// The native routes share one app: the address follows the view (`/`, `/booking`) and the dialog a
-// button opens (`/my-bookings`), and Back, Forward and a reload follow the address. Runs against the
-// stored presentation, whose surfaces change with the route.
 import { test, expect } from './fixtures.mjs'
 import { harnessOrigin } from './origins.mjs'
 import { installStoredBackend } from './public-fixtures.mjs'
@@ -47,7 +44,6 @@ for (const width of [390, 1280]) {
     // The site names itself by the origin of the canonical the shell came with (VITE_SITE_URL).
     const site = new URL(await canonical(page).getAttribute('href')).origin
 
-    // Home -> booking, by keyboard: one new entry, with the booking route's own head.
     await book.focus()
     await page.keyboard.press('Enter')
     await expect(barber).toBeVisible()
@@ -55,15 +51,13 @@ for (const width of [390, 1280]) {
     await expect(about).toHaveCount(0)
     await expect(page).toHaveTitle(/^Boka tid – /)
     await expect(canonical(page)).toHaveAttribute('href', `${site}/booking`)
-    // The desktop toggle stays usable: it keeps the focus and tells its state. The mobile hero
-    // folds away with its button, so the focus moves into the booking view.
+    // The mobile hero folds away with its button, so the focus moves into the booking view.
     if (width === 1280) {
       await expect(book).toHaveAttribute('aria-expanded', 'true')
       await expect(book).toBeFocused()
     } else await expect(page.locator('[role="main"]')).toBeFocused()
     expect(await entries(page)).toBe(atHome + 1)
 
-    // Back -> home, Forward -> booking, without a further entry.
     await page.goBack()
     await expect(page).toHaveURL(HOME)
     await expect(about).toBeAttached()
@@ -77,13 +71,11 @@ for (const width of [390, 1280]) {
     await expect(about).toHaveCount(0)
     expect(await entries(page)).toBe(atHome + 1)
 
-    // A reload stays on booking.
     await page.reload()
     await expect(page).toHaveURL(BOOKING)
     await expect(barber).toBeVisible()
     await expect(about).toHaveCount(0)
 
-    // The language is part of the same entry: `lang=en` is added and removed in place.
     await page.getByRole('button', { name: 'Byt språk till engelska', exact: true }).click()
     await expect(page).toHaveURL(`${BOOKING}&lang=en`)
     await expect(page.locator('html')).toHaveAttribute('lang', 'en')
@@ -94,7 +86,6 @@ for (const width of [390, 1280]) {
     await expect(page.locator('html')).toHaveAttribute('lang', 'sv')
     expect(await entries(page)).toBe(atHome + 1)
 
-    // The dialog a button opens has an entry of its own, kept out of the index; Back closes it.
     await page.goBack()
     await expect(page).toHaveURL(HOME)
     await expect(about).toBeAttached()
@@ -109,8 +100,7 @@ for (const width of [390, 1280]) {
     await expect(page).toHaveURL(HOME)
     await expect(robots(page)).toHaveAttribute('content', INDEXABLE)
     await expect(canonical(page)).toHaveAttribute('href', `${site}/`)
-    // Keyboard focus is back on the page: on the button that opened the dialog, or on the main
-    // landmark in an engine whose buttons take no focus from a click.
+    // Focus is back on the opener, or on main in an engine where a click does not focus a button.
     await expect
       .poll(() =>
         page.evaluate(() => {
@@ -120,7 +110,6 @@ for (const width of [390, 1280]) {
       )
       .toBe(true)
 
-    // Forward opens it again; its own close button returns to the entry it was opened from.
     await page.goForward()
     await expect(dialog).toBeVisible()
     await expect(page).toHaveURL(DIALOG)
@@ -128,7 +117,6 @@ for (const width of [390, 1280]) {
     await expect(dialog).toHaveCount(0)
     await expect(page).toHaveURL(HOME)
 
-    // One step back from the first entry of the site leaves it.
     await page.goBack()
     await expect(page).toHaveURL(OUTSIDE)
   })

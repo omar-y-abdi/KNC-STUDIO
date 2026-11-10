@@ -145,8 +145,7 @@ describe('booking dialog close controls', () => {
     expect(textContent(confirmationClose)).toBe('×')
   })
 
-  // The published presentation stores these two titles as a `span` and a `div`: they are headings
-  // by role, and their element (and so their stored identity and look) stays what it was.
+  // The presentation stores these titles as a `span` and a `div`; the element is their identity.
   it('exposes each dialog title as a level-2 heading on its original element', () => {
     const detailsTitle = findById(details(), 'knc-details-title')
     expect(detailsTitle?.type).toBe('span')
@@ -159,8 +158,6 @@ describe('booking dialog close controls', () => {
     expect(textContent(bookedTitle)).toBe(t.bookedTitle)
   })
 
-  // A submit on its way is said on the book button, to assistive technology only: the button keeps
-  // its look and stays enabled (a pending submit is a normal state of the popup).
   it('marks the book button as busy while its submit is on its way, and changes nothing else', () => {
     const bookButton = (dialog: unknown): VNodeLike | null =>
       findWhere(dialog, (node) => node.type === 'button' && textContent(node) === t.book)
@@ -175,7 +172,6 @@ describe('booking dialog close controls', () => {
     expect(textContent(busy)).toBe(textContent(idle))
   })
 
-  // Swedish is the site's default and carries no query; an English visitor gets the English terms.
   it.each([
     ['sv', '/terms'],
     ['en', '/terms?lang=en'],

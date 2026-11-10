@@ -1,7 +1,3 @@
-// Where the keyboard focus goes in the two owner lists of Settings once an answer has rendered. The
-// decisions are pure and tested as such; `moveOwnerListFocus` is the one function that touches the
-// page, and is tested against stand-ins for the few element methods it uses.
-
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   controlMark,
@@ -51,12 +47,10 @@ describe('focus after an action on a row', () => {
   })
 
   it('finds the place by where the row was, also in a list that was read again', () => {
-    // The list was read again and holds other rows than before; the row acted on is not among them.
     const d = entry('d')
     const e = entry('e')
     expect(focusAfterRowAction([a, b, c], [d, e], 'b', 'delete')).toEqual(firstOf('e'))
     expect(focusAfterRowAction([a, b, c], [d, e], 'a', 'delete')).toEqual(firstOf('d'))
-    // And when it is among them, it keeps the focus on its own button.
     expect(focusAfterRowAction([a, b, c], [d, b], 'b', 'visibility')).toEqual({
       place: 'row',
       id: 'b',
@@ -119,8 +113,6 @@ describe('whose the focus is', () => {
   })
 })
 
-// --- the page ------------------------------------------------------------------------------------
-
 interface FakeElement {
   readonly tag: string
   readonly attributes: Readonly<Record<string, string>>
@@ -162,8 +154,7 @@ function element(
   return self
 }
 
-// The page's elements are stood in for by the few methods the focus code calls, as the other
-// focus tests of this suite do.
+// The fakes have only the methods the focus code calls.
 const onPage = (fake: FakeElement): HTMLElement => fake as unknown as HTMLElement
 
 function page() {
@@ -186,7 +177,6 @@ function page() {
     list: onPage(list),
   }
   const all = [hide, remove, reviewRow, publish, otherRow, logRow, more, list, toggleButton]
-  /** The elements that were given the focus, in the order the page holds them. */
   const focused = () => all.filter((candidate) => candidate.focus.mock.calls.length > 0)
   const focusRestsOn = (active: FakeElement | null): void => {
     vi.stubGlobal('document', { activeElement: active, body })

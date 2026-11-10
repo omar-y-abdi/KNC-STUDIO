@@ -31,7 +31,6 @@ describe('homepage replica preview ports', () => {
       ok: true,
       times: ['10:00'],
     })
-    // A failed production read stays a failure in the preview; it is not turned into "no times".
     await expect(preview.booking.availability(params)).resolves.toEqual({ ok: false })
     await expect(preview.reviews.list()).resolves.toEqual([])
     expect(availability).toHaveBeenCalledWith(params)
@@ -41,8 +40,7 @@ describe('homepage replica preview ports', () => {
     expect(preview.aboutContent).toBe(source.aboutContent)
     expect(preview.gallery).toBe(source.gallery)
 
-    // The booking flow writes its line from the kind of the error: a preview that never sends
-    // answers with a kind of its own, not with the "could not be sent, try again" of a refusal.
+    // The booking flow words its message by error kind; a refusal's kind would say "try again".
     await expect(preview.booking.submit({} as never)).resolves.toEqual({
       ok: false,
       error: { kind: 'read_only', message: 'Preview is read-only.' },

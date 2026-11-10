@@ -43,7 +43,7 @@ const VALID_START_UTC = '2040-03-14T12:30:00.000Z'
 const EARLY_START_UTC = '2040-03-14T06:00:00.000Z'
 let haircutServiceId = ''
 
-/** The times the real adapter offers. A failed read fails the test: it is not "no times". */
+/** A failed read fails the test: it is not "no times". */
 async function availableTimes(params: AvailabilityParams): Promise<readonly string[]> {
   const result = await supabaseBookingAdapter.availability(params)
   if (!result.ok) throw new Error('The availability read failed')

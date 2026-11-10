@@ -2789,7 +2789,6 @@ async function verifyPrivacy(
     ['/terms', strings.about.termsLink],
     ['/privacy', strings.about.privacyLink],
   ]) {
-    // The legal pages open in the visitor's language; Swedish is the bare path.
     const href = lang === 'en' ? `${path}?lang=en` : path
     const link = page.locator('#om-oss footer').getByRole('link', { name: label, exact: true })
     assert((await link.getAttribute('href')) === href, `Missing localized About link: ${href}`)

@@ -13,7 +13,6 @@ import {
 } from '../../supabase/worker/customerGateway'
 import worker, { PublicContent } from '../../supabase/worker/index'
 
-/** A repository file as one line: runs of whitespace become one space, as in the served page. */
 const source = (path: string): string => readFileSync(path, 'utf8').replace(/\s+/g, ' ')
 
 const MIGRATIONS = 'supabase/migrations'
@@ -53,11 +52,8 @@ const REVIEW_TAKEN_DOWN =
 const BARBER_EMAIL =
   'Har barberaren du bokar hos ett eget barberarkonto på webbplatsen får barberaren ett mejl [...]'
 
-// The database objects the sentences of the policy rest on. The pins below read each one in the
-// last file of its row. A later migration that redefines a function, reschedules a job or changes
-// a policy, constraint or table listed here would leave every pin on the older file green, so the
-// first test compares `files` with the migrations directory: such a migration fails it under the
-// name of the object and the words of the policy to check before the file is added to the row.
+// The objects the policy rests on, each pinned in the last file of its row. The first test fails
+// when a newer migration touches one, so the policy is checked before that file joins the row.
 const DECIDED = [
   {
     kind: 'function',
@@ -171,11 +167,10 @@ type Named<Kind extends Decided['kind']> = Extract<
   { readonly kind: Kind }
 >['name']
 
-/** A migration as the guard reads it: one line, lower case, identifiers without their quotes. */
 const statements = (file: string): string =>
   source(`${MIGRATIONS}/${file}`).toLowerCase().replace(/"/g, '')
 
-/** The statements that define or change an object of each kind; the first group is its name. */
+/** Statements that define or change an object of each kind; group 1 is its name. */
 const STATEMENT = {
   function:
     /\b(?:create or replace|create|alter|drop) function (?:if exists )?(?:public\.)?(\w+) ?\(/g,
@@ -185,14 +180,12 @@ const STATEMENT = {
     /\b(?:create|alter|drop) table (?:if not exists |if exists )?(?:only )?(?:public\.)?(\w+)/g,
 } as const satisfies Readonly<Record<Exclude<Decided['kind'], 'job'>, RegExp>>
 
-/** Whether a migration, read as above, has a statement about one object. */
 function concerns(sql: string, kind: Decided['kind'], name: string): boolean {
   // Scheduling, unscheduling and altering a job all quote its name.
   if (kind === 'job') return sql.includes(`'${name}'`)
   return [...sql.matchAll(STATEMENT[kind])].some((match) => match[1] === name)
 }
 
-/** The migration files a reading of their statements holds for, oldest first. */
 function migrationsWhere(holds: (sql: string) => boolean): string[] {
   return readdirSync(MIGRATIONS)
     .filter((file) => file.endsWith('.sql'))
@@ -200,16 +193,13 @@ function migrationsWhere(holds: (sql: string) => boolean): string[] {
     .filter((file) => holds(statements(file)))
 }
 
-/** The last migration with a statement about one listed object: the one that decides it now. */
 function decidingFile(kind: Decided['kind'], name: string): string {
   const listed: Decided | undefined = DECIDED.find((row) => row.kind === kind && row.name === name)
   if (listed === undefined) throw new Error(`${kind} ${name} is not listed in DECIDED`)
   return `${MIGRATIONS}/${listed.files[listed.files.length - 1] ?? listed.files[0]}`
 }
 
-/** One listed function as its deciding migration defines it, whitespace collapsed, from CREATE to
- * the end of its body. A pin inside it is a pin on the statement that runs, not on the same words
- * in another function. */
+/** A function as its deciding migration defines it, so a pin cannot match another function. */
 function definition(name: Named<'function'>): string {
   const file = decidingFile('function', name)
   const sql = source(file)
@@ -221,7 +211,6 @@ function definition(name: Named<'function'>): string {
   return sql.slice(start, start + length)
 }
 
-/** The deciding migration of one listed job, policy, constraint or table, whitespace collapsed. */
 function deciding<Kind extends Exclude<Decided['kind'], 'function'>>(
   kind: Kind,
   name: Named<Kind>,
@@ -313,8 +302,7 @@ describe('public privacy disclosure of stored email copies', () => {
   })
 })
 
-// Every period, name and recipient below is stated to customers. Each test reads the code that
-// decides it first, then the sentence in both language sections, so neither can change alone.
+// Each test pins the deciding code and the sentence in both languages, so neither changes alone.
 describe('public privacy disclosure of retention, backups, reviews and browser storage', () => {
   it('states the booking retention the nightly purge applies and who may delete sooner', async () => {
     const purge = definition('internal_purge_expired_bookings')
@@ -325,8 +313,7 @@ describe('public privacy disclosure of retention, backups, reviews and browser s
     expect(deciding('job', 'booking-retention-purge')).toContain(
       "cron.schedule( 'booking-retention-purge', '11 3 * * *', 'select public.internal_purge_expired_bookings()' )",
     )
-    // Before that age the owner may delete any booking that is cancelled or has ended, and a barber
-    // those of their own: a request naming a booking of another barber is refused whole.
+    // Before then the owner may delete any ended or cancelled booking, a barber only their own.
     const remove = definition('admin_delete_bookings')
     expect(remove).toContain(
       'v_is_owner boolean := public.is_owner(); v_barber_id text := public.current_barber_id();',
@@ -388,8 +375,7 @@ describe('public privacy disclosure of retention, backups, reviews and browser s
     expect(cleanup).toContain(
       'delete from public.customer_profile_emails e where e.email = any (v_emails)',
     )
-    // The rule is per group of connected addresses, not per address: the token and the membership
-    // of an unused address stay while any address of the same profile is in use.
+    // Per group of connected addresses: an unused address stays while any of its profile is in use.
     expect(cleanup).toContain(
       'with in_use as materialized ( select u.email from public.customer_emails_in_use() as u(email) ) delete from public.customer_booking_access_tokens t',
     )
@@ -399,9 +385,8 @@ describe('public privacy disclosure of retention, backups, reviews and browser s
     expect(cleanup).toContain(
       'and e.profile_id = any (v_profiles) and not exists ( select 1 from public.customer_profile_emails sibling join in_use u on u.email = sibling.email where sibling.profile_id = e.profile_id );',
     )
-    // Step 0 makes "waiting to be sent" the whole rule: an unused access link whose e-mail can no
-    // longer be sent (no job for it is pending or dispatching: the job is blocked or gone) is
-    // deleted, and one whose e-mail is still waiting is never deleted.
+    // An unused access link is deleted once its e-mail can no longer be sent (no pending or
+    // dispatching job), and never while that e-mail is still waiting.
     const waiting =
       "not exists ( select 1 from public.external_action_jobs j where j.action_type = 'customer_access_email_send' and j.payload ->> 'challenge_id' = c.id::text and j.status in ('pending', 'dispatching') )"
     expect(cleanup).toContain(
@@ -445,7 +430,6 @@ describe('public privacy disclosure of retention, backups, reviews and browser s
     expect(rotate).toContain(
       'delete from public.customer_booking_access_sessions s where pg_catalog.lower(s.email) = v_email;',
     )
-    // A session past its time opens nothing.
     expect(definition('customer_booking_access_scope')).toContain(
       'from public.customer_booking_access_sessions s where s.token_hash = p_session_hash and s.expires_at > pg_catalog.now()',
     )
@@ -509,7 +493,6 @@ describe('public privacy disclosure of retention, backups, reviews and browser s
     expect(definition('consume_public_action_attempt')).toContain(
       "insert into public.public_action_attempts (action, ip_hash, phone_hash) values (p_action, p_ip_hash, p_phone_hash); delete from public.public_action_attempts where created_at < pg_catalog.now() - interval '2 days';",
     )
-    // No scheduled job cleans that table: the baseline alone names it, and none of its jobs does.
     expect(migrationsWhere((sql) => sql.includes('public_action_attempts'))).toEqual([BASELINE])
     expect(source(`${MIGRATIONS}/${BASELINE}`)).not.toMatch(
       /cron\.schedule\([^;]*public_action_attempts/,
@@ -534,7 +517,6 @@ describe('public privacy disclosure of retention, backups, reviews and browser s
   })
 
   it('states what Cloudflare counts for each client and how long it keeps the count', async () => {
-    // One limiter, of 60 requests in 60 seconds, and a refused client is told the same period.
     expect(source('wrangler.jsonc').match(/"simple": \{[^}]*\}/g)).toEqual([
       '"simple": { "limit": 60, "period": 60 }',
     ])
@@ -551,7 +533,6 @@ describe('public privacy disclosure of retention, backups, reviews and browser s
     const gateway = source('supabase/worker/customerGateway.ts')
     expect(gateway.split('withinRateLimit(')).toHaveLength(3)
     expect(gateway).toContain("endpoint === 'public-booking-actions' && !(await withinRateLimit(")
-    // The requests on that path: those of My appointments, of device access and a review.
     expect(BOOKING_ACTIONS).toEqual([
       'request_access',
       'exchange_access',
@@ -562,8 +543,7 @@ describe('public privacy disclosure of retention, backups, reviews and browser s
       'request_link',
       'confirm_link',
     ])
-    // Each is counted under its kind and the client address, an IPv6 address as its /64. This
-    // limiter refuses every request, so the Worker answers before it would call Supabase.
+    // This limiter refuses every request, so the Worker answers before it would call Supabase.
     const counted: string[] = []
     const limiter: GatewayRateLimit = {
       async limit({ key }) {
@@ -683,8 +663,7 @@ describe('public privacy disclosure of retention, backups, reviews and browser s
       'Pris',
       'Kontakt',
     ])
-    // The address is that of a staff account with the barber role, so a barber without one gets
-    // no e-mail.
+    // A barber gets the e-mail only through a staff account with the barber role.
     expect(sender).toContain("client.rpc('booking_confirmation_details', { p_id: id })")
     expect(definition('booking_confirmation_details')).toContain(
       "'barber_email', ( select u.email from public.profiles p join auth.users u on u.id = p.id where p.role = 'barber' and p.barber_id = b.barber_id order by p.created_at asc limit 1 ),",
@@ -708,8 +687,7 @@ describe('public privacy disclosure of retention, backups, reviews and browser s
     expect(consent).toContain("const STORAGE_PREFERENCES_COOKIE = 'bladeblend_storage_preferences'")
     expect(consent).toContain(`Max-Age=${365 * day};`)
     expect(customerCookieHeader(CUSTOMER_SESSION_COOKIE, 'token')).toContain(`Max-Age=${30 * day};`)
-    // The server ends both after 30 days whatever the browser keeps. Two functions make a session,
-    // each with that lifetime, and no other statement in any migration makes one.
+    // The server ends sessions after 30 days whatever the browser keeps; two functions make them.
     const session = 'insert into public.customer_booking_access_sessions'
     const lifetime = `${session} (phone, email, token_hash, expires_at) values (v_phone, v_email, p_session_hash, pg_catalog.now() + interval '30 days');`
     expect(definition('establish_customer_booking_session')).toContain(lifetime)
@@ -779,8 +757,7 @@ describe('public privacy disclosure of retention, backups, reviews and browser s
   })
 })
 
-// The terms page is one bilingual document like the policy; no business is read here, so the
-// shipped file is the text a visitor gets.
+// No business is read here, so the shipped file is the text a visitor gets.
 describe('public terms page', () => {
   it('sends the reader to the contact page, in each language to that language', () => {
     const terms = source('public/terms.html')
@@ -800,7 +777,6 @@ describe('public terms page', () => {
 
   it('gives the English section the statements the Swedish text makes', () => {
     const terms = source('public/terms.html')
-    // Swedish sentence, then its English counterpart.
     for (const [swedish, english] of [
       [
         'Webbplatsen tar inte emot betalning; betalningsfrågor hanteras med salongen.',

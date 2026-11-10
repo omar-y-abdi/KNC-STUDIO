@@ -351,8 +351,7 @@ describe('the shell #root found among owner bytes (G02)', () => {
     expect(html).not.toContain('cms-native-state')
   })
 
-  // The homepage's title is the Företag & SEO title. /about has no CMS title here, so its title is
-  // its name and the business name: there the owner bytes that keep quotes are the business name.
+  // /about has no CMS title here, so the business name carries the quotes into its title.
   it.each([
     ['/', { seo_title_sv: 'Om salongen id="root" i Göteborg' }, 'Om salongen id="root" i Göteborg'],
     [
@@ -363,7 +362,6 @@ describe('the shell #root found among owner bytes (G02)', () => {
   ] as const)(
     'serves the %s fallback in the real #root when its title names id="root"',
     async (path, settings, title) => {
-      // Företag & SEO accepts any 1-120 characters for the title and any 1-160 for the name.
       const document = emptyDocument()
       Object.assign(document.settings, settings)
       validateCompleteDocument(document, document)

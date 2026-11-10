@@ -22,10 +22,8 @@ import {
 
 type LegalPath = (typeof LEGAL_PAGES)[number]['path']
 
-// What Studio exports (downloadDraft in modules/studio/src/Studio.tsx): a CmsDocument as JSON with
-// two spaces. This one is the contract's empty document with the recorded publication of
-// tools/e2e/fixtures, whose /privacy and /terms still hold the first import: one bilingual body in
-// both language fields and the old sheet in all four css fields.
+// A Studio export (downloadDraft in Studio.tsx) of the tools/e2e/fixtures publication: its /privacy
+// and /terms still hold the first import, one bilingual body and the old sheet in every field.
 const exported: CmsDocument = {
   ...emptyDocument(),
   presentation: JSON.parse(
@@ -44,10 +42,8 @@ const FILES: Readonly<Record<LegalPath, string>> = {
 const CONTRACT = { CmsValidationError, validateDocument, validateDocumentMarkupPlacements }
 const LANGS = ['sv', 'en'] as const
 
-/** A refusal is one sentence: one line that ends with a full stop. */
 const ONE_SENTENCE = /^[^\n]+\.$/
 
-/** The sentence of a refusal; an outcome with a value fails the test. */
 function refusal(
   outcome: { readonly ok: true } | { readonly ok: false; readonly problem: string },
 ): string {
@@ -56,14 +52,12 @@ function refusal(
   return outcome.problem
 }
 
-/** What the tool makes of a draft; a refusal fails the test. */
 function apply(input: unknown = draft()) {
   const outcome = applyLegalPages(input, FILES)
   if (!outcome.ok) throw new Error(outcome.problem)
   return outcome.value
 }
 
-/** The applied draft as the document the contract accepts. */
 function applied(input: unknown = draft()): CmsDocument {
   const document: unknown = apply(input).document
   validateDocument(document)
@@ -83,7 +77,6 @@ function shipped(path: LegalPath) {
   return outcome.value
 }
 
-/** The words a reader sees: markup taken out, whitespace collapsed. */
 const visible = (html: string): string =>
   html
     .replace(/<[^>]*>/g, ' ')
@@ -94,19 +87,15 @@ describe('a shipped legal file as a stored page takes it', () => {
   it.each(LEGAL_PAGES)('reads the body and the style of $file', ({ path }) => {
     const text = FILES[path]
     const { html, css, updated } = shipped(path)
-    // The inside of <body> is the one <main> element; nothing of the head comes along.
     expect(html.trim().startsWith('<main class="bb-doc">')).toBe(true)
     expect(html.trim().endsWith('</main>')).toBe(true)
     expect(html.match(/<main\b/g)).toHaveLength(1)
     expect(html).not.toMatch(/<(?:script|style|link|meta|body|html|head)\b/)
-    // It says what the file's body says, read here without a parser.
     const body = /<body>([\s\S]*)<\/body>/.exec(text)?.[1] ?? ''
     expect(visible(body)).not.toBe('')
     expect(visible(html) === visible(body)).toBe(true)
-    // The style is the text of the file's <style>, and empty for a file without one.
     expect(css).toBe(/<style>([\s\S]*?)<\/style>/.exec(text)?.[1] ?? '')
     expect(css === '').toBe(!text.includes('<style'))
-    // One date in each language, as the file states it.
     expect(updated).toHaveLength(2)
     expect(updated[0]).toMatch(/^(?:Senast uppdaterad|Uppdaterad) \d{1,2} [a-zåäö]+ \d{4}$/)
     expect(updated[1]).toMatch(/^(?:Last updated|Updated) \d{1,2} [A-Z][a-z]+ \d{4}$/)
@@ -229,8 +218,7 @@ describe('the shipped legal pages applied to an exported draft', () => {
     expect(restored.presentation.pages.map((page) => Object.keys(page))).toEqual(
       exported.presentation.pages.map((page) => Object.keys(page)),
     )
-    // With the six replaced texts of each page put back, the output is the export, byte for byte:
-    // every other page, key and value, and the order of the keys.
+    // With the replaced html and css put back, the output is the export byte for byte.
     for (const { path } of LEGAL_PAGES)
       for (const lang of LANGS) {
         const stored = legal(exported, path).content[lang]
@@ -379,7 +367,6 @@ describe('the contract of the import, asked before anything is written', () => {
 describe('node tools/cms/apply-legal-pages.mjs', () => {
   const created: string[] = []
 
-  /** A directory holding these files. */
   function directory(files: Readonly<Record<string, string>>): string {
     const dir = mkdtempSync(join(tmpdir(), 'apply-legal-pages-'))
     created.push(dir)
@@ -489,7 +476,6 @@ describe('node tools/cms/apply-legal-pages.mjs', () => {
     expect(result.said[0]).toContain(problem)
     expect(result.code).toBe(1)
     expect(result.out).toBe('')
-    // The directory holds what it held, and every file its text.
     expect(readdirSync(dir).sort()).toEqual(Object.keys(files).sort())
     for (const [name, text] of Object.entries(files))
       expect(readFileSync(join(dir, name), 'utf8') === text).toBe(true)

@@ -1,28 +1,9 @@
-// Puts the shipped legal texts into an exported Studio draft.
-//
-// The Worker serves the published CMS page for /privacy and /terms before the static file, and
-// Studio never replaces a stored legal page with the shipped one: corePages.ts keeps an existing
-// information page byte for byte. The way in is the draft file. Studio, Utkast & backup, Export
-// gives knc-cms-draft.json; this tool writes a copy whose two legal pages hold the body and the
-// style of public/privacy.html and public/terms.html; Import takes that copy and Publicera
-// publishes it.
+// Puts the shipped legal texts into an exported Studio draft. The Worker serves a published CMS
+// page for /privacy and /terms before the static file, and Studio keeps a stored legal page as it
+// is, so the way in is the draft: Utkast & backup, Export; this tool; Import; Publicera.
 //
 // Usage: node tools/cms/apply-legal-pages.mjs <exported knc-cms-draft.json> <output.json>
-//
-// For each of the two pages, content.sv.html and content.en.html become the inside of the file's
-// <body>, its <main> element, as Studio seeds a missing page (modules/studio/src/nativePages.ts):
-// both language fields hold the whole bilingual document. The four css fields become the text of
-// the file's <style> elements, the empty string when it has none. /tokens.css and /info.css are
-// not stored; the Worker inlines them. Everything else in the draft is written back as it was read,
-// in the two-space JSON the export uses.
-//
-// Before anything is written, the text to write must pass what the CMS applies on import
-// (supabase/functions/cms-studio/index.ts): validateDocument for the whole draft, with its size
-// limits, and the markup contract for the two replaced pages. That contract is TypeScript, which
-// Node loads as it is from version 22.18.
-//
-// No file is overwritten, the input least of all. Every refusal is one sentence on stderr with exit
-// status 1, and nothing has been written when it is printed.
+// Needs Node 22.18 or later, which loads the TypeScript CMS contract the result is checked against.
 
 import { readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -31,7 +12,6 @@ import { parse, serialize } from 'parse5'
 
 const root = new URL('../../', import.meta.url)
 
-/** The pages replaced, and the shipped file each takes its body and style from. */
 export const LEGAL_PAGES = /** @type {const} */ ([
   { path: '/privacy', kind: 'privacy', file: 'public/privacy.html' },
   { path: '/terms', kind: 'terms', file: 'public/terms.html' },
@@ -103,11 +83,8 @@ const UPDATED =
   /(Senast uppdaterad|Uppdaterad|Last updated|Updated)\s+(\d{1,2})\s+([A-Za-zåäöÅÄÖ]+)\s+(\d{4})/g
 
 /**
- * What a stored legal page takes from the text of its shipped file, found by the file's structure:
- * the serialised children of <body>, which must be one <main> element, and the text of every
- * <style> element. A file that links a stylesheet the Worker does not inline for a CMS page would
- * look different there, and a file without a date would leave the owner unable to see which text
- * went in, so neither is taken.
+ * Refuses a stylesheet the Worker does not inline for a CMS page, and a file without a date, which
+ * would hide from the owner which text went in.
  * @param {string} file the file's name, for the sentence of a refusal
  * @param {string} text
  * @returns {Outcome<ShippedPage>}
@@ -139,8 +116,8 @@ const LANGS = /** @type {const} */ (['sv', 'en'])
 const MODES = /** @type {const} */ (['light', 'dark'])
 
 /**
- * A stored legal page with the shipped body and style in all six fields. Its other keys, the order
- * of its keys and any key a later Studio adds stay as they are.
+ * Both languages get the whole bilingual document, as Studio seeds a missing page
+ * (modules/studio/src/nativePages.ts).
  * @param {Record<string, unknown>} page
  * @param {LegalPage} legal
  * @param {ShippedPage} shipped
@@ -170,9 +147,7 @@ function pageWith(page, legal, shipped) {
 }
 
 /**
- * The draft with its /privacy and /terms holding the body and style of the two shipped files.
- * Nothing is read or written here, and the draft given is not changed: the result shares every
- * part it did not replace.
+ * Pure; the draft given is not changed.
  * @param {unknown} draft the parsed export
  * @param {Readonly<Record<LegalPage['path'], string>>} files the text of each page's shipped file
  * @returns {Outcome<Applied>}
@@ -208,20 +183,17 @@ export function applyLegalPages(draft, files) {
   }
 }
 
-// The origins the markup contract resolves a link against. The site origin is the one cms-studio
-// falls back to. Neither shipped page links a file of the library, so no link of theirs has the
-// storage origin, and a host name that cannot exist stands in for it.
+// The site origin is cms-studio's fallback; neither page links a library file, so the storage
+// origin is a host that cannot exist.
 const POLICY = {
   siteOrigin: 'https://bladeblendstudio.se',
   storageOrigin: 'https://storage.invalid',
 }
 
 /**
- * The sentence with which the CMS would refuse this draft on import, or null when it would not:
- * the document contract for the whole draft, then the markup contract for the two legal pages. The
- * other pages are as the export held them, and their library files are judged against a storage
- * origin this tool does not know. The markup contract writes the HTML it parsed back into the pages
- * it is given, so the draft passed here is a copy that is not the one written out.
+ * The sentence the CMS would refuse this draft with on import, or null. Markup is checked on the
+ * two legal pages only: the others' library links need a storage origin this tool does not know.
+ * The markup check rewrites the pages it is given, so pass a copy, not the text written out.
  * @param {unknown} document
  * @param {Contract} contract
  * @returns {string | null}
@@ -276,8 +248,7 @@ async function loadContract() {
 }
 
 /**
- * Reads the export and the two shipped files, applies them, checks the text to write against the
- * contract and writes it to a file that does not exist yet. Every effect of the tool is here.
+ * Every effect of the tool is here.
  * @param {readonly string[]} args the command line after the script
  * @returns {Promise<Outcome<readonly string[]>>} the lines to print
  */
@@ -312,7 +283,7 @@ async function run(args) {
   const problem = contractProblem(JSON.parse(text), contract.value)
   if (problem !== null) return refuse(`The CMS would refuse the result on import (${problem}).`)
   try {
-    // 'wx' fails on a path that exists, whatever it is called: a link to the input included.
+    // 'wx' refuses any existing path, a link to the input included.
     writeFileSync(output, text, { flag: 'wx' })
   } catch (error) {
     return refuse(
@@ -333,9 +304,8 @@ async function run(args) {
   }
 }
 
-// True for `node tools/cms/apply-legal-pages.mjs`; tests/unit/applyLegalPages.test.ts imports the
-// functions above. Node resolves symlinks for the entry module's URL, so the started path is
-// resolved the same way: a mismatch would do nothing and still exit 0.
+// Node resolves symlinks in the entry module's URL, so the started path is resolved too: a mismatch
+// would do nothing and still exit 0.
 function startedModuleUrl() {
   try {
     return pathToFileURL(realpathSync(process.argv[1] ?? '')).href

@@ -140,7 +140,6 @@ describe('business structured data', () => {
   })
 
   it.each([
-    // Already international, written with a plus.
     '+46793043671',
     '+46 79 304 36 71',
     // Neither a national number with one trunk zero nor a number behind 00.
