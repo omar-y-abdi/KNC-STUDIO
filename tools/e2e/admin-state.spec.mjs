@@ -26,6 +26,7 @@ const cases = [
     'late-profile',
     'password-flag',
     'late-settings-password',
+    'late-settings-update',
     'queued-write',
     'notification-gap',
     'late-reset-logout',

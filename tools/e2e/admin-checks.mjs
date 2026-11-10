@@ -2122,7 +2122,13 @@ async function verifyAdminSession(page, scenario) {
           if (held) finished.password.release()
           return
         }
-        if (url.pathname === '/auth/v1/user') return reply(adminSession(who ?? AUTH_USER_A).user)
+        if (url.pathname === '/auth/v1/user') {
+          const held = request.method() === 'PUT' && scenario === 'late-settings-update'
+          if (held) await holds.password.promise
+          await reply(adminSession(who ?? AUTH_USER_A).user)
+          if (held) finished.password.release()
+          return
+        }
         if (url.pathname === '/rest/v1/profiles') {
           const snapshot = {
             role: 'owner',
@@ -2218,7 +2224,9 @@ async function verifyAdminSession(page, scenario) {
     )
     await mountRealAdmin(
       page,
-      queuedWrite || scenario === 'late-settings-password' ? 'settings' : 'bookings',
+      queuedWrite || ['late-settings-password', 'late-settings-update'].includes(scenario)
+        ? 'settings'
+        : 'bookings',
     )
     if (scenario === 'late-reset-logout') {
       await data.waitFor()
@@ -2289,6 +2297,26 @@ async function verifyAdminSession(page, scenario) {
       assert(
         await page.evaluate(() => globalThis.localStorage.getItem('knc-admin-auth') === null),
         'A flagged profile kept its session in storage',
+      )
+    } else if (scenario === 'late-settings-update') {
+      await page.locator('#settings-current-password').fill('Synthetic-old-password-123!')
+      await page.locator('#settings-new-password').fill('Synthetic-new-password-123!')
+      await page.locator('#settings-confirm-password').fill('Synthetic-new-password-123!')
+      await page
+        .locator('form[aria-labelledby="settings-password-heading"] button[type="submit"]')
+        .click()
+      await waitCall((call) => call.path === '/auth/v1/user' && call.method === 'PUT')
+      await signOut()
+      holds.password.release()
+      await finished.password.promise
+      await page.clock.runFor(100)
+      assert(
+        (await page.locator('.knc-admin-shell').count()) === 0,
+        'Late password result reopened protected UI',
+      )
+      assert(
+        await page.evaluate(() => globalThis.localStorage.getItem('knc-admin-auth') === null),
+        'Late password result restored the signed-out session in storage',
       )
     } else if (scenario === 'late-settings-password') {
       await page.locator('#settings-current-password').fill('Synthetic-old-password-123!')
