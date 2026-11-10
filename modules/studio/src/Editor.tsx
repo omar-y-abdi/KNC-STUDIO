@@ -141,6 +141,10 @@ function afterCanvasPaint(callback: () => void): () => void {
   }
 }
 
+/** An image the owner can place: neither archived nor in the trash. */
+const isLibraryImage = (asset: CmsAsset): boolean =>
+  asset.mime.startsWith('image/') && !asset.archived && !asset.trashed_at
+
 function fontFamilyOptions(assets: CmsAsset[]): { id: string; label: string }[] {
   return [
     { id: "'Inter Variable',Inter,system-ui,sans-serif", label: 'Inter' },
@@ -192,6 +196,8 @@ const nudges = [
   { key: 'ArrowDown', name: 'Flytta nedåt', icon: 'arrowDown', dx: 0, dy: 1 },
   { key: 'ArrowRight', name: 'Flytta åt höger', icon: 'arrowRight', dx: 1, dy: 0 },
 ] as const
+
+const tabs = ['design', 'layers', 'blocks'] as const
 
 function label(component: Component | null): string {
   if (!component) return 'Sida'
@@ -615,14 +621,15 @@ export function CmsEditor(props: Props): JSX.Element {
         current.page.path === '/'
           ? current.presentation.pages.find((page) => page.path === '/about')
           : undefined
-      const aboutExport = aboutOwner
-        ? extractComposedAbout(
-            nativeExport.html,
-            exportedCss,
-            aboutOwner.content[current.lang].html,
-            { about: aboutOwner.content[current.lang].css[current.mode], home: storedHome },
-          )
-        : null
+      // About's part of a Home canvas, split off against the stored sheets of both pages.
+      const aboutPart = (canvasHtml: string, canvasCss: string) =>
+        aboutOwner
+          ? extractComposedAbout(canvasHtml, canvasCss, aboutOwner.content[current.lang].html, {
+              about: aboutOwner.content[current.lang].css[current.mode],
+              home: storedHome,
+            })
+          : null
+      const aboutExport = aboutPart(nativeExport.html, exportedCss)
       // Home's part of this export and of the checkpoint is stripped with the same owners. In each
       // canvas, the About sheet extracted from it owns its copies. With none extracted, About's
       // stored sheet does, in the form the canvas imported it.
@@ -664,14 +671,7 @@ export function CmsEditor(props: Props): JSX.Element {
         current.mode,
       )
       const checkpointCss = canonicalizeCmsRootStyles(checkpointExport.css, wrapperId)
-      const aboutBaseline = aboutOwner
-        ? extractComposedAbout(
-            checkpointExport.html,
-            checkpointCss,
-            aboutOwner.content[current.lang].html,
-            { about: aboutOwner.content[current.lang].css[current.mode], home: storedHome },
-          )
-        : null
+      const aboutBaseline = aboutPart(checkpointExport.html, checkpointCss)
       const pageBaseline = structuredClone(current.page)
       pageBaseline.content[current.lang].css[current.mode] = stripComposedCanvas(
         checkpointExport.html,
@@ -1111,7 +1111,7 @@ export function CmsEditor(props: Props): JSX.Element {
     editor.AssetManager.clear()
     editor.AssetManager.add(
       props.assets
-        .filter((asset) => asset.mime.startsWith('image/') && !asset.archived && !asset.trashed_at)
+        .filter(isLibraryImage)
         .map((asset) => ({ src: mediaUrl(asset, SUPABASE_URL ?? ''), name: asset.name })),
     )
   }, [props.assets])
@@ -1324,7 +1324,6 @@ export function CmsEditor(props: Props): JSX.Element {
           aria-label="Egenskapspanel"
           inert={loading}
           onKeyDown={(event) => {
-            const tabs = ['design', 'layers', 'blocks'] as const
             const index = tabs.indexOf(props.tab)
             const next =
               event.key === 'ArrowRight'
@@ -1344,7 +1343,7 @@ export function CmsEditor(props: Props): JSX.Element {
             event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus()
           }}
         >
-          {(['design', 'layers', 'blocks'] as const).map((tab) => (
+          {tabs.map((tab) => (
             <button
               type="button"
               role="tab"
@@ -1631,9 +1630,7 @@ export function CmsEditor(props: Props): JSX.Element {
       {imageTarget && (
         <CmsModal title="Välj bild" onClose={closePicker}>
           <p class="cms-help">Välj en bild. Ladda upp fler via Resurser.</p>
-          {!props.assets.some(
-            (asset) => asset.mime.startsWith('image/') && !asset.archived && !asset.trashed_at,
-          ) && (
+          {!props.assets.some(isLibraryImage) && (
             <div class="cms-resource-empty">
               <CmsIcon name="image" />
               <strong>Inga bilder att välja ännu</strong>
@@ -1641,16 +1638,12 @@ export function CmsEditor(props: Props): JSX.Element {
             </div>
           )}
           <div class="cms-resource-grid">
-            {props.assets
-              .filter(
-                (asset) => asset.mime.startsWith('image/') && !asset.archived && !asset.trashed_at,
-              )
-              .map((asset) => (
-                <button type="button" class="cms-resource-card" onClick={() => pickImage(asset)}>
-                  <img src={mediaUrl(asset, SUPABASE_URL ?? '')} alt={asset.alt} />
-                  <span>{asset.name}</span>
-                </button>
-              ))}
+            {props.assets.filter(isLibraryImage).map((asset) => (
+              <button type="button" class="cms-resource-card" onClick={() => pickImage(asset)}>
+                <img src={mediaUrl(asset, SUPABASE_URL ?? '')} alt={asset.alt} />
+                <span>{asset.name}</span>
+              </button>
+            ))}
           </div>
         </CmsModal>
       )}
