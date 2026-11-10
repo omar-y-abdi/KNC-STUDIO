@@ -78,22 +78,6 @@ function contactHours(facts: BusinessDiscoveryFacts, lang: CmsLang): string {
   )
 }
 
-function contactSlots(
-  html: string,
-  business: BusinessSettings,
-  heading: string,
-  details: string,
-  hours: string,
-): string {
-  return fillSlots(html, CONTACT_SLOTS, {
-    'contact-title': escapeElementText(heading + ' ' + business.name),
-    'contact-details': details,
-    'contact-hours': hours,
-    'data-business-name': escapeElementText(business.name),
-    'data-business-city': escapeElementText(business.city),
-  })
-}
-
 /** The Contact body with its server-owned slots filled from the live business and schedule. */
 export function renderContactFragment(
   html: string,
@@ -117,13 +101,13 @@ export function renderContactFragment(
     '</a></dd>'
   const address =
     `<dt>${copy.address}</dt><dd>` + escapeElementText(formatBusinessAddress(business)) + '</dd>'
-  return contactSlots(
-    html,
-    business,
-    copy.heading,
-    '<dl>' + address + phone + email + '</dl>',
-    contactHours(facts, lang),
-  )
+  return fillSlots(html, CONTACT_SLOTS, {
+    'contact-title': escapeElementText(copy.heading + ' ' + business.name),
+    'contact-details': '<dl>' + address + phone + email + '</dl>',
+    'contact-hours': contactHours(facts, lang),
+    'data-business-name': escapeElementText(business.name),
+    'data-business-city': escapeElementText(business.city),
+  })
 }
 
 /** The Contact title and description a visitor sees when the owner has set neither. */
