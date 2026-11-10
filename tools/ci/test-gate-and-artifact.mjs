@@ -51,7 +51,7 @@ test('workflow keeps plain Bash, formatted source, strict browser reports and pr
     assert.equal(job.if, 'always()')
     const gate = job.steps.find((step) => step.run?.startsWith('node tools/ci/check-gate.mjs '))
     assert.ok(gate)
-    assert.deepEqual(gate.run.split(' ').slice(3).sort(), job.needs.toSorted())
+    assert.deepEqual(gate.run.split(' ').slice(2).sort(), job.needs.toSorted())
     for (const dependency of job.needs) assert.ok(workflow.jobs[dependency])
   }
   for (const id of ['public-browsers', 'cms', 'startup', 'database-current']) {
@@ -156,8 +156,8 @@ test('only browser-only jobs use the matching Playwright image and skip browser 
   assert.ok(install.some((step) => step.run?.includes('playwright install --with-deps')))
   assert.deepEqual(workflow.jobs['public-browsers'].strategy.matrix, { shard: [1, 2] })
   assert.ok(
-    workflow.jobs['public-browsers'].steps.some((step) =>
-      step.run?.endsWith('browser public --shard=${{ matrix.shard }}/2'),
+    workflow.jobs['public-browsers'].steps.some(
+      (step) => step.run === 'npx playwright test --shard=${{ matrix.shard }}/2',
     ),
   )
   assert.deepEqual(workflow.jobs.startup.strategy.matrix.engine, ['chromium', 'webkit'])
@@ -371,27 +371,20 @@ test('shared build verification rejects corrupt, missing, extra and stale-source
   await assert.rejects(verifyArtifact(root), /different source/)
 })
 
-test('affected workflow binds every consumer and omission to the formatted producer', () => {
-  assert.equal(workflow.env.CI_BASE_SHA, '${{ github.event.pull_request.base.sha }}')
-  assert.equal(workflow.env.CI_HEAD_SHA, '${{ github.sha }}')
-  assert.equal(workflow.env.CI_EVENT_NAME, '${{ github.event_name }}')
+test('every job runs for every event and consumes the formatted producer', () => {
+  // Only the two gates carry a job condition, and it is always(): no job or step can be omitted.
+  assert.doesNotMatch(JSON.stringify(workflow.jobs), /\boutputs\b/)
   const format = workflow.jobs.format.steps
   const record = format.findIndex((step) => step.name === 'Record the exact tested source')
-  const derive = format.findIndex((step) => step.id === 'impact')
   const upload = format.findIndex((step) => step.uses?.startsWith('actions/upload-artifact@'))
-  assert.ok(record >= 0 && derive > record && upload > derive)
-  assert.ok(format[upload].with.path.includes('/impact.json'))
-  const node = action('ci-node').runs.steps
-  assert.ok(
-    node.findIndex((step) => step.run === 'node tools/ci/impact-plan.mjs verify') >
-      node.findIndex((step) => step.run === 'npm ci'),
-  )
+  assert.ok(record >= 0 && upload > record)
+  for (const file of ['/format.patch', '/source.json'])
+    assert.ok(format[upload].with.path.includes(file), file)
   for (const [id, job] of Object.entries(workflow.jobs)) {
-    const checkout = job.steps.find((step) => step.uses?.startsWith('actions/checkout@'))
-    assert.equal(checkout.with['fetch-depth'], 0, id)
-    if (!['format', 'quality', 'frontend', 'database'].includes(id))
-      assert.equal(job.if, `needs.format.outputs.${id} == 'true'`, id)
-    if (id !== 'format')
+    const gate = ['frontend', 'database'].includes(id)
+    assert.equal(job.if, gate ? 'always()' : undefined, id)
+    for (const step of job.steps) assert.ok(step.if === undefined || step.if === 'always()', id)
+    if (!gate)
       assert.ok(
         job.steps.some((step) => step.uses === './.github/actions/ci-node'),
         id,
@@ -400,17 +393,10 @@ test('affected workflow binds every consumer and omission to the formatted produ
   for (const id of ['quality', 'build', 'edge-functions'])
     assert.ok(
       workflow.jobs[id].steps.some(
-        (step) =>
-          step.run?.includes('verify-source .ci-source') &&
-          step.run.includes('impact-plan.mjs verify'),
+        (step) => step.run === 'node tools/ci/build-artifact.mjs verify-source .ci-source',
       ),
       id,
     )
-  for (const id of ['frontend', 'database']) {
-    assert.ok(workflow.jobs[id].needs.includes('format'))
-    const gate = workflow.jobs[id].steps.find((step) => step.run?.includes('check-gate.mjs'))
-    assert.ok(gate.run.includes('check-gate.mjs --plan '))
-  }
   assert.deepEqual(workflow.jobs.frontend.needs, [
     'format',
     'quality',
@@ -421,36 +407,52 @@ test('affected workflow binds every consumer and omission to the formatted produ
     'edge-functions',
   ])
   assert.deepEqual(workflow.jobs.database.needs, ['format', 'database-current'])
-  for (const [id, group] of [
-    ['cms', 'cms'],
-    ['public-browsers', 'public'],
-    ['startup', 'startup'],
-    ['database-current', 'customer'],
+  // Each browser job names its group once, in the job environment, and runs exactly two native
+  // commands: discovery and execution select the same cases, with no file or filter argument.
+  for (const [id, group, selector, expected] of [
+    [
+      'cms',
+      'cms',
+      ' --project=cms-${{ matrix.engine }} --shard=${{ matrix.shard }}/9',
+      '.ci-expected.json',
+    ],
+    ['public-browsers', 'public', ' --shard=${{ matrix.shard }}/2', '.ci-expected.json'],
+    ['startup', 'startup', ' --project=startup-${{ matrix.engine }}', '.ci-expected.json'],
+    ['database-current', 'customer', '', '"$RUNNER_TEMP/expected.json"'],
   ]) {
-    const prefix = `node tools/ci/impact-plan.mjs browser ${group}`
-    const commands = workflow.jobs[id].steps
-      .flatMap((step) => (step.run ?? '').split('\n'))
-      .filter((command) => command.startsWith(prefix))
-    assert.equal(commands.length, 2, id)
-    assert.equal(commands[0].split(' --list --reporter=json > ')[0], commands[1], id)
+    const job = workflow.jobs[id]
+    assert.equal(job.env.E2E_GROUP, group, id)
+    assert.doesNotMatch(JSON.stringify(job.steps), /E2E_GROUP/, id)
+    assert.deepEqual(
+      job.steps
+        .flatMap((step) => (step.run ?? '').split('\n'))
+        .filter((command) => /(?:^|[\s/@])playwright(?:\s|\/)/.test(command)),
+      [
+        `npx playwright test${selector} --list --reporter=json > ${expected}`,
+        `npx playwright test${selector}`,
+      ],
+      id,
+    )
   }
   const quality = workflow.jobs.quality.steps.map((step) => step.run ?? '').join('\n')
   for (const command of [
     'node tools/modules/boundaries.mjs',
     'node --test tools/modules/test*.mjs',
-    'node tools/ci/impact-plan.mjs units',
     'npm run lint',
     'npm run typecheck',
     'npm audit --omit=dev --audit-level=high',
   ])
     assert.ok(quality.includes(command), command)
+  // The unit suite runs whole: the step and the script it calls take no file or filter.
+  assert.ok(workflow.jobs.quality.steps.some((step) => step.run === 'npm test'))
+  assert.equal(JSON.parse(readFileSync('package.json', 'utf8')).scripts.test, 'vitest run')
   const ignore = readFileSync('.gitignore', 'utf8').split('\n')
   for (const path of ['/.ci-source/', '/.ci-build/', '/.ci-expected.json'])
     assert.ok(ignore.includes(path))
   assert.ok(!ignore.some((line) => /^\/?\.ci-\*/.test(line)))
 })
 
-test('affected selection does not weaken any test job timeout', () => {
+test('no test job timeout is weakened', () => {
   const minutes = {
     format: 10,
     quality: 10,

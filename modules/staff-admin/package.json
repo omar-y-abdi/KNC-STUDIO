@@ -23,7 +23,6 @@
     "test": "node ../../tools/modules/run.mjs staff-admin test",
     "lint": "node ../../tools/modules/run.mjs staff-admin lint",
     "typecheck": "node ../../tools/modules/run.mjs staff-admin typecheck",
-    "build": "node ../../tools/modules/run.mjs staff-admin build",
-    "plan": "node ../../tools/modules/run.mjs staff-admin plan"
+    "build": "node ../../tools/modules/run.mjs staff-admin build"
   }
 }

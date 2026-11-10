@@ -78,7 +78,7 @@ async function setup(context, { consent = true, remembered = false } = {}) {
   return state
 }
 
-async function details(page, open = true) {
+async function service(page, open = true) {
   if (open) await page.getByRole('button', { name: 'Boka tid', exact: true }).first().click()
   await page.getByTestId('booking-barber-option').first().click()
   await page
@@ -87,6 +87,9 @@ async function details(page, open = true) {
     .first()
     .click()
   await page.getByTestId('booking-service-option').first().click()
+}
+async function details(page, open = true) {
+  await service(page, open)
   await page.getByRole('button', { name: '10:00', exact: true }).click()
   return page.getByRole('dialog').locator('input:not([type="hidden"])')
 }
@@ -159,6 +162,37 @@ test('late device hydration preserves edits; withdrawal clears only untouched hi
   expect(state.listCalls).toBe(2)
   await page.reload()
   await values(await details(page, false), { name: '', phone: '', email: '' })
+})
+
+test('the details sheet takes focus as it opens, so an edit typed at once survives late hydration', async ({
+  page,
+  context,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  const state = await setup(context, { remembered: true })
+  let release
+  state.hold = new Promise((resolve) => {
+    release = resolve
+  })
+  await page.clock.install()
+  await page.goto(harnessOrigin)
+  await service(page)
+  // Freeze frames and timers so work the sheet defers past its opening frame stays pending while
+  // the name is typed. fill() is these two steps: select+focus the input, then insert the text
+  // into whatever holds focus; a CI frame can fall between them.
+  const time = page.getByRole('button', { name: '10:00', exact: true })
+  await expect(time).toBeVisible()
+  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000))
+  await time.click()
+  const fields = page.getByRole('dialog').locator('input:not([type="hidden"])')
+  await fields.nth(0).selectText()
+  await page.clock.runFor(100)
+  await page.keyboard.insertText('My edit')
+  await page.clock.resume()
+  release()
+  state.hold = null
+  await values(fields, { ...contact, name: 'My edit' })
+  expect(state.listCalls).toBe(2)
 })
 
 test('rejected optional storage never prefills device hints', async ({ page, context }) => {

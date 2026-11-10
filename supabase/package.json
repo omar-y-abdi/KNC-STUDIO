@@ -21,7 +21,6 @@
     "test": "node ../tools/modules/run.mjs backend test",
     "lint": "node ../tools/modules/run.mjs backend lint",
     "typecheck": "node ../tools/modules/run.mjs backend typecheck",
-    "build": "node ../tools/modules/run.mjs backend build",
-    "plan": "node ../tools/modules/run.mjs backend plan"
+    "build": "node ../tools/modules/run.mjs backend build"
   }
 }

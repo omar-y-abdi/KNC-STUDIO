@@ -486,7 +486,6 @@ verify_jwt = true
 [functions.upload-image]
 enabled = true
 verify_jwt = true
-static_files = ["./functions/upload-image/magick.wasm"]
 
 [functions.external-cleanup]
 enabled = true

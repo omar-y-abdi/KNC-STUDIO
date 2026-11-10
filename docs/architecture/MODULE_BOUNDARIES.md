@@ -1,10 +1,10 @@
-# Module ownership and affected verification
+# Module ownership and boundaries
 
 Base: `fix/mobile-booking-polish`, including CI repair `a719093`. Work happens on `refactor/module-boundaries`; further CI repairs on the base branch are integrated before final qualification. No production deployment or migration is part of this task.
 
 ## Intended outcome
 
-The repository has real npm workspaces with restricted source interfaces. An in-place Studio or staff-admin source change skips the backend jobs; a document/schema, rendering, database, CSS or build change runs every job. The decision is inspectable, tied to the formatted source tree, and fails closed.
+The repository has real npm workspaces with restricted source interfaces. Every pull request, push to `main` and manual run executes every CI job.
 
 ## Boundaries
 
@@ -25,31 +25,17 @@ Workspace `exports` and dependency declarations are enforced for production impo
 
 Move NativeSource and its source-cache/draft/example helpers into public-owned preview implementation. Keep same-origin messaging, endpoint, readiness/failure markers, inert capture, navigation containment and denied customer/write capabilities. Studio uses the named preview protocol/rendering interface. App remains an implementation detail. Persisted native IDs, JSX structure and public rendering must remain unchanged.
 
-## Impact model
+## Verification model
 
 - `boundaries.mjs` generates and validates source import edges with the installed TypeScript parser, including dynamic imports, exports and `new URL(..., import.meta.url)` worker edges. It resolves npm exports and explicit Deno targets.
-- The CI plan is a path classifier (`tools/ci/impact-plan.mjs`, described in `tools/modules/README.md`). Only in-place edits of Studio or staff-admin TypeScript/JavaScript source omit jobs, and only the Edge Function and current-schema database jobs. The boundary graph is not used to select tests.
-- Every other change selects full verification: other workspaces, SQL, CSS/HTML and assets, tests, tools, configuration, lockfiles and package exports, unknown paths, additions, deletions and renames, a missing or unusable base, untracked files, boundary errors and unreadable harness imports.
-- Main pushes and manual runs retain full integration. PR plans bind exact base/head and formatted tracked source identity, including format-induced changes.
-- The plan records required and omitted jobs with the reasons for full verification. Stable aggregate gates accept a skipped job only when a verified plan explicitly authorizes omission. Failures, missing expected jobs and tampered/stale plans fail.
+- CI does not select by change: every event runs every job (`.github/workflows/ci.yml`), and the boundary graph is not used to select tests.
 - The unit suite and each browser group run whole. Browser discovery and execution use identical arguments. Existing exact case accounting, no skips/retries and source/artifact checks remain in force.
 
 ## Delivery slices
 
 1. Record the source/CI inventory and implement workspace layout, explicit exports, preview ownership and executable import boundaries. Preserve source behavior and package/deploy resolution.
-2. Implement the CI plan and module-local commands. Prove the omission and every fail-closed case before workflow mutation.
-3. Wire CI job conditions and aggregate authorization to the verified plan. Keep full-suite mode. Contract/schema/CSS fixtures must select every job.
-4. Independent adversarial review, integration of parent CI repairs, full baseline verification, documentation and PR with exact evidence.
-
-## Acceptance examples
-
-| Change                                     | Must include                                                                      | Must avoid when proven unrelated                          |
-| ------------------------------------------ | --------------------------------------------------------------------------------- | --------------------------------------------------------- |
-| In-place Studio or staff-admin source edit | Boundary/type checks, the unit suite, every CMS, public and startup browser group | Edge Function checks, customer DB stack                   |
-| CMS document validator/format              | Studio, public rendering/preview, backend/SQL parity, release stamp               | Nothing selected away solely because source is TypeScript |
-| Booking schema/rules/migration             | Backend current schema, customer booking and staff behavior                       | No assumption that import reachability captures SQL       |
-| Public CSS/token/font asset                | Public rendering + Studio capture/preview and relevant build/startup              | No CSS exclusion from full verification                   |
-| CI/lockfile/package exports/unknown path   | Full verification                                                                 | No silent omission                                        |
+2. Implement module-local commands.
+3. Independent adversarial review, integration of parent CI repairs, full baseline verification, documentation and PR with exact evidence.
 
 ## Risks and verification
 

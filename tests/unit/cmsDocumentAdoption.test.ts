@@ -15,7 +15,7 @@ import {
 } from '../../modules/studio/src/corePages'
 import { CmsDraft, restoreRevision } from '../../modules/studio/src/draft'
 import type { CmsBackup } from '../../modules/studio/src/backup'
-import { normalizeDocument } from '../../modules/studio/src/normalizeDocument'
+import { normalizeDesktopCss, normalizeDocument } from '../../modules/studio/src/normalizeDocument'
 
 const legacyCss =
   '@media(max-width:1440px){#owner-offset{translate:12px 0!important}}' +
@@ -97,18 +97,20 @@ describe('Studio document adoption', () => {
     expect(normalizeDocument(current)).toBe(current)
   })
 
-  it('keeps raw-history and adopted canvas output identical in both schemes', () => {
+  it('keeps reviewed-history and adopted canvas output identical in both schemes', () => {
     const stored = storedDocument()
     const raw = stored.presentation.pages[0]?.content.en
+    // A history review repairs the revision it reads without adopting it.
+    const reviewed = normalizeDesktopCss(stored).presentation.pages[0]?.content.en
     const adopted = normalizeDocument(stored)
     const variant = adopted.presentation.pages[0]?.content.en
-    if (!variant || !raw) throw new Error('The About variant is missing')
+    if (!variant || !raw || !reviewed) throw new Error('The About variant is missing')
     for (const mode of ['light', 'dark'] as const) {
-      expect(nativeCanvas(raw, mode)).toEqual({
+      expect(nativeCanvas(reviewed, mode)).toEqual({
         html: raw.html,
         css: 'body{background-color:inherit;color:inherit}' + repairedCss,
       })
-      expect(nativeCanvas(variant, mode)).toEqual(nativeCanvas(raw, mode))
+      expect(nativeCanvas(variant, mode)).toEqual(nativeCanvas(reviewed, mode))
       expect(raw.css[mode]).toBe(legacyCss)
     }
   })

@@ -9,7 +9,10 @@ import {
   validateCompleteDocument,
   validateDocumentMedia,
 } from '../../packages/content-contracts/src/cms.ts'
-import { validateDocumentMarkupPlacements } from '../../packages/content-contracts/src/cms-markup.ts'
+import {
+  validateDocumentMarkupPlacements,
+  validateNoFrozenSitePages,
+} from '../../packages/content-contracts/src/cms-markup.ts'
 import { CMS_BUILT_ASSETS } from '../../packages/content-contracts/src/cms-built-assets.ts'
 
 // A fake cms-studio and upload-image that answer like the real Edge functions and database:
@@ -275,6 +278,8 @@ export async function nativeBackend(
       let checked
       try {
         checked = validated(body)
+        // Publication only, as in cms-studio/index.ts: validation still accepts a frozen page.
+        if (body.operation === 'publish') validateNoFrozenSitePages(checked.candidate)
       } catch (error) {
         if (!(error instanceof CmsValidationError)) throw error
         console.error('CMS_VALIDATION_ERROR', error.message)

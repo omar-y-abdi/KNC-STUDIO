@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { pathToFileURL } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const media = vi.hoisted(() => {
@@ -231,6 +232,9 @@ describe('upload-image HTTP paths', () => {
           p_detail: null,
         })
       }
+      expect(media.readWasm).toHaveBeenCalledExactlyOnceWith(
+        pathToFileURL('node_modules/@imagemagick/magick-wasm/dist/magick.wasm'),
+      )
       expect(media.initialize).toHaveBeenCalledOnce()
       expect(fetch).not.toHaveBeenCalled()
     },

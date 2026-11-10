@@ -1,6 +1,5 @@
 import { themeDeclarations } from '@bladeblend/content-contracts/site-theme-declarations'
 import { modeCss } from '@bladeblend/content-contracts/cms-mode-css'
-import { repairDesktopCss } from '@bladeblend/content-contracts/cms-device-css'
 import {
   clone,
   generate,
@@ -318,7 +317,7 @@ export function normalizeNativeOwnerRules(
 }
 
 export function nativeCanvasTree(variant: PageVariant, mode: CmsMode): CanvasTree {
-  const stored = repairDesktopCss(parseCanvasSheet(variant.css[mode]))
+  const stored = parseCanvasSheet(variant.css[mode])
   if (!variant.html.includes('data-knc-native="1"')) {
     const sheet = parseCanvasSheet('body{background-color:inherit;color:inherit}')
     sheet.children.appendList(modeCss(stored, mode).children)

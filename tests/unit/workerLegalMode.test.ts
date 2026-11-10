@@ -756,9 +756,9 @@ describe('Worker CMS contact and static fallback', () => {
 })
 
 // A.B01: owner CSS whose css-tree-generated form materializes an HTML raw-text boundary. The
-// submitted string carries no literal "</", so the current checkCss accepts it; modeCss and
-// repairDesktopCss then emit a literal </style><meta ...> and the <style> interpolation turns it
-// into an active element. The Worker trusts the stored document (publicCmsFromWire validates the
+// submitted string carries no literal "</", so the current checkCss accepts it; modeCss then
+// emits a literal </style><meta ...> and the <style> interpolation turns it into an active
+// element. The Worker trusts the stored document (publicCmsFromWire validates the
 // presentation only), so these serve the payload as a document published before any validation fix.
 // The materializing part, free of quotes so it nests inside either a double-quoted stylesheet
 // string or a single-quoted inline-style string. The refresh meta needs no quotes: its content is
@@ -815,7 +815,6 @@ describe('Worker CMS stylesheet boundary (A.B01)', () => {
 
   it.each([
     ['prefers-color-scheme (modeCss)', MODE_PAYLOAD, '</style><meta', '<\\/style'],
-    ['max-width:1440px (repairDesktopCss)', REPAIR_PAYLOAD, '</style><meta', '<\\/style'],
     ['uppercase end tag', UPPER_PAYLOAD, '</STYLE><meta', '<\\/STYLE'],
   ])(
     'keeps a stored boundary payload inert in the served sheet: %s',
@@ -868,10 +867,14 @@ describe('Worker CMS stylesheet boundary (A.B01)', () => {
     expect(html).not.toContain('</style><meta')
   })
 
-  it('serves escapes verbatim when neither modeCss nor repairDesktopCss runs', async () => {
-    // No prefers-color-scheme and no 1440px: both transforms return the string untouched, so the
-    // escapes are served as stored. A fix that always re-parses and regenerates would break this.
-    const css = `p::before{content:"\\3c b\\3e"}`
+  it.each([
+    ['a plain sheet', `p::before{content:"\\3c b\\3e"}`],
+    // The Studio repairs this breakpoint when it takes a document in; the Worker serves a sheet
+    // that still holds it as stored.
+    ['a legacy Desktop breakpoint', REPAIR_PAYLOAD],
+  ])('serves escapes verbatim when modeCss does not run: %s', async (_label, css) => {
+    // No prefers-color-scheme: the transform returns the string untouched, so the escapes are
+    // served as stored. A fix that always re-parses and regenerates would break this.
     const presentation = {
       ...emptyDocument().presentation,
       pages: [
@@ -879,7 +882,8 @@ describe('Worker CMS stylesheet boundary (A.B01)', () => {
       ],
     }
     const html = await serveBoundary(presentation, '/hemsida')
-    expect(sheet(html, 'cms-page-light')).toBe('p::before{content:"\\3c b\\3e"}')
+    expect(sheet(html, 'cms-page-light')).toBe(css)
+    expect(httpEquivElements(html)).toBe(0)
   })
 
   it.each([

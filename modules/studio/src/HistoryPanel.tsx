@@ -8,6 +8,7 @@ import { cmsApi } from './api'
 import { CmsModal } from './Modal'
 import { CmsIcon } from './Icon'
 import { LivePreview } from './LivePreview'
+import { normalizeDesktopCss } from './normalizeDocument'
 
 export function HistoryPanel({
   history,
@@ -26,7 +27,12 @@ export function HistoryPanel({
   onRestore: (document: CmsDocument) => void
   onError: (message: string) => void
 }): JSX.Element {
-  const [review, setReview] = useState<{ revision: number; document: CmsDocument } | null>(null)
+  const [review, setReview] = useState<{
+    revision: number
+    document: CmsDocument
+    /** The revision as the preview shows it; restoring adopts `document`. */
+    shown: CmsDocument
+  } | null>(null)
   const [path, setPath] = useState('/')
   const [busy, setBusy] = useState<number | null>(null)
   const request = useRef(0)
@@ -45,7 +51,11 @@ export function HistoryPanel({
       if (restore) onRestore(old.document)
       else {
         setPath('/')
-        setReview({ revision: value, document: old.document })
+        setReview({
+          revision: value,
+          document: old.document,
+          shown: normalizeDesktopCss(old.document),
+        })
       }
     } catch (reason) {
       if (request.current === id)
@@ -55,8 +65,8 @@ export function HistoryPanel({
     }
   }
   const page =
-    review?.document.presentation.pages.find((item) => item.path === path) ??
-    review?.document.presentation.pages[0]
+    review?.shown.presentation.pages.find((item) => item.path === path) ??
+    review?.shown.presentation.pages[0]
   return (
     <>
       <div class="cms-history-list">
@@ -131,7 +141,7 @@ export function HistoryPanel({
               {/* The revision's own business. Its document never reaches the native frame. */}
               <LivePreview
                 page={page}
-                presentation={review.document.presentation}
+                presentation={review.shown.presentation}
                 business={resolveBusinessSettings(
                   new Map(Object.entries(review.document.settings)),
                 )}

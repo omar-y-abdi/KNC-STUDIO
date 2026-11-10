@@ -127,8 +127,8 @@ protocol separate from its lazy runtime entry. Neither public startup nor staff 
 
 [Module boundaries and local commands](tools/modules/README.md) describes the enforced interfaces
 and the workspace commands. For example, `npm run check --workspace @bladeblend/studio` runs the
-boundary check, typechecks, Studio lint and the unit suite. The same document explains
-the source-bound plan that lets Studio and staff-admin source edits skip the backend jobs;
+boundary check, typechecks, Studio lint and the unit suite. Every pull request, push to `main` and
+manual run executes every CI job (`.github/workflows/ci.yml`); nothing is selected by changed path;
 [qualification evidence](docs/qa/2026-11-05-module-boundaries.md) records the extraction, review
 and execution results.
 
