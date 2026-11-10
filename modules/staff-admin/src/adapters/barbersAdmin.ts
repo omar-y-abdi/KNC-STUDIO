@@ -31,6 +31,7 @@ import type {
   NewBarber,
 } from '../types'
 import { err, ok, outcomeError } from '../types'
+import { invokeManageBarber } from './barberAccountAdmin'
 
 export const BARBER_COLUMNS = 'id,name,ig,role_sv,role_en,bio_sv,bio_en,active,sort_order'
 
@@ -164,23 +165,11 @@ export async function deleteBarber(
   purgeBookings: boolean,
 ): Promise<DeleteBarberOutcome> {
   try {
-    const { data, error } = await getAdminClient().functions.invoke('admin-manage-barber', {
-      body: {
-        action: 'delete',
-        barber_id: id,
-        purge_bookings: purgeBookings,
-      },
+    const payload = await invokeManageBarber({
+      action: 'delete',
+      barber_id: id,
+      purge_bookings: purgeBookings,
     })
-    let payload: unknown = data
-    if (payload === null && error !== null) {
-      try {
-        const response = (error as unknown as { context?: Response }).context
-        if (response === undefined) return outcomeError('network', WRITE_ERROR)
-        payload = await response.json()
-      } catch {
-        return outcomeError('network', WRITE_ERROR)
-      }
-    }
 
     const parsed = parseWith(adminDeleteBarberResponse, payload)
     if (!parsed.ok) return outcomeError('malformed', WRITE_ERROR)
