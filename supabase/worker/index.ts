@@ -41,7 +41,13 @@ import {
 } from '@bladeblend/content-contracts/cms'
 import { CMS_THEME_SCRIPT } from '@bladeblend/public-web/server/theme-script'
 import { publicBusinessDiscoveryResponse } from '@bladeblend/backend-contracts/rpcSchemas'
-import { customerGateway } from './customerGateway'
+import {
+  customerGateway,
+  gatewayError,
+  type GatewayErrorCode,
+  type GatewayRateLimit,
+} from './customerGateway'
+import { ownHeaders } from './responseHeaders'
 import {
   CMS_REVISION_ATTRIBUTE,
   NATIVE_PUBLIC_PATHS,
@@ -74,6 +80,10 @@ interface Env {
   SUPABASE_URL?: string
   SUPABASE_ANON_KEY?: string
   CUSTOMER_GATEWAY_SECRET?: string
+  /** The maintenance switch of wrangler.jsonc, read through maintenanceMode. */
+  MAINTENANCE?: string
+  /** Counts gateway requests; absent where no `ratelimits` binding is configured. */
+  GATEWAY_RATE_LIMIT?: GatewayRateLimit
 }
 
 interface WorkerContext {
@@ -95,6 +105,11 @@ const PUBLIC_FILE_ALIASES: Readonly<Record<string, string>> = {
 }
 const SITEMAP_PATH = '/sitemap.xml'
 const SECURITY_TXT_PATH = '/.well-known/security.txt'
+/** The deployed documents that answer a failed request and a closed site. Each also answers under
+ * its own file name, and is never a search result there. */
+const FAILURE_DOCUMENT = '/500.html'
+const MAINTENANCE_DOCUMENT = '/maintenance.html'
+type OutageDocument = typeof FAILURE_DOCUMENT | typeof MAINTENANCE_DOCUMENT
 
 function withoutTrailingSlash(pathname: string): string {
   let end = pathname.length
@@ -124,6 +139,24 @@ export function isSpaPath(pathname: string): boolean {
   return path === '/' || isPrivatePath(path)
 }
 
+/** The one path a fixed route answers at, for a request path that names the route in any letter
+ * case, with trailing slashes or by its file name: the path itself when it is already that one,
+ * null when it names no fixed route. The fixed routes are the native pages, the static pages and
+ * the staff routes. Below /admin/ the app reads the rest of the path, so only trailing slashes go
+ * there and the letters stay as written. */
+export function fixedRoutePath(pathname: string): string | null {
+  const clean = withoutTrailingSlash(pathname)
+  if (clean.startsWith('/admin/')) return clean
+  const folded = clean.toLowerCase()
+  if (folded === '/index.html') return '/'
+  const page = folded.endsWith('.html') ? folded.slice(0, -'.html'.length) : folded
+  if (Object.hasOwn(PUBLIC_FILE_ALIASES, page)) return page
+  return NATIVE_PUBLIC_PATHS.includes(folded) ||
+    (isPrivatePath(folded) && !folded.startsWith('/admin/'))
+    ? folded
+    : null
+}
+
 /** Paths the published presentation can hold a page for: created and core information pages.
  * Files, probes and unknown routes never read the presentation. */
 export function isCmsPagePath(pathname: string): boolean {
@@ -131,7 +164,12 @@ export function isCmsPagePath(pathname: string): boolean {
 }
 
 function isNoIndexPath(pathname: string): boolean {
-  return isPrivatePath(pathname) || withoutTrailingSlash(pathname) === '/google-calendar'
+  return (
+    isPrivatePath(pathname) ||
+    withoutTrailingSlash(pathname) === '/google-calendar' ||
+    pathname === FAILURE_DOCUMENT ||
+    pathname === MAINTENANCE_DOCUMENT
+  )
 }
 
 function withNoIndex(response: Response): Response {
@@ -149,14 +187,54 @@ function notFoundPage(request: Request, missing: Response): Response {
   return withNoIndex(
     new Response(request.method === 'HEAD' ? null : missing.body, {
       status: 404,
-      headers: missing.headers,
+      headers: ownHeaders(missing.headers),
     }),
   )
 }
 
+/** The asset layer serves GET and HEAD. Its answer to any other method names neither, so a 405
+ * that passes through the Worker says which methods the file accepts. */
+function withAllowedMethods(refused: Response): Response {
+  const headers = ownHeaders(refused.headers)
+  headers.set('Allow', 'GET, HEAD')
+  return new Response(refused.body, {
+    status: refused.status,
+    statusText: refused.statusText,
+    headers,
+  })
+}
+
+/** `url` on the apex host. The www host is the only other one the Worker answers for; any other
+ * host, a local one too, stays as it is. */
+function onApex(url: URL): URL {
+  const apex = new URL(url)
+  if (apex.hostname === WWW_HOST) apex.hostname = CANONICAL_HOST
+  return apex
+}
+
+/** The one permanent redirect to where a request is answered: the apex host and `pathname`, with
+ * the query of the request. Its target is answered without another redirect. */
 function redirectTo(url: URL, pathname: string): Response {
-  url.pathname = pathname
-  return new Response(null, { status: 308, headers: { Location: url.toString() } })
+  const target = onApex(url)
+  target.pathname = pathname
+  return new Response(null, {
+    status: 308,
+    headers: ownHeaders({ Location: target.toString() }),
+  })
+}
+
+/** A customer link carries its credential in the path. Its one answer moves the credential into a
+ * fragment on the apex host, which no server, log or Referer header receives. */
+function customerLinkRedirect(url: URL, token: string): Response {
+  return new Response(null, {
+    status: 302,
+    headers: ownHeaders({
+      Location: `${onApex(url).origin}/#booking_token=${token}`,
+      'Cache-Control': 'no-store',
+      'Referrer-Policy': 'no-referrer',
+      'X-Robots-Tag': 'noindex, nofollow',
+    }),
+  })
 }
 
 function assetRequest(request: Request, pathname: string, dynamic = false): Request {
@@ -362,6 +440,22 @@ async function publishedCmsPage(
   const page = cms?.presentation.pages.find((item) => item.path === path)
   if (!cms || !page) return null
   return method === 'HEAD' ? { read: 'exists' } : { read: 'page', cms, page }
+}
+
+/** The path a request is answered at. A fixed route has one spelling. Any other path may name a
+ * created page in another letter case or with trailing slashes: it does when the publication holds
+ * a page at its folded form, which only a GET or HEAD asks. Every path that is neither is answered
+ * as written: the letters of a file name mean what they say. */
+async function canonicalPath(env: Env, pathname: string, getOrHead: boolean): Promise<string> {
+  const fixed = fixedRoutePath(pathname)
+  if (fixed !== null) return fixed
+  const folded = withoutTrailingSlash(pathname).toLowerCase()
+  const created =
+    getOrHead &&
+    folded !== pathname &&
+    isCreatedPagePath(folded) &&
+    (await publishedCmsPage(env, folded, 'sv', 'HEAD')) !== null
+  return created ? folded : pathname
 }
 
 function discoveryFromWire(value: unknown): BusinessDiscovery | null {
@@ -703,6 +797,101 @@ const RUNTIME_ISLAND = /\bid="knc-(?:about|booking|my-bookings)-runtime"/
 const COLOR_SCHEME_META = /(<meta\b[^>]*\bname="color-scheme"[^>]*\bcontent=")[^"]*(")/i
 const LANGUAGE_ACTION = 'cms-site-action-language'
 const THEME_ACTION = 'cms-site-action-theme'
+
+/** Where the skip link of an authored page leads. */
+export type SkipTarget =
+  /** The shell's own #root: on an information page it holds the page's content and nothing else. */
+  | 'root'
+  /** The content of a created page, below its site header. */
+  | 'site-content'
+
+/** The words of the skip link, as the static documents and the app say them. */
+const SKIP_LABEL: Readonly<Record<CmsLang, string>> = {
+  sv: 'Hoppa till innehållet',
+  en: 'Skip to content',
+}
+/** The legal fallbacks are one document in both languages, as public/404.html is. */
+const BILINGUAL_SKIP_LABEL = `${SKIP_LABEL.sv} / <span lang="en">${SKIP_LABEL.en}</span>`
+/** The id renderSitePage gives the content of a created page; a frozen page stores the same one. */
+const SITE_CONTENT_ID = 'cms-site-content'
+
+/** The skip link the static documents carry (public/404.html): the first element a keyboard
+ * reaches. `label` is the Worker's own markup, never owner text. */
+function skipLink(target: string, label: string): string {
+  return `<a class="bb-skip bb-btn" href="#${target}">${label}</a>`
+}
+
+/** How an authored page shows that link, after the page's own sheets: above the viewport until it
+ * has focus, as public/info.css keeps the skip link of the static documents, and legible where
+ * neither that file nor /tokens.css is loaded (a created page stored with a frozen header). The
+ * shell's #root takes the focus of an information page's link and shows no ring around the whole
+ * page, as .bb-doc does in that file. */
+const SKIP_LINK_CSS =
+  '.bb-skip{position:absolute;top:.75rem;left:.75rem;z-index:2147483647;max-width:calc(100% - 1.5rem);padding:.75rem 1.4rem;border-radius:999px;background:var(--bb-accent,#1c1c1e);color:var(--bb-accent-text,#fff);font-weight:600;text-decoration:none;transform:translateY(-200%)}' +
+  '.bb-skip:focus{transform:none;outline:3px solid var(--bb-text,currentColor);outline-offset:4px}' +
+  '#root:focus{outline:none}' +
+  '@media print{.bb-skip{display:none}}'
+
+/** A deployed information page with the skip link the other static documents carry in their own
+ * markup: the link first in its body, and its main as the link's target. These pages cannot carry
+ * it themselves, because Studio seeds a CMS page from their body. `html` is the deployed file as it
+ * is, before any owner text is in it. A file without a body or a main, or whose main already has
+ * an id or a tabindex, is served as it is. */
+export function withFallbackSkipLink(html: string, label: string): string {
+  const body = firstStartTag(html, BODY_TAG_OPENING, 0)
+  if (body === null) return html
+  const main = firstStartTag(html, MAIN_TAG_OPENING, body.end)
+  if (main === null) return html
+  if (/\s(?:id|tabindex)\s*=/i.test(html.slice(main.start, main.end))) return html
+  const mainTagEnd = main.end - 1
+  return (
+    html.slice(0, body.end) +
+    skipLink('main', label) +
+    html.slice(body.end, mainTagEnd) +
+    ' id="main" tabindex="-1"' +
+    html.slice(mainTagEnd)
+  )
+}
+
+/** The `<` and the name of a start tag named exactly `body` or `main`: `<main-menu` is neither. */
+const BODY_TAG_OPENING = /<body(?=[\s>])/i
+const MAIN_TAG_OPENING = /<main(?=[\s>])/i
+
+/** Where a start tag is in a document. */
+interface StartTag {
+  /** The offset of its `<`. */
+  readonly start: number
+  /** The offset after its `>`. */
+  readonly end: number
+}
+
+/** The first start tag `opening` matches at or after `from`; null when there is none, or when the
+ * tag it opens never ends. */
+function firstStartTag(html: string, opening: RegExp, from: number): StartTag | null {
+  const found = opening.exec(html.slice(from))
+  if (found === null) return null
+  const start = from + found.index
+  const end = startTagEnd(html, start + found[0].length)
+  return end === null ? null : { start, end }
+}
+
+/** The offset after the `>` that ends the start tag whose name ends at `from`. A `>` inside a
+ * quoted attribute value ends no tag, as a browser reads it; null when the tag never ends. One
+ * pass over the tag, whatever it holds. */
+function startTagEnd(html: string, from: number): number | null {
+  let quote: '"' | "'" | null = null
+  for (let at = from; at < html.length; at += 1) {
+    const char = html[at]
+    if (quote !== null) {
+      if (char === quote) quote = null
+    } else if (char === '"' || char === "'") {
+      quote = char
+    } else if (char === '>') {
+      return at + 1
+    }
+  }
+  return null
+}
 
 /** A frozen page's stored markup with its header's language and theme actions pointed at this
  * response, as main's Worker pointed them on every response: the language action at the other
@@ -1047,6 +1236,8 @@ export function renderCmsPage(
   discovery: BusinessDiscovery | null = null,
   /** The page's URL in each language, when it is indexable under `canonicalUrl` itself. */
   alternates: LanguageUrls | null = null,
+  /** Where the page's skip link leads; null serves the page without one. */
+  skipTo: SkipTarget | null = null,
 ): string {
   const plan = planCmsRender(page, lang, requested, contact, presentation)
   const variant = plan.variant
@@ -1057,6 +1248,20 @@ export function renderCmsPage(
     pageSheets(variant, plan.mode) +
     themeSheets(plan.mode, presentation)
   const layout = shellLayout(html)
+  // The skip link is the Worker's own element in front of the shell's #root, and it leads to the
+  // #root itself or to the content wrapper of a created page, the first element with that id in
+  // the document. No owner markup is searched for a place or edited, so an owner id `main`, a
+  // second `root` or a body without a <main> changes nothing. Markup the app owns gets no link,
+  // and neither does a frozen page whose stored markup no longer names its content: the id is only
+  // looked for, and the link and its sheet only ever sit at the shell's own offsets.
+  const skipTarget =
+    !authored || layout.root === null || layout.headEnd === null || skipTo === null
+      ? null
+      : skipTo === 'root'
+        ? 'root'
+        : variant.html.includes(`id="${SITE_CONTENT_ID}"`)
+          ? SITE_CONTENT_ID
+          : null
   // Select from the original shell before injecting page-dependent styles or markup, so the
   // parser work is bounded by the build shell and reused across authored pages/modes.
   const dropped =
@@ -1129,6 +1334,7 @@ export function renderCmsPage(
         (alternates === null ? '' : hreflangLinks(alternates)) +
         (authored ? CMS_RESET : '') +
         styles +
+        (skipTarget === null ? '' : `<style id="cms-skip">${SKIP_LINK_CSS}</style>`) +
         (authored && !shellScheme ? `<meta name="color-scheme" content="${scheme}">` : ''),
     })
   if (root !== null)
@@ -1137,10 +1343,11 @@ export function renderCmsPage(
         start: root.tagStart,
         end: root.contentStart,
         fill: (tag) =>
+          (skipTarget === null ? '' : skipLink(skipTarget, SKIP_LABEL[lang])) +
           tag.replace(
             /\s*>$/,
             () =>
-              ` data-cms-public="1" data-cms-mode="${plan.mode}" data-cms-page-id="${escapeAttribute(page.id)}">`,
+              ` data-cms-public="1" data-cms-mode="${plan.mode}" data-cms-page-id="${escapeAttribute(page.id)}"${skipTarget === 'root' ? ' tabindex="-1"' : ''}>`,
           ),
       },
       { start: root.contentStart, end: root.contentEnd, fill: () => markup },
@@ -1216,7 +1423,9 @@ export function renderContactMetadata(
   facts: BusinessDiscoveryFacts = EMPTY_BUSINESS_FACTS,
 ): string {
   const defaults = contactDefaults(business, 'sv')
-  let rendered = replaceElementText(html, 'contact-meta-title', defaults.title)
+  // First: an attribute value keeps no quotes, so it cannot name the ids looked up after it.
+  let rendered = replaceMetaContent(html, 'contact-image-alt', business.name)
+  rendered = replaceElementText(rendered, 'contact-meta-title', defaults.title)
   rendered = replaceMetaContent(rendered, 'contact-description', defaults.description)
   const filled = fillBody(rendered, (body) => renderContactFragment(body, business, 'sv', facts))
   if (filled === null) throw new Error('Contact fallback is missing its body')
@@ -1458,6 +1667,9 @@ const SECURITY_TXT_HEADERS = {
   'Content-Type': 'text/plain; charset=utf-8',
   'Cache-Control': 'public, max-age=300',
 }
+/** A security.txt that names the default address because the business could not be read answers
+ * a failure: no cache keeps it, and the next request reads again. */
+const UNREAD_SECURITY_TXT_HEADERS = { ...SECURITY_TXT_HEADERS, 'Cache-Control': 'no-store' }
 
 /** security.txt naming `contact`, as issued today. */
 function issueSecurityTxt(contact: SecurityContact): string {
@@ -1491,7 +1703,7 @@ function markdownResponse(
   business: BusinessSettings,
   path: InformationPage,
 ): Response {
-  const headers = new Headers({
+  const headers = ownHeaders({
     'Content-Type': 'text/markdown; charset=utf-8',
     'Cache-Control': 'no-store',
     Link: '</llms.txt>; rel="describedby"',
@@ -1504,7 +1716,7 @@ function markdownResponse(
 }
 
 function markdownNotFound(request: Request): Response {
-  const headers = new Headers({
+  const headers = ownHeaders({
     'Content-Type': 'text/markdown; charset=utf-8',
     'Cache-Control': 'no-store',
     'X-Robots-Tag': 'noindex, nofollow',
@@ -1518,7 +1730,7 @@ function markdownNotFound(request: Request): Response {
 }
 
 function notAcceptable(request: Request): Response {
-  const headers = new Headers({
+  const headers = ownHeaders({
     'Content-Type': 'text/plain; charset=utf-8',
     'Cache-Control': 'no-store',
   })
@@ -1544,6 +1756,22 @@ const PRESENTATION_HEADERS = {
   'Cache-Control': 'no-store',
   'X-Robots-Tag': 'noindex',
 } as const
+/** A presentation read fails on a database read that was refused or cut off after 1.8 seconds, and
+ * the next read may succeed: the app asks again within two seconds by itself. */
+const PRESENTATION_RETRY = { 'Retry-After': '1' } as const
+
+/** The presentation's answer when there is no document to send. Its client reads the status and
+ * never the body, which stays the one it has always been. */
+function presentationUnavailable(
+  method: string,
+  status: 500 | 503,
+  extra: Readonly<Record<string, string>>,
+): Response {
+  return new Response(method === 'HEAD' ? null : JSON.stringify({ error: 'unavailable' }), {
+    status,
+    headers: ownHeaders({ ...PRESENTATION_HEADERS, ...extra }),
+  })
+}
 
 /** The revision a `public_cms_presentation` body opens with. PostgreSQL orders jsonb keys by
  * length, so `revision` precedes `presentation`; any other shape reads as no revision. */
@@ -1556,12 +1784,12 @@ function openingRevision(body: Uint8Array): number | null {
  * completely and opens with that very revision; otherwise this is the current document, uncached.
  * The body is buffered once and never parsed, so a read cut off by the timeout is never stored. */
 async function versionedPresentation(upstream: Response, requested: number): Promise<Response> {
-  const headers = new Headers(PRESENTATION_HEADERS)
+  const headers = ownHeaders(PRESENTATION_HEADERS)
   let body: ArrayBuffer
   try {
     body = await upstream.arrayBuffer()
   } catch {
-    return new Response(JSON.stringify({ error: 'unavailable' }), { status: 503, headers })
+    return presentationUnavailable('GET', 503, PRESENTATION_RETRY)
   }
   if (openingRevision(new Uint8Array(body)) === requested)
     headers.set('Cloudflare-CDN-Cache-Control', IMMUTABLE_EDGE_CACHE)
@@ -1571,7 +1799,6 @@ async function versionedPresentation(upstream: Response, requested: number): Pro
 async function fetchPublicContent(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url)
   const pathname = url.pathname
-  const cleanPathname = withoutTrailingSlash(pathname)
   const getOrHead = request.method === 'GET' || request.method === 'HEAD'
   const lang: CmsLang = url.searchParams.get('lang') === 'en' ? 'en' : 'sv'
 
@@ -1587,23 +1814,19 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
   }
 
   if (pathname === PRESENTATION_PATH) {
-    if (!getOrHead) return new Response(null, { status: 405 })
+    if (!getOrHead) {
+      return new Response(null, { status: 405, headers: ownHeaders({ Allow: 'GET, HEAD' }) })
+    }
     // Publication validates the database document; the browser validates its copy on receipt.
     // Stream this public RPC without cloning/parsing/stringifying megabytes at the edge.
     const response = await publicCmsResponse(env, 'public_cms_presentation')
     const requested = request.method === 'GET' ? requestedPresentationRevision(url) : null
     if (requested !== null && response?.ok) return versionedPresentation(response, requested)
-    return new Response(
-      request.method === 'HEAD'
-        ? null
-        : response?.ok
-          ? response.body
-          : JSON.stringify({ error: 'unavailable' }),
-      {
-        status: response?.ok ? 200 : 503,
-        headers: PRESENTATION_HEADERS,
-      },
-    )
+    if (!response?.ok) return presentationUnavailable(request.method, 503, PRESENTATION_RETRY)
+    return new Response(request.method === 'HEAD' ? null : response.body, {
+      status: 200,
+      headers: ownHeaders(PRESENTATION_HEADERS),
+    })
   }
 
   if (pathname === '/cms-public/source' && getOrHead) {
@@ -1616,27 +1839,14 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
     return notFoundPage(request, await serveAsset(request, env, '/404.html'))
   }
 
-  const customerAccessToken = customerAccessTokenFromPath(pathname)
-  if (customerAccessToken !== null && getOrHead) {
-    return new Response(null, {
-      status: 302,
-      headers: {
-        Location: `${url.origin}/#booking_token=${customerAccessToken}`,
-        'Cache-Control': 'no-store',
-        'Referrer-Policy': 'no-referrer',
-        'X-Robots-Tag': 'noindex, nofollow',
-      },
-    })
-  }
-
   if (pathname === '/llms.txt' && request.method === 'GET') {
     const discovery = await loadDiscovery(env)
     if (discovery !== null) {
       return new Response(renderLlmsText(discovery), {
-        headers: {
+        headers: ownHeaders({
           'Content-Type': 'text/plain; charset=utf-8',
           'Cache-Control': 'public, max-age=300',
-        },
+        }),
       })
     }
   }
@@ -1644,10 +1854,10 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
   // The sitemap lists the pages of the current publication. When that cannot be read, the static
   // file below answers with the core pages.
   if (pathname === SITEMAP_PATH && getOrHead) {
-    const headers = {
+    const headers = ownHeaders({
       'Content-Type': 'application/xml; charset=utf-8',
       'Cache-Control': 'public, max-age=300',
-    }
+    })
     // HEAD reads nothing, so it cannot know whether GET would read the publication: it answers
     // with the headers of the generated sitemap, also when GET would serve the static file.
     if (request.method === 'HEAD') return new Response(null, { headers })
@@ -1657,31 +1867,15 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
 
   // The only /.well-known/ path the Worker answers itself; any other is a file or a 404 below.
   if (pathname === SECURITY_TXT_PATH && getOrHead) {
-    const discovery = request.method === 'HEAD' ? null : await loadDiscovery(env)
-    return new Response(
-      request.method === 'HEAD'
-        ? null
-        : issueSecurityTxt(securityContact(discovery?.business.email ?? null)),
-      { headers: SECURITY_TXT_HEADERS },
-    )
+    // HEAD reads nothing and answers with the headers of a read that succeeded.
+    if (request.method === 'HEAD') {
+      return new Response(null, { headers: ownHeaders(SECURITY_TXT_HEADERS) })
+    }
+    const discovery = await loadDiscovery(env)
+    return new Response(issueSecurityTxt(securityContact(discovery?.business.email ?? null)), {
+      headers: ownHeaders(discovery === null ? UNREAD_SECURITY_TXT_HEADERS : SECURITY_TXT_HEADERS),
+    })
   }
-
-  // A native route with trailing slashes is the slashless route, as the app normalises it.
-  if (
-    pathname !== cleanPathname &&
-    (isSpaPath(cleanPathname) ||
-      NATIVE_PUBLIC_PATHS.includes(cleanPathname) ||
-      Object.hasOwn(PUBLIC_FILE_ALIASES, cleanPathname))
-  ) {
-    return redirectTo(url, cleanPathname)
-  }
-
-  const canonicalPath = pathname.endsWith('.html') ? pathname.slice(0, -'.html'.length) : undefined
-  if (canonicalPath !== undefined && Object.hasOwn(PUBLIC_FILE_ALIASES, canonicalPath)) {
-    return redirectTo(url, canonicalPath)
-  }
-
-  if (pathname === '/index.html') return redirectTo(url, '/')
 
   const nativePath = nativePublicPath(pathname)
   if (nativePath !== null && getOrHead) {
@@ -1739,18 +1933,18 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
     (dynamicLegal || dynamicContact) && request.method === 'GET' ? loadDiscovery(env) : null
   if (
     getOrHead &&
-    isCmsPagePath(cleanPathname) &&
+    isCmsPagePath(pathname) &&
     !isPrivatePath(pathname) &&
     pathname !== '/google-calendar'
   ) {
     const published = await publishedCmsPage(
       env,
-      cleanPathname,
+      pathname,
       lang,
       request.method === 'HEAD' ? 'HEAD' : 'GET',
     )
     if (published !== null) {
-      const informationPage = INFORMATION_PAGE_PATHS.includes(cleanPathname)
+      const informationPage = INFORMATION_PAGE_PATHS.includes(pathname)
       const [index, discovery, baseCss] = await Promise.all([
         serveAsset(request, env, '/index.html', true),
         published.read === 'exists' ? null : (informationDiscovery ?? loadDiscovery(env)),
@@ -1806,6 +2000,7 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
         business,
         discovery,
         identity.kind === 'translated' ? identity.urls : null,
+        informationPage ? 'root' : 'site-content',
       )
       return new Response(body, { status: index.status, headers })
     }
@@ -1824,7 +2019,7 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
         request.method === 'HEAD'
           ? null
           : renderContactMetadata(
-              await asset.text(),
+              withFallbackSkipLink(await asset.text(), SKIP_LABEL.sv),
               discovery?.business ?? DEFAULT_BUSINESS,
               discovery?.facts ?? EMPTY_BUSINESS_FACTS,
             ),
@@ -1837,11 +2032,16 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
       return new Response(
         request.method === 'HEAD'
           ? null
-          : renderLegalMetadata(await asset.text(), pathname, discovery?.business ?? null),
+          : renderLegalMetadata(
+              withFallbackSkipLink(await asset.text(), BILINGUAL_SKIP_LABEL),
+              pathname,
+              discovery?.business ?? null,
+            ),
         { status: asset.status, headers },
       )
     }
-    return isNoIndexPath(pathname) ? withNoIndex(asset) : asset
+    const answer = asset.status === 405 ? withAllowedMethods(asset) : asset
+    return isNoIndexPath(pathname) ? withNoIndex(answer) : answer
   }
 
   if (getOrHead) {
@@ -1911,57 +2111,159 @@ function publicContentFallback(pathname: string): PublicContentFallback | null {
   return pathname === SECURITY_TXT_PATH ? { kind: 'security-txt' } : null
 }
 
+/** The maintenance switch, as the MAINTENANCE variable of wrangler.jsonc sets it. */
+export type Maintenance = 'on' | 'off'
+
+/** Only the exact value "on" closes the site: a variable that is absent or misspelt leaves it
+ * open. */
+export function maintenanceMode(value: string | undefined): Maintenance {
+  return value === 'on' ? 'on' : 'off'
+}
+
+/** An answer the Worker gives in place of the one that was asked for. */
+interface Outage {
+  readonly status: 500 | 503
+  /** The deployed page a visitor reads. */
+  readonly document: OutageDocument
+  /** What a client of the gateway is told. */
+  readonly code: GatewayErrorCode
+  /** What the status needs beside the headers every such answer has. */
+  readonly headers: Readonly<Record<string, string>>
+  /** The page's message in both languages, for when the page itself cannot be read. */
+  readonly text: string
+}
+
+const OUTAGES = {
+  failure: {
+    status: 500,
+    document: FAILURE_DOCUMENT,
+    code: 'system',
+    headers: {},
+    text: 'Något gick fel. Försök igen om en stund.\nSomething went wrong. Please try again shortly.\n',
+  },
+  // The Worker cannot know how long the site stays closed: clients and crawlers are asked to come
+  // back in an hour.
+  maintenance: {
+    status: 503,
+    document: MAINTENANCE_DOCUMENT,
+    code: 'maintenance',
+    headers: { 'Retry-After': '3600' },
+    text: 'Webbplatsen är tillfälligt stängd för underhåll. Försök igen om en stund.\nThe site is temporarily down for maintenance. Please try again shortly.\n',
+  },
+} as const satisfies Readonly<Record<string, Outage>>
+
+/** A deployed outage page; null when the asset layer cannot give it. */
+async function deployedDocument(
+  request: Request,
+  env: Env,
+  path: OutageDocument,
+): Promise<Response | null> {
+  try {
+    const page = await env.ASSETS.fetch(new URL(path, request.url))
+    return page.ok ? page : null
+  } catch {
+    return null
+  }
+}
+
+/** The answer to `request` while the site is closed or after its handling failed. An /api/ path
+ * answers in the JSON its client reads; every other path answers with the deployed page, or with
+ * the page's message as plain text when the page cannot be read. Never stored, never a search
+ * result. */
+async function outageResponse(
+  request: Request,
+  env: Env,
+  kind: keyof typeof OUTAGES,
+): Promise<Response> {
+  const outage: Outage = OUTAGES[kind]
+  const { pathname } = new URL(request.url)
+  if (pathname === PRESENTATION_PATH) {
+    return presentationUnavailable(request.method, outage.status, outage.headers)
+  }
+  if (pathname.startsWith('/api/')) return gatewayError(outage.code, outage.status, outage.headers)
+  const page = await deployedDocument(request, env, outage.document)
+  const headers = ownHeaders(page === null ? undefined : renderedHeaders(page))
+  headers.set('Content-Type', `${page === null ? 'text/plain' : 'text/html'}; charset=utf-8`)
+  headers.set('Cache-Control', 'no-store')
+  headers.set('X-Robots-Tag', 'noindex, nofollow')
+  for (const [name, value] of Object.entries(outage.headers)) headers.set(name, value)
+  const body = request.method === 'HEAD' ? null : page === null ? outage.text : page.body
+  return new Response(body, { status: outage.status, headers })
+}
+
+async function respond(request: Request, env: Env, context: WorkerContext): Promise<Response> {
+  if (maintenanceMode(env.MAINTENANCE) === 'on') return outageResponse(request, env, 'maintenance')
+  const url = new URL(request.url)
+  const getOrHead = request.method === 'GET' || request.method === 'HEAD'
+
+  const customerAccessToken = customerAccessTokenFromPath(url.pathname)
+  if (customerAccessToken !== null && getOrHead) {
+    return customerLinkRedirect(url, customerAccessToken)
+  }
+
+  // One redirect answers every other spelling of a URL: the www host, and a path that names a
+  // route in another letter case, with trailing slashes or by its file name. The /api/ paths have
+  // one spelling each; only their host is corrected.
+  const pathname = url.pathname.startsWith('/api/')
+    ? url.pathname
+    : await canonicalPath(env, url.pathname, getOrHead)
+  if (pathname !== url.pathname || url.hostname === WWW_HOST) return redirectTo(url, pathname)
+
+  if (url.pathname === '/api/customer-bookings') return customerGateway(request, env)
+  if (url.pathname === '/api/bookings') return customerGateway(request, env, 'submit-booking')
+
+  if (url.hostname === CANONICAL_HOST && isPublicContentRequest(request, url)) {
+    const fallback = publicContentFallback(url.pathname)
+    try {
+      const response = await context.exports.PublicContent.fetch(request)
+      if (response.status < 500 || fallback === null) return response
+    } catch (error) {
+      if (fallback === null) throw error
+    }
+    // Metadata must never take the interactive site down. A failed/CPU-limited renderer runs
+    // in a separate entrypoint; this tiny fallback still loads the same app and published CMS.
+    switch (fallback.kind) {
+      case 'shell': {
+        const asset = await serveAsset(request, env, '/index.html', true)
+        // The unrendered shell still names the route's own language, canonical, og:url and
+        // alternates, and the account page stays out of the index in its header and its tags.
+        // The deployed shell holds no owner text, so the edits run on the whole document.
+        const headers = renderedHeaders(asset)
+        if (nativeIdentity(fallback.path).kind === 'account') headers.set('X-Robots-Tag', 'noindex')
+        const lang: CmsLang = url.searchParams.get('lang') === 'en' ? 'en' : 'sv'
+        return new Response(nativeShellHead(await asset.text(), fallback.path, lang, null), {
+          status: asset.status,
+          headers,
+        })
+      }
+      case 'sitemap': {
+        const asset = await serveAsset(request, env, SITEMAP_PATH, true)
+        const headers = new Headers(asset.headers)
+        headers.set('Cache-Control', 'no-store')
+        return new Response(asset.body, { status: asset.status, headers })
+      }
+      case 'security-txt':
+        return new Response(issueSecurityTxt({ kind: 'default' }), {
+          headers: ownHeaders(UNREAD_SECURITY_TXT_HEADERS),
+        })
+    }
+  }
+
+  const response = await fetchPublicContent(request, env)
+  return /^\/admin\/cms(?:\/|$)/.test(url.pathname) ? cmsFrameResponse(response, false) : response
+}
+
 export default {
+  /** Whatever fails while a request is handled, the visitor gets the deployed failure page and a
+   * client of /api/ the JSON it reads. */
   async fetch(request: Request, env: Env, context: WorkerContext): Promise<Response> {
-    const url = new URL(request.url)
-
-    if (url.hostname === WWW_HOST) {
-      url.hostname = CANONICAL_HOST
-      return new Response(null, { status: 308, headers: { Location: url.toString() } })
+    try {
+      return await respond(request, env, context)
+    } catch (error) {
+      // The runtime no longer logs it: log the error alone (a request path can be a credential).
+      // eslint-disable-next-line no-console
+      console.error(error)
+      return outageResponse(request, env, 'failure')
     }
-
-    if (url.pathname === '/api/customer-bookings') return customerGateway(request, env)
-    if (url.pathname === '/api/bookings') return customerGateway(request, env, 'submit-booking')
-
-    if (url.hostname === CANONICAL_HOST && isPublicContentRequest(request, url)) {
-      const fallback = publicContentFallback(url.pathname)
-      try {
-        const response = await context.exports.PublicContent.fetch(request)
-        if (response.status < 500 || fallback === null) return response
-      } catch (error) {
-        if (fallback === null) throw error
-      }
-      // Metadata must never take the interactive site down. A failed/CPU-limited renderer runs
-      // in a separate entrypoint; this tiny fallback still loads the same app and published CMS.
-      switch (fallback.kind) {
-        case 'shell': {
-          const asset = await serveAsset(request, env, '/index.html', true)
-          // The unrendered shell still names the route's own language, canonical, og:url and
-          // alternates, and the account page stays out of the index in its header and its tags.
-          // The deployed shell holds no owner text, so the edits run on the whole document.
-          const headers = renderedHeaders(asset)
-          if (nativeIdentity(fallback.path).kind === 'account')
-            headers.set('X-Robots-Tag', 'noindex')
-          const lang: CmsLang = url.searchParams.get('lang') === 'en' ? 'en' : 'sv'
-          return new Response(nativeShellHead(await asset.text(), fallback.path, lang, null), {
-            status: asset.status,
-            headers,
-          })
-        }
-        case 'sitemap': {
-          const asset = await serveAsset(request, env, SITEMAP_PATH, true)
-          const headers = new Headers(asset.headers)
-          headers.set('Cache-Control', 'no-store')
-          return new Response(asset.body, { status: asset.status, headers })
-        }
-        case 'security-txt':
-          return new Response(issueSecurityTxt({ kind: 'default' }), {
-            headers: { ...SECURITY_TXT_HEADERS, 'Cache-Control': 'no-store' },
-          })
-      }
-    }
-
-    const response = await fetchPublicContent(request, env)
-    return /^\/admin\/cms(?:\/|$)/.test(url.pathname) ? cmsFrameResponse(response, false) : response
   },
 } satisfies { fetch(request: Request, env: Env, context: WorkerContext): Promise<Response> }

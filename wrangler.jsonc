@@ -33,7 +33,22 @@
   },
   "vars": {
     "SUPABASE_URL": "https://soktgawvexeumqvtyhda.supabase.co",
+    // Maintenance switch. To close the site, change "off" to "on" and deploy the Worker: every
+    // request it receives then answers 503 with public/maintenance.html (JSON under /api/). To
+    // open it again, change back to "off" and deploy. Any value other than "on" leaves it open.
+    "MAINTENANCE": "off",
   },
+  // Counts the requests to /api/customer-bookings for each client address and action, an IPv6
+  // address by the /64 it is in: at most "limit" of them in "period" seconds, then 429 until the
+  // period has passed. The period is also GATEWAY_RATE_LIMIT_PERIOD_SECONDS in
+  // supabase/worker/customerGateway.ts.
+  "ratelimits": [
+    {
+      "name": "GATEWAY_RATE_LIMIT",
+      "namespace_id": "1001",
+      "simple": { "limit": 60, "period": 60 },
+    },
+  ],
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",

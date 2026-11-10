@@ -1563,11 +1563,14 @@ describe('security.txt (J)', () => {
     },
   )
 
-  it('names the default e-mail when Företag & SEO cannot be read', async () => {
+  it('names the default e-mail, unstored, when Företag & SEO cannot be read', async () => {
     stubNative(() => null, null)
     const before = new Date()
     const response = await serve('/.well-known/security.txt')
     expect(response.status).toBe(200)
+    expect(response.headers.get('Content-Type')).toBe('text/plain; charset=utf-8')
+    // The answer to a failed read is not kept: the next request reads the business again.
+    expect(response.headers.get('Cache-Control')).toBe('no-store')
     expectIssued(await response.text(), DEFAULT_BUSINESS.email, before)
   })
 
@@ -1582,6 +1585,8 @@ describe('security.txt (J)', () => {
       })
       const response = await serve('/.well-known/security.txt')
       expect(response.status).toBe(200)
+      // The business was read: this default is as lasting an answer as a written address.
+      expect(response.headers.get('Cache-Control')).toBe('public, max-age=300')
       const lines = (await response.text()).split('\n')
       expect(lines).toHaveLength(5)
       expect(lines[0]).toBe(`Contact: mailto:${DEFAULT_BUSINESS.email}`)

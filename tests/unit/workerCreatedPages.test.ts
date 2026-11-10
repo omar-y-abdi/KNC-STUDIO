@@ -472,3 +472,119 @@ describe('a classless legacy theme link (A.R06)', () => {
     expect(classes(link)).toEqual(expect.arrayContaining(['owner-theme', 'cms-site-action-theme']))
   })
 })
+
+// W2-8: the skip link of a created page leads to its content below the site header: the wrapper
+// renderSitePage puts around a live page's body, which a frozen page stores under the same id.
+describe('the skip link of a created page (W2-8)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  const SKIP_WORDS = { sv: 'Hoppa till innehållet', en: 'Skip to content' } as const
+  const words = (node: Element): string =>
+    node.childNodes.map((child) => ('value' in child ? child.value : '')).join('')
+  /** The served document: every element in document order, the two elements its body opens with,
+   * and its skip links. */
+  const view = (html: string) => {
+    const all = descendants(parse(html))
+    const body = all.find((node) => node.tagName === 'body')
+    if (!body) throw new Error('The served document has no body')
+    const [first, second] = children(body)
+    return {
+      all,
+      first,
+      second,
+      skipLinks: all.filter((node) =>
+        (value(node, 'class') ?? '').split(/\s+/).includes('bb-skip'),
+      ),
+      /** The element a link to `#id` leads to: the first with that id. */
+      target: (id: string): Element | undefined => all.find((node) => value(node, 'id') === id),
+    }
+  }
+
+  it.each(['sv', 'en'] as const)(
+    'leads a live page to its content below the site header (%s)',
+    async (lang) => {
+      const presentation = published()
+      presentation.pages.push(createdPage())
+      const html = await serve(presentation, `/hemsida?lang=${lang}`)
+      const { all, first: link, second: root, skipLinks, target } = view(html)
+      if (!link || !root) throw new Error('The served body is empty')
+      expect(link.tagName).toBe('a')
+      expect(value(link, 'class')).toBe('bb-skip bb-btn')
+      expect(value(link, 'href')).toBe('#cms-site-content')
+      expect(words(link)).toBe(SKIP_WORDS[lang])
+      expect(skipLinks).toHaveLength(1)
+      expect(value(root, 'id')).toBe('root')
+      // The #root of a created page holds its header too: it is not the target and takes no focus.
+      expect(value(root, 'tabindex')).toBeUndefined()
+      const content = target('cms-site-content')
+      if (!content) throw new Error('The served page has no content wrapper')
+      expect(content.tagName).toBe('div')
+      expect(content.parentNode).toBe(root)
+      expect(all.indexOf(withId(root, 'cms-site-header'))).toBeLessThan(all.indexOf(content))
+      expect(descendants(content).some((node) => node.tagName === 'main')).toBe(true)
+      expect(sheet(html, 'cms-skip')).toContain('.bb-skip{')
+      expect(html.indexOf('<style id="cms-skip">')).toBeLessThan(html.indexOf('</head>'))
+    },
+  )
+
+  it('leads to the wrapper when the owner body carries the same id, the id main and the id root', async () => {
+    const body =
+      '<main id="main"><div id="cms-site-content">Ägarens</div><div id="root">Ägarens rot</div></main>'
+    const page = createdPage()
+    page.content.sv.html = body
+    page.content.en.html = body
+    const presentation = published()
+    presentation.pages.push(page)
+    const html = await serve(presentation, '/hemsida')
+    const { first: link, second: root, target } = view(html)
+    if (!link || !root) throw new Error('The served body is empty')
+    expect(value(link, 'href')).toBe('#cms-site-content')
+    expect(target('cms-site-content')?.parentNode).toBe(root)
+    expect(target('root')).toBe(root)
+    expect(value(root, 'tabindex')).toBeUndefined()
+    // The owner body is served inside the wrapper as it is stored.
+    expect(html).toContain(`<div id="cms-site-content">${body}</div>`)
+  })
+
+  it.each(['sv', 'en'] as const)(
+    'leads a frozen page to the content it stores under that id, and serves it as stored (%s)',
+    async (lang) => {
+      const page = legacyPage()
+      const stored = page.content[lang].html
+      const html = await serve(withLegacy(page), `/hemsida?lang=${lang}`)
+      const { first: link, second: root, skipLinks, target } = view(html)
+      if (!link || !root) throw new Error('The served body is empty')
+      expect(link.tagName).toBe('a')
+      expect(value(link, 'class')).toBe('bb-skip bb-btn')
+      expect(value(link, 'href')).toBe('#cms-site-content')
+      expect(words(link)).toBe(SKIP_WORDS[lang])
+      expect(skipLinks).toHaveLength(1)
+      expect(value(root, 'id')).toBe('root')
+      expect(value(root, 'tabindex')).toBeUndefined()
+      const content = target('cms-site-content')
+      if (!content) throw new Error('The served page has no content wrapper')
+      expect(descendants(content).some((node) => node.tagName === 'main')).toBe(true)
+      expect(html).toContain(stored.slice(stored.indexOf('<nav id="cms-site-menu"')))
+      // A frozen page has no base sheet: the Worker's own sheet gives the link its whole look.
+      expect(sheet(html, 'cms-base')).toBe('')
+      expect(sheet(html, 'cms-skip')).toContain('background:var(--bb-accent,#1c1c1e)')
+    },
+  )
+
+  it('adds no link to a frozen page whose stored markup no longer names its content', async () => {
+    const unnamed = (lang: CmsLang): string =>
+      LEGACY_HTML[lang].replace('<div id="cms-site-content">', '<div>')
+    const page = legacyPage({ sv: unnamed('sv'), en: unnamed('en') })
+    expect(page.content.sv.html).not.toContain('cms-site-content')
+    expect(isFrozenSitePage(page)).toBe(true)
+    const html = await serve(withLegacy(page), '/hemsida')
+    const { first, skipLinks } = view(html)
+    if (!first) throw new Error('The served body is empty')
+    expect(skipLinks).toEqual([])
+    expect(value(first, 'id')).toBe('root')
+    expect(value(first, 'tabindex')).toBeUndefined()
+    expect(html).not.toContain('cms-skip')
+  })
+})
