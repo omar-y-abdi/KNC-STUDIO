@@ -177,7 +177,8 @@ export function connectCanvasStyles(editor: Editor, project?: (css: string) => s
   }
 }
 
-const attributes = [
+/** The attributes a source baseline records, and an owner edit can therefore override. */
+export const baselineAttributes = [
   'class',
   'title',
   'href',
@@ -198,6 +199,19 @@ function readBaseline(element: Element, mode: CmsMode): Record<string, string> {
   if (!value || typeof value !== 'object' || Array.isArray(value))
     throw new Error('Ogiltig källmetadata. Läs in den befintliga sidan igen.')
   return value as Record<string, string>
+}
+
+/** An attribute that still holds its `from` baseline takes the `to` baseline's value. */
+function swapBaselineAttributes(
+  element: Element,
+  from: Record<string, string>,
+  to: Record<string, string>,
+): void {
+  for (const name of baselineAttributes) {
+    if (element.getAttribute(name) !== (from[name] ?? null)) continue
+    if (to[name] === undefined) element.removeAttribute(name)
+    else element.setAttribute(name, to[name])
+  }
 }
 
 interface NativeStyle {
@@ -318,11 +332,7 @@ export function nativeCanvasTree(variant: PageVariant, mode: CmsMode): CanvasTre
   for (const element of doc.querySelectorAll('[data-knc-baseline]')) {
     const light = readBaseline(element, 'light')
     const current = mode === 'dark' ? readBaseline(element, 'dark') : light
-    for (const name of attributes) {
-      if (element.getAttribute(name) !== (light[name] ?? null)) continue
-      if (current[name] === undefined) element.removeAttribute(name)
-      else element.setAttribute(name, current[name])
-    }
+    swapBaselineAttributes(element, light, current)
     const style =
       element.getAttribute(`data-knc-${mode}`) ?? element.getAttribute('data-knc-light') ?? ''
     const native = nativeStyle(element, mode, styles)
@@ -377,11 +387,7 @@ export function exportNativeCanvas(
     if (element.id) originalStyles.set(element.id, native.style)
     const light = readBaseline(element, 'light')
     const current = mode === 'dark' ? readBaseline(element, 'dark') : light
-    for (const name of attributes) {
-      if (element.getAttribute(name) !== (current[name] ?? null)) continue
-      if (light[name] === undefined) element.removeAttribute(name)
-      else element.setAttribute(name, light[name])
-    }
+    swapBaselineAttributes(element, current, light)
     element.removeAttribute('style')
   }
   return {

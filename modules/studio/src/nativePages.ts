@@ -8,8 +8,8 @@ import contactEnglish from './contact.en.html?raw'
 import { INFORMATION_PAGE_PATHS } from '@bladeblend/content-contracts/cms'
 import { CORE_PAGE_IDS } from './corePages'
 import { NATIVE_PUBLIC_PATHS } from '@bladeblend/public-web/route-metadata'
+import { baselineAttributes } from './nativeCanvas'
 
-const attrs = ['class', 'title', 'href', 'target', 'rel', 'src', 'alt', 'aria-label', 'placeholder']
 const informationTemplates: Readonly<Record<string, string>> = {
   '/privacy': privacyTemplate,
   '/terms': termsTemplate,
@@ -70,6 +70,14 @@ export function mobileBarberCss(desktopHtml: string, mobileHtml: string): string
   }
   if (!rules.length) throw new Error('Mobilens barberarkort saknar egna presentationsstilar.')
   return `@media(max-width:768px){${rules.join('')}}`
+}
+
+/** An element's own text, as its source baseline records it. */
+export function baselineText(node: Element): string {
+  return [...node.childNodes]
+    .filter((child) => child.nodeType === 3)
+    .map((child) => child.textContent ?? '')
+    .join('')
 }
 
 export function snapshotNative(root: Element, prefix: string): string {
@@ -146,7 +154,7 @@ export function snapshotNative(root: Element, prefix: string): string {
     // Read-only previews still need source styles for both themes and future reloads.
     // They remain read-only because they have no data-knc-source identity.
     const baseline: Record<string, string> = Object.fromEntries(
-      attrs.flatMap((name) =>
+      baselineAttributes.flatMap((name) =>
         node.hasAttribute(name) ? [[name, node.getAttribute(name) ?? '']] : [],
       ),
     )
@@ -157,10 +165,7 @@ export function snapshotNative(root: Element, prefix: string): string {
         return identity ? [identity] : []
       }),
     )
-    baseline['text'] = [...node.childNodes]
-      .filter((child) => child.nodeType === 3)
-      .map((child) => child.textContent ?? '')
-      .join('')
+    baseline['text'] = baselineText(node)
     const textGaps = [false]
     for (const child of node.childNodes) {
       if (child.nodeType === 1) textGaps.push(false)
@@ -190,28 +195,44 @@ export function mergeModes(light: string, dark: string): string {
   return `<div data-knc-native="1" style="display:contents">${doc.body.innerHTML}</div>`
 }
 
-async function waitFor(
-  frame: HTMLIFrameElement,
-  predicate: (doc: Document) => boolean,
-): Promise<Document> {
-  const deadline = performance.now() + 20000
-  while (performance.now() < deadline) {
-    const doc = frame.contentDocument
-    if (doc?.documentElement && predicate(doc)) return doc
-    await new Promise((resolve) => setTimeout(resolve, 25))
-  }
-  throw new Error('Den befintliga webbplatsen kunde inte läsas. Inga mallsidor skapades.')
-}
-
-export async function readCorePageSource(): Promise<CmsPage[]> {
+/** The hidden Desktop-size frame a capture renders the public preview in. */
+export function openCaptureFrame(title: string, src: string): HTMLIFrameElement {
   const frame = document.createElement('iframe')
-  frame.title = 'Läser den befintliga webbplatsen'
+  frame.title = title
   frame.setAttribute('aria-hidden', 'true')
   frame.tabIndex = -1
   frame.style.cssText =
     'position:fixed;left:0;top:0;width:1440px;height:900px;opacity:0;pointer-events:none;z-index:-1;border:0'
-  frame.src = PUBLIC_PREVIEW_PATH
+  frame.src = src
   document.body.appendChild(frame)
+  return frame
+}
+
+/** The frame's document once `predicate` accepts it; `timeout` is the error after 20 s. */
+export async function waitForCapture(
+  frame: HTMLIFrameElement,
+  predicate: (doc: Document) => boolean,
+  timeout: string,
+  signal?: AbortSignal,
+): Promise<Document> {
+  const deadline = performance.now() + 20000
+  while (performance.now() < deadline) {
+    signal?.throwIfAborted()
+    const doc = frame.contentDocument
+    if (doc?.documentElement && predicate(doc)) return doc
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+  throw new Error(timeout)
+}
+
+export async function readCorePageSource(): Promise<CmsPage[]> {
+  const frame = openCaptureFrame('Läser den befintliga webbplatsen', PUBLIC_PREVIEW_PATH)
+  const waitFor = (predicate: (doc: Document) => boolean): Promise<Document> =>
+    waitForCapture(
+      frame,
+      predicate,
+      'Den befintliga webbplatsen kunde inte läsas. Inga mallsidor skapades.',
+    )
   const paths = NATIVE_PUBLIC_PATHS
   const data = new Map<string, PageSources>(
     paths.map((path) => [
@@ -224,7 +245,7 @@ export async function readCorePageSource(): Promise<CmsPage[]> {
   )
   const mobileAbout = new Map<string, string>()
   try {
-    await waitFor(frame, (doc) => doc.documentElement.dataset['kncSourceListening'] === '1')
+    await waitFor((doc) => doc.documentElement.dataset['kncSourceListening'] === '1')
     for (const lang of ['sv', 'en'] as const)
       for (const mode of ['light', 'dark'] as const)
         for (const device of ['Desktop', 'Mobile'] as const)
@@ -249,7 +270,7 @@ export async function readCorePageSource(): Promise<CmsPage[]> {
               { type: PREVIEW_MESSAGE.context, id, lang, mode, device, scene },
               location.origin,
             )
-            const doc = await waitFor(frame, (document) => {
+            const doc = await waitFor((document) => {
               if (document.documentElement.dataset['kncSourceError'] === id)
                 throw new Error(
                   'Källan kunde inte läsas: ' +
@@ -295,6 +316,15 @@ export async function readCorePageSource(): Promise<CmsPage[]> {
   for (const [index, path] of paths.entries()) {
     const variants = data.get(path)
     if (!variants) throw new Error('Källsidorna saknas')
+    const sheet = (lang: CmsLang, mode: CmsMode): string =>
+      responsive +
+      [...new Set(variants[lang][mode].map((item) => item.css))].join('\n') +
+      (path === '/about'
+        ? mobileBarberCss(
+            variants[lang][mode][0]?.html ?? '',
+            mobileAbout.get(`${lang}:${mode}`) ?? '',
+          )
+        : '')
     const content = Object.fromEntries(
       (['sv', 'en'] as const).map((lang) => [
         lang,
@@ -303,26 +333,7 @@ export async function readCorePageSource(): Promise<CmsPage[]> {
             variants[lang].light.map((item) => item.html).join(''),
             variants[lang].dark.map((item) => item.html).join(''),
           ),
-          css: {
-            light:
-              responsive +
-              [...new Set(variants[lang].light.map((item) => item.css))].join('\n') +
-              (path === '/about'
-                ? mobileBarberCss(
-                    variants[lang].light[0]?.html ?? '',
-                    mobileAbout.get(`${lang}:light`) ?? '',
-                  )
-                : ''),
-            dark:
-              responsive +
-              [...new Set(variants[lang].dark.map((item) => item.css))].join('\n') +
-              (path === '/about'
-                ? mobileBarberCss(
-                    variants[lang].dark[0]?.html ?? '',
-                    mobileAbout.get(`${lang}:dark`) ?? '',
-                  )
-                : ''),
-          },
+          css: { light: sheet(lang, 'light'), dark: sheet(lang, 'dark') },
         },
       ]),
     ) as CmsPage['content']
