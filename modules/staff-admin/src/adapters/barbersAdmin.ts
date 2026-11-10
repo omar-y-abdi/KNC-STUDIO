@@ -19,6 +19,7 @@ import {
   barberRows,
   parseWith,
   profileRow,
+  type BarberRow,
 } from '../adminSchemas'
 import type {
   AdminBarber,
@@ -37,17 +38,7 @@ const READ_ERROR = 'Kunde inte läsa barberare.'
 const WRITE_ERROR = 'Kunde inte spara. Försök igen.'
 
 /** Map a parsed raw barber row into the admin domain type. */
-function toBarber(r: {
-  id: string
-  name: string
-  ig: string
-  role_sv: string
-  role_en: string
-  bio_sv: string
-  bio_en: string
-  active: boolean
-  sort_order: number
-}): AdminBarber {
+function toBarber(r: BarberRow): AdminBarber {
   return {
     id: r.id,
     name: r.name,

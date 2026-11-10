@@ -6,7 +6,7 @@
 // Boundary discipline: rows Zod-parsed; failure -> AdminError; never throws to the UI.
 
 import { getAdminClient } from '../adminClient'
-import { addSlotBlockResponse, parseWith, slotBlockRows } from '../adminSchemas'
+import { addSlotBlockResponse, parseWith, slotBlockRows, type SlotBlockRow } from '../adminSchemas'
 import type { AdminBarberId, AdminResult, AvailabilityMutationOutcome, SlotBlock } from '../types'
 import { err, ok, outcomeError } from '../types'
 
@@ -16,13 +16,7 @@ const WRITE_ERROR = 'Kunde inte spara. Försök igen.'
 const COLUMNS = 'id,barber_id,block_date,start_min,end_min'
 
 /** Map a parsed raw block row to the domain type. */
-function toSlotBlock(r: {
-  id: string
-  barber_id: string
-  block_date: string
-  start_min: number
-  end_min: number
-}): SlotBlock {
+function toSlotBlock(r: SlotBlockRow): SlotBlock {
   return {
     id: r.id,
     barberId: r.barber_id,

@@ -5,7 +5,7 @@
 // Boundary discipline: rows Zod-parsed; failure -> AdminError; never throws to the UI.
 
 import { getAdminClient } from '../adminClient'
-import { addTimeOffResponse, parseWith, timeOffRows } from '../adminSchemas'
+import { addTimeOffResponse, parseWith, timeOffRows, type TimeOffRow } from '../adminSchemas'
 import type { AdminBarberId, AdminResult, AvailabilityMutationOutcome, TimeOff } from '../types'
 import { err, ok, outcomeError } from '../types'
 
@@ -13,13 +13,7 @@ const READ_ERROR = 'Kunde inte läsa ledighet.'
 const WRITE_ERROR = 'Kunde inte spara. Försök igen.'
 
 /** Map a parsed raw time-off row to the domain type. */
-function toTimeOff(r: {
-  id: string
-  barber_id: string
-  start_date: string
-  end_date: string
-  reason: string
-}): TimeOff {
+function toTimeOff(r: TimeOffRow): TimeOff {
   return {
     id: r.id,
     barberId: r.barber_id,

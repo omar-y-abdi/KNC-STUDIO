@@ -7,6 +7,7 @@ import {
   deleteRecurringBreakResponse,
   parseWith,
   recurringBreakRows,
+  type RecurringBreakRow,
 } from '../adminSchemas'
 import type {
   AdminBarberId,
@@ -21,13 +22,7 @@ const READ_ERROR = 'Kunde inte läsa återkommande pauser.'
 const WRITE_ERROR = 'Kunde inte spara. Försök igen.'
 const COLUMNS = 'id,barber_id,weekday,start_min,end_min'
 
-function toRecurringBreak(r: {
-  id: string
-  barber_id: string
-  weekday: Weekday
-  start_min: number
-  end_min: number
-}): RecurringBreak {
+function toRecurringBreak(r: RecurringBreakRow): RecurringBreak {
   return {
     id: r.id,
     barberId: r.barber_id,
