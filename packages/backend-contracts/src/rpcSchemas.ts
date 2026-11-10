@@ -19,6 +19,9 @@ z.config({ jitless: true })
 const isoTimestamp = z.string().regex(ISO_TIMESTAMP, 'Invalid datetime')
 const bookingDurationMin = z.number().finite().int().min(1).max(600)
 const serviceDurationMin = z.number().finite().int().min(5).max(600)
+const price = z.number().finite().min(0).max(100000)
+const weekday = z.number().int().min(0).max(6)
+const mobilePhone = z.string().regex(/^07[0-9]{8}$/)
 const sortOrder = z.number().finite().refine(Number.isInteger).min(0)
 
 /**
@@ -29,7 +32,7 @@ const sortOrder = z.number().finite().refine(Number.isInteger).min(0)
 const ratingInt = z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)])
 
 const canonicalWeekdays = z
-  .array(z.number().int().min(0).max(6))
+  .array(weekday)
   .min(1)
   .superRefine((weekdays, context) => {
     for (let index = 1; index < weekdays.length; index += 1) {
@@ -110,7 +113,7 @@ const myBookingRow = z.object({
   barber_id: z.string(),
   barber_name: z.string().optional(),
   service_name: z.string(),
-  price: z.number().finite().min(0).max(100000),
+  price,
   duration_min: bookingDurationMin,
   start_at: isoTimestamp,
 })
@@ -121,10 +124,10 @@ const listCustomerBookingsOk = z.object({
   session_proof: customerSessionProof,
   receipt_proof: customerSessionProof.optional(),
   name: z.string().optional(),
-  phone: z.string().regex(/^07[0-9]{8}$/),
+  phone: mobilePhone,
   email: z.string().email().optional(),
   emails: z.array(z.string().email()).optional(),
-  phones: z.array(z.string().regex(/^07[0-9]{8}$/)).optional(),
+  phones: z.array(mobilePhone).optional(),
   bookings: z.array(myBookingRow),
 })
 const listDeviceBookingsOk = z.object({
@@ -133,7 +136,7 @@ const listDeviceBookingsOk = z.object({
   booking_contact: z
     .object({
       name: z.string(),
-      phone: z.string().regex(/^07[0-9]{8}$/),
+      phone: mobilePhone,
       email: z.string().email(),
     })
     .optional(),
@@ -224,7 +227,7 @@ export const publicServiceRow = z.object({
   id: z.string(),
   barber_id: z.string(),
   name: z.string(),
-  price: z.number().finite().min(0).max(100000),
+  price,
   duration_min: serviceDurationMin,
   active: z.boolean(),
   sort_order: sortOrder,
@@ -253,13 +256,13 @@ export const publicBusinessDiscoveryResponse = z.object({
     z.object({
       id: z.string(),
       barber_id: z.string(),
-      price: z.number().finite().min(0).max(100000),
+      price,
     }),
   ),
   schedules: z.array(
     z.object({
       barber_id: z.string(),
-      weekday: z.number().int().min(0).max(6),
+      weekday,
       start_min: z.number().int().min(0).max(1439),
       end_min: z.number().int().min(1).max(1440),
     }),
