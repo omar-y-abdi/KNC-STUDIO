@@ -239,6 +239,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
   const [turnstileToken, setTurnstileToken] = useState('')
   const [turnstileNonce, setTurnstileNonce] = useState(0)
   const challengeRequired = props.challengeEnabled !== false && turnstileConfigured
+  const submitBlocked = submitting || (challengeRequired && turnstileToken === '')
 
   const submitErrorText = (error: ReviewError): string => {
     switch (error.kind) {
@@ -257,30 +258,23 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
     }
   }
 
+  // Editing a field clears the thank-you, the submit error and that field's own error.
+  const setField = <K extends keyof ReviewDraft>(key: K, value: ReviewDraft[K]): void => {
+    setThanks(false)
+    setSubmitError(null)
+    setErrors((p) => (p[key] ? { ...p, [key]: false } : p))
+    setDraft((d) => ({ ...d, [key]: value }))
+  }
   const setPhone = (e: JSX.TargetedInputEvent<HTMLInputElement>): void => {
     typedPhone.current = true
-    setThanks(false)
-    setSubmitError(null)
-    setErrors((p) => (p.phone ? { ...p, phone: false } : p))
-    const v = e.currentTarget.value
-    setDraft((d) => ({ ...d, phone: v }))
+    setField('phone', e.currentTarget.value)
   }
-  const setText = (e: JSX.TargetedInputEvent<HTMLTextAreaElement>): void => {
-    setThanks(false)
-    setSubmitError(null)
-    setErrors((p) => (p.text ? { ...p, text: false } : p))
-    const v = e.currentTarget.value
-    setDraft((d) => ({ ...d, text: v }))
-  }
-  const setRating = (r: Rating): void => {
-    setThanks(false)
-    setSubmitError(null)
-    setErrors((p) => (p.rating ? { ...p, rating: false } : p))
-    setDraft((d) => ({ ...d, rating: r }))
-  }
+  const setText = (e: JSX.TargetedInputEvent<HTMLTextAreaElement>): void =>
+    setField('text', e.currentTarget.value)
+  const setRating = (r: Rating): void => setField('rating', r)
 
   const submit = async (): Promise<void> => {
-    const parsed = parseReview({ phone: draft.phone, rating: draft.rating, text: draft.text })
+    const parsed = parseReview(draft)
     if (!parsed.ok) {
       setErrors(parsed.fields)
       return
@@ -925,15 +919,12 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
 
           <button
             type="button"
-            onClick={
-              submitting || (challengeRequired && turnstileToken === '') ? undefined : onSubmitClick
-            }
-            disabled={submitting || (challengeRequired && turnstileToken === '')}
+            onClick={submitBlocked ? undefined : onSubmitClick}
+            disabled={submitBlocked}
             style={{
               ...s.bookBtnStyle,
-              opacity: submitting || (challengeRequired && turnstileToken === '') ? 0.5 : 1,
-              cursor:
-                submitting || (challengeRequired && turnstileToken === '') ? 'default' : 'pointer',
+              opacity: submitBlocked ? 0.5 : 1,
+              cursor: submitBlocked ? 'default' : 'pointer',
             }}
           >
             {tx.reviewSubmit}
