@@ -13,19 +13,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
 import { buildAuthUrl, signState } from '../_shared/calendar.ts'
-
-const corsHeaders: Record<string, string> = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
-
-function json(body: unknown, status: number): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, 'content-type': 'application/json' },
-  })
-}
+import { callerBarberId, corsHeaders, json } from '../_shared/calendarCaller.ts'
 
 /** A same-scheme https origin we may link back to from the callback page (never auto-redirected). */
 function safeOrigin(raw: string | null): string | undefined {
@@ -54,29 +42,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
   const service = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } })
 
-  // AUTH GATE (fail-closed): validate JWT, then read the caller's OWN role + barber_id from the DB.
-  const authHeader = req.headers.get('authorization') ?? ''
-  const jwt = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : ''
-  if (!jwt) return json({ ok: false, error: 'unauthorized' }, 401)
-
-  const { data: callerData, error: callerError } = await service.auth.getUser(jwt)
-  if (callerError || callerData.user === null)
-    return json({ ok: false, error: 'unauthorized' }, 401)
-
-  const { data: profile, error: profileError } = await service
-    .from('profiles')
-    .select('role, barber_id, account_enabled')
-    .eq('id', callerData.user.id)
-    .single()
-  if (profileError || profile === null) return json({ ok: false, error: 'unauthorized' }, 401)
-
   // Only a linked barber connects a personal calendar. An owner (no barber_id) is refused — consent
   // requires the barber's own Google login, which the owner cannot perform on their behalf.
-  const barberId =
-    profile.role === 'barber' && profile.account_enabled === true ? profile.barber_id : null
-  if (typeof barberId !== 'string' || barberId === '') {
-    return json({ ok: false, error: 'forbidden' }, 403)
-  }
+  const barberId = await callerBarberId(req, service)
+  if (barberId instanceof Response) return barberId
 
   // Bind the barber id into a short-lived signed state (CSRF + identity). iat in epoch seconds.
   const nowSec = Math.floor(Date.now() / 1000)
