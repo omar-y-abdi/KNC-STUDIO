@@ -36,7 +36,7 @@ test('canvas CSS trees survive import and startup yields return control to the b
       const fromText = parseCanvasCss(bindCmsRootStyles(css, 'editor-root'), editor)
       const repeated = parseCanvasCss(bound, editor)
       const nestedCss =
-        '#safe{width:10px;@layer{&{width:20px}}@layer{&{width:30px}}width:40px;@media(min-width:769px){@supports(display:grid){@container(min-width:100px){&{width:56%!important}}}}& __proto__{color:red}& constructor{color:blue}}'
+        '#safe{width:10px;&.twice{width:20px}&.twice{width:30px}width:40px;@media(min-width:769px){@supports(display:grid){@container(min-width:100px){&{width:56%!important}}}}& __proto__{color:red}& constructor{color:blue}}'
       validateMarkup('', nestedCss, {
         siteOrigin: globalThis.location.origin,
         storageOrigin: 'https://storage.example.test',
@@ -65,6 +65,30 @@ test('canvas CSS trees survive import and startup yields return control to the b
           rejectedLoss.push(true)
         }
       }
+      // The canvas keeps neither a cascade layer nor a selector function with alternatives.
+      const refused = [
+        '@layer base{#safe{width:20px}}',
+        '@layer{#safe{width:20px}}',
+        '@layer base,overrides;#safe{width:20px}',
+        '@media(min-width:769px){@layer base{#safe{width:20px}}}',
+        '#safe{@layer{&{width:20px}}}',
+        ':is(#safe,#other){width:20px}',
+        '#safe:where(.a,.b){width:20px}',
+        '#safe:not(.a,.b){width:20px}',
+        '#safe{&:is(.a,.b){width:20px}}',
+      ].map((unkept) => {
+        try {
+          parseCanvasCss(unkept, editor)
+          return 'imported'
+        } catch (error) {
+          return error.message
+        }
+      })
+      // One alternative is no list, as in the guards a resize writes.
+      const single = parseCanvasCss(
+        '#safe:is(.a):not(.b){width:20px;&:where(#safe){width:30px}}',
+        editor,
+      ).length
       const failureUnchanged = beforeFailedImport === JSON.stringify(editor.getProjectData())
       let schedulerCalls = 0
       Object.defineProperty(globalThis, 'scheduler', {
@@ -92,6 +116,8 @@ test('canvas CSS trees survive import and startup yields return control to the b
         nestedFromText,
         safePrototype,
         rejectedLoss,
+        refused,
+        single,
         failureUnchanged,
         schedulerCalls,
         inputRan,
@@ -115,15 +141,15 @@ test('canvas CSS trees survive import and startup yields return control to the b
   assert.deepEqual(result.nestedFromText, result.nested, 'Text and prepared-tree imports agree')
   assert.deepEqual(Object.keys(result.nested[0].style), [
     'width',
-    '@layer',
-    '@layer ',
+    '&.twice',
+    '&.twice ',
     'width ',
     '@media (min-width:769px)',
     '& __proto__',
     '& constructor',
   ])
-  assert.equal(result.nested[0].style['@layer']['&'].width, '20px')
-  assert.equal(result.nested[0].style['@layer ']['&'].width, '30px')
+  assert.equal(result.nested[0].style['&.twice'].width, '20px')
+  assert.equal(result.nested[0].style['&.twice '].width, '30px')
   assert.equal(result.nested[0].style['width '], '40px')
   assert.equal(
     result.nested[0].style['@media (min-width:769px)']['@supports (display:grid)'][
@@ -137,6 +163,12 @@ test('canvas CSS trees survive import and startup yields return control to the b
     [true, true, true],
     'Unsupported syntax must fail before importing models',
   )
+  assert.deepEqual(
+    result.refused,
+    Array(9).fill('Sidans CSS innehåller syntax som inte kan bevaras. Källan har bevarats.'),
+    'A cascade layer or a list of selector alternatives must fail before importing models',
+  )
+  assert.equal(result.single, 1, 'A selector function with one alternative imports')
   assert.equal(result.failureUnchanged, true)
   assert.equal(result.schedulerCalls, 1, 'Use scheduler.yield when available')
   assert.equal(result.inputRan, true, 'The fallback must yield a task, not only a microtask')
@@ -189,9 +221,7 @@ test('information-page comparison uses the editing canvas base and selected them
   }
 })
 
-test('canvas style imports retain layer precedence, root selectors and declaration order', async ({
-  page,
-}) => {
+test('canvas style imports retain root selectors and declaration order', async ({ page }) => {
   const pageErrors = []
   page.on('pageerror', (error) => pageErrors.push(error.message))
   await page.setViewportSize({ width: 1600, height: 1000 })
@@ -211,7 +241,7 @@ test('canvas style imports retain layer precedence, root selectors and declarati
       avoidInlineStyle: true,
       selectorManager: { componentFirst: true },
       components:
-        '<div id="holder"><div id="card">Card</div><div id="important">Important</div><div id="anonymous">Anonymous</div><div id="conditioned">Conditioned</div><div id="nested">Nested</div><div id="mixed">Mixed</div><div id="uppercase">Uppercase</div><div id="nested-conditions">Conditions</div><div id="container-case">Container</div><div id="editable">Editable</div><div id="priority-order">Priority order</div><div id="margin">Margin</div><div id="animated">Animated</div><div id="prefixed">Prefixed</div></div>',
+        '<div id="holder"><div id="card">Card</div><div id="mixed">Mixed</div><div id="nested-conditions">Conditions</div><div id="container-case">Container</div><div id="editable">Editable</div><div id="priority-order">Priority order</div><div id="margin">Margin</div><div id="animated">Animated</div><div id="prefixed">Prefixed</div></div>',
     })
     const releaseStyles = connectCanvasStyles(editor)
     await new Promise((resolve) => editor.on('load', resolve))
@@ -219,22 +249,15 @@ test('canvas style imports retain layer precedence, root selectors and declarati
     const view = doc.defaultView
     const css =
       '#holder{width:800px;container-type:inline-size}' +
-      '@layer overrides,base;' +
-      '@layer base{#card{width:70%}#important{width:70%!important}}' +
-      '@layer overrides{#card{width:40%}#important{width:40%!important}}' +
-      '@layer{#anonymous{width:70%!important}}@layer{#anonymous{width:40%!important}}' +
-      '@supports(display:block){@layer{#conditioned{width:70%!important}}@layer{#conditioned{width:40%!important}}}' +
-      '#nested{@layer ordered.overrides,ordered.base;@layer ordered.base{&{width:70%}}@layer ordered.overrides{&{width:40%}}}' +
-      '@media(min-width:1000px){#mixed{width:70%}}@media(min-width:769px){@layer mixed.base;#mixed{width:50%}}' +
-      '@LAYER caps{@MEDIA(min-width:769px){#uppercase{width:25%}}}' +
+      '@media(min-width:1000px){#mixed{width:70%}}@media(min-width:769px){#mixed{width:50%}}' +
       '@MEDIA(min-width:769px){@SUPPORTS(display:grid){#nested-conditions{width:35%}}}' +
       '@media(min-width:769px){@supports(display:cms-unsupported-layout){#nested-conditions{width:95%}}}' +
       '@media(min-width:769px){@container(min-width:700px){#container-case{width:45%}}}' +
       '@media(min-width:769px){@container(min-width:900px){#container-case{width:95%}}}' +
-      '@media(min-width:1000px){#editable{width:25%;justify-self:end;@supports(display:grid){&.active{width:60%}}@layer owner{&.active{width:70%}}}}' +
+      '@media(min-width:1000px){#editable{width:25%;justify-self:end;@supports(display:grid){&.active{width:60%}}}}' +
       '#priority-order{width:70%;zoom:2;all:initial!important;@media(min-width:769px){&{width:80%!important;zoom:.8!important}}display:block!important;height:40px!important}' +
       '#margin{margin-left:1px;margin:2px;margin-left:3px}' +
-      '@layer roots{html{--owner-layer-root:present}html body{padding-left:17px}body::before{content:"owner"}}' +
+      'html{--owner-root:present}html body{padding-left:17px}body::before{content:"owner"}' +
       '@KEYFRAMES owner-motion{from{opacity:.2}50%{opacity:.5}to{opacity:.8}}' +
       '@-webkit-keyframes owner-prefixed{0%{opacity:.1}100%{opacity:.9}}' +
       '#animated{animation:owner-motion 10s linear paused;animation-delay:-5s}' +
@@ -249,28 +272,16 @@ test('canvas style imports retain layer precedence, root selectors and declarati
     const parsed = parseCanvasCss(tree, editor)
     const snapshot = () => {
       const widths = Object.fromEntries(
-        [
-          'card',
-          'important',
-          'anonymous',
-          'conditioned',
-          'nested',
-          'mixed',
-          'uppercase',
-          'nested-conditions',
-          'container-case',
-          'editable',
-          'priority-order',
-        ].map((id) => [id, doc.getElementById(id).getBoundingClientRect().width]),
+        ['mixed', 'nested-conditions', 'container-case', 'editable', 'priority-order'].map((id) => [
+          id,
+          doc.getElementById(id).getBoundingClientRect().width,
+        ]),
       )
       const margin = view.getComputedStyle(doc.getElementById('margin'))
       return {
         widths,
         margins: [margin.marginTop, margin.marginRight, margin.marginBottom, margin.marginLeft],
-        root: view
-          .getComputedStyle(doc.documentElement)
-          .getPropertyValue('--owner-layer-root')
-          .trim(),
+        root: view.getComputedStyle(doc.documentElement).getPropertyValue('--owner-root').trim(),
         bodyPadding: view.getComputedStyle(doc.body).paddingLeft,
         pseudoContent: view.getComputedStyle(doc.body, '::before').content,
         opacity: ['animated', 'prefixed'].map((id) =>
@@ -361,13 +372,7 @@ test('canvas style imports retain layer precedence, root selectors and declarati
   })
   const expected = {
     widths: {
-      card: 560,
-      important: 320,
-      anonymous: 560,
-      conditioned: 560,
-      nested: 560,
       mixed: 400,
-      uppercase: 200,
       'nested-conditions': 280,
       'container-case': 360,
       editable: 200,
@@ -433,7 +438,7 @@ test('complex selector functions keep their ancestor constraint through producti
       storageOrigin: 'https://storage.example.test',
     }
     const source =
-      '#complex-holder{width:600px}.owner{width:400px}.owner :is(.a,.b,.c){width:150px}#--cms-internal-selector-0{width:175px}'
+      '#complex-holder{width:600px}.owner{width:400px}.owner :nth-child(n of .a,.b,.c){width:150px}#--cms-internal-selector-0{width:175px}'
     validateMarkup('', source, policy)
     const measure = () =>
       ['inside-a', 'inside-b', 'inside-c', 'outside-b', '--cms-internal-selector-0'].map(
@@ -479,8 +484,8 @@ test('complex selector functions keep their ancestor constraint through producti
   assert.deepEqual(result.before, [150, 150, 150, 600, 175])
   assert.deepEqual(result.restored, result.before)
   assert.deepEqual(result.resized, [150, 120, 150, 600, 175])
-  assert.ok(result.exported.includes('.owner :is(.a,.b,.c)'))
-  assert.ok(result.finalCss.includes('.owner :is(.a,.b,.c)'))
+  assert.ok(result.exported.includes('.owner :nth-child(n of.a,.b,.c)'))
+  assert.ok(result.finalCss.includes('.owner :nth-child(n of.a,.b,.c)'))
   assert.equal(
     result.ownerIdWidth,
     '175px',
@@ -528,11 +533,9 @@ test('resize styles use the native cascade and survive production import without
     const view = doc.defaultView
     const css =
       '#holder{width:800px;font-size:20px}' +
-      '@layer base,overrides;' +
-      '@layer base{.owner .card,#unmatched{--owner-card-width:70%;width:var(--owner-card-width,60%);@supports(display:grid){&.special{width:80%}}}}' +
-      '@layer overrides{#probe-card{width:revert-layer}}' +
-      '@layer base{#layer-holder{width:200px;container-type:inline-size}}' +
-      '@layer overrides{#layer-holder{width:400px}@container(min-width:300px){.container-card{width:70%}}}' +
+      '.owner .card,#unmatched{--owner-card-width:70%;width:var(--owner-card-width,60%);@supports(display:grid){&.special{width:80%}}}' +
+      '#layer-holder{width:200px;container-type:inline-size}' +
+      '#layer-holder{width:400px}@container(min-width:300px){.container-card{width:70%}}' +
       '@media(min-width:1000px){#probe-card{width:var(--owner-card-width,60%)!important}}' +
       '#percent-parent{width:70%}#percent-inherit{width:inherit;font-size:10px}' +
       '#relative-parent{font-size:20px;width:8em}#relative-inherit{font-size:10px;width:inherit}' +
@@ -686,7 +689,7 @@ test('resize styles use the native cascade and survive production import without
   assert.equal(
     result.samples[0].before[6],
     280,
-    'Branch probes preserve the original layer order and active container',
+    'Branch probes preserve the original rule order and active container',
   )
   assert.equal(
     result.samples[1].before[7],

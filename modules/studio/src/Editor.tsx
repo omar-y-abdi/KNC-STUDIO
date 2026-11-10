@@ -62,6 +62,8 @@ import {
   parseCanvasCss,
   parseCanvasSheet,
   readCanvasCss,
+  storesLayer,
+  unkeptSyntax,
   yieldCanvasTask,
 } from './nativeCanvas'
 import { bindCmsRootStyles, canonicalizeCmsRootStyles } from './cmsRootStyles'
@@ -351,6 +353,20 @@ export function CmsEditor(props: Props): JSX.Element {
   latestChrome.current = chrome
   const contextKey = editorContextKey(props, chrome)
   const variant = props.page.content[props.lang]
+  // An edit writes its geometry to the page's other sheets, and on Home to About's, without
+  // importing them into the canvas, which keeps no cascade layer.
+  const syncedSheets = [
+    props.page,
+    ...(props.page.path === '/'
+      ? props.presentation.pages.filter((page) => page.path === '/about')
+      : []),
+  ].flatMap((page) =>
+    (['sv', 'en'] as const).flatMap((lang) => [
+      page.content[lang].css.light,
+      page.content[lang].css.dark,
+    ]),
+  )
+  const layered = useMemo(() => syncedSheets.some(storesLayer), syncedSheets)
   const materializeAbout = (): void => {
     cancelAboutIdle.current?.()
     cancelAboutIdle.current = null
@@ -1233,6 +1249,7 @@ export function CmsEditor(props: Props): JSX.Element {
   const previewPage = props.preview?.presentation.pages.find((item) => item.id === props.page.id)
 
   if (loadError) throw loadError
+  if (layered) throw new Error(unkeptSyntax)
   return (
     <>
       <div

@@ -520,6 +520,37 @@ function canvasNestedStyle(
   return style
 }
 
+/** The canvas keeps neither a cascade layer nor a selector function with more than one
+ * alternative, so a page that stores either is not edited. */
+export const unkeptSyntax =
+  'Sidans CSS innehåller syntax som inte kan bevaras. Källan har bevarats.'
+
+function isLayer(node: CssNode): boolean {
+  return node.type === 'Atrule' && ident.decode(node.name).toLowerCase() === 'layer'
+}
+
+/** A selector function that holds more than one alternative, as in `:is(a,b)`. */
+function isAlternativeList(node: CssNode): boolean {
+  if (node.type !== 'PseudoClassSelector') return false
+  const list = node.children?.first
+  return (
+    list?.type === 'SelectorList' &&
+    list.children.size > 1 &&
+    ['is', 'where', 'matches', 'not'].includes(ident.decode(node.name).toLowerCase())
+  )
+}
+
+/** Whether a stored sheet holds a cascade layer. Only the text `@layer`, or an escape that can
+ * spell it, parses to one. */
+export function storesLayer(css: string): boolean {
+  if (!/@layer|\\/i.test(css)) return false
+  let found = false
+  walk(parseCanvasSheet(css), (node) => {
+    if (isLayer(node)) found = true
+  })
+  return found
+}
+
 /** Preserve declarations that CSSOM expands to empty longhands (notably var/env shorthands).
  * GrapesJS also assumes every nested CSSOM rule has `.style`; grouping rules do not. Mask
  * nested blocks too, then restore their syntax from the prepared tree after selector parsing. */
@@ -533,8 +564,8 @@ export function parseCanvasCss(
   // Masking declaration names is destructive; retain the prepared tree for deferred previews.
   const tree = typeof css === 'string' ? parseCanvasSheet(css) : clone(css)
   walk(tree, (node) => {
-    if (node.type === 'Raw')
-      throw new Error('Sidans CSS innehåller syntax som inte kan bevaras. Källan har bevarats.')
+    if (node.type === 'Raw' || isLayer(node) || isAlternativeList(node))
+      throw new Error(unkeptSyntax)
   })
   if (tree.type === 'StyleSheet')
     tree.children.forEach((node, item) => {
