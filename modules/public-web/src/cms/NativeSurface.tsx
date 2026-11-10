@@ -22,6 +22,8 @@ import {
   parseCmsRevision,
   presentationPath,
 } from '../site/routeMetadata'
+import { aboutStrings, appStrings, type Lang } from '../i18n/index'
+import { langHref } from '../ui/langHref'
 
 const NativeContext = createContext<{
   presentation: CmsPresentation | null
@@ -116,8 +118,27 @@ const VISUALLY_HIDDEN: JSX.CSSProperties = {
   border: 0,
 }
 
+export interface OutageLink {
+  readonly href: string
+  readonly label: string
+}
+
+/** The pages a visitor can still read while the site itself cannot load: they are served without
+ * the presentation. `search` is the address query; it names the language as it does for the app
+ * (`lang=en` is English, everything else Swedish). */
+export function outageLinks(search: string): readonly OutageLink[] {
+  const lang: Lang = new URLSearchParams(search).get('lang') === 'en' ? 'en' : 'sv'
+  const about = aboutStrings(lang)
+  return [
+    { href: langHref('/contact', lang), label: appStrings(lang).contactLink },
+    { href: langHref('/terms', lang), label: about.termsLink },
+    { href: langHref('/privacy', lang), label: about.privacyLink },
+  ]
+}
+
 /** While the presentation is read, the page is its pre-painted background (R12); only assistive
- * technology hears the status. A failure after the last retry stays visible with a manual retry. */
+ * technology hears the status. A failure after the last retry stays visible with a manual retry
+ * and the links of `outageLinks`. */
 function PublicPresentationGate({
   error,
   onRetry,
@@ -147,11 +168,23 @@ function PublicPresentationGate({
         textAlign: 'center',
       }}
     >
-      <div role="alert" aria-live="polite">
-        <p>Webbplatsen kunde inte laddas just nu.</p>
-        <button type="button" onClick={onRetry}>
-          Försök igen
-        </button>
+      <div>
+        <div role="alert" aria-live="polite">
+          <p>Webbplatsen kunde inte laddas just nu.</p>
+          <button type="button" onClick={onRetry}>
+            Försök igen
+          </button>
+        </div>
+        <p>
+          {outageLinks(window.location.search).map((link, index) => (
+            <Fragment key={link.href}>
+              {index > 0 ? ' · ' : null}
+              <a href={link.href} style={{ color: 'inherit' }}>
+                {link.label}
+              </a>
+            </Fragment>
+          ))}
+        </p>
       </div>
     </main>
   )

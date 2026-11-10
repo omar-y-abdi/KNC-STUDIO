@@ -209,10 +209,39 @@ describe.each([
       cuts: [photo],
       reviews: [{ id: 'r1', name: 'Ada', rating: 5, text: 'Bra' }],
       overlay: { heading: 'Rubrik' },
-      slots: ['09:00', '09:30'],
-      serviceSlots: ['09:00', '09:30'],
+      slots: { ok: true, times: ['09:00', '09:30'] },
+      serviceSlots: { ok: true, times: ['09:00', '09:30'] },
       photoUrls: [`${PROJECT_URL}/storage/v1/object/public/barber-photos/photos/b%20one.webp`],
       chromeLoaded: true,
     })
+  })
+})
+
+describe('availability read failures', () => {
+  it.each([
+    ['an HTTP error', async () => Response.json({ message: 'unavailable' }, { status: 503 })],
+    ['a malformed answer', async () => Response.json({ times: '09:00' })],
+    [
+      'a network failure',
+      async (): Promise<Response> => {
+        throw new TypeError('offline')
+      },
+    ],
+  ] as const)('report %s as a failed read, never as an empty day', async (_label, respond) => {
+    vi.stubGlobal('fetch', respond)
+    vi.resetModules()
+    vi.doMock('../../modules/public-web/src/backend/config', () => ({
+      SUPABASE_URL: PROJECT_URL,
+      SUPABASE_ANON_KEY: JWT_KEY,
+      isBackendConfigured: () => true,
+    }))
+    const { supabaseBookingAdapter } =
+      await import('../../modules/public-web/src/booking/adapters/supabaseBooking')
+    const selection = { barberId: asBarberId('b1'), dateIso: '2040-03-18', durationMin: 45 }
+
+    await expect(supabaseBookingAdapter.availability(selection)).resolves.toEqual({ ok: false })
+    await expect(
+      supabaseBookingAdapter.availability({ ...selection, serviceId: 's1' }),
+    ).resolves.toEqual({ ok: false })
   })
 })

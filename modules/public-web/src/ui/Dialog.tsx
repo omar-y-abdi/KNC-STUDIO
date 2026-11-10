@@ -4,19 +4,32 @@
 //
 // Behaviour added:
 //  - role="dialog", aria-modal, aria-labelledby (the title element id)
-//  - focus the dialog on open; restore focus to the previously-focused trigger on close
-//  - focus trap: Tab / Shift+Tab cycle within the dialog
+//  - focus the dialog on open; restore focus to the previously-focused trigger on close. In the
+//    public shell, when that trigger is gone or can no longer hold focus, the dialog below takes
+//    it, else the page's main landmark (without a visible change)
+//  - focus trap: Tab / Shift+Tab cycle within the dialog, over the controls that can take focus.
+//    An embedded widget at either end of them (the verification challenge) is entered by the
+//    browser's own Tab, which the trap leaves alone there
+//  - the page behind stays out of reach of the keyboard: focus that lands outside the topmost open
+//    dialog returns to it, and Tab pressed while nothing in it holds focus (the focused element was
+//    removed) enters it. The page is not made `inert`: this dialog is shared with the staff pages,
+//    whose own elements carry an `inert` the renderer owns, and an attribute removed from outside
+//    would leave them out of step with it.
+//    (The three points above are ui/dialogFocus.ts.)
 //  - Escape closes (in addition to the existing backdrop click-to-close)
 //  - prefers-reduced-motion: gate the entry animation only (settled appearance unchanged)
 
 import type { ComponentChildren, JSX } from 'preact'
 import { useEffect, useRef } from 'preact/hooks'
-import { useNativeSurface } from '../cms/NativeSurface'
+import { useNativeSource, useNativeSurface } from '../cms/NativeSurface'
 import type { CmsLang, CmsMode } from '@bladeblend/content-contracts/cms'
+import {
+  focusIntoCard,
+  holdKeyboardFocus,
+  settleFocusAfterClose,
+  tabLeavesCard,
+} from './dialogFocus'
 import { prefersReducedMotion } from './reducedMotion'
-
-const FOCUSABLE =
-  'a[href],button:not([disabled]),textarea,input,select,[tabindex]:not([tabindex="-1"])'
 
 export interface DialogProps {
   readonly cms?: { surface: string; lang: CmsLang; mode: CmsMode }
@@ -44,15 +57,24 @@ export interface DialogProps {
 export function Dialog(props: DialogProps): JSX.Element {
   const cardRef = useRef<HTMLDivElement>(null)
   const previouslyFocused = useRef<HTMLElement | null>(null)
+  // A Studio source or capture frame shows the dialog as a scene: nothing there holds the keyboard.
+  const nativeSource = useNativeSource()
 
   useEffect(() => {
     previouslyFocused.current =
       document.activeElement instanceof HTMLElement ? document.activeElement : null
     const card = cardRef.current
     if (card) card.focus()
+    const release = card && !nativeSource ? holdKeyboardFocus(card) : null
     return () => {
+      // Released first: the restore below moves focus out of this dialog.
+      release?.()
       const prev = previouslyFocused.current
       if (prev && typeof prev.focus === 'function') prev.focus()
+      // Settled once the closing tree has left the document: only then is it known whether the
+      // restore held. A dialog closed together with the one it opened from is restored into that
+      // one and loses the focus with it. Outside the public shell this changes nothing.
+      queueMicrotask(() => settleFocusAfterClose(prev))
     }
   }, [])
 
@@ -64,26 +86,9 @@ export function Dialog(props: DialogProps): JSX.Element {
     }
     if (e.key !== 'Tab') return
     const card = cardRef.current
-    if (!card) return
-    const nodes = card.querySelectorAll<HTMLElement>(FOCUSABLE)
-    if (nodes.length === 0) {
-      e.preventDefault()
-      card.focus()
-      return
-    }
-    const first = nodes[0]
-    const last = nodes[nodes.length - 1]
-    if (!first || !last) return
-    const active = document.activeElement
-    if (e.shiftKey) {
-      if (active === first || active === card) {
-        e.preventDefault()
-        last.focus()
-      }
-    } else if (active === last) {
-      e.preventDefault()
-      first.focus()
-    }
+    if (!card || !tabLeavesCard(card, e.shiftKey)) return
+    e.preventDefault()
+    focusIntoCard(card, e.shiftKey)
   }
 
   // Reduced motion: drop only the entry animation; the settled card looks identical.

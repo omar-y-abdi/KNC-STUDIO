@@ -158,6 +158,8 @@ test('cms-populated', async ({ page, context, browserName }) => {
       .locator('[data-testid="fold-booking"]')
       .getByText('Fixture barber A', { exact: true })
       .waitFor()
+    // Booking has its own address (/booking); Back returns to the homepage, which the reload reads.
+    await live.goBack()
     await live.reload({ waitUntil: 'domcontentloaded' })
     await live.getByText('Owner edited the populated site', { exact: true }).waitFor()
     console.log(`PASS populated ${name}: roster, photos, publication, reload, native booking`)

@@ -382,6 +382,7 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
               onFocus={preloadBookingFlow}
               style={heroBtnStyle}
               type="button"
+              aria-expanded={booking}
             >
               {tx.book}
             </button>

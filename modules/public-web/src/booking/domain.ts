@@ -102,10 +102,23 @@ export interface BookingLinks {
   readonly mapsHref: string
 }
 
-/** Domain error union for a booking submission. */
+/** Domain error union for a booking submission. `unavailable` means the server refused the chosen
+ * start time itself (taken meanwhile, outside opening hours, or no longer a valid start): the
+ * details are fine and another time can succeed. `unconfirmed` means no answer came back that says
+ * what happened (the request failed on the way, or its answer could not be read): the booking may
+ * or may not exist. `rate_limited` and `failed_challenge` are the gateway's own refusals;
+ * `read_only` is the answer of a port that does not book (the Studio's preview of the site);
+ * `submit` is every other refusal. `message` is the adapter's wording in the language of the
+ * booking; the booking flow writes its lines from `kind`, in the language on screen when they are
+ * shown. */
 export type BookingError =
   | { readonly kind: 'validation'; readonly message: string }
   | { readonly kind: 'submit'; readonly message: string }
+  | { readonly kind: 'read_only'; readonly message: string }
+  | { readonly kind: 'rate_limited'; readonly message: string }
+  | { readonly kind: 'failed_challenge'; readonly message: string }
+  | { readonly kind: 'unavailable'; readonly message: string }
+  | { readonly kind: 'unconfirmed'; readonly message: string }
 
 /** Result of submitting a booking through a `BookingPort`. */
 export type BookingResult =

@@ -53,7 +53,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   ports.overlay.mockResolvedValue({})
   ports.reviews.mockResolvedValue([])
-  ports.roster.mockReturnValue({ roster: [], loading: false })
+  ports.roster.mockReturnValue({ roster: [], status: 'ready', retry: () => undefined })
   ports.gallery.mockReturnValue({ status: 'ready', photos: [] })
   vi.stubGlobal('window', {
     location: { pathname: '/' },

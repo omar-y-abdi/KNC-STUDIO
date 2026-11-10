@@ -24,7 +24,10 @@ export function exampleBookingPorts(read: DesktopSitePreviewPorts): DesktopSiteP
     },
     booking: {
       ...read.booking,
-      availability: async () => ['09:00', '09:30', '10:00', '10:30', '11:00', '11:30', '12:00'],
+      availability: async () => ({
+        ok: true,
+        times: ['09:00', '09:30', '10:00', '10:30', '11:00', '11:30', '12:00'],
+      }),
     },
   }
 }

@@ -4,8 +4,9 @@
 // default popup renders exactly as the mock did.
 
 import type { JSX } from 'preact'
-import type { BookingStrings } from '../i18n/index'
+import type { BookingStrings, Lang } from '../i18n/index'
 import { Dialog, type DialogProps } from '../ui/Dialog'
+import { langHref } from '../ui/langHref'
 import { FOCUS_CLS } from '../ui/pseudo'
 import { sheetBackdropStyle, type BookingStyles } from './bookingStyles'
 import type { FieldErrors } from './validation'
@@ -15,6 +16,8 @@ const BACKDROP_STYLE = sheetBackdropStyle(40)
 export interface DetailsDialogProps {
   readonly cms?: DialogProps['cms']
   readonly t: BookingStrings
+  /** The language of `t`: the terms link opens the terms in it. */
+  readonly lang: Lang
   readonly s: BookingStyles
   readonly closeLabel: string
   readonly sumBarber: string
@@ -25,9 +28,13 @@ export interface DetailsDialogProps {
   readonly phoneValue: string
   readonly emailValue: string
   readonly bookDisabled: boolean
+  /** The submit for this popup's time is on its way. Said to assistive technology on the book
+   * button; the button looks and works as it does otherwise. */
+  readonly bookBusy: boolean
   /** Per-field error flags from the last failed submit (all false = pristine popup). */
   readonly fieldErrors: FieldErrors
-  /** Generic system/submit error (port failure), or null. Distinct from field errors. */
+  /** The line above the book button about a submit (a refusal, a submit without an answer, a
+   * submit still on its way), or null. Distinct from field errors. */
   readonly submitError: string | null
   readonly onName: (e: JSX.TargetedInputEvent<HTMLInputElement>) => void
   readonly onPhone: (e: JSX.TargetedInputEvent<HTMLInputElement>) => void
@@ -65,6 +72,7 @@ export function DetailsDialog(props: DetailsDialogProps): JSX.Element {
         type={inputType}
         autoComplete={inputType === 'text' ? 'name' : inputType}
         {...(inputType !== 'text' ? { inputMode: inputType } : {})}
+        aria-required="true"
         aria-invalid={invalid ? 'true' : undefined}
         style={invalid ? s.inputErrorStyle : s.inputStyle}
         class={FOCUS_CLS}
@@ -89,8 +97,12 @@ export function DetailsDialog(props: DetailsDialogProps): JSX.Element {
       cardStyle={s.overlayCardStyle}
     >
       <div style={s.overlayHeaderStyle}>
+        {/* A heading by role, not by tag: the published presentation stores this element as a
+            `span`, and its look must not change. */}
         <span
           id="knc-details-title"
+          role="heading"
+          aria-level={2}
           style="font-family:'Inter Variable';font-weight:600;font-size:17px;"
         >
           {t.yourDetails}
@@ -132,7 +144,7 @@ export function DetailsDialog(props: DetailsDialogProps): JSX.Element {
         <p style="font-size:11.5px;line-height:1.5;opacity:.5;margin:16px 0 14px;">{t.policy}</p>
         <p style="font-size:12px;line-height:1.5;margin:0 0 14px;">
           <a
-            href="/terms"
+            href={langHref('/terms', props.lang)}
             target="_blank"
             rel="noopener noreferrer"
             aria-label={t.termsLinkLabel}
@@ -156,6 +168,7 @@ export function DetailsDialog(props: DetailsDialogProps): JSX.Element {
         <button
           onClick={props.bookDisabled ? undefined : props.onBook}
           disabled={props.bookDisabled}
+          aria-busy={props.bookBusy ? 'true' : undefined}
           style={s.bookBtnStyle}
         >
           {t.book}

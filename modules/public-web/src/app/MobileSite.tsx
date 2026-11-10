@@ -186,6 +186,9 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
   // Muted, theme-aware colour for the underlined hero links (sits on the panel surface).
   const heroLinkColor = dark ? 'rgba(255,255,255,.72)' : 'rgba(0,0,0,.6)'
   const brandMotion = mobileBrandMotion(collapse, viewportHeight, reduceMotion)
+  // The folded hero is inert and takes its level-1 heading with it: the compact mark, fully faded
+  // in by then, is the page's heading for exactly that long.
+  const heroInert = brandMotion.brand === 0 && brandMotion.actions === 0
   // While the entry tween pins the panel, its rendered height is the fold progress; otherwise the
   // resting fold state is.
   const brandCollapse = (root: HTMLElement, height: number, resting: number): number => {
@@ -266,7 +269,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     display: 'block',
   }
   // The banner receives the moving brand before the phone and emblem rules fade in.
-  // It remains decorative and never takes pointer input from the controls beneath it.
+  // It never takes pointer input from the controls beneath it.
   const headerMarkStyle: JSX.CSSProperties = {
     position: 'absolute',
     zIndex: 6,
@@ -460,15 +463,17 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
           </div>
         </div>
 
-        <div data-knc-fold="mark" style={headerMarkStyle} aria-hidden="true">
+        <div
+          data-knc-fold="mark"
+          style={headerMarkStyle}
+          role="heading"
+          aria-level={1}
+          aria-hidden={heroInert ? undefined : 'true'}
+        >
           <CornerMark height={26} />
         </div>
 
-        <div
-          data-knc-fold="hero"
-          style={heroExtrasStyle}
-          inert={brandMotion.brand === 0 && brandMotion.actions === 0}
-        >
+        <div data-knc-fold="hero" style={heroExtrasStyle} inert={heroInert}>
           <h1 style={{ margin: 0, display: 'flex', justifyContent: 'center' }}>
             <HomepageLogo
               logo={props.homepageLogo}
@@ -573,7 +578,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
       {/* Keep panel + spacer at one viewport tall. At max collapse the section begins below the
           compact top panel, while reverse scrolling recreates the hero without a mode switch. */}
       <div data-knc-fold="spacer" aria-hidden="true" style={{ height: collapse + 'px' }} />
-      <div data-knc-fold="body" style={m3BodyStyle}>
+      <div data-knc-fold="body" style={m3BodyStyle} role="main">
         {inSection ? (
           <LazySurface
             loadingLabel={tx.lazyBookingLoading}

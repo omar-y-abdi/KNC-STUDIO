@@ -124,8 +124,9 @@ for (const width of [390, 1280]) {
     fields = await details(page, false)
     await values(fields, contact)
     expect(state.submitCalls).toBe(1)
+    // The address has followed the view to /booking, so the reload opens in booking.
     await page.reload()
-    await values(await details(page), contact)
+    await values(await details(page, false), contact)
     expect(
       await page.evaluate(() => [globalThis.localStorage.length, globalThis.sessionStorage.length]),
     ).toEqual([0, 0])
@@ -157,7 +158,7 @@ test('late device hydration preserves edits; withdrawal clears only untouched hi
   await values(fields, { name: 'My edit', phone: '', email: '' })
   expect(state.listCalls).toBe(2)
   await page.reload()
-  await values(await details(page), { name: '', phone: '', email: '' })
+  await values(await details(page, false), { name: '', phone: '', email: '' })
 })
 
 test('rejected optional storage never prefills device hints', async ({ page, context }) => {

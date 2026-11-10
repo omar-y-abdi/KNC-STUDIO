@@ -19,10 +19,18 @@ import { defaultMyBookingsPort } from '../mybookings/adapters/index'
 import { LazyMyBookingsDialog, preloadMyBookingsDialog } from '../mybookings/lazyMyBookingsDialog'
 import { canReplaceDocumentMetadata, useSiteChrome } from '../site/useSiteChrome'
 import { buildBusinessStructuredData } from '../site/business'
+import { nativePublicPath } from '../site/routeMetadata'
 import { formatBusinessAddress, resolveSiteText, type SiteChrome } from '../site/siteChrome'
 import { paintViewport } from '../ui/paintViewport'
 import { scheduleIdle } from '../ui/idle'
 import { LazySurface } from '../ui/LazySurface'
+import {
+  SKIP_LINK_CLASS,
+  focusIsStranded,
+  focusIsWithin,
+  focusQuietly,
+  mainLandmark,
+} from '../ui/pageFocus'
 import { usePrivacyPreferences } from '../site/usePrivacyPreferences'
 import { PrivacyBanner } from '../site/PrivacyBanner'
 import { readStoragePreferences, subscribeStoragePreferences } from '../site/storageConsent'
@@ -36,40 +44,54 @@ import type { SiteChromePort } from '../site/port'
 const sourceChromePort: SiteChromePort = { load: (lang) => defaultSiteChromePort.load(lang) }
 import { DesktopSite } from './DesktopSite'
 import { MobileSite } from './MobileSite'
+import { setMetaContent, writeLocales, writeRouteIdentity, writeRouteTexts } from './documentHead'
+import {
+  headDocument,
+  headWrite,
+  identityWrite,
+  siteOriginOf,
+  type HeadDocument,
+  type RoutePage,
+} from './routeHead'
+import { viewStateForPath } from './siteHistory'
+import { createSiteHistoryDriver } from './siteHistoryDriver'
 import type { Mode, View } from './shared'
-import { EASE, MOBILE_MQ, chromeIcon, mobBtnBg, mobMuted, shellPalette } from './shared'
+import {
+  EASE,
+  MOBILE_MQ,
+  chromeIcon,
+  mobBtnBg,
+  mobMuted,
+  ownerBusiness,
+  shellPalette,
+} from './shared'
 
-function setMeta(selector: string, content: string): void {
-  document.querySelector<HTMLMetaElement>(selector)?.setAttribute('content', content)
-}
-
-function updateDocumentMetadata(chrome: SiteChrome, lang: Lang): void {
+/**
+ * Brings the document head in step with the business settings. The site name, the image text and
+ * the structured data are the settings' own on every route; the Worker writes the same three from
+ * the same settings. The title and the descriptions belong to the address, and to what the owner
+ * wrote for its page in Studio (`pages`): `headWrite` leaves those the Worker rendered as they are
+ * until the app changes the address itself. The identity of the address is written apart, without
+ * waiting for the settings (the effect beside this one's).
+ */
+function updateDocumentMetadata(
+  chrome: SiteChrome,
+  lang: Lang,
+  siteOrigin: string,
+  pages: readonly RoutePage[],
+  served: HeadDocument,
+): void {
   const business = chrome.business
-  const seo = business.seo[lang]
-  document.documentElement.lang = lang
-  document.title = seo.title
-  setMeta('meta[name="robots"]', 'index, follow, max-image-preview:large')
-  setMeta('meta[name="description"]', seo.description)
-  setMeta('meta[property="og:site_name"]', business.name)
-  setMeta('meta[property="og:title"]', seo.title)
-  setMeta('meta[property="og:description"]', seo.description)
-  setMeta('meta[property="og:image:alt"]', business.name)
-  setMeta('meta[name="twitter:title"]', seo.title)
-  setMeta('meta[name="twitter:description"]', seo.description)
-
-  let canonicalElement = document.querySelector<HTMLLinkElement>('link[rel="canonical"]')
-  if (canonicalElement === null) {
-    canonicalElement = document.createElement('link')
-    canonicalElement.rel = 'canonical'
-    canonicalElement.href = `${import.meta.env.VITE_SITE_URL || window.location.origin}/`
-    document.head.appendChild(canonicalElement)
+  setMetaContent(document, 'meta[property="og:site_name"]', business.name)
+  setMetaContent(document, 'meta[property="og:image:alt"]', business.name)
+  const path = nativePublicPath(window.location.pathname)
+  const write = headWrite(path, lang, business, pages, served)
+  if (write !== null) {
+    writeRouteTexts(document, write.texts)
+    if (write.locales !== null) writeLocales(document, write.locales)
   }
 
-  const canonical = canonicalElement.getAttribute('href')
-  const siteUrl = canonical?.startsWith('http')
-    ? canonical.replace(/\/$/, '')
-    : window.location.origin
-  const jsonLd = buildBusinessStructuredData(business, chrome.facts, siteUrl)
+  const jsonLd = buildBusinessStructuredData(business, chrome.facts, siteOrigin)
   const structuredData = document.querySelector<HTMLScriptElement>('#business-json-ld')
   if (structuredData !== null) {
     structuredData.textContent = JSON.stringify(jsonLd).replace(/</g, '\\u003c')
@@ -104,6 +126,16 @@ export interface SitePreview {
   readonly onReady: (snapshot: SitePreviewSnapshot) => void
 }
 
+/** Scrolls the mobile layout back to its hero. The desktop layout has no such scroll root. */
+function showMobileHero(): void {
+  window.requestAnimationFrame(() => {
+    document.querySelector<HTMLElement>('[data-testid="mobile-site-scroll"]')?.scrollTo({
+      top: 0,
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+    })
+  })
+}
+
 function takeCustomerAccessLink(): BookingAccessLink {
   const link = consumeBookingAccessLink(window.location.href)
   if (link.code !== null || link.emailLinkCode !== undefined) {
@@ -124,6 +156,7 @@ export function App({
   const [state, setRaw] = useState<AppState>(() => {
     const query = new URLSearchParams(window.location.search)
     const requestedMode = query.get('mode')
+    const addressed = viewStateForPath(window.location.pathname, 'home')
     return {
       mode:
         preview?.mode ??
@@ -133,10 +166,14 @@ export function App({
             ? 'dark'
             : 'light'),
       lang: preview?.lang ?? (query.get('lang') === 'en' ? 'en' : 'sv'),
-      view: preview?.view ?? (window.location.pathname === '/booking' ? 'booking' : 'home'),
-      myBookingsOpen: preview?.myBookings ?? window.location.pathname === '/my-bookings',
+      view: preview?.view ?? addressed?.view ?? 'home',
+      myBookingsOpen: preview?.myBookings ?? addressed?.myBookingsOpen ?? false,
     }
   })
+  // The handlers of browser events (`popstate`, the timer behind `history.back()`) read the state
+  // of the latest render.
+  const stateRef = useRef(state)
+  stateRef.current = state
   const setState = (u: Partial<AppState> | ((s: AppState) => Partial<AppState>)): void =>
     setRaw((s) => ({ ...s, ...(typeof u === 'function' ? u(s) : u) }))
   useEffect(() => {
@@ -177,6 +214,57 @@ export function App({
     undefined,
   )
   const [bookingRefresh, setBookingRefresh] = useState(0)
+  // Browser history: siteHistory.ts decides, siteHistoryDriver.ts applies it to `window`. A Studio
+  // frame has no driver: it never changes its own or its parent's address. `headAddress` is the
+  // address the head was last written for: null until the app itself changes path or query, so a
+  // server-rendered head stays.
+  const [headAddress, setHeadAddress] = useState<string | null>(null)
+  const [siteHistory] = useState(() =>
+    preview
+      ? null
+      : createSiteHistoryDriver(
+          {
+            location: window.location,
+            history: window.history,
+            document: window.performance.timeOrigin,
+            setTimeout: (handler, timeout) => window.setTimeout(handler, timeout),
+            clearTimeout: (id) => window.clearTimeout(id),
+          },
+          () => stateRef.current,
+          setHeadAddress,
+        ),
+  )
+  useEffect(() => {
+    siteHistory?.follow({
+      view: state.view,
+      myBookingsOpen: state.myBookingsOpen,
+      lang: state.lang,
+    })
+  }, [state.view, state.myBookingsOpen, state.lang])
+  useEffect(() => {
+    if (siteHistory === null) return
+    const onPopState = (): void => {
+      const current = stateRef.current
+      const next = siteHistory.traversed(current)
+      // A path that is not this shell's: the router replaces the app.
+      if (next === null) return
+      if (next.myBookingsOpen !== current.myBookingsOpen) {
+        // The same reset as the dialog's own open and close buttons.
+        accessSequence.current++
+        setBookingAccess({})
+        setEmailLinkCode(undefined)
+        if (next.myBookingsOpen) void preloadMyBookingsDialog()
+      }
+      if (next.view !== current.view || next.myBookingsOpen !== current.myBookingsOpen)
+        setState({ view: next.view, myBookingsOpen: next.myBookingsOpen })
+      if (current.view === 'booking' && next.view === 'home') showMobileHero()
+    }
+    window.addEventListener('popstate', onPopState)
+    return () => {
+      window.removeEventListener('popstate', onPopState)
+      siteHistory.dispose()
+    }
+  }, [])
   useEffect(() => {
     if (preview) return
     const clearOptionalAccess = (): void => {
@@ -346,6 +434,12 @@ export function App({
   const [initialStructuredData] = useState<string | null>(
     () => document.querySelector<HTMLScriptElement>('#business-json-ld')?.textContent ?? null,
   )
+  const [siteOrigin] = useState(() =>
+    siteOriginOf(
+      document.querySelector('link[rel="canonical"]')?.getAttribute('href') ?? null,
+      window.location.origin,
+    ),
+  )
   const business = chrome.business
   const txBase = appStrings(lang)
   const siteText = resolveSiteText(
@@ -403,11 +497,51 @@ export function App({
     color: on ? (dark ? '#1c1c1e' : '#fff') : dark ? 'rgba(255,255,255,.55)' : 'rgba(0,0,0,.5)',
   })
 
+  // The interface language is the page's language at once. So is the identity of an address the
+  // app itself moved to: it needs the path, the language and the origin, and nothing that loads.
+  // The title and the descriptions wait for the business settings of that language.
+  useEffect(() => {
+    if (!preview) document.documentElement.lang = lang
+  }, [lang])
+  useEffect(() => {
+    if (preview) return
+    const identity = identityWrite(
+      nativePublicPath(window.location.pathname),
+      lang,
+      siteOrigin,
+      headDocument(headAddress, document.documentElement),
+    )
+    if (identity !== null) writeRouteIdentity(document, identity)
+  }, [lang, headAddress])
   useEffect(() => {
     if (!preview && canReplaceDocumentMetadata(metadataReady, initialStructuredData)) {
-      updateDocumentMetadata(chrome, lang)
+      updateDocumentMetadata(
+        chrome,
+        lang,
+        siteOrigin,
+        cmsPresentation?.pages ?? [],
+        headDocument(headAddress, document.documentElement),
+      )
     }
-  }, [chrome, initialStructuredData, lang, metadataReady])
+  }, [chrome, initialStructuredData, lang, metadataReady, headAddress, cmsPresentation])
+  // A change of view can strand keyboard focus: the control that held it is gone (the other view's
+  // content) or inert by now (the folded mobile hero, the closed desktop fold), and nothing else
+  // announces the change. Only then focus moves into the new view; a control that is still usable
+  // keeps it, as the desktop "Boka tid" toggle does, whose `aria-expanded` tells the change.
+  // Booking is the desktop fold or the mobile main landmark; the start view is the desktop main
+  // landmark or the mobile panel, whose hero is that view's top.
+  const focusedView = useRef(state.view)
+  useEffect(() => {
+    if (focusedView.current === state.view) return
+    focusedView.current = state.view
+    if (preview || !focusIsStranded(document.activeElement, document.body)) return
+    const viewStart = document.querySelector<HTMLElement>(
+      state.view === 'booking'
+        ? '[data-testid="fold-booking"]'
+        : '[data-testid="mobile-site-scroll"] [data-knc-fold="panel"]',
+    )
+    focusQuietly(viewStart ?? mainLandmark())
+  }, [state.view])
 
   const toggleLanguage = (): void => setState((s) => ({ lang: s.lang === 'sv' ? 'en' : 'sv' }))
   const toggleMode = (): void => setState((s) => ({ mode: s.mode === 'dark' ? 'light' : 'dark' }))
@@ -417,9 +551,10 @@ export function App({
   const scrollToAbout = (): void => {
     setState({ view: 'home' })
     window.requestAnimationFrame(() => {
-      document
-        .getElementById(ABOUT_SECTION_ID)
-        ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      document.getElementById(ABOUT_SECTION_ID)?.scrollIntoView({
+        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+        block: 'start',
+      })
     })
   }
   // Mobile: the hero becomes the compact header as its own scroll container advances.
@@ -438,13 +573,16 @@ export function App({
       })
   }
   const scrollMobToHero = (): void => {
+    // The control that asks for this is in the compact panel only: MobileSite hides it once the
+    // hero is back, and focus it held would fall to the `body`. It moves now to the panel, the top
+    // of the view being returned to, without a visible change.
+    const site = document.querySelector<HTMLElement>('[data-testid="mobile-site-scroll"]')
+    if (
+      focusIsWithin(document.activeElement, site?.querySelector('[data-knc-fold="return"]') ?? null)
+    )
+      focusQuietly(site?.querySelector<HTMLElement>('[data-knc-fold="panel"]') ?? null)
     setState({ view: 'home' })
-    window.requestAnimationFrame(() => {
-      document.querySelector<HTMLElement>('[data-testid="mobile-site-scroll"]')?.scrollTo({
-        top: 0,
-        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
-      })
-    })
+    showMobileHero()
   }
   const openMyBookings = (): void => {
     const sequence = ++accessSequence.current
@@ -453,7 +591,11 @@ export function App({
     // The chunk is normally resolved by the button's pointerdown/focus preload, so the dialog
     // opens without a loading surface; a rejected chunk still opens into the LazySurface error.
     void preloadMyBookingsDialog().then(() => {
-      if (sequence === accessSequence.current) setState({ myBookingsOpen: true })
+      if (sequence !== accessSequence.current) return
+      // A dialog opened from its button has an address of its own; one opened by a customer link
+      // (acceptLink) keeps the address the link was cleaned to.
+      siteHistory?.enterDialog(stateRef.current.lang)
+      setState({ myBookingsOpen: true })
     })
   }
   const closeMyBookings = (): void => {
@@ -563,13 +705,37 @@ export function App({
         cursor: 'pointer',
       }}
     >
-      <span aria-hidden="true" style={svMiniStyle}>
+      <span
+        aria-hidden="true"
+        data-current-lang={lang === 'sv' ? '' : undefined}
+        style={svMiniStyle}
+      >
         SV
       </span>
-      <span aria-hidden="true" style={enMiniStyle}>
+      <span
+        aria-hidden="true"
+        data-current-lang={lang === 'en' ? '' : undefined}
+        style={enMiniStyle}
+      >
         EN
       </span>
     </button>
+  )
+  // The first stop of the tab order, outside every presentation surface, so no stored element id
+  // shifts. It is off-screen until it holds keyboard focus (global.css). Its presence also tells
+  // the shared dialog that this page's main landmark may take focus (ui/pageFocus.ts).
+  const skipLink = preview ? null : (
+    <a
+      href="#main"
+      class={SKIP_LINK_CLASS}
+      style={{ background: c.accent, color: c.accentText }}
+      onClick={(event) => {
+        event.preventDefault()
+        focusQuietly(mainLandmark(), true)
+      }}
+    >
+      {tx.skipToContent}
+    </a>
   )
 
   const myBookingsDialog = state.myBookingsOpen ? (
@@ -579,6 +745,7 @@ export function App({
         {...(preview ? { port: example?.customer?.port ?? previewCustomerPort } : {})}
         mode={state.mode}
         lang={lang}
+        business={ownerBusiness({ chrome, metadataReady })}
         onClose={closeMyBookings}
         {...(bookingAccess.token === undefined ? {} : { accessToken: bookingAccess.token })}
         {...(bookingAccess.error === undefined ? {} : { accessError: bookingAccess.error })}
@@ -619,6 +786,7 @@ export function App({
 
   return (
     <>
+      {skipLink}
       {isMobile ? (
         <MobileSite
           {...shell}

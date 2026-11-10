@@ -74,3 +74,144 @@ body {
     font-size: 19px;
   }
 }
+
+/* A container that receives keyboard focus from code (ui/pageFocus.ts: the main landmark after a
+   dialog, the new view after a view change, the skip link's target) is not a control and shows no
+   focus indicator. */
+[data-quiet-focus]:focus {
+  outline: none;
+}
+
+/* Skip link (app/App.tsx): the first stop of the tab order, above the viewport until it holds
+   keyboard focus. Its colours are the shell palette's accent pair, set inline per mode. */
+.knc-skip-link {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 90;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font:
+    600 14px/1.2 'Inter Variable',
+    -apple-system,
+    system-ui,
+    sans-serif;
+  text-decoration: none;
+  transform: translateY(calc(-100% - 8px));
+}
+.knc-skip-link:focus {
+  transform: translate(
+    max(8px, env(safe-area-inset-left, 0px)),
+    calc(env(safe-area-inset-top, 0px) + 8px)
+  );
+}
+
+/* Larger pointer targets for small text links, without moving a pixel: a transparent pseudo-element
+   extends the element's hit area into the free space around it. The element keeps its own box, so
+   layout, focus ring and paint are unchanged. The hero links (13px text) gain 14px above and below
+   and 8px at the sides, inside the 16px to the button above and the 18px between the two links; the
+   About footer links (12px text) gain 4px above and below, half of the 8px between wrapped rows. */
+.knc-hit-hero,
+.knc-hit-footer {
+  position: relative;
+}
+.knc-hit-hero::after,
+.knc-hit-footer::after {
+  content: '';
+  position: absolute;
+}
+.knc-hit-hero::after {
+  inset: -14px -8px;
+}
+.knc-hit-footer::after {
+  inset: -4px 0;
+}
+
+/* Forced colours (Windows contrast themes): the browser drops author backgrounds and shadows, so
+   every state the public shell shows by fill alone would vanish and a borderless button would lose
+   its outline. System colours survive the forcing; `!important` because the shell's styles are
+   inline. Scoped to the public shell (the two site roots, the sheet dialogs, the privacy panel):
+   this stylesheet also loads on the staff pages, which have their own rules. */
+@media (forced-colors: active) {
+  :is(
+      [data-testid='mobile-site-scroll'],
+      div:has(> [data-testid='desktop-top-panel']),
+      .knc-sheet-card,
+      #privacy-preferences
+    )
+    :is(button, [role='button']) {
+    border: 1px solid ButtonText !important;
+  }
+  :is(
+      [data-testid='mobile-site-scroll'],
+      div:has(> [data-testid='desktop-top-panel']),
+      .knc-sheet-card
+    )
+    :is([aria-pressed='true'], [aria-current='page'], [aria-checked='true'], [data-current-lang]) {
+    background: Highlight !important;
+    color: HighlightText !important;
+  }
+}
+
+/* Print. Paper is white and browsers leave backgrounds out, while the shell sets its palette
+   inline: the dark palette would print near-white text on white. */
+@media print {
+  html,
+  body {
+    background: #fff !important;
+  }
+  :is(
+    [data-testid='mobile-site-scroll'],
+    div:has(> [data-testid='desktop-top-panel']),
+    .knc-sheet-backdrop
+  ),
+  :is(
+      [data-testid='mobile-site-scroll'],
+      div:has(> [data-testid='desktop-top-panel']),
+      .knc-sheet-backdrop
+    )
+    * {
+    color: #000 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+  /* The dark palette inverts the black icons to white. */
+  :is(
+      [data-testid='mobile-site-scroll'],
+      div:has(> [data-testid='desktop-top-panel']),
+      .knc-sheet-backdrop
+    )
+    img {
+    filter: none !important;
+  }
+  /* Controls of the screen: the fixed navigation, the skip link, the privacy panel and the moving
+     photo rows. */
+  .knc-skip-link,
+  #privacy-preferences,
+  [data-testid='desktop-top-panel'],
+  [data-testid='marquee-row'] {
+    display: none !important;
+  }
+  /* The mobile layout scrolls inside a box as tall as the screen: let all of it reach the paper. */
+  [data-testid='mobile-site-scroll'] {
+    height: auto !important;
+    overflow: visible !important;
+  }
+  [data-testid='mobile-site-scroll'] > [data-knc-fold='panel'] {
+    position: relative !important;
+  }
+  /* An open sheet dialog (booking details, confirmation, Mina bokningar) prints alone: a fixed box
+     repeats on every page, so the page behind it gives up its height. A dialog left mounted in an
+     inert part (the closed desktop booking fold) is not on screen and does not count: the page
+     prints. */
+  body:has(.knc-sheet-backdrop:not([inert], [inert] *))
+    :is([data-testid='mobile-site-scroll'], div:has(> [data-testid='desktop-top-panel'])) {
+    height: 0 !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+  }
+}

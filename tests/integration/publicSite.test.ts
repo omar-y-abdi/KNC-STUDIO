@@ -22,6 +22,7 @@ import { supabaseBookingAdapter } from '../../modules/public-web/src/booking/ada
 import { stockholmInstant } from '../../modules/public-web/src/booking/stockholmTime'
 import { supabaseSiteChromeAdapter } from '../../modules/public-web/src/site/adapters/supabaseSiteChrome'
 import { asBarberId } from '../../modules/public-web/src/booking/domain'
+import type { AvailabilityParams } from '../../modules/public-web/src/booking/port'
 import {
   adminBackendReady,
   insertBookingRaw,
@@ -46,6 +47,13 @@ async function runSql(env: AdminStackEnv, sql: string, params: readonly unknown[
   } finally {
     await client.end()
   }
+}
+
+/** The times the real adapter offers. A failed read fails the test: it is not "no times". */
+async function availableTimes(params: AvailabilityParams): Promise<readonly string[]> {
+  const result = await supabaseBookingAdapter.availability(params)
+  if (!result.ok) throw new Error('The availability read failed')
+  return result.times
 }
 
 /** Read one about_content cell via the superuser (to restore it after an edit). */
@@ -328,7 +336,7 @@ describe.skipIf(!adminBackendReady())('public-site DB ports (integration)', () =
       // 2040-03-14 is a Wednesday (working under the seed). No bookings ⇒ the full 15-min-grid packed
       // set is available: a 45-min service fits at every quarter-hour from 09:00 whose window ends by
       // 18:00 (last start 17:15 → 17:15 + 45 = 18:00), i.e. 09:00, 09:15, …, 17:15 (34 starts).
-      const available = await supabaseBookingAdapter.availability({
+      const available = await availableTimes({
         barberId: asBarberId('hassan'),
         dateIso: '2040-03-14',
         durationMin: 45,
@@ -382,7 +390,7 @@ describe.skipIf(!adminBackendReady())('public-site DB ports (integration)', () =
       const start = stockholmInstant(2040, 3, 14, 13, 30)
       await insertBookingRaw(env, 'hassan', start, 45)
 
-      const available = await supabaseBookingAdapter.availability({
+      const available = await availableTimes({
         barberId: asBarberId('hassan'),
         dateIso,
         durationMin: 45,
@@ -402,7 +410,7 @@ describe.skipIf(!adminBackendReady())('public-site DB ports (integration)', () =
         'update public.barber_schedules set working = false where barber_id = $1 and weekday = 3',
         ['hassan'],
       )
-      const available = await supabaseBookingAdapter.availability({
+      const available = await availableTimes({
         barberId: asBarberId('hassan'),
         dateIso: '2040-03-14', // a Wednesday
         durationMin: 45,

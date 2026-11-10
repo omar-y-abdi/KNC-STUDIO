@@ -16,6 +16,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import { buildBookingStyles, palette, systemRed } from '../booking/bookingStyles'
 import { Turnstile, turnstileConfigured } from '../booking/Turnstile'
 import { FOCUS_CLS } from '../ui/pseudo'
+import { langHref } from '../ui/langHref'
 import type { AboutStrings, Lang } from '../i18n/index'
 import { aboutStrings, privacyStrings } from '../i18n/index'
 import { scalePx, type SizePreset } from '../site/siteChrome'
@@ -488,6 +489,8 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
     fontSize: '12px',
     textUnderlineOffset: '3px',
   }
+  // `knc-hit-footer` (global.css) enlarges the pointer target without moving the link.
+  const footerLinkClass = FOCUS_CLS + ' knc-hit-footer'
 
   // The interactive photo marquee of one gallery, or the note that stands in for it.
   const gallery = (state: ReturnType<typeof useGallery>, alt: string): JSX.Element =>
@@ -926,16 +929,16 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
           textAlign: 'center',
         }}
       >
-        <a href="/terms" class={FOCUS_CLS} style={footerLinkStyle}>
+        <a href={langHref('/terms', props.lang)} class={footerLinkClass} style={footerLinkStyle}>
           {tx.termsLink}
         </a>
-        <a href="/privacy" class={FOCUS_CLS} style={footerLinkStyle}>
+        <a href={langHref('/privacy', props.lang)} class={footerLinkClass} style={footerLinkStyle}>
           {tx.privacyLink}
         </a>
         {props.onManagePrivacy ? (
           <a
             href="#privacy-preferences"
-            class={FOCUS_CLS}
+            class={footerLinkClass}
             aria-label={privacyStrings(props.lang).manageLabel}
             onClick={(event) => {
               event.preventDefault()

@@ -16,6 +16,7 @@ import { asBarberId } from '../../modules/public-web/src/booking/domain'
 import type {
   CustomerEmailLinkResult,
   CustomerProfile,
+  MyBooking,
   MyBookingsResult,
   MyCancelResult,
 } from '../../modules/public-web/src/mybookings/domain'
@@ -365,6 +366,20 @@ let setCustomerCode: ((code: string | null | undefined) => void) | undefined
 let activeCustomerPort: CustomerPortKey = 'a'
 let activeCustomerCode: string | null | undefined
 
+/** A list result reaches the page as JSON, where each booking's `start` is a string; the dialog
+ * compares it with its clock, so make it the `Date` the port contract promises. */
+function revivedList(result: MyBookingsResult): MyBookingsResult {
+  if (!result.ok) return result
+  const revive = (booking: MyBooking): MyBooking => ({ ...booking, start: new Date(booking.start) })
+  return {
+    ...result,
+    bookings: {
+      upcoming: result.bookings.upcoming.map(revive),
+      past: result.bookings.past.map(revive),
+    },
+  }
+}
+
 export function customerControl(
   action:
     | 'switch-port'
@@ -392,7 +407,7 @@ export function customerControl(
   }
   if (action in responseGates && !responseGates[action as keyof typeof responseGates][index])
     throw new Error(`Customer ${action} response has no started ${port}[${index}] request`)
-  if (action === 'resolve-list') probe.list[index]?.release(result as MyBookingsResult)
+  if (action === 'resolve-list') probe.list[index]?.release(revivedList(result as MyBookingsResult))
   if (action === 'resolve-request') probe.request[index]?.release(result as CustomerEmailLinkResult)
   if (action === 'resolve-confirm') probe.confirm[index]?.release(result as CustomerEmailLinkResult)
   if (action === 'resolve-cancel') probe.cancel[index]?.release(result as MyCancelResult)
@@ -443,6 +458,9 @@ export function mountCustomerHarness(
       mode: 'light',
       lang,
       onClose: () => undefined,
+      business: DEFAULT_BUSINESS,
+      // Well before the fixture bookings (September 2026), so their cancel button is offered.
+      clock: () => new Date('2026-09-01T07:00:00Z'),
       port: probes[portKey].port,
       ...(accessToken === undefined ? {} : { accessToken }),
       ...(emailLinkCode === undefined ? {} : { emailLinkCode }),
@@ -972,7 +990,7 @@ const publicPorts: DesktopSitePreviewPorts = {
     listForBarber: async () => [{ id: 'test-service', name: 'Test cut', price: 300, dur: 30 }],
   },
   booking: {
-    availability: async () => ['10:00'],
+    availability: async () => ({ ok: true, times: ['10:00'] }),
     submit: async () => ({
       ok: false,
       error: { kind: 'submit', message: 'Unexpected fixture write' },

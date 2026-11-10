@@ -5,6 +5,7 @@ import type { JSX } from 'preact'
 import { useEffect, useState } from 'preact/hooks'
 import type { Lang } from '../i18n/index'
 import type { BusinessSettings } from '../site/siteChrome'
+import type { SiteChromeSnapshot } from '../site/useSiteChrome'
 
 export type Mode = 'light' | 'dark'
 
@@ -100,4 +101,15 @@ export interface ShellProps {
   readonly themeToggle: JSX.Element
   readonly langToggle: JSX.Element
   readonly chromeIconStyle: JSX.CSSProperties
+}
+
+/**
+ * The business settings a part of the app may act on as the owner's own: those of the site chrome
+ * once it has loaded for the language shown, `'unknown'` until then, and for good when that load
+ * fails. Until it has loaded the chrome is the shipped default (site/useSiteChrome.ts), whose
+ * 24-hour cancellation deadline and contact details are not the owner's. Without a backend the
+ * default is all there is, and is ready at once.
+ */
+export function ownerBusiness(site: SiteChromeSnapshot): BusinessSettings | 'unknown' {
+  return site.metadataReady ? site.chrome.business : 'unknown'
 }

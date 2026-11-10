@@ -54,8 +54,12 @@ export function ConfirmationDialog(props: ConfirmationDialogProps): JSX.Element 
         <div style={s.successCircleStyle}>
           <img src="/icons/checkmark.svg" alt="" style={s.successCheckStyle} />
         </div>
+        {/* A heading by role, not by tag: the published presentation stores this element as a
+            `div`, and its look must not change. */}
         <div
           id="knc-booked-title"
+          role="heading"
+          aria-level={2}
           style="font-family:'Inter Variable';font-weight:600;font-size:20px;margin-bottom:6px;"
         >
           {t.bookedTitle}

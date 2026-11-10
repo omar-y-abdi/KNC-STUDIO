@@ -19,7 +19,7 @@ export const bookingSv = {
   /** Shown in the time column while real availability is loading from the backend. */
   loadingTimes: 'Laddar tider …',
   /** Shown in the time column when a barber+date+service is chosen but no bookable times remain
-   * (barber off/on time-off, fully booked, or — for the backend — a read error; fail-closed). */
+   * (barber off/on time-off, fully booked). A failed read shows `errLoadTimes` instead. */
   noSlots: 'Inga lediga tider den här dagen. Välj en annan dag.',
   legendChosen: 'Vald',
   legendClosed: 'Stängt / upptaget',
@@ -51,13 +51,38 @@ export const bookingSv = {
   newBooking: 'Boka en ny tid',
   min: 'min',
   errName: 'Namnet är för långt',
-  errPhone: 'Ogiltigt telefonnummer',
+  errPhone: 'Ange ett svenskt mobilnummer: 07X XXX XX XX eller +46 7X XXX XX XX',
   errEmail: 'Ogiltig e-postadress',
   errSubmit: 'Något gick fel. Försök igen.',
   /** Gateway rejection: too many booking attempts (per-IP/phone backstop). */
   errRateLimited: 'För många bokningsförsök. Vänta en stund och försök igen.',
   /** Gateway rejection: the Turnstile human-verification challenge failed. */
   errChallenge: 'Vi kunde inte verifiera att du är en människa. Ladda om sidan och försök igen.',
+  /** A failed read of the barbers, the services or the times: never an empty-state message. Each
+   * is followed by the `retry` button. */
+  errLoadBarbers: 'Barberarna kunde inte hämtas.',
+  errLoadServices: 'Behandlingarna kunde inte hämtas.',
+  errLoadTimes: 'Tiderna kunde inte hämtas.',
+  retry: 'Försök igen',
+  /** The server refused the chosen start time (taken meanwhile, outside opening hours or no longer
+   * a valid start). Shown in the time column after the details popup closes. */
+  errSlotTaken: 'Tiden går inte längre att boka. Välj en annan tid.',
+  /** The server refused the chosen time right after a submit for that same time ended without an
+   * answer: the refusal may be about the customer's own booking. Shown in the details popup, or in
+   * the time column when the customer has closed the popup meanwhile. */
+  errPossiblyBooked:
+    'Tiden kan redan vara bokad av dig. Kontrollera din e-post eller Mina bokningar innan du bokar en ny tid.',
+  /** A submit ended without an answer that says what happened: the booking may exist. Shown in
+   * the details popup, for whichever time it is open, until a booking succeeds or the customer
+   * starts over; and in the time column when no popup was open as the submit ended, until a time
+   * is chosen. */
+  errUnconfirmed:
+    'Vi fick inget svar på din bokning och vet inte om den gick igenom. Kontrollera din e-post eller Mina bokningar innan du bokar igen.',
+  /** The book button was pressed in the popup of one time while the submit for another time was
+   * still on its way. Shown in that popup until the other submit is answered. */
+  errSubmitPending: 'En bokning skickas redan. Vänta en stund och försök igen.',
+  /** The booking port does not book: the Studio's preview of the site. Shown where a refusal is. */
+  errReadOnly: 'Förhandsvisningen är skrivskyddad.',
 }
 
 export const appSv = {
@@ -78,6 +103,10 @@ export const appSv = {
   lazyBookingError: 'Kunde inte ladda bokningen.',
   lazyMyBookingsError: 'Kunde inte ladda bokningarna.',
   lazyReload: 'Ladda om',
+  /** The skip link: the first stop of the tab order, shown only while it holds keyboard focus. */
+  skipToContent: 'Hoppa till innehållet',
+  /** Link to the contact page from the notice shown when the site could not be loaded. */
+  contactLink: 'Kontakt',
 }
 
 export const privacySv = {
@@ -140,7 +169,7 @@ export const aboutSv = {
   reviewTextPh: 'Berätta om ditt besök …',
   reviewSubmit: 'Lämna ett omdöme',
   reviewThanks: 'Tack för ditt omdöme!',
-  reviewErrPhone: 'Ogiltigt telefonnummer',
+  reviewErrPhone: 'Ange ett svenskt mobilnummer: 07X XXX XX XX eller +46 7X XXX XX XX',
   reviewErrText: 'Skriv något om ditt besök',
   reviewErrRating: 'Välj ett betyg',
   /** No device receipt or verified session, or no eligible finished, not-yet-reviewed booking in
@@ -206,6 +235,13 @@ export const myBookingsSv = {
   ariaClose: 'Stäng',
   ariaExpandRow: 'Visa detaljer',
   ariaExpandPast: 'Visa tidigare bokningar',
+  /** Replaces the cancel button once the online deadline has passed. `{hours}` is the salon's
+   * cancellation policy; the salon's phone and e-mail links follow the sentence. */
+  cancelClosed:
+    'Tidsgränsen för avbokning online ({hours} h före besöket) har passerat. Kontakta salongen:',
+  /** A cancel the server did not carry out, after which the list no longer holds the booking (it
+   * was already cancelled, or is no longer this customer's). Shown where `cancelledNote` is. */
+  bookingGoneNote: 'Bokningen finns inte längre bland dina kommande bokningar.',
 }
 
 export const labelsSv: CalendarLabels = {

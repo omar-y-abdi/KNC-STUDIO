@@ -132,6 +132,8 @@ test('customer access, booking, CMS publication and HTTPS cookie contracts', asy
     await page.getByRole('button', { name: 'Mina bokningar', exact: true }).click()
     await showHistory(page, a)
     await page.getByRole('button', { name: 'Stäng', exact: true }).click()
+    // The dialog's button gave it the entry /my-bookings; closing steps back to the homepage's.
+    await page.waitForURL((url) => url.pathname === '/')
     await page.reload({ waitUntil: 'domcontentloaded' })
     await cms.verify(page, width)
     await page.screenshot({

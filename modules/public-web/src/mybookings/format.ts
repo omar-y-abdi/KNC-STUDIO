@@ -15,6 +15,16 @@ export function formatRowLabel(lang: Lang, date: Date, sep: string): string {
 }
 
 /**
+ * Whether a booking looks cancellable online from here: its start is more than `policyHours` after
+ * `now`. The server decides with the same operator (strictly later), but on its own clock and its
+ * current setting, so the two can disagree; the dialog uses this only as a courtesy, to hide the
+ * cancel button and say why before the customer tries. Pure (injected `now`).
+ */
+export function onlineCancellationOpen(start: Date, now: Date, policyHours: number): boolean {
+  return start.getTime() > now.getTime() + policyHours * 3_600_000
+}
+
+/**
  * Split a flat booking list into upcoming/past around `now`: upcoming soonest-first, past
  * most-recent-first. A booking counts as past once its start is at/before `now`. Pure (injected
  * `now`); it sorts the filtered copies, so the input is never mutated.

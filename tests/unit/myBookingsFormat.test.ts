@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { formatRowLabel, splitByTime } from '../../modules/public-web/src/mybookings/format'
+import {
+  formatRowLabel,
+  onlineCancellationOpen,
+  splitByTime,
+} from '../../modules/public-web/src/mybookings/format'
 import { asBarberId } from '../../modules/public-web/src/booking/domain'
 import type { MyBooking } from '../../modules/public-web/src/mybookings/domain'
 
@@ -59,5 +63,28 @@ describe('splitByTime', () => {
     const before = all.map((b) => b.id)
     splitByTime(all, now)
     expect(all.map((b) => b.id)).toEqual(before)
+  })
+})
+
+describe('onlineCancellationOpen', () => {
+  // The server cancels only while `start > now + policy hours` (strictly later).
+  const now = new Date('2026-06-19T10:00:00.000Z')
+  const hours = (count: number): Date => new Date(now.getTime() + count * 3_600_000)
+
+  it('is open while the start is later than now plus the policy', () => {
+    expect(onlineCancellationOpen(hours(25), now, 24)).toBe(true)
+    expect(onlineCancellationOpen(new Date(hours(24).getTime() + 1), now, 24)).toBe(true)
+  })
+
+  it('is closed at exactly the deadline and after it', () => {
+    expect(onlineCancellationOpen(hours(24), now, 24)).toBe(false)
+    expect(onlineCancellationOpen(hours(23), now, 24)).toBe(false)
+    expect(onlineCancellationOpen(hours(-1), now, 24)).toBe(false)
+  })
+
+  it('follows the owner-set policy, not a fixed 24 hours', () => {
+    expect(onlineCancellationOpen(hours(30), now, 48)).toBe(false)
+    expect(onlineCancellationOpen(hours(49), now, 48)).toBe(true)
+    expect(onlineCancellationOpen(hours(2), now, 1)).toBe(true)
   })
 })
