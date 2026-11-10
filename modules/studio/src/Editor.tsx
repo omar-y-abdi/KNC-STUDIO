@@ -206,6 +206,11 @@ function fitEditor(editor: Editor): number | undefined {
   return editor.Canvas.getZoom()
 }
 
+/** The canvas as a flush compares it: its HTML with ids kept, and its sheet. */
+function canvasSnapshot(editor: Editor): { html: string; css: string } {
+  return { html: editor.getHtml({ cleanId: false }), css: readCanvasCss(editor) }
+}
+
 /** `chrome` is a created page's live header: menu, logo and contact changes invalidate its view. */
 function editorContextKey(props: Props, chrome: string): string {
   if (isSitePage(props.page)) return `${props.page.id}:${props.lang}:${props.mode}:site:${chrome}`
@@ -346,7 +351,7 @@ export function CmsEditor(props: Props): JSX.Element {
       installHomeAboutPreview(editor, create)
       aboutPreviewBuilt.current = true
       deferredAbout.current = null
-      checkpoint.current = { html: editor.getHtml({ cleanId: false }), css: readCanvasCss(editor) }
+      checkpoint.current = canvasSnapshot(editor)
       editor.clearDirtyCount()
       // Startup readiness stays separate from completion of the inactive model tree.
       host.current?.setAttribute('data-cms-about-preview-ready', 'true')
@@ -805,11 +810,7 @@ export function CmsEditor(props: Props): JSX.Element {
       applying.current = false
       if (reused) {
         rendered.current = { ...previous, key: contextKey, chrome }
-        if (timer.current === null)
-          checkpoint.current = {
-            html: editor.getHtml({ cleanId: false }),
-            css: readCanvasCss(editor),
-          }
+        if (timer.current === null) checkpoint.current = canvasSnapshot(editor)
         editor.clearDirtyCount()
         return
       }
@@ -842,7 +843,7 @@ export function CmsEditor(props: Props): JSX.Element {
       editor.select()
       setSelected(null)
       rendered.current = { ...previous, device: props.device, scene: props.scene, key: contextKey }
-      checkpoint.current = { html: editor.getHtml({ cleanId: false }), css: readCanvasCss(editor) }
+      checkpoint.current = canvasSnapshot(editor)
       applying.current = false
       editor.clearDirtyCount()
       if (previousState) restoreViewState(editor, previousState)
@@ -968,10 +969,7 @@ export function CmsEditor(props: Props): JSX.Element {
         html: variant.html,
         css: variant.css[props.mode],
       }
-      checkpoint.current = {
-        html: editor.getHtml({ cleanId: false }),
-        css: readCanvasCss(editor),
-      }
+      checkpoint.current = canvasSnapshot(editor)
       applying.current = false
       editor.clearDirtyCount()
       if (previousState) restoreViewState(editor, previousState)
