@@ -93,7 +93,8 @@ export const DEFAULT_BUSINESS: BusinessSettings = {
   ),
 }
 
-function textOrDefault(value: string | undefined, fallback: string): string {
+/** Use the default until an owner has entered a non-blank replacement. */
+export function textOrDefault(value: string | undefined, fallback: string): string {
   return value?.trim() === '' || value === undefined ? fallback : value
 }
 
