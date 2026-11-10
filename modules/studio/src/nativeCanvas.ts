@@ -39,7 +39,6 @@ export function readCanvasCss(editor: Editor): string {
 
 export function canvasRules(editor: Editor): CssRule[] {
   // Keep every unused source rule, but selection can create empty component rules.
-  // Empty layers live inside a nonempty envelope and remain in the export.
   return editor.Css.getAll().models.filter(
     (rule) => !rule.isNested() && Object.keys(rule.get('style') ?? {}).length > 0,
   )
@@ -106,7 +105,7 @@ export function readCanvasRuleCss(rule: CssRule, dimensions?: StyleProps): strin
     const atRule = rule.getAtRule()
     return atRule ? `${atRule}{${css}}` : css
   }
-  // These root envelopes preserve anonymous layer identity and complete keyframes.
+  // These root envelopes preserve nested conditions and complete keyframes.
   // Their frame keys need not fit GrapesJS's punctuation-only nested-key heuristic.
   if (rule.get('singleAtRule') && !rule.getAtRule() && !rule.selectorsToString())
     return canvasStyleCss(rule.toJSON().style ?? {})
@@ -116,8 +115,8 @@ export function readCanvasRuleCss(rule: CssRule, dimensions?: StyleProps): strin
   })
 }
 
-/** GrapesJS defaults both nested and empty blocks off. Layer ordering requires the
- * empty blocks too; keep canvas mounting and every export on the same options. */
+/** GrapesJS defaults both nested and empty blocks off. Keep canvas mounting and every export
+ * on the same options. */
 export function connectCanvasStyles(editor: Editor, project?: (css: string) => string): () => void {
   if (project) canvasStyleProjectors.set(editor, project)
   editor.getConfig().optsCss = { ...editor.getConfig().optsCss, ...canvasStyleOptions }
@@ -402,7 +401,7 @@ interface CanvasStyle {
 }
 
 /** JS style objects need distinct keys where CSS permits repeated blocks. Whitespace before
- * the opening brace/colon keeps the CSS identical, including separate anonymous layers. */
+ * the opening brace/colon keeps the CSS identical. */
 function appendCanvasStyle(style: CanvasStyle, property: string, value: CanvasStyle[string]): void {
   let key = property
   const nested = typeof value === 'object' && !Array.isArray(value)
@@ -423,33 +422,6 @@ function appendCanvasStyle(style: CanvasStyle, property: string, value: CanvasSt
   Object.defineProperty(style, key, { value, enumerable: true, configurable: true, writable: true })
 }
 
-function appendLayerOrder(style: CanvasStyle, node: Atrule): void {
-  const list = node.prelude?.type === 'AtrulePrelude' ? node.prelude.children.first : null
-  // css-tree's installed runtime supports LayerList/Layer; its type package is older.
-  if (!list || String(list.type) !== 'LayerList' || !('children' in list) || !list.children)
-    throw new Error('Ordningen på sidans CSS-lager kunde inte bevaras.')
-  list.children.forEach((layer) => {
-    appendCanvasStyle(style, `@layer ${generate(layer)}`, Object.create(null))
-  })
-}
-
-/** Parse a stored sheet with each layer statement in the form the canvas writes it: the import
- * orders a statement's layers with an empty block each, in its place, and the export writes those
- * blocks. Ownership compares stored items with exported ones in this form. */
-export function parseLayerBlocks(css: string): StyleSheet {
-  const sheet = parseCanvasSheet(css)
-  walk(sheet, {
-    visit: 'Atrule',
-    enter(node, item, list) {
-      if (node.block || ident.decode(node.name).toLowerCase() !== 'layer' || !item || !list) return
-      const order: CanvasStyle = Object.create(null)
-      appendLayerOrder(order, node)
-      list.replace(item, parseCanvasSheet(canvasStyleCss(order)).children)
-    },
-  })
-  return sheet
-}
-
 function canvasNestedStyle(
   block: Block,
   withinRule = true,
@@ -464,13 +436,6 @@ function canvasNestedStyle(
         node.property,
         generate(node.value) + (node.important ? ' !important' : ''),
       )
-    } else if (
-      node.type === 'Atrule' &&
-      ident.decode(node.name).toLowerCase() === 'layer' &&
-      !node.block
-    ) {
-      // Ordered empty named blocks establish exactly the same layer ordering.
-      appendLayerOrder(style, node)
     } else if (node.type === 'Rule' || (node.type === 'Atrule' && node.block)) {
       if (!node.block) throw new Error('Ett nästlat CSS-block saknas.')
       let key =
@@ -479,30 +444,17 @@ function canvasNestedStyle(
           : `@${node.name}${node.prelude ? ` ${generate(node.prelude)}` : ''}`
       // GrapesJS recognizes nested style keys by punctuation. An explicit nesting
       // selector preserves the descendant meaning of a bare type selector as well.
-      if (node.type === 'Rule' && !envelope && !keyframes && !/^[&.#:[>+~*]/.test(key)) {
-        if (withinRule) key = `& ${key}`
-        else if (node.prelude.type === 'SelectorList')
-          key = node.prelude.children
-            .toArray()
-            .map((branch) => `:is(${generate(branch)})`)
-            .join(',')
-        else throw new Error('En CSS-selektor i ett lager kunde inte bevaras.')
-      }
+      if (node.type === 'Rule' && !envelope && !keyframes && !/^[&.#:[>+~*]/.test(key))
+        key = `& ${key}`
       // GJS renders once before css:mount:before. Prefix every absolute selector/frame
       // key so it recognizes a nested model instead of coercing an object declaration.
       // The envelope serializer removes exactly this prefix in the same context.
       if (node.type === 'Rule' && envelope && (!withinRule || keyframes)) key = `& ${key}`
       if (
         node.type === 'Atrule' &&
-        ![
-          'media',
-          'supports',
-          'container',
-          'layer',
-          'font-face',
-          'keyframes',
-          '-webkit-keyframes',
-        ].includes(ident.decode(node.name).toLowerCase())
+        !['media', 'supports', 'container', 'font-face', 'keyframes', '-webkit-keyframes'].includes(
+          ident.decode(node.name).toLowerCase(),
+        )
       )
         throw new Error(`Kan inte bevara nästlad @${node.name} i sidans CSS.`)
       appendCanvasStyle(
@@ -569,20 +521,11 @@ export function parseCanvasCss(
   })
   if (tree.type === 'StyleSheet')
     tree.children.forEach((node, item) => {
-      let hasLayer = false
-      walk(node, (child) => {
-        if (child.type === 'Rule') return walk.skip
-        if (child.type === 'Atrule' && ident.decode(child.name).toLowerCase() === 'layer')
-          hasLayer = true
-        return undefined
-      })
       if (
         node.type !== 'Atrule' ||
-        (!hasLayer &&
-          // Groups inside a qualified rule are already masked below. Keeping that
-          // rule native preserves the component's editable Desktop ID style.
-          !node.block?.children.some((child) => child.type === 'Atrule') &&
-          !isKeyframes(node))
+        // Groups inside a qualified rule are already masked below. Keeping that
+        // rule native preserves the component's editable Desktop ID style.
+        (!node.block?.children.some((child) => child.type === 'Atrule') && !isKeyframes(node))
       )
         return
       const key = `--cms-internal-layer-${layerRoots.size}`
@@ -640,8 +583,7 @@ export function parseCanvasCss(
           declaration.important = false
         } else if (
           declaration.type === 'Rule' ||
-          (declaration.type === 'Atrule' &&
-            (declaration.block || ident.decode(declaration.name).toLowerCase() === 'layer'))
+          (declaration.type === 'Atrule' && declaration.block)
         ) {
           const nested = canvasNestedStyle({
             ...block,
