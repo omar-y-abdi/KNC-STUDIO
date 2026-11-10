@@ -45,7 +45,7 @@ test('image processing CPU budget', async ({ page, evidenceDir }) => {
     await page.close()
   }
   await initializeImageMagick(
-    new Uint8Array(await readFile('supabase/functions/upload-image/magick.wasm')),
+    new Uint8Array(await readFile('node_modules/@imagemagick/magick-wasm/dist/magick.wasm')),
   )
   const results = []
   for (const [name, encoded] of Object.entries(samples)) {

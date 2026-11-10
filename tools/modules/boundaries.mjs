@@ -111,9 +111,11 @@ export function dependenciesOf(path, text) {
       ts.isPropertyAccessExpression(node.expression) &&
       isImportMeta(node.expression.expression)
     ) {
-      unsupported.push(
-        `${path}: unsupported import.meta dependency operation ${node.expression.name.text}`,
-      )
+      if (node.expression.name.text === 'resolve') add(node.arguments[0], 'import.meta.resolve')
+      else
+        unsupported.push(
+          `${path}: unsupported import.meta dependency operation ${node.expression.name.text}`,
+        )
     } else if (
       ts.isNewExpression(node) &&
       ts.isIdentifier(node.expression) &&
@@ -238,43 +240,6 @@ export function inspectBoundaries(root = repositoryRoot) {
     jsx: ts.JsxEmit.ReactJSX,
   }
   const exportedTargets = new Set(exports.values())
-  // Harnesses may intentionally inspect private source, so production package restrictions do
-  // not apply to tests. A harness dependency that cannot be read or resolved is still recorded.
-  const testUnsupported = []
-  for (const file of ['tools/e2e', 'tests/unit', 'tests/integration']
-    .flatMap((path) => walkFiles(root, path))
-    .filter((path) => /\.[cm]?[jt]sx?$/.test(path))) {
-    const parsed = dependenciesOf(file, readFileSync(resolve(root, file), 'utf8'))
-    testUnsupported.push(...parsed.unsupported.map((reason) => ({ file, reason })))
-    for (const { specifier, kind } of parsed.dependencies) {
-      const normalized = specifier.startsWith('/') ? resolve(root, specifier.slice(1)) : specifier
-      const resolved = ts.resolveModuleName(
-        normalized,
-        resolve(root, file),
-        compilerOptions,
-        ts.sys,
-      ).resolvedModule
-      const literal = specifier.startsWith('/')
-        ? resolve(root, specifier.slice(1))
-        : specifier.startsWith('.')
-          ? resolve(root, dirname(file), specifier)
-          : null
-      const target =
-        exports.get(specifier) ??
-        (resolved
-          ? relative(root, realpathSync(resolved.resolvedFileName))
-          : literal && existsSync(literal)
-            ? relative(root, realpathSync(literal))
-            : null)
-      if (
-        target === null &&
-        (specifier.startsWith('.') ||
-          specifier.startsWith('/') ||
-          specifier.startsWith('@bladeblend/'))
-      )
-        testUnsupported.push({ file, reason: `${file}: unresolved test ${kind} ${specifier}` })
-    }
-  }
   for (const file of styles) {
     const owner = ownerOf(file)
     const manifest = manifests[owner] ?? rootManifest
@@ -456,7 +421,6 @@ export function inspectBoundaries(root = repositoryRoot) {
   return {
     files: files.sort(),
     styles,
-    testUnsupported: testUnsupported.sort((a, b) => a.reason.localeCompare(b.reason)),
     edges: edges.sort((a, b) => `${a.from}:${a.to}`.localeCompare(`${b.from}:${b.to}`)),
     errors: [...new Set(errors)].sort(),
     unsupported: [...new Set(unsupported)].sort(),

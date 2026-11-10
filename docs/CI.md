@@ -1,42 +1,30 @@
 # CI architecture and verification
 
-The definitive workflow is `.github/workflows/ci.yml`. Pushes to `main` and manual runs always use full verification.
-Pull requests classify the paths changed between the exact base commit and the formatted checkout
-(the GitHub merge commit). One kind of change omits jobs: when every changed path is an in-place
-modification of a TypeScript or JavaScript source file under `modules/studio/src` or
-`modules/staff-admin/src`, the Edge Functions job and the current-schema database job are skipped.
-The boundary check keeps backend code from importing those two workspaces. The database job's
-integration tests and customer flow do exercise staff adapters and Studio publication; for such a
-pull request they run on the push to `main`. Every other change selects full verification: an
-added, deleted or renamed file, a stylesheet, template or data file, any other workspace, a
-migration, test, tool, document or configuration file, an empty diff, an invalid comparison
-context, an untracked input, a boundary error, or a browser or integration harness import the
-boundary check cannot read. No path-filtered workflow can bypass the gates.
+The definitive workflow is `.github/workflows/ci.yml`. Every pull request, push to `main` and manual
+run executes every job: nothing is selected by changed path and no job is conditional. No
+path-filtered workflow can bypass the gates.
 
-The format job records the tested source, then creates and rederives `impact.json` before exporting
-one decision per job. Consumers fetch complete commit history, replay that same format patch,
-install frozen dependencies and rederive the plan against workflow-provided base/head/event values.
-The plan's own context cannot authorize itself. Only the exact root CI artifact paths are ignored;
-untracked source inputs force full coverage. Tests are followed by source and plan checks.
+The format job records the tested source. Every other verification job replays that same format
+patch, verifies the recorded source identity, installs frozen dependencies and verifies the source
+identity again after its tests. A missing or stale source or build artifact fails the job. Only the
+exact root CI artifact paths are ignored by Git.
 
 The protected contexts retain **Frontend and browser**, **Edge Functions**, and **Database and
-integration**. Both aggregates always run and validate the source artifact, plan and exact dependency
-set. Selected jobs must succeed. A skipped job is accepted only when the rederived plan explicitly
-omits it; failed, cancelled, unknown and missing results always fail. Frontend also checks the Edge
-job, so skipping Edge cannot evade omission validation. Missing or stale artifacts fail closed.
-Formatting, broad static checks, module boundaries and CI regression contracts always run.
+integration**. Both aggregates always run and check the exact set of jobs they need: every one must
+have succeeded. Failed, cancelled, skipped, unknown and missing results always fail. Frontend also
+requires the Edge job.
 
 CMS verification uses both Chromium and WebKit across nine shards per engine; public verification
 uses two shards and includes Chromium, Firefox and WebKit. The unit suite and every browser group
-always run whole: no plan selects individual test files. Discovery and execution receive the same
-project and shard through `tools/ci/impact-plan.mjs`, which refuses a group whose job the plan
-omits; empty execution is fatal.
+always run whole: nothing selects individual test files. Each browser job names its group in the
+job environment (`E2E_GROUP`) and gives native discovery and execution the same project and shard;
+empty execution is fatal.
 There are no retries, `continue-on-error` gates, scheduled substitutes or paid runner requirements.
 
 ## Modules and seams
 
 The source preparation module (`.github/actions/ci-node`) owns frozen npm installation, replay of the
-shared format patch, source identity verification and trusted impact-plan verification. Container preparation checks UID 1001 and
+shared format patch and source identity verification. Container preparation checks UID 1001 and
 write access before caches, artifact downloads and `npm ci`; npm cache paths come from shell
 variables inside the container. Furl setup and regression tests belong to the quality job. Workflow
 commands use plain Bash. The format job produces a patch that consumers replay, so formatting does
@@ -140,7 +128,7 @@ source identity check detects tracked changes by browser tests. JSON/HTML report
 screenshots and domain evidence are retained as per-shard GitHub artifacts. Uploads naming a hidden
 `.ci-*` plan explicitly enable `include-hidden-files` so the discovered plan is retained too.
 
-The always-on quality tests independently list all unsharded native browser projects and
+The quality tests independently list all unsharded native browser projects and
 compare their discovered file union with the spec files on disk for each of the four browser
 groups. A file's group follows from its name: `cms-startup.spec.mjs` is startup, `customer.spec.mjs`
 is customer, any other `cms-*` spec is CMS and the rest are public. A spec excluded by `testMatch`,

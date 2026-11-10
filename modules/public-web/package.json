@@ -53,7 +53,6 @@
     "test": "node ../../tools/modules/run.mjs public-web test",
     "lint": "node ../../tools/modules/run.mjs public-web lint",
     "typecheck": "node ../../tools/modules/run.mjs public-web typecheck",
-    "build": "node ../../tools/modules/run.mjs public-web build",
-    "plan": "node ../../tools/modules/run.mjs public-web plan"
+    "build": "node ../../tools/modules/run.mjs public-web build"
   }
 }

@@ -22,7 +22,6 @@
     "test": "node ../../tools/modules/run.mjs studio test",
     "lint": "node ../../tools/modules/run.mjs studio lint",
     "typecheck": "node ../../tools/modules/run.mjs studio typecheck",
-    "build": "node ../../tools/modules/run.mjs studio build",
-    "plan": "node ../../tools/modules/run.mjs studio plan"
+    "build": "node ../../tools/modules/run.mjs studio build"
   }
 }

@@ -102,12 +102,10 @@ test('native CMS shards cover every case exactly once', () => {
   const cms = workflow.jobs.cms
   const { matrix } = cms.strategy
   assert.deepEqual(matrix, { engine: ['chromium', 'webkit'], shard: [1, 2, 3, 4, 5, 6, 7, 8, 9] })
-  const steps = cms.steps.filter((step) =>
-    step.run?.startsWith('node tools/ci/impact-plan.mjs browser cms '),
-  )
+  const steps = cms.steps.filter((step) => step.run?.startsWith('npx playwright test '))
   assert.equal(steps.length, 2)
   const args =
-    'node tools/ci/impact-plan.mjs browser cms --project=cms-${{ matrix.engine }} --shard=${{ matrix.shard }}/9'
+    'npx playwright test --project=cms-${{ matrix.engine }} --shard=${{ matrix.shard }}/9'
   assert.equal(steps[0].run, `${args} --list --reporter=json > .ci-expected.json`)
   assert.equal(steps[1].run, args)
   for (const engine of matrix.engine) {

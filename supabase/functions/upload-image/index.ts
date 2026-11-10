@@ -16,9 +16,9 @@ const MAX_INPUT_BYTES = 5 * 1024 * 1024
 let imageMagickReady: Promise<void> | null = null
 
 function ensureImageMagickReady(): Promise<void> {
-  imageMagickReady ??= Deno.readFile(new URL('./magick.wasm', import.meta.url)).then((wasm) =>
-    initializeImageMagick(wasm),
-  )
+  imageMagickReady ??= Deno.readFile(
+    new URL('magick.wasm', import.meta.resolve('@imagemagick/magick-wasm')),
+  ).then((wasm) => initializeImageMagick(wasm))
   return imageMagickReady
 }
 

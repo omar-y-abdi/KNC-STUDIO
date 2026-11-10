@@ -12,7 +12,9 @@ const JPEG_FIXTURE = Uint8Array.from(
 
 describe('upload-image JPEG runtime', () => {
   beforeAll(async () => {
-    const wasm = new Uint8Array(readFileSync('supabase/functions/upload-image/magick.wasm'))
+    const wasm = new Uint8Array(
+      readFileSync('node_modules/@imagemagick/magick-wasm/dist/magick.wasm'),
+    )
     await initializeImageMagick(wasm)
   })
 
