@@ -1,14 +1,20 @@
 # CI architecture and verification
 
 The definitive workflow is `.github/workflows/ci.yml`. Pushes to `main` and manual runs always use full verification.
-Pull requests derive an affected-module plan from the exact base commit and the formatted checkout
-(the GitHub merge commit), including transitive source imports and explicitly owned tests. Unknown
-paths, unsupported imports, incomplete ownership, invalid comparison context or untracked inputs
-conservatively select full verification. Shared content contracts reach public, Studio and backend;
-booking SQL reaches customer and staff acceptance. No path-filtered workflow can bypass the gates.
+Pull requests classify the paths changed between the exact base commit and the formatted checkout
+(the GitHub merge commit). One kind of change omits jobs: when every changed path is an in-place
+modification of a TypeScript or JavaScript source file under `modules/studio/src` or
+`modules/staff-admin/src`, the Edge Functions job and the current-schema database job are skipped.
+The boundary check keeps backend code from importing those two workspaces. The database job's
+integration tests and customer flow do exercise staff adapters and Studio publication; for such a
+pull request they run on the push to `main`. Every other change selects full verification: an
+added, deleted or renamed file, a stylesheet, template or data file, any other workspace, a
+migration, test, tool, document or configuration file, an empty diff, an invalid comparison
+context, an untracked input, a boundary error, or a browser or integration harness import the
+boundary check cannot read. No path-filtered workflow can bypass the gates.
 
 The format job records the tested source, then creates and rederives `impact.json` before exporting
-job decisions and matrices. Consumers fetch complete commit history, replay that same format patch,
+one decision per job. Consumers fetch complete commit history, replay that same format patch,
 install frozen dependencies and rederive the plan against workflow-provided base/head/event values.
 The plan's own context cannot authorize itself. Only the exact root CI artifact paths are ignored;
 untracked source inputs force full coverage. Tests are followed by source and plan checks.
@@ -20,13 +26,11 @@ omits it; failed, cancelled, unknown and missing results always fail. Frontend a
 job, so skipping Edge cannot evade omission validation. Missing or stale artifacts fail closed.
 Formatting, broad static checks, module boundaries and CI regression contracts always run.
 
-Full CMS verification uses both Chromium and WebKit across nine shards per engine; full public
-verification uses two shards and includes Chromium, Firefox and WebKit. Affected plans may select
-fewer explicitly owned specs and proven shard counts. A sole DeliveryStatus panel edit, with its
-audited importer set unchanged, retains delivery races, real Studio navigation, owner/workspace
-contracts, public CMS shell and startup coverage using one nonempty CMS shard per engine and one
-public shard. Additional callers, shared inputs or other edits invalidate that narrow cohort. Discovery and execution receive the same
-literal spec filters, project and shard through `tools/ci/impact-plan.mjs`; empty execution is fatal.
+CMS verification uses both Chromium and WebKit across nine shards per engine; public verification
+uses two shards and includes Chromium, Firefox and WebKit. The unit suite and every browser group
+always run whole: no plan selects individual test files. Discovery and execution receive the same
+project and shard through `tools/ci/impact-plan.mjs`, which refuses a group whose job the plan
+omits; empty execution is fatal.
 There are no retries, `continue-on-error` gates, scheduled substitutes or paid runner requirements.
 
 ## Modules and seams
@@ -77,10 +81,10 @@ mail and Edge runtime. Only Studio, metadata tooling and the pooler are omitted 
 | Gate         | Native coverage / checks                                                                                                                                  |
 | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Source       | Auto-format, format check, patch replay and exact source verification                                                                                     |
-| Static       | ESLint, TypeScript (including Playwright config), selected exact unit files, boundary/CI contracts, production dependency audit, CMS release stamp        |
+| Static       | ESLint, TypeScript (including Playwright config), the complete unit suite, boundary/CI contracts, production dependency audit, CMS release stamp          |
 | Build        | Production compile/minification, real Worker dry-run, font license/artifact rejection, CSP fixture build                                                  |
 | Public/admin | Chromium domain/race/session flows; privacy, CMS shell and delayed verification in all three engines; approved visual views and existing image CPU budget |
-| CMS          | Selected CMS specs in both engines; full plans retain nine shards per engine                                                                              |
+| CMS          | Every CMS spec in both engines across nine shards per engine                                                                                              |
 | Startup      | Chromium and WebKit against actual compiled routes under the existing production CSP policy                                                               |
 | Edge         | Every entrypoint checked by Deno 2.9.5 with the frozen lock                                                                                               |
 | Current DB   | All current migrations and pgTAP; serial adapter integration; actual Edge/Storage asset reuse; three real Worker/Edge/HTTPS customer engine flows         |
@@ -111,8 +115,8 @@ npm run test:e2e:startup
 npm run test:e2e:customer       # requires dedicated local Supabase + documented Function env
 ```
 
-Use native `--project`, `--grep`, and `--shard` options for scoped diagnosis. Full CI plans use nine CMS shards
-per engine and two public shards; affected plans export their verified matrices. Each runner uses one browser worker so latency/CPU assertions do
+Use native `--project`, `--grep`, and `--shard` options for scoped diagnosis. CI uses nine CMS shards
+per engine and two public shards. Each runner uses one browser worker so latency/CPU assertions do
 not compete with another local test. Failure in one matrix member does not cancel unrelated members.
 
 Several worktrees can run Playwright at the same time if each one has its own `E2E_PORT_OFFSET`, for
@@ -137,11 +141,13 @@ screenshots and domain evidence are retained as per-shard GitHub artifacts. Uplo
 `.ci-*` plan explicitly enable `include-hidden-files` so the discovered plan is retained too.
 
 The always-on quality tests independently list all unsharded native browser projects and
-compare their discovered file union with declared ownership for each of the four browser groups.
-An owned file excluded by `testMatch`, an empty browser spec, or a file assigned to the wrong group
-fails this check even if every discovered case passes. The union preserves deliberate per-engine
-exclusions, including Chromium-only CMS specs. Native Vitest file discovery must also exactly
-match unit ownership, so changing metadata cannot silently drop a unit file.
+compare their discovered file union with the spec files on disk for each of the four browser
+groups. A file's group follows from its name: `cms-startup.spec.mjs` is startup, `customer.spec.mjs`
+is customer, any other `cms-*` spec is CMS and the rest are public. A spec excluded by `testMatch`,
+an empty browser spec, or a spec its group's projects do not match fails this check even if every
+discovered case passes. The union preserves deliberate per-engine exclusions, including
+Chromium-only CMS specs. Native Vitest file discovery must also exactly match the test files under
+`tests/unit`, so a configuration change cannot silently drop a unit file.
 
 `tools/ci/test-*.mjs` exercises actual formatter replay/errors, the protected gate executable,
 artifact corruption/staleness, native fixture failure/timeout/focused tests/empty selection, shard

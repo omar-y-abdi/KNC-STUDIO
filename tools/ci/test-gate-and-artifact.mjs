@@ -164,9 +164,11 @@ test('only browser-only jobs use the matching Playwright image and skip browser 
   const install = action('ci-browsers').runs.steps
   assert.ok(install.some((step) => step.uses?.startsWith('actions/cache@')))
   assert.ok(install.some((step) => step.run?.includes('playwright install --with-deps')))
-  assert.equal(
-    workflow.jobs['public-browsers'].strategy.matrix,
-    '${{ fromJSON(needs.format.outputs.public_matrix) }}',
+  assert.deepEqual(workflow.jobs['public-browsers'].strategy.matrix, { shard: [1, 2] })
+  assert.ok(
+    workflow.jobs['public-browsers'].steps.some((step) =>
+      step.run?.endsWith('browser public --shard=${{ matrix.shard }}/2'),
+    ),
   )
   assert.deepEqual(workflow.jobs.startup.strategy.matrix.engine, ['chromium', 'webkit'])
 })

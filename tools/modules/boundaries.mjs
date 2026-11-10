@@ -238,9 +238,8 @@ export function inspectBoundaries(root = repositoryRoot) {
     jsx: ts.JsxEmit.ReactJSX,
   }
   const exportedTargets = new Set(exports.values())
-  // Harnesses may intentionally inspect private source. Record their literal dependencies for
-  // audited behavioral cohorts, without applying production package restrictions to tests.
-  const testEdges = []
+  // Harnesses may intentionally inspect private source, so production package restrictions do
+  // not apply to tests. A harness dependency that cannot be read or resolved is still recorded.
   const testUnsupported = []
   for (const file of ['tools/e2e', 'tests/unit', 'tests/integration']
     .flatMap((path) => walkFiles(root, path))
@@ -267,7 +266,6 @@ export function inspectBoundaries(root = repositoryRoot) {
           : literal && existsSync(literal)
             ? relative(root, realpathSync(literal))
             : null)
-      if (target && ownerOf(target)) testEdges.push({ from: file, to: target })
       if (
         target === null &&
         (specifier.startsWith('.') ||
@@ -459,7 +457,6 @@ export function inspectBoundaries(root = repositoryRoot) {
     files: files.sort(),
     styles,
     testUnsupported: testUnsupported.sort((a, b) => a.reason.localeCompare(b.reason)),
-    testEdges: testEdges.sort((a, b) => `${a.from}:${a.to}`.localeCompare(`${b.from}:${b.to}`)),
     edges: edges.sort((a, b) => `${a.from}:${a.to}`.localeCompare(`${b.from}:${b.to}`)),
     errors: [...new Set(errors)].sort(),
     unsupported: [...new Set(unsupported)].sort(),

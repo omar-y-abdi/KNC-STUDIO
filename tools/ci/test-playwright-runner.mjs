@@ -8,19 +8,11 @@ import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import test from 'node:test'
 
-import { browserArguments } from '../modules/run.mjs'
-import { inspectBoundaries } from '../modules/boundaries.mjs'
-import {
-  deliveryCohort,
-  loadInventory,
-  selectVerification,
-  unitOwnership,
-} from '../modules/model.mjs'
-import { planOutputs } from './impact-plan.mjs'
 import {
   discoverBrowserFiles,
   discoverUnitFiles,
-  verifyOwnedFiles,
+  testFiles,
+  verifyRunnerFiles,
 } from './verify-test-inventory.mjs'
 
 const cli = resolve('node_modules/playwright/cli.js')
@@ -64,7 +56,7 @@ test('native runner makes fixture failure, timeout, focused tests and empty sele
   assert.match(focused.stdout + focused.stderr, /forbidOnly/)
 })
 
-test('native full CMS shards cover every case exactly once with selected literal filters', () => {
+test('native CMS shards cover every case exactly once', () => {
   // `specs` collects each listed case's project, file (relative to testDir) and spec identity.
   const list = (args, specs = []) => {
     const result = spawnSync(
@@ -104,23 +96,20 @@ test('native full CMS shards cover every case exactly once with selected literal
   const webkit = specs.filter((spec) => spec.project === 'cms-webkit')
   const shared = chromium.filter((spec) => !spec.file.endsWith('.chromium.spec.mjs'))
   assert.deepEqual(webkit.map((spec) => spec.key).sort(), shared.map((spec) => spec.key).sort())
-  // Check the actual workflow selector against independently chosen files and native shard IDs.
+  // Check the actual workflow selector and matrix against the native shard IDs.
   const { load } = createRequire(import.meta.url)('js-yaml')
   const workflow = load(readFileSync('.github/workflows/ci.yml', 'utf8'))
   const cms = workflow.jobs.cms
-  assert.equal(cms.strategy.matrix, '${{ fromJSON(needs.format.outputs.cms_matrix) }}')
+  const { matrix } = cms.strategy
+  assert.deepEqual(matrix, { engine: ['chromium', 'webkit'], shard: [1, 2, 3, 4, 5, 6, 7, 8, 9] })
   const steps = cms.steps.filter((step) =>
     step.run?.startsWith('node tools/ci/impact-plan.mjs browser cms '),
   )
   assert.equal(steps.length, 2)
   const args =
-    'node tools/ci/impact-plan.mjs browser cms --project=cms-${{ matrix.engine }} --shard=${{ matrix.shard }}/${{ needs.format.outputs.cms_shards }}'
+    'node tools/ci/impact-plan.mjs browser cms --project=cms-${{ matrix.engine }} --shard=${{ matrix.shard }}/9'
   assert.equal(steps[0].run, `${args} --list --reporter=json > .ci-expected.json`)
   assert.equal(steps[1].run, args)
-  const matrix = JSON.parse(planOutputs({ jobs: {}, shards: { cms: 9, public: 2 } }).cms_matrix)
-  assert.deepEqual(matrix, { engine: ['chromium', 'webkit'], shard: [1, 2, 3, 4, 5, 6, 7, 8, 9] })
-  const paths = [...new Set(chromium.map((spec) => `tools/e2e/${spec.file}`))].sort()
-  const filters = browserArguments(paths).slice(2)
   for (const engine of matrix.engine) {
     const project = `cms-${engine}`
     const selected = specs
@@ -130,7 +119,7 @@ test('native full CMS shards cover every case exactly once with selected literal
     assert.ok(selected.length > 0)
     const assignedSpecs = []
     const assigned = matrix.shard.flatMap((shard) =>
-      list([...filters, `--project=${project}`, `--shard=${shard}/9`], assignedSpecs),
+      list([`--project=${project}`, `--shard=${shard}/9`], assignedSpecs),
     )
     assert.equal(new Set(assigned).size, assigned.length, `${project}: duplicate cases`)
     assert.deepEqual(
@@ -138,61 +127,6 @@ test('native full CMS shards cover every case exactly once with selected literal
       selected,
       `${project}: missing or unexpected cases`,
     )
-  }
-})
-
-test('affected DeliveryStatus native shard union preserves exactly the selected CMS and public cases', () => {
-  const graph = inspectBoundaries(process.cwd())
-  const { inventory, errors } = loadInventory(process.cwd())
-  assert.deepEqual(errors, [])
-  const plan = selectVerification(
-    [{ path: deliveryCohort.input, status: 'M' }],
-    graph,
-    inventory,
-    unitOwnership(process.cwd(), inventory, graph),
-  )
-  assert.equal(plan.mode, 'affected')
-  assert.deepEqual(plan.tests.browser.cms, deliveryCohort.cms)
-  assert.deepEqual(plan.tests.browser.public, deliveryCohort.public)
-  const list = (group, paths, extra) => {
-    const result = spawnSync(
-      process.execPath,
-      browserArguments(paths, [...extra, '--list', '--reporter=json']),
-      {
-        env: { ...process.env, E2E_GROUP: group },
-        encoding: 'utf8',
-        timeout: 30000,
-      },
-    )
-    assert.equal(result.status, 0, result.stderr)
-    const cases = []
-    const visit = (suite) => {
-      for (const spec of suite.specs ?? [])
-        for (const row of spec.tests ?? []) cases.push(`${spec.id}/${row.projectName}`)
-      for (const child of suite.suites ?? []) visit(child)
-    }
-    for (const suite of JSON.parse(result.stdout).suites) visit(suite)
-    assert.ok(cases.length > 0, `${group}: empty native selection`)
-    return cases.sort()
-  }
-  for (const [group, projects] of [
-    ['cms', ['cms-chromium', 'cms-webkit']],
-    ['public', [null]],
-  ]) {
-    const paths = plan.tests.browser[group]
-    const matrix = JSON.parse(planOutputs(plan)[`${group}_matrix`])
-    assert.equal(matrix.shard.length, plan.shards[group])
-    for (const project of projects) {
-      const extra = project ? [`--project=${project}`] : []
-      const expected = list(group, paths, extra)
-      const actual = matrix.shard
-        .flatMap((shard) =>
-          list(group, paths, [...extra, `--shard=${shard}/${plan.shards[group]}`]),
-        )
-        .sort()
-      assert.equal(new Set(actual).size, actual.length, `${group}: duplicate selected cases`)
-      assert.deepEqual(actual, expected, `${group}: missing or unselected cases`)
-    }
   }
 })
 
@@ -204,6 +138,7 @@ async function nativeInventoryFixture(t) {
   for (const file of ['playwright.config.ts', 'vitest.config.ts', 'tools/e2e/origins.mjs'])
     cpSync(file, join(root, file))
   symlinkSync(resolve('node_modules'), join(root, 'node_modules'))
+  assert.equal(spawnSync('git', ['init', '-q'], { cwd: root }).status, 0)
   const spec = (name, content = `import {test} from '@playwright/test'; test('${name}',()=>{});`) =>
     writeFileSync(join(root, `tools/e2e/${name}.spec.mjs`), content)
   for (const name of ['admin-state', 'cms-fixture', 'cms-startup', 'customer']) spec(name)
@@ -214,50 +149,52 @@ async function nativeInventoryFixture(t) {
   return { root, spec }
 }
 
-test('native inventory rejects an owned public spec excluded by project testMatch', async (t) => {
+test('native inventory accepts a fixture whose every test file is discovered', async (t) => {
+  const { root } = await nativeInventoryFixture(t)
+  const files = testFiles(root)
+  assert.deepEqual(files, [
+    'tests/unit/example.test.ts',
+    'tools/e2e/admin-state.spec.mjs',
+    'tools/e2e/cms-fixture.spec.mjs',
+    'tools/e2e/cms-startup.spec.mjs',
+    'tools/e2e/customer.spec.mjs',
+  ])
+  for (const group of ['cms', 'public', 'startup', 'customer'])
+    verifyRunnerFiles(files, group, discoverBrowserFiles(root, group))
+  verifyRunnerFiles(files, 'unit', discoverUnitFiles(root))
+})
+
+test('native inventory rejects a public spec excluded by project testMatch', async (t) => {
   const { root, spec } = await nativeInventoryFixture(t)
   spec('new-public-contract')
-  const inventory = {
-    'tools/e2e/admin-state.spec.mjs': { kind: 'public' },
-    'tools/e2e/new-public-contract.spec.mjs': { kind: 'public' },
-  }
   const discovered = discoverBrowserFiles(root, 'public')
   assert.deepEqual(discovered, ['tools/e2e/admin-state.spec.mjs'])
-  assert.throws(() => verifyOwnedFiles(inventory, 'public', discovered), /public.*ownership/)
+  assert.throws(() => verifyRunnerFiles(testFiles(root), 'public', discovered), /public.*on disk/)
 })
 
-test('native inventory rejects an owned empty browser spec', async (t) => {
+test('native inventory rejects an empty browser spec', async (t) => {
   const { root, spec } = await nativeInventoryFixture(t)
   spec('cms-empty', 'export {}\n')
-  const browser = {
-    'tools/e2e/cms-fixture.spec.mjs': { kind: 'cms' },
-    'tools/e2e/cms-empty.spec.mjs': { kind: 'cms' },
-  }
   assert.throws(
-    () => verifyOwnedFiles(browser, 'cms', discoverBrowserFiles(root, 'cms')),
-    /cms.*ownership/,
+    () => verifyRunnerFiles(testFiles(root), 'cms', discoverBrowserFiles(root, 'cms')),
+    /cms.*on disk/,
   )
 })
 
-test('native inventory rejects a unit file assigned another kind', async (t) => {
+test('native inventory rejects a unit test file the unit runner does not include', async (t) => {
   const { root } = await nativeInventoryFixture(t)
   writeFileSync(
-    join(root, 'tests/unit/retained.test.ts'),
-    "import {test} from 'vitest'; test('retained',()=>{});",
+    join(root, 'tests/unit/excluded.test.tsx'),
+    "import {test} from 'vitest'; test('excluded',()=>{});",
   )
-  const units = {
-    'tests/unit/example.test.ts': { kind: 'orchestration' },
-    'tests/unit/retained.test.ts': { kind: 'unit' },
-  }
   const discovered = discoverUnitFiles(root)
-  assert.deepEqual(discovered, ['tests/unit/example.test.ts', 'tests/unit/retained.test.ts'])
-  assert.throws(() => verifyOwnedFiles(units, 'unit', discovered), /unit.*ownership/)
+  assert.deepEqual(discovered, ['tests/unit/example.test.ts'])
+  assert.throws(() => verifyRunnerFiles(testFiles(root), 'unit', discovered), /unit.*on disk/)
 })
 
-test('every owned browser and unit file is independently discovered by its native runner', () => {
-  const { inventory, errors } = loadInventory(process.cwd())
-  assert.deepEqual(errors, [])
+test('every browser and unit test file on disk is independently discovered by its native runner', () => {
+  const files = testFiles(process.cwd())
   for (const group of ['cms', 'public', 'startup', 'customer'])
-    verifyOwnedFiles(inventory, group, discoverBrowserFiles(process.cwd(), group))
-  verifyOwnedFiles(inventory, 'unit', discoverUnitFiles(process.cwd()))
+    verifyRunnerFiles(files, group, discoverBrowserFiles(process.cwd(), group))
+  verifyRunnerFiles(files, 'unit', discoverUnitFiles(process.cwd()))
 })
