@@ -148,7 +148,8 @@ export interface CmsPage {
   description: Localized
   content: Record<CmsLang, PageVariant>
   inMenu: boolean
-  /** New authored pages own their complete layout, including a freely editable header/footer. */
+  /** Legacy mark of a page stored with its own header and footer copy. Stored documents may
+   * carry it; publication refuses it on a created page (validateNoFrozenSitePages). */
   layout?: 'independent'
 }
 const REGION_NAMES = ['home-before', 'home-after', 'about-before', 'about-after'] as const

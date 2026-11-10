@@ -320,7 +320,7 @@ describe('a created page stored with a frozen header by main', () => {
     vi.restoreAllMocks()
   })
 
-  it('is frozen, publishable, and stores its language action pinned to light', () => {
+  it('is frozen, valid as a stored document, and stores its language action pinned to light', () => {
     expect(isFrozenSitePage(legacyPage())).toBe(true)
     expectValid(withLegacy(legacyPage()))
     for (const lang of ['sv', 'en'] as const)

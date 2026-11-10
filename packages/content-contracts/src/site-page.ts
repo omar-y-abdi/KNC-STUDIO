@@ -1,4 +1,5 @@
 import { repairDesktopCss } from './cms-device-css.ts'
+import { isFrozenSitePage } from './cms-frozen-page.ts'
 import { generate, ident, parse, walk, type Atrule, type CssNode, type Rule } from 'css-tree'
 import { parseFragment, serialize, serializeOuter, type DefaultTreeAdapterMap } from 'parse5'
 import {
@@ -14,6 +15,7 @@ import {
 } from './cms.ts'
 
 export { isSitePage } from './cms.ts'
+export { isFrozenSitePage } from './cms-frozen-page.ts'
 
 type Node = DefaultTreeAdapterMap['node']
 type Element = DefaultTreeAdapterMap['element']
@@ -559,23 +561,6 @@ export interface SitePageRender {
   /** The page's own CSS per scheme; SITE_PAGE_CSS is the base sheet below it. */
   readonly css: Record<CmsMode, string>
 }
-
-/** Most bodies never name the old shell. Parse only candidates so comments and quoted attribute
- * values cannot impersonate an actual shell element. HTML ids remain case-sensitive. */
-function hasFrozenShell(html: string): boolean {
-  return (
-    html.includes('cms-site-shell') &&
-    find(parseFragment(html), (node) => attr(node, 'id') === 'cms-site-shell') !== undefined
-  )
-}
-
-/** A created page an earlier Studio stored with its own frozen header copy. The Worker serves it as
- * stored without migrating its markup; the Studio migrates it on load with dropFrozenChrome.
- * The explicit legacy flag avoids inspecting either variant. */
-export const isFrozenSitePage = (page: CmsPage): boolean =>
-  page.layout === 'independent' ||
-  hasFrozenShell(page.content.sv.html) ||
-  hasFrozenShell(page.content.en.html)
 
 /** A created page in the current format: its stored body goes under the live header. */
 export const isLiveSitePage = (page: CmsPage): boolean =>

@@ -16,6 +16,7 @@ export const releaseFiles = [
   'packages/content-contracts/src/cms-primitives.ts',
   'packages/content-contracts/src/email-design.ts',
   'packages/content-contracts/src/cms-markup.ts',
+  'packages/content-contracts/src/cms-frozen-page.ts',
   'packages/content-contracts/src/cms-built-assets.ts',
 ]
 
