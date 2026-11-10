@@ -21,7 +21,7 @@ import { canReplaceDocumentMetadata, useSiteChrome } from '../site/useSiteChrome
 import { buildBusinessStructuredData } from '../site/business'
 import { nativePublicPath } from '../site/routeMetadata'
 import { formatBusinessAddress, resolveSiteText, type SiteChrome } from '../site/siteChrome'
-import { paintViewport } from '../ui/paintViewport'
+import { paintEdgeTints, paintViewport } from '../ui/paintViewport'
 import { scheduleIdle } from '../ui/idle'
 import { LazySurface } from '../ui/LazySurface'
 import {
@@ -459,6 +459,7 @@ export function App({
   const topBar = isMobile ? (dark ? '#242427' : '#f4f3f0') : c.bg
   const pageBg = isMobile ? (inSection ? c.bg : dark ? '#242427' : '#f4f3f0') : c.bg
   const cmsPresentation = useCmsPresentation()
+  const edgeTints = isMobile && preview === undefined
   useLayoutEffect(() => {
     const surface = document.querySelector(
       `[data-knc-surface="${isMobile ? 'mobile' : 'desktop'}-${inSection ? 'booking' : 'home'}"]`,
@@ -472,8 +473,10 @@ export function App({
       return value === 'transparent' || value === 'rgba(0, 0, 0, 0)' ? fallback : value
     }
     const top = background(header, topBar)
-    paintViewport(isMobile && !inSection ? top : background(surface, pageBg), top, state.mode)
-  }, [pageBg, topBar, isMobile, inSection, state.mode, cmsPresentation])
+    const page = isMobile && !inSection ? top : background(surface, pageBg)
+    paintViewport(page, top, state.mode)
+    return edgeTints ? paintEdgeTints(top, page) : undefined
+  }, [pageBg, topBar, isMobile, inSection, state.mode, cmsPresentation, edgeTints])
 
   const langMini = (on: boolean): JSX.CSSProperties => ({
     border: 'none',
