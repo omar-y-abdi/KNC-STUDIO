@@ -50,6 +50,12 @@ test.describe('mobile viewport chrome', () => {
                   ?.content,
                 themeMatches:
                   metas.length === 1 && !metas[0].hasAttribute('media') && metas[0].content === top,
+                edges: [...globalThis.document.querySelectorAll('body > [data-viewport-edge]')].map(
+                  (edge) => [
+                    edge.dataset.viewportEdge,
+                    globalThis.getComputedStyle(edge).backgroundColor,
+                  ],
+                ),
                 expected: mode,
               }
             },
@@ -77,6 +83,19 @@ test.describe('mobile viewport chrome', () => {
             scheme: mode,
             declaredScheme: mode,
             themeMatches: true,
+            edges: [
+              ['top', mode === 'light' ? 'rgb(244, 243, 240)' : 'rgb(36, 36, 39)'],
+              [
+                'bottom',
+                view === 'home'
+                  ? mode === 'light'
+                    ? 'rgb(244, 243, 240)'
+                    : 'rgb(36, 36, 39)'
+                  : mode === 'light'
+                    ? 'rgb(255, 255, 255)'
+                    : 'rgb(28, 28, 30)',
+              ],
+            ],
           }),
         )
     }

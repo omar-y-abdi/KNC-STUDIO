@@ -569,7 +569,15 @@ test('cms-lifecycle a canvas edit reaches IndexedDB when the tab is hidden, then
   await context.clock.resume()
 
   const next = await context.newPage()
+  // The studio offers a draft once, at load, and only while that draft's tab lock is free.
+  await next.goto(`${harnessOrigin}/tools/e2e/admin-harness.html?view=cms-studio`)
+  await expect
+    .poll(() => next.evaluate(async () => (await globalThis.navigator.locks.query()).held.length), {
+      timeout: 30_000,
+    })
+    .toBe(0)
   await openStudio(next)
+  await attachTabState(next, 'tab state of the next tab')
   await next.getByRole('button', { name: 'Visa utkast', exact: true }).click()
   const offers = next.getByRole('region', { name: 'Utkast från stängda flikar', exact: true })
   await offers.getByRole('button', { name: 'Fortsätt här', exact: true }).click()

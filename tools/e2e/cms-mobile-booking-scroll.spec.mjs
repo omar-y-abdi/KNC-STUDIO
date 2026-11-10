@@ -119,3 +119,80 @@ test('captured booking opens at its content and folds reversibly in the editing 
   await page.evaluate(() => globalThis.disposeBookingCanvas())
   await expect(frame.locator('#cms-canvas-behavior')).toHaveCount(0)
 })
+
+test('hero controls, slotted ones included, fade in the editing canvas as on the site', async ({
+  page,
+  context,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await installStoredBackend(context)
+  await context.addCookies([
+    { name: 'bladeblend_storage_preferences', value: 'essential', url: harnessOrigin },
+  ])
+  await page.goto(`${harnessOrigin}/?mode=light`)
+  const hero = '[data-knc-fold="hero"]'
+  // Every hero control but the travelling brand, including the ones a slot wraps.
+  const controls = `${hero} > :not(h1):not([data-knc-slot]), ${hero} > [data-knc-slot] > *`
+  const pill = `${hero} > [data-knc-slot] > [aria-label="Hantera integritetsinställningar"]`
+  await page.locator(pill).waitFor()
+  await page.evaluate(async () => {
+    const { snapshotNative, mergeModes } = await import('/modules/studio/src/nativePages.ts')
+    const { nativeCanvas } = await import('/modules/studio/src/nativeCanvas.ts')
+    const { canvasBehavior } = await import('/modules/studio/src/canvasBehavior.ts')
+    const source = globalThis.document.querySelector('[data-knc-surface="mobile-home"]')
+    const snapshot = snapshotNative(source, 'mobile-home')
+    const html = mergeModes(snapshot, snapshot)
+    const canvas = nativeCanvas({ html, css: { light: '', dark: '' } }, 'light')
+    const frame = globalThis.document.createElement('iframe')
+    frame.id = 'home-canvas-fixture'
+    frame.style.cssText = 'position:fixed;inset:0;width:390px;height:844px;border:0;z-index:999'
+    globalThis.document.body.appendChild(frame)
+    const parsed = new globalThis.DOMParser().parseFromString(canvas.html, 'text/html')
+    frame.contentDocument.body.replaceChildren(
+      frame.contentDocument.importNode(parsed.body.firstElementChild, true),
+    )
+    const style = frame.contentDocument.createElement('style')
+    style.textContent = `body{margin:0}${canvas.css}`
+    frame.contentDocument.head.appendChild(style)
+    globalThis.disposeHomeCanvas = canvasBehavior(
+      {
+        Canvas: { getDocument: () => frame.contentDocument },
+        on: () => undefined,
+        off: () => undefined,
+        refresh: () => undefined,
+      },
+      'default',
+      'light',
+    )
+  })
+  const canvas = page.frameLocator('#home-canvas-fixture')
+  await expect(canvas.locator(pill)).toHaveCount(1)
+  const opacity = (locator) =>
+    locator.evaluate((node) => node.ownerDocument.defaultView.getComputedStyle(node).opacity)
+  const opacities = (scope) =>
+    scope
+      .locator(controls)
+      .evaluateAll((nodes) =>
+        nodes.map((node) => node.ownerDocument.defaultView.getComputedStyle(node).opacity),
+      )
+  const scrollTo = (top) =>
+    Promise.all(
+      [page, canvas].map((scope) =>
+        scope.locator('[data-knc-surface="mobile-home"]').evaluate((root, top) => {
+          root.scrollTop = top
+        }, top),
+      ),
+    )
+  // The site paints the fade one frame after its scroll; compare once its control has settled.
+  const compare = async (top, settled) => {
+    await scrollTo(top)
+    await expect.poll(async () => settled(await opacity(page.locator(pill)))).toBe(true)
+    const site = await opacities(page)
+    await expect.poll(() => opacities(canvas)).toEqual(site)
+  }
+  await compare(732, (value) => value === '0')
+  await compare(200, (value) => value !== '0' && value !== '1')
+  await compare(0, (value) => value === '1')
+  await page.evaluate(() => globalThis.disposeHomeCanvas())
+})

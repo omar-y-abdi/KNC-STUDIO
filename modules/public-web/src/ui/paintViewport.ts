@@ -29,3 +29,35 @@ export function paintViewport(pageBg: string, themeColor: string, scheme?: 'ligh
   for (const item of document.querySelectorAll('meta[name="theme-color"]'))
     if (item !== meta) item.remove()
 }
+
+function edgeTint(edge: 'top' | 'bottom', color: string): HTMLElement {
+  const tint = document.createElement('div')
+  tint.setAttribute('data-viewport-edge', edge)
+  tint.setAttribute('aria-hidden', 'true')
+  const declarations: readonly (readonly [string, string])[] = [
+    ['position', 'fixed'],
+    [edge, '0'],
+    ['left', '0'],
+    ['right', '0'],
+    ['height', '24px'],
+    // Above the mobile panel (10), below the privacy banner and dialogs (30+).
+    ['z-index', '20'],
+    ['pointer-events', 'none'],
+    ['background-color', color],
+    // Safari reads the background colour; the mask paints none of it.
+    ['mask-image', 'linear-gradient(transparent, transparent)'],
+    ['-webkit-mask-image', 'linear-gradient(transparent, transparent)'],
+  ]
+  for (const [name, value] of declarations) tint.style.setProperty(name, value)
+  return tint
+}
+
+/** iOS 26 Safari tints its bars from a fixed box at each edge and keeps a viewport-sized sticky
+ *  box's first colour; fresh strips override it. Returns their remover. */
+export function paintEdgeTints(top: string, bottom: string): () => void {
+  const tints = [edgeTint('top', top), edgeTint('bottom', bottom)]
+  for (const tint of tints) document.body.appendChild(tint)
+  return () => {
+    for (const tint of tints) tint.remove()
+  }
+}

@@ -73,13 +73,20 @@ export function canvasBehavior(editor: Editor, scene: CmsScene, mode: CmsMode): 
         brandRoot = root
         stopBrandGeometry = root ? observeMobileBrandGeometry(root, schedule) : () => undefined
       }
-      if (root)
+      if (root) {
+        // The fade reaches a slotted control only through the slot's inline display:contents,
+        // which the runtime renders and the canvas keeps in an ID rule instead.
+        for (const slot of root.querySelectorAll<HTMLElement>(
+          '[data-knc-fold="hero"] > [data-knc-slot]',
+        ))
+          if (slot.style.display !== 'contents') slot.style.display = 'contents'
         paintMobileBrand(
           root,
           motion.collapse,
           height,
           win.matchMedia('(prefers-reduced-motion: reduce)').matches,
         )
+      }
     }
     const schedule = (): void => {
       if (!frame) frame = win.requestAnimationFrame(update)

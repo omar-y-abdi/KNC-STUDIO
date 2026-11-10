@@ -8,8 +8,9 @@ import {
   gatewayError,
   type GatewayRateLimit,
 } from '../../supabase/worker/customerGateway'
-import worker, { PublicContent, maintenanceMode } from '../../supabase/worker/index'
+import worker, { PublicContent, isWorkerPath, maintenanceMode } from '../../supabase/worker/index'
 import { ownHeaders } from '../../supabase/worker/responseHeaders'
+import { NATIVE_PUBLIC_PATHS } from '../../modules/public-web/src/site/routeMetadata'
 
 const SITE = 'https://bladeblendstudio.se'
 const read = (path: string): string =>
@@ -899,9 +900,157 @@ describe('Allow on every 405 (W2-4)', () => {
     },
   )
 
+  const offers: CmsPage = {
+    ...terms,
+    id: '10000000-0000-4000-8000-000000000008',
+    kind: 'page',
+    path: '/offers',
+  }
+  /** Paths whose GET the Worker answers itself; /offers is a published created page. */
+  const WORKER_PATHS = [
+    ...NATIVE_PUBLIC_PATHS,
+    '/admin',
+    '/admin/cms',
+    '/admin/settings',
+    '/login',
+    '/reset',
+    '/invite',
+    '/auth/confirm',
+    '/.well-known/security.txt',
+    '/cms-public/source',
+    `/${TOKEN}`,
+    '/offers',
+  ]
+  const REFUSED = ['POST', 'PUT', 'PATCH', 'DELETE']
+
+  it('isWorkerPath holds for the paths the Worker answers without a file, not a file-backed or unknown path', () => {
+    for (const path of WORKER_PATHS.filter((path) => path !== '/offers'))
+      expect(isWorkerPath(path), path).toBe(true)
+    for (const path of [
+      '/offers',
+      '/not-a-route',
+      '/contact',
+      '/privacy',
+      '/terms',
+      '/google-calendar',
+      '/llms.txt',
+      '/sitemap.xml',
+      '/404.html',
+      '/api/cms/presentation',
+      '/administrator',
+      `/${TOKEN}/extra`,
+    ])
+      expect(isWorkerPath(path), path).toBe(false)
+  })
+
+  it.each(REFUSED.flatMap((method) => WORKER_PATHS.map((path) => [method, path] as const)))(
+    'names GET and HEAD when the Worker refuses %s %s, with no body and no read GET does not make',
+    async (method, path) => {
+      const env = createEnv()
+      const getReads = stubSupabase(publication([offers]))
+      const served = await worker.fetch(new Request(`${SITE}${path}`), env, cached(env))
+      expect(served.status).toBeLessThan(400)
+      const calls = stubSupabase(publication([offers]))
+      const response = await worker.fetch(
+        new Request(`${SITE}${path}`, { method }),
+        createEnv(),
+        noPublicContent,
+      )
+      expect(response.status).toBe(405)
+      expect(response.headers.get('Allow')).toBe('GET, HEAD')
+      expectOwnHeaders(response)
+      expect(await response.text()).toBe('')
+      expect(calls.filter((call) => !getReads.includes(call))).toEqual([])
+    },
+  )
+
+  it.each(['/admin', '/admin/settings', '/login', '/reset', '/invite', '/auth/confirm'])(
+    'keeps the noindex of POST %s on its 405',
+    async (path) => {
+      const response = await worker.fetch(
+        new Request(`${SITE}${path}`, { method: 'POST' }),
+        createEnv(),
+        noPublicContent,
+      )
+      expect(response.status).toBe(405)
+      expect(response.headers.get('X-Robots-Tag')).toBe('noindex, nofollow')
+    },
+  )
+
+  it.each(['GET', 'HEAD'].flatMap((method) => WORKER_PATHS.map((path) => [method, path] as const)))(
+    'answers %s %s without a 405 or Allow (control)',
+    async (method, path) => {
+      stubSupabase(publication([offers]))
+      const env = createEnv()
+      const response = await worker.fetch(
+        new Request(`${SITE}${path}`, { method }),
+        env,
+        cached(env),
+      )
+      expect(response.status).toBeLessThan(400)
+      expect(response.headers.has('Allow')).toBe(false)
+    },
+  )
+
+  it.each(
+    REFUSED.flatMap((method) =>
+      ['/not-a-route', '/offers', '/api/not-a-route', '/.well-known/not-a-file'].map(
+        (path) => [method, path] as const,
+      ),
+    ),
+  )(
+    'answers %s %s, which names nothing, with 404 and no read GET does not make (control)',
+    async (method, path) => {
+      const env = createEnv()
+      const getReads = stubSupabase(publication())
+      const missing = await worker.fetch(new Request(`${SITE}${path}`), env, cached(env))
+      expect(missing.status).toBe(404)
+      const calls = stubSupabase(publication())
+      const response = await worker.fetch(
+        new Request(`${SITE}${path}`, { method }),
+        createEnv(),
+        noPublicContent,
+      )
+      expect(response.status).toBe(404)
+      expect(response.headers.has('Allow')).toBe(false)
+      expect(calls.filter((call) => !getReads.includes(call))).toEqual([])
+    },
+  )
+
+  it.each(['/llms.txt', '/privacy', '/terms'])(
+    'leaves the 405 to POST %s to its deployed file (control)',
+    async (path) => {
+      const files = {
+        ...FILES,
+        '/llms.txt': read('public/llms.txt'),
+        '/privacy.html': read('public/privacy.html'),
+        '/terms.html': read('public/terms.html'),
+      }
+      const response = await worker.fetch(
+        new Request(`${SITE}${path}`, { method: 'POST' }),
+        createEnv({}, files),
+        noPublicContent,
+      )
+      expect(response.status).toBe(405)
+      expect(response.headers.get('Allow')).toBe('GET, HEAD')
+    },
+  )
+
+  it.each([
+    ['/booking', 404],
+    ['/', 405],
+  ] as const)('answers OPTIONS %s as the asset layer does (control)', async (path, status) => {
+    const response = await worker.fetch(
+      new Request(`${SITE}${path}`, { method: 'OPTIONS' }),
+      createEnv(),
+      noPublicContent,
+    )
+    expect(response.status).toBe(status)
+  })
+
   it('adds no Allow to an answer that is not a 405 (control)', async () => {
     stubSupabase()
-    for (const method of ['GET', 'POST']) {
+    for (const method of ['GET', 'HEAD', ...REFUSED]) {
       const response = await worker.fetch(
         new Request(`${SITE}/not-a-route`, { method }),
         createEnv(),
