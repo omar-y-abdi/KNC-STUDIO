@@ -200,6 +200,14 @@ export function err<T>(kind: AdminError['kind'], message: string): AdminResult<T
   return { ok: false, error: { kind, message } }
 }
 
+/** Build the `error` branch of a structured outcome (availability mutation / barber delete). */
+export function outcomeError(
+  kind: AdminError['kind'],
+  message: string,
+): { readonly kind: 'error'; readonly error: AdminError } {
+  return { kind: 'error', error: { kind, message } }
+}
+
 // --- Delete outcomes -----------------------------------------------------------------------------
 
 /**

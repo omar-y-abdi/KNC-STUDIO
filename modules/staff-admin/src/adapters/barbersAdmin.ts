@@ -23,14 +23,13 @@ import {
 import type {
   AdminBarber,
   AdminBarberId,
-  AdminError,
   AdminResult,
   BarberAccountState,
   BarberEdit,
   DeleteBarberOutcome,
   NewBarber,
 } from '../types'
-import { err, ok } from '../types'
+import { err, ok, outcomeError } from '../types'
 
 export const BARBER_COLUMNS = 'id,name,ig,role_sv,role_en,bio_sv,bio_en,active,sort_order'
 
@@ -160,11 +159,6 @@ export async function setBarberActive(
   }
 }
 
-/** Build the `error` branch of a `DeleteBarberOutcome` from a typed kind + Swedish message. */
-function deleteBarberError(kind: AdminError['kind'], message: string): DeleteBarberOutcome {
-  return { kind: 'error', error: { kind, message } }
-}
-
 /**
  * Delete a barber via the `admin_delete_barber` RPC (owner-only; RLS + the SECURITY DEFINER RPC are
  * the whole boundary). With `purgeBookings=false` the RPC REFUSES while the barber still has bookings
@@ -190,15 +184,15 @@ export async function deleteBarber(
     if (payload === null && error !== null) {
       try {
         const response = (error as unknown as { context?: Response }).context
-        if (response === undefined) return deleteBarberError('network', WRITE_ERROR)
+        if (response === undefined) return outcomeError('network', WRITE_ERROR)
         payload = await response.json()
       } catch {
-        return deleteBarberError('network', WRITE_ERROR)
+        return outcomeError('network', WRITE_ERROR)
       }
     }
 
     const parsed = parseWith(adminDeleteBarberResponse, payload)
-    if (!parsed.ok) return deleteBarberError('malformed', WRITE_ERROR)
+    if (!parsed.ok) return outcomeError('malformed', WRITE_ERROR)
 
     const r = parsed.value
     if (r.ok) {
@@ -219,11 +213,11 @@ export async function deleteBarber(
     }
     if (r.error === 'delivery_pending') return { kind: 'delivery_pending' }
     if (r.error === 'forbidden') {
-      return deleteBarberError('forbidden', 'Bara ägaren kan radera barberare.')
+      return outcomeError('forbidden', 'Bara ägaren kan radera barberare.')
     }
-    return deleteBarberError('not_found', 'Barberaren finns inte.')
+    return outcomeError('not_found', 'Barberaren finns inte.')
   } catch {
-    return deleteBarberError('network', WRITE_ERROR)
+    return outcomeError('network', WRITE_ERROR)
   }
 }
 

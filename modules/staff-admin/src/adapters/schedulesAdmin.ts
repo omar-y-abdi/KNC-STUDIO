@@ -18,7 +18,7 @@ import type {
   AvailabilityMutationOutcome,
   WeekSchedule,
 } from '../types'
-import { err, ok } from '../types'
+import { err, ok, outcomeError } from '../types'
 
 const READ_ERROR = 'Kunde inte läsa schemat.'
 const WRITE_ERROR = 'Kunde inte spara schemat. Försök igen.'
@@ -69,22 +69,19 @@ export async function saveWeek(
       p_week: rows,
       p_allow_existing_bookings: allowExistingBookings,
     })
-    if (error !== null) return { kind: 'error', error: { kind: 'network', message: WRITE_ERROR } }
+    if (error !== null) return outcomeError('network', WRITE_ERROR)
     const parsed = parseWith(saveWeekResponse, data)
-    if (!parsed.ok) return { kind: 'error', error: { kind: 'malformed', message: WRITE_ERROR } }
+    if (!parsed.ok) return outcomeError('malformed', WRITE_ERROR)
     if (parsed.value.ok) return { kind: 'ok', value: week }
     if (parsed.value.error === 'booking_conflict') {
       return { kind: 'booking_conflict', bookingIds: parsed.value.booking_ids }
     }
     if (parsed.value.error === 'forbidden') {
-      return {
-        kind: 'error',
-        error: { kind: 'forbidden', message: 'Du kan bara ändra ditt eget schema.' },
-      }
+      return outcomeError('forbidden', 'Du kan bara ändra ditt eget schema.')
     }
-    return { kind: 'error', error: { kind: 'validation', message: WRITE_ERROR } }
+    return outcomeError('validation', WRITE_ERROR)
   } catch {
-    return { kind: 'error', error: { kind: 'network', message: WRITE_ERROR } }
+    return outcomeError('network', WRITE_ERROR)
   }
 }
 
