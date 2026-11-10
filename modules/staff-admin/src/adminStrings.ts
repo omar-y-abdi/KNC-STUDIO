@@ -1,426 +1,14 @@
-// Typed admin UI string table — SV + EN. The pattern mirrors the public i18n (BookingStrings,
-// AppStrings in index.ts): a closed interface means a missing translation is a compile error.
+// Typed admin UI string table — SV + EN. The Swedish table defines the keys (`AdminStrings`), so a
+// translation missing from the English table is a compile error.
 // All admin strings live in one file (not split into sv.ts/en.ts) because the admin UI is
 // self-contained and the volume is much smaller than the public-facing copy.
 
 import type { Lang } from '@bladeblend/public-web/localization'
 
-// --- Interface (the single source of truth for required keys) ------------------------------------
-
-export interface AdminStrings {
-  // Navigation tabs (AdminShell sidebar + mobile strip)
-  readonly tabSchedule: string
-  readonly tabBookings: string
-  readonly tabAllBookings: string
-  readonly tabBarbers: string
-  readonly tabServices: string
-  readonly tabProfile: string
-  readonly tabSettings: string
-  readonly lazyLoading: string
-  readonly lazyError: string
-  readonly lazyReload: string
-  // Settings (authenticated owner/barber account)
-  readonly settingsTitle: string
-  readonly settingsLead: string
-  readonly settingsEmailTitle: string
-  readonly settingsEmailLead: string
-  readonly settingsCurrentEmail: string
-  readonly settingsNewEmail: string
-  readonly settingsEmailPlaceholder: string
-  readonly settingsEmailInvalid: string
-  readonly settingsEmailSame: string
-  readonly settingsEmailSaving: string
-  readonly settingsEmailSubmit: string
-  readonly settingsEmailSent: string
-  readonly settingsPasswordTitle: string
-  readonly settingsPasswordLead: string
-  // Profil (barber photo) view.
-  readonly profileTitle: string
-  readonly profileLead: string
-  readonly profilePhotoAlt: string
-  readonly profileUpload: string
-  readonly profileReplace: string
-  readonly profileUploading: string
-  readonly profileRemove: string
-  readonly profileNoPhoto: string
-  readonly profileUploadedOk: string
-  readonly profileRemovedOk: string
-  readonly profileRemovalPending: string
-  readonly profileLoading: string
-  readonly profileDeleteTitle: string
-  readonly profileDeleteBody: string
-  // Services (per-barber menu) view.
-  readonly servicesTitle: string
-  readonly servicesLead: string
-  readonly svcColName: string
-  readonly svcColPrice: string
-  readonly svcColDuration: string
-  readonly svcNamePh: string
-  readonly svcActive: string
-  readonly svcSpecificDays: string
-  readonly svcSpecificDaysLead: string
-  readonly svcInactiveTag: string
-  readonly svcSave: string
-  readonly svcSaving: string
-  readonly svcSaved: string
-  readonly svcDelete: string
-  readonly svcMoveUp: string
-  readonly svcMoveDown: string
-  readonly svcAddTitle: string
-  readonly svcAddBtn: string
-  readonly svcAdding: string
-  readonly svcLoading: string
-  readonly svcEmpty: string
-  readonly svcSaveError: string
-  readonly svcValidation: string
-  readonly svcDeleteTitle: string
-  readonly svcDeleteBody: string
-  readonly svcDeleteConfirm: string
-  readonly svcDeleteCancel: string
-  // Shell chrome
-  readonly signOut: string
-  /** Used as `{t.greeting} {firstName}` in the topbar — kept as a plain word ("Hej" / "Hi"). */
-  readonly greeting: string
-  // Kalender-koppling (Google Calendar-sync) — barberns "Mina bokningar".
-  readonly calendarConnect: string
-  readonly calendarConnecting: string
-  readonly calendarConnected: string
-  readonly calendarDisconnect: string
-  readonly calendarDisconnecting: string
-  readonly calendarDisconnectPending: string
-  readonly calendarRepairAccess: string
-  readonly calendarRepairHint: string
-  readonly calendarHint: string
-  readonly calendarLoading: string
-  readonly calendarRefresh: string
-  readonly calendarStatusUnavailable: string
-  readonly calendarStatusError: string
-  readonly calendarActionError: string
-  readonly calendarSyncErrorPrefix: string
-  readonly calendarOpenApp: string
-  readonly ariaSelectBarber: string
-  readonly themeLight: string
-  readonly themeDark: string
-  readonly ariaNav: string
-  // Bookings view headings + leads (constructed in AdminShell, passed as props to BookingsView)
-  /** Prefix for the owner heading: "Bokningar · {barberName}" / "Bookings · {barberName}". */
-  readonly bookingsOwnerHeadingPrefix: string
-  readonly bookingsBarberHeading: string
-  readonly bookingsOwnerLead: string
-  readonly bookingsBarberLead: string
-  // Schedule empty state (rendered inline in AdminShell when no barber is selected)
-  readonly scheduleNoBarber: string
-  // BookingsView — table column headers
-  readonly bookingsColTime: string
-  readonly bookingsColBarber: string
-  readonly bookingsColCustomer: string
-  readonly bookingsColService: string
-  readonly bookingsColContact: string
-  readonly bookingsColStatus: string
-  readonly bookingsColAction: string
-  // BookingsView — section headings + empty states
-  readonly bookingsUpcoming: string
-  readonly bookingsPast: string
-  readonly bookingsEmptyUpcoming: string
-  readonly bookingsEmptyPast: string
-  // BookingsView — loading + status labels
-  readonly bookingsLoading: string
-  readonly bookingsStatusConfirmed: string
-  readonly bookingsStatusCancelled: string
-  /** Inline "· hos {barberName}" / "· with {barberName}" in the card all-barbers view. */
-  readonly bookingsAtBarber: string
-  // BookingsView — cancel flow
-  readonly bookingsCancelAction: string
-  readonly bookingsCancelledOk: string
-  readonly bookingsCancelDialogTitle: string
-  readonly bookingsCancelDialogBodySuffix: string
-  readonly bookingsCancelDialogConfirm: string
-  readonly bookingsCancelDialogKeep: string
-  // BookingsView — 3-section switcher (Kommande/Avbokade/Tidigare) + Avbokade empty state
-  readonly bookingsSectionCancelled: string
-  readonly bookingsEmptyCancelled: string
-  // BookingsView — multi-select history clearing (Tidigare + Avbokade only)
-  readonly bookingsSelectWeek: string
-  readonly bookingsSelectAll: string
-  /** Label of the delete-selected action; the count is interpolated in the view. */
-  readonly bookingsClearSelected: string
-  readonly bookingsClearTitle: string
-  readonly bookingsClearBody: string
-  readonly bookingsClearConfirm: string
-  readonly bookingsClearCancel: string
-  readonly bookingsClearedOk: string
-  // BookingsView — owner-only global purge (type-to-confirm)
-  readonly bookingsPurgeAll: string
-  /** The token the owner must type to confirm the global purge (same literal in both languages). */
-  readonly bookingsPurgeToken: string
-  readonly bookingsPurgeTitle: string
-  readonly bookingsPurgeBody: string
-  readonly bookingsPurgeConfirm: string
-  readonly bookingsPurgeCancel: string
-  readonly bookingsPurgedOk: string
-  // ScheduleView — section headings + loading
-  readonly scheduleHeadingPrefix: string
-  readonly scheduleLoading: string
-  readonly scheduleWeekHeadingPrefix: string
-  readonly scheduleWeekLead: string
-  // ScheduleView — bulk time row
-  readonly scheduleFrom: string
-  readonly scheduleTo: string
-  readonly scheduleSameTimeAllDays: string
-  // ScheduleView — per-day rows
-  readonly scheduleDayOffLabel: string
-  readonly scheduleStartTimeAria: string
-  readonly scheduleEndTimeAria: string
-  readonly scheduleWorkingAria: string
-  readonly scheduleInvalidHours: string
-  // ScheduleView — auto-save status line
-  readonly scheduleSaving: string
-  readonly scheduleSaved: string
-  readonly scheduleRetry: string
-  // ScheduleView — weekly recurring breaks
-  readonly scheduleRecurringBreakToggle: string
-  readonly scheduleRecurringBreakLead: string
-  readonly scheduleRecurringBreakDay: string
-  readonly scheduleRecurringBreakAdd: string
-  readonly scheduleRecurringBreakAdding: string
-  readonly scheduleRecurringBreakAdded: string
-  readonly scheduleRecurringBreakRemoved: string
-  readonly scheduleRecurringBreakEmpty: string
-  readonly scheduleRecurringBreakRemove: string
-  readonly scheduleRecurringBreakDeleteTitle: string
-  readonly scheduleRecurringBreakDeleteCancel: string
-  // ScheduleView — time-off section
-  readonly scheduleTimeOffHeading: string
-  readonly scheduleTimeOffLead: string
-  readonly scheduleTimeOffReason: string
-  readonly scheduleTimeOffAdding: string
-  readonly scheduleTimeOffAdd: string
-  readonly scheduleTimeOffAdded: string
-  readonly scheduleTimeOffRemoved: string
-  readonly scheduleTimeOffEmpty: string
-  readonly scheduleTimeOffRemove: string
-  readonly scheduleTimeOffColPeriod: string
-  readonly scheduleTimeOffColReason: string
-  readonly scheduleTimeOffColAction: string
-  readonly scheduleTimeOffDateError: string
-  readonly scheduleTimeOffDeleteTitle: string
-  readonly scheduleTimeOffDeleteCancel: string
-  // ScheduleDayGrid — headings + navigation
-  readonly scheduleGridHeading: string
-  readonly scheduleGridLead: string
-  readonly scheduleGridAriaDayPicker: string
-  readonly scheduleGridToday: string
-  readonly scheduleGridLoading: string
-  // ScheduleDayGrid — day state cards
-  readonly scheduleGridDayOff: string
-  readonly scheduleGridNonWorkingDay: string
-  readonly scheduleGridDayBlockedMsg: string
-  readonly scheduleGridDayNotInWeekMsg: string
-  readonly scheduleGridRangeOffMsg: string
-  // ScheduleDayGrid — whole-day controls + legend
-  readonly scheduleGridOpenDay: string
-  readonly scheduleGridBlockDay: string
-  readonly scheduleGridLegendFree: string
-  readonly scheduleGridLegendBlocked: string
-  readonly scheduleGridLegendBooked: string
-  readonly scheduleGridLegendRecurringBreak: string
-  readonly scheduleGridLegendClosed: string
-  // ScheduleDayGrid — hour/quarter controls + slot states
-  readonly scheduleGridSaveError: string
-  readonly scheduleGridBlockHour: string
-  readonly scheduleGridOpenHour: string
-  readonly scheduleGridSlotFree: string
-  readonly scheduleGridSlotBlocked: string
-  readonly scheduleGridSlotBooked: string
-  readonly scheduleGridSlotRecurringBreak: string
-  readonly scheduleGridSlotPast: string
-  readonly scheduleGridSlotClosed: string
-  /** Suffix for `${n}/4 ${t.scheduleGridFreeCountSuffix}` in the hour chip summary. */
-  readonly scheduleGridFreeCountSuffix: string
-  // ScheduleDayGrid — "Reservera kund" (manual booking)
-  readonly reserveBtn: string
-  readonly reserveTitle: string
-  readonly reserveLeadPrefix: string
-  readonly reserveService: string
-  readonly reserveName: string
-  readonly reserveNamePh: string
-  readonly reservePrice: string
-  readonly reservePricePh: string
-  readonly reservePhone: string
-  readonly reservePhonePh: string
-  readonly reserveConfirm: string
-  readonly reserveBusy: string
-  readonly reserveCancel: string
-  readonly reserveDefaultName: string
-  readonly reserveServiceName: string
-  readonly reserveErrPhone: string
-  readonly reserveErrPrice: string
-  // Unavailability ↔ booking conflict (block day / veckoschema / ledighet that clashes with bookings)
-  readonly unavailTitle: string
-  readonly unavailLead: string
-  readonly unavailExplainCancel: string
-  readonly unavailExplainKeep: string
-  readonly unavailCancelBtn: string
-  readonly unavailKeepBtn: string
-  readonly unavailAbortBtn: string
-  readonly unavailBusy: string
-  readonly unavailCancelError: string
-  readonly unavailCancelledTitle: string
-  readonly unavailCancelledLead: string
-  readonly unavailNoPhone: string
-  readonly unavailClose: string
-  // BarbersView — section headings + roster states
-  readonly barbersTitle: string
-  readonly barbersLead: string
-  readonly barbersAddNew: string
-  readonly barbersNewHeading: string
-  readonly barbersLoading: string
-  readonly barbersEmpty: string
-  // BarbersView — table column headers
-  readonly barbersColName: string
-  readonly barbersColInstagram: string
-  readonly barbersColLogin: string
-  readonly barbersColStatus: string
-  readonly barbersColAction: string
-  // BarbersView — status pills
-  readonly barbersStatusLinked: string
-  readonly barbersStatusUnlinked: string
-  readonly barbersStatusAccessDisabled: string
-  readonly barbersStatusActive: string
-  readonly barbersStatusHidden: string
-  // BarbersView — row/card action buttons
-  readonly barbersEdit: string
-  readonly barbersClose: string
-  readonly barbersHide: string
-  readonly barbersActivate: string
-  readonly barbersCreateLogin: string
-  readonly barbersResendInvite: string
-  readonly barbersDisableAccess: string
-  readonly barbersEnableAccess: string
-  // BarbersView — edit/new form field labels
-  readonly barbersFieldName: string
-  readonly barbersFieldInstagram: string
-  readonly barbersFieldRoleSv: string
-  readonly barbersFieldRoleEn: string
-  readonly barbersFieldBioSv: string
-  readonly barbersFieldBioEn: string
-  readonly barbersFieldId: string
-  readonly barbersFieldEmail: string
-  readonly barbersEmailPlaceholder: string
-  // BarbersView — form action buttons
-  readonly barbersSave: string
-  readonly barbersSaving: string
-  readonly barbersCreate: string
-  readonly barbersCreating: string
-  readonly barbersResending: string
-  readonly barbersCancel: string
-  // BarbersView — notices + validation
-  readonly barbersUpdatedOk: string
-  readonly barbersHiddenOk: string
-  readonly barbersActivatedOk: string
-  readonly barbersAddedOk: string
-  readonly barbersIdError: string
-  readonly barbersNameRequired: string
-  readonly barbersEmailError: string
-  readonly barbersInviteSentNote: string
-  readonly barbersAccessDisabledOk: string
-  readonly barbersAccessEnabledOk: string
-  readonly barbersAuthSyncPending: string
-  // BarbersView — delete flow (type-the-id confirm + has-bookings purge confirm)
-  readonly barbersDelete: string
-  readonly barbersDeleteTitle: string
-  /** Body of the type-to-confirm dialog. `{name}` is interpolated with the barber's name. */
-  readonly barbersDeleteBody: string
-  readonly barbersDeleteConfirm: string
-  readonly barbersDeleteCancel: string
-  /** Purge confirm body. `{count}`/`{past}`/`{upcoming}` are interpolated with the booking counts. */
-  readonly barbersDeleteBookingsBody: string
-  readonly barbersDeleteBookingsConfirm: string
-  readonly barbersDeleteBookingsCancel: string
-  readonly barbersDeletedOk: string
-  readonly barbersDeleteUpcomingBlocked: string
-  readonly barbersAuthCleanupPending: string
-  readonly barbersExternalCleanupPending: string
-  readonly barbersDeliveryPending: string
-  // --- Auth area: /login + password screens ------------------------------------------------------
-  // LoginPage (`/login`)
-  readonly loginErrorEmptyFields: string
-  /** The "backend not configured" notice, split so the `<code>VITE_SUPABASE_*</code>` literals stay verbatim. */
-  readonly loginNotConfiguredPre: string
-  readonly loginNotConfiguredMid: string
-  readonly loginNotConfiguredPost: string
-  readonly loginEmailLabel: string
-  readonly loginPasswordLabel: string
-  readonly loginSubmitting: string
-  readonly loginSubmit: string
-  readonly loginKicker: string
-  readonly loginBackToSite: string
-  readonly loginBackToSiteAria: string
-  readonly loginHeading: string
-  readonly loginLead: string
-  readonly loginForgotPasswordLink: string
-  // Shared auth links (identical across the password screens)
-  readonly authToSignIn: string
-  readonly authBackToSignIn: string
-  // Settings password form
-  readonly changePwSuccess: string
-  readonly changePwCurrentPassword: string
-  readonly changePwNewPassword: string
-  readonly changePwConfirmPassword: string
-  readonly changePwSaving: string
-  readonly changePwSubmit: string
-  // ForgotPasswordForm ("Glömt lösenord" — flow B)
-  readonly forgotPwSubtitle: string
-  readonly forgotPwSuccess: string
-  readonly forgotPwEmailLabel: string
-  readonly forgotPwSending: string
-  readonly forgotPwSubmit: string
-  readonly forgotPwChallengeError: string
-  readonly forgotPwRetryChallenge: string
-  // ForcedPasswordChange (forced first-login change)
-  readonly forcedPwSubtitle: string
-  readonly forcedPwIntro: string
-  readonly forcedPwNewPassword: string
-  readonly forcedPwConfirmPassword: string
-  /** Soft failure: the password changed but the flag-clear RPC failed. */
-  readonly forcedPwClearError: string
-  readonly forcedPwSaving: string
-  readonly forcedPwSubmit: string
-  // ResetPasswordPage (`/reset` recovery landing)
-  readonly resetPwSubtitle: string
-  readonly resetPwIntro: string
-  readonly resetPwContinue: string
-  readonly resetPwInvalidLink: string
-  readonly resetPwChecking: string
-  readonly resetPwSuccess: string
-  readonly resetPwNewPassword: string
-  readonly resetPwConfirmPassword: string
-  readonly resetPwSaving: string
-  readonly resetPwSubmit: string
-  // ResetPasswordPage (`/invite` staff invitation landing)
-  readonly invitePwSubtitle: string
-  readonly invitePwIntro: string
-  readonly invitePwContinue: string
-  readonly invitePwInvalidLink: string
-  readonly invitePwChecking: string
-  readonly invitePwSuccess: string
-  readonly invitePwNewPassword: string
-  readonly invitePwConfirmPassword: string
-  readonly invitePwSaving: string
-  readonly invitePwSubmit: string
-  // EmailChangeConfirmPage (`/auth/confirm`)
-  readonly emailChangeConfirmSubtitle: string
-  readonly emailChangeConfirmIntro: string
-  readonly emailChangeConfirmSubmit: string
-  readonly emailChangeConfirming: string
-  readonly emailChangeConfirmSuccess: string
-  readonly emailChangeConfirmInvalid: string
-  readonly emailChangeConfirmToAdmin: string
-}
-
 // --- Swedish (default) ---------------------------------------------------------------------------
 
-const SV: AdminStrings = {
+const SV = {
+  // Navigation tabs (AdminShell sidebar + mobile strip)
   tabSchedule: 'Mitt schema',
   tabBookings: 'Mina bokningar',
   tabAllBookings: 'Alla bokningar',
@@ -431,6 +19,7 @@ const SV: AdminStrings = {
   lazyLoading: 'Laddar adminpanelen …',
   lazyError: 'Kunde inte ladda adminpanelen.',
   lazyReload: 'Ladda om',
+  // Settings (authenticated owner/barber account)
   settingsTitle: 'Inställningar',
   settingsLead: 'Hantera inloggningsuppgifterna för ditt konto.',
   settingsEmailTitle: 'E‑post',
@@ -446,6 +35,7 @@ const SV: AdminStrings = {
     'En bekräftelselänk har skickats till den nya adressen. E‑postadressen ändras när den nya adressen har bekräftats.',
   settingsPasswordTitle: 'Lösenord',
   settingsPasswordLead: 'Ange ditt nuvarande lösenord innan du väljer ett nytt.',
+  // Profil (barber photo) view.
   profileTitle: 'Profilbild',
   profileLead:
     'Bilden visas i "Om oss" på hemsidan. Utan bild visas en platshållare. Kvadratiskt format ser bäst ut.',
@@ -461,6 +51,7 @@ const SV: AdminStrings = {
   profileLoading: 'Laddar profil …',
   profileDeleteTitle: 'Ta bort profilbild?',
   profileDeleteBody: 'Bilden tas bort och platshållaren visas igen på hemsidan.',
+  // Services (per-barber menu) view.
   servicesTitle: 'Tjänster',
   servicesLead:
     'Lägg till behandlingar, sätt pris och längd, och ordna listan. Kunderna ser dina aktiva tjänster när de bokar. En rabatt är bara en egen tjänst (t.ex. "Studentklippning").',
@@ -489,8 +80,11 @@ const SV: AdminStrings = {
   svcDeleteBody: 'Behandlingen tas bort permanent. Redan bokade tider påverkas inte.',
   svcDeleteConfirm: 'Ta bort',
   svcDeleteCancel: 'Avbryt',
+  // Shell chrome
   signOut: 'Logga ut',
+  /** Used as `{t.greeting} {firstName}` in the topbar — kept as a plain word ("Hej" / "Hi"). */
   greeting: 'Hej',
+  // Kalender-koppling (Google Calendar-sync) — barberns "Mina bokningar".
   calendarConnect: 'Koppla kalender',
   calendarConnecting: 'Öppnar Google…',
   calendarConnected: 'Kalender kopplad',
@@ -514,11 +108,15 @@ const SV: AdminStrings = {
   themeLight: 'Byt till ljust läge',
   themeDark: 'Byt till mörkt läge',
   ariaNav: 'Adminmeny',
+  // Bookings view headings + leads (constructed in AdminShell, passed as props to BookingsView)
+  /** Prefix for the owner heading: "Bokningar · {barberName}" / "Bookings · {barberName}". */
   bookingsOwnerHeadingPrefix: 'Bokningar',
   bookingsBarberHeading: 'Mina bokningar',
   bookingsOwnerLead: 'Bokningar för vald barberare. Byt barberare uppe till vänster.',
   bookingsBarberLead: 'Dina kommande och tidigare bokningar. Avboka vid behov.',
+  // Schedule empty state (rendered inline in AdminShell when no barber is selected)
   scheduleNoBarber: 'Ingen barberare vald.',
+  // BookingsView — table column headers
   bookingsColTime: 'Tid',
   bookingsColBarber: 'Barberare',
   bookingsColCustomer: 'Kund',
@@ -526,31 +124,40 @@ const SV: AdminStrings = {
   bookingsColContact: 'Kontakt',
   bookingsColStatus: 'Status',
   bookingsColAction: 'Åtgärd',
+  // BookingsView — section headings + empty states
   bookingsUpcoming: 'Kommande',
   bookingsPast: 'Tidigare',
   bookingsEmptyUpcoming: 'Inga kommande bokningar.',
   bookingsEmptyPast: 'Inga tidigare bokningar.',
+  // BookingsView — loading + status labels
   bookingsLoading: 'Laddar bokningar …',
   bookingsStatusConfirmed: 'Bekräftad',
   bookingsStatusCancelled: 'Avbokad',
+  /** Inline "· hos {barberName}" / "· with {barberName}" in the card all-barbers view. */
   bookingsAtBarber: 'hos',
+  // BookingsView — cancel flow
   bookingsCancelAction: 'Avboka',
   bookingsCancelledOk: 'Bokningen avbokad.',
   bookingsCancelDialogTitle: 'Avboka bokningen?',
   bookingsCancelDialogBodySuffix: '. Detta går inte att ångra.',
   bookingsCancelDialogConfirm: 'Avboka',
   bookingsCancelDialogKeep: 'Behåll',
+  // BookingsView — 3-section switcher (Kommande/Avbokade/Tidigare) + Avbokade empty state
   bookingsSectionCancelled: 'Avbokade',
   bookingsEmptyCancelled: 'Inga avbokade bokningar.',
+  // BookingsView — multi-select history clearing (Tidigare + Avbokade only)
   bookingsSelectWeek: 'Markera veckan',
   bookingsSelectAll: 'Markera alla',
+  /** Label of the delete-selected action; the count is interpolated in the view. */
   bookingsClearSelected: 'Radera markerade',
   bookingsClearTitle: 'Radera markerade bokningar?',
   bookingsClearBody: 'Detta raderar de markerade bokningarna permanent.',
   bookingsClearConfirm: 'Radera',
   bookingsClearCancel: 'Avbryt',
   bookingsClearedOk: 'Bokningarna raderades.',
+  // BookingsView — owner-only global purge (type-to-confirm)
   bookingsPurgeAll: 'Töm all historik',
+  /** The token the owner must type to confirm the global purge (same literal in both languages). */
   bookingsPurgeToken: 'RADERA ALLT',
   bookingsPurgeTitle: 'Töm ALL historik?',
   bookingsPurgeBody:
@@ -558,21 +165,26 @@ const SV: AdminStrings = {
   bookingsPurgeConfirm: 'Töm historik',
   bookingsPurgeCancel: 'Avbryt',
   bookingsPurgedOk: 'All historik tömd.',
+  // ScheduleView — section headings + loading
   scheduleHeadingPrefix: 'Schema',
   scheduleLoading: 'Laddar schema …',
   scheduleWeekHeadingPrefix: 'Veckoschema',
   scheduleWeekLead: 'Markera vilka dagar du jobbar och sätt tider — ändringar sparas automatiskt.',
+  // ScheduleView — bulk time row
   scheduleFrom: 'Från',
   scheduleTo: 'Till',
   scheduleSameTimeAllDays: 'Samma tid alla dagar',
+  // ScheduleView — per-day rows
   scheduleDayOffLabel: 'Ledig',
   scheduleStartTimeAria: 'Starttid',
   scheduleEndTimeAria: 'Sluttid',
   scheduleWorkingAria: 'Jobbar',
   scheduleInvalidHours: 'Sluttid måste vara efter starttid.',
+  // ScheduleView — auto-save status line
   scheduleSaving: 'Sparar …',
   scheduleSaved: 'Sparat ✓',
   scheduleRetry: 'Försök igen',
+  // ScheduleView — weekly recurring breaks
   scheduleRecurringBreakToggle: 'Återkommande paus',
   scheduleRecurringBreakLead:
     'Lås en tid varje vecka. Kunder kan inte boka tider som överlappar pausen.',
@@ -585,6 +197,7 @@ const SV: AdminStrings = {
   scheduleRecurringBreakRemove: 'Ta bort',
   scheduleRecurringBreakDeleteTitle: 'Ta bort återkommande paus?',
   scheduleRecurringBreakDeleteCancel: 'Avbryt',
+  // ScheduleView — time-off section
   scheduleTimeOffHeading: 'Ledighet',
   scheduleTimeOffLead:
     'Blockera en dag eller en period (semester, ledig dag). Blockerade datum visas inte som bokningsbara.',
@@ -601,17 +214,20 @@ const SV: AdminStrings = {
   scheduleTimeOffDateError: 'Slutdatum måste vara samma eller efter startdatum.',
   scheduleTimeOffDeleteTitle: 'Ta bort ledigheten?',
   scheduleTimeOffDeleteCancel: 'Avbryt',
+  // ScheduleDayGrid — headings + navigation
   scheduleGridHeading: 'Dagsöversikt',
   scheduleGridLead:
     'Välj dag, tryck på en timme och blockera kvartarna som är upptagna (t.ex. manuellt bokat) — sparas direkt. Tryck igen för att öppna.',
   scheduleGridAriaDayPicker: 'Välj dag',
   scheduleGridToday: 'Idag',
   scheduleGridLoading: 'Laddar …',
+  // ScheduleDayGrid — day state cards
   scheduleGridDayOff: 'Ledig dag',
   scheduleGridNonWorkingDay: 'Ingen arbetsdag',
   scheduleGridDayBlockedMsg: 'Dagen är blockerad — inga tider kan bokas.',
   scheduleGridDayNotInWeekMsg: 'Dagen är avmarkerad i veckoschemat.',
   scheduleGridRangeOffMsg: 'Dagen ingår i en ledighetsperiod — hantera den under Ledighet.',
+  // ScheduleDayGrid — whole-day controls + legend
   scheduleGridOpenDay: 'Öppna dagen',
   scheduleGridBlockDay: 'Blockera hela dagen',
   scheduleGridLegendFree: 'Ledig',
@@ -619,6 +235,7 @@ const SV: AdminStrings = {
   scheduleGridLegendBooked: 'Bokad',
   scheduleGridLegendRecurringBreak: 'Återkommande paus',
   scheduleGridLegendClosed: 'Stängt',
+  // ScheduleDayGrid — hour/quarter controls + slot states
   scheduleGridSaveError: 'Kunde inte spara. Försök igen.',
   scheduleGridBlockHour: 'Blockera',
   scheduleGridOpenHour: 'Öppna',
@@ -628,7 +245,9 @@ const SV: AdminStrings = {
   scheduleGridSlotRecurringBreak: 'Återkommande paus',
   scheduleGridSlotPast: 'Passerad',
   scheduleGridSlotClosed: 'Stängt',
+  /** Suffix for `${n}/4 ${t.scheduleGridFreeCountSuffix}` in the hour chip summary. */
   scheduleGridFreeCountSuffix: 'lediga',
+  // ScheduleDayGrid — "Reservera kund" (manual booking)
   reserveBtn: 'Reservera kund',
   reserveTitle: 'Reservera kund',
   reserveLeadPrefix: 'Tid:',
@@ -646,6 +265,7 @@ const SV: AdminStrings = {
   reserveServiceName: 'Reserverad tid',
   reserveErrPhone: 'Ogiltigt telefonnummer',
   reserveErrPrice: 'Ange ett giltigt pris (t.ex. 199 eller 199.99).',
+  // Unavailability ↔ booking conflict (block day / veckoschema / ledighet that clashes with bookings)
   unavailTitle: 'Kunder är bokade',
   unavailLead: 'Följande kunder är bokade under tiden du vill vara borta:',
   unavailExplainCancel: 'Avboka kunder – avbokar kunderna nedan och gör dig ledig.',
@@ -661,6 +281,7 @@ const SV: AdminStrings = {
   unavailCancelledLead: 'Dessa bokningar har avbokats:',
   unavailNoPhone: 'Inget nummer',
   unavailClose: 'Stäng',
+  // BarbersView — section headings + roster states
   barbersTitle: 'Barberare',
   barbersLead:
     'Hantera publik synlighet och personalåtkomst separat. Döljning påverkar kundbokning; kontoåtkomst styr inloggning.',
@@ -668,16 +289,19 @@ const SV: AdminStrings = {
   barbersNewHeading: 'Ny barberare',
   barbersLoading: 'Laddar barberare …',
   barbersEmpty: 'Inga barberare.',
+  // BarbersView — table column headers
   barbersColName: 'Namn',
   barbersColInstagram: 'Instagram',
   barbersColLogin: 'Inloggning',
   barbersColStatus: 'Status',
   barbersColAction: 'Åtgärd',
+  // BarbersView — status pills
   barbersStatusLinked: 'Inloggning aktiv',
   barbersStatusUnlinked: 'Ej kopplad',
   barbersStatusAccessDisabled: 'Åtkomst avstängd',
   barbersStatusActive: 'Synlig för kunder',
   barbersStatusHidden: 'Dold för kunder',
+  // BarbersView — row/card action buttons
   barbersEdit: 'Redigera',
   barbersClose: 'Stäng',
   barbersHide: 'Dölj för kunder',
@@ -686,6 +310,7 @@ const SV: AdminStrings = {
   barbersResendInvite: 'Skicka ny inbjudan',
   barbersDisableAccess: 'Stäng av åtkomst',
   barbersEnableAccess: 'Aktivera åtkomst',
+  // BarbersView — edit/new form field labels
   barbersFieldName: 'Namn',
   barbersFieldInstagram: 'Instagram',
   barbersFieldRoleSv: 'Roll (SV)',
@@ -695,12 +320,14 @@ const SV: AdminStrings = {
   barbersFieldId: 'Id (a–z, 0–9, -)',
   barbersFieldEmail: 'E-post',
   barbersEmailPlaceholder: 'barberare@exempel.se',
+  // BarbersView — form action buttons
   barbersSave: 'Spara',
   barbersSaving: 'Sparar …',
   barbersCreate: 'Skapa',
   barbersCreating: 'Skapar …',
   barbersResending: 'Skickar …',
   barbersCancel: 'Avbryt',
+  // BarbersView — notices + validation
   barbersUpdatedOk: 'Barberaren uppdaterad.',
   barbersHiddenOk: 'Barberaren dold.',
   barbersActivatedOk: 'Barberaren aktiv.',
@@ -714,12 +341,15 @@ const SV: AdminStrings = {
   barbersAccessEnabledOk: 'Kontoåtkomsten aktiverad.',
   barbersAuthSyncPending:
     'Databasåtkomsten är spärrad. Auth-spärren kunde inte synkas och behöver försökas igen.',
+  // BarbersView — delete flow (type-the-id confirm + has-bookings purge confirm)
   barbersDelete: 'Radera',
   barbersDeleteTitle: 'Radera barberare?',
+  /** Body of the type-to-confirm dialog. `{name}` is interpolated with the barber's name. */
   barbersDeleteBody:
     'Barberaren {name} tas bort permanent. Detta går inte att ångra. Skriv barberarens id nedan för att bekräfta.',
   barbersDeleteConfirm: 'Radera',
   barbersDeleteCancel: 'Avbryt',
+  /** Purge confirm body. `{count}`/`{past}`/`{upcoming}` are interpolated with the booking counts. */
   barbersDeleteBookingsBody:
     'Barberaren har {count} historiska eller avbokade bokningar ({past} totalt). Radera historiken också?',
   barbersDeleteBookingsConfirm: 'Radera historik',
@@ -733,7 +363,10 @@ const SV: AdminStrings = {
     'Google Calendar rensas säkert i bakgrunden ({count} händelser). Försök radera barberaren igen om en stund.',
   barbersDeliveryPending:
     'Barberaren har bokningsmejl som måste levereras eller hanteras i Studio → Mejl → Leveransstatus innan radering.',
+  // --- Auth area: /login + password screens ------------------------------------------------------
+  // LoginPage (`/login`)
   loginErrorEmptyFields: 'Fyll i både e‑post och lösenord.',
+  /** The "backend not configured" notice, split so the `<code>VITE_SUPABASE_*</code>` literals stay verbatim. */
   loginNotConfiguredPre:
     'Adminpanelen kräver den live-backend som inte är konfigurerad i den här miljön. Sätt',
   loginNotConfiguredMid: 'och',
@@ -748,14 +381,17 @@ const SV: AdminStrings = {
   loginHeading: 'Logga in',
   loginLead: 'Hantera ditt schema och dina bokningar.',
   loginForgotPasswordLink: 'Glömt lösenord?',
+  // Shared auth links (identical across the password screens)
   authToSignIn: 'Till inloggning',
   authBackToSignIn: 'Tillbaka till inloggning',
+  // Settings password form
   changePwSuccess: 'Lösenordet är ändrat.',
   changePwCurrentPassword: 'Nuvarande lösenord',
   changePwNewPassword: 'Nytt lösenord',
   changePwConfirmPassword: 'Bekräfta nytt lösenord',
   changePwSaving: 'Sparar …',
   changePwSubmit: 'Byt lösenord',
+  // ForgotPasswordForm ("Glömt lösenord" — flow B)
   forgotPwSubtitle: 'Glömt lösenord',
   forgotPwSuccess:
     'Om ett konto med den adressen finns har vi skickat en återställningslänk. Kolla din inkorg (och skräpposten).',
@@ -764,14 +400,17 @@ const SV: AdminStrings = {
   forgotPwSubmit: 'Skicka återställningslänk',
   forgotPwChallengeError: 'Säkerhetskontrollen misslyckades. Försök igen.',
   forgotPwRetryChallenge: 'Försök igen',
+  // ForcedPasswordChange (forced first-login change)
   forcedPwSubtitle: 'Byt ditt lösenord',
   forcedPwIntro:
     'Ditt konto har ett tillfälligt lösenord. Du måste välja ett nytt för att komma åt panelen.',
   forcedPwNewPassword: 'Nytt lösenord',
   forcedPwConfirmPassword: 'Bekräfta nytt lösenord',
+  /** Soft failure: the password changed but the flag-clear RPC failed. */
   forcedPwClearError: 'Lösenordet är ändrat, men ett nätverksfel inträffade. Kontakta ägaren.',
   forcedPwSaving: 'Sparar …',
   forcedPwSubmit: 'Byt lösenord',
+  // ResetPasswordPage (`/reset` recovery landing)
   resetPwSubtitle: 'Återställ lösenord',
   resetPwIntro: 'Fortsätt för att kontrollera länken och välja ett nytt lösenord.',
   resetPwContinue: 'Fortsätt',
@@ -783,6 +422,7 @@ const SV: AdminStrings = {
   resetPwConfirmPassword: 'Bekräfta nytt lösenord',
   resetPwSaving: 'Sparar …',
   resetPwSubmit: 'Spara nytt lösenord',
+  // ResetPasswordPage (`/invite` staff invitation landing)
   invitePwSubtitle: 'Aktivera ditt konto',
   invitePwIntro: 'Fortsätt för att kontrollera inbjudan och skapa ditt personliga lösenord.',
   invitePwContinue: 'Öppna inbjudan',
@@ -793,6 +433,7 @@ const SV: AdminStrings = {
   invitePwConfirmPassword: 'Bekräfta lösenord',
   invitePwSaving: 'Aktiverar …',
   invitePwSubmit: 'Aktivera konto',
+  // EmailChangeConfirmPage (`/auth/confirm`)
   emailChangeConfirmSubtitle: 'Bekräfta ny e‑postadress',
   emailChangeConfirmIntro:
     'Bekräfta ändringen med knappen nedan. Din e‑postadress ändras direkt efter bekräftelsen.',
@@ -803,6 +444,9 @@ const SV: AdminStrings = {
     'Bekräftelselänken är ogiltig eller har gått ut. Logga in och skicka en ny länk från Inställningar.',
   emailChangeConfirmToAdmin: 'Till adminpanelen',
 }
+
+/** Every key of the Swedish table; a translation missing from `EN` is a compile error. */
+export type AdminStrings = { readonly [K in keyof typeof SV]: string }
 
 // --- English -------------------------------------------------------------------------------------
 
