@@ -121,9 +121,9 @@ schema before restoring lineage. Do not silently discard unknown columns or mark
 as fully restore-tested. Keep cron and external job dispatch disabled throughout the drill; only
 configure production provider credentials after restore validation and the intended cutover.
 
-After byte verification, configure Auth URLs and SMTP, deploy Edge Functions and secrets, recreate
-Cron jobs, configure third-party integrations, and rotate credentials before traffic reaches the
-target project.
+After byte verification, configure Auth URLs and SMTP, deploy Edge Functions and secrets, enable
+the Auth Send Email hook, recreate Cron jobs, configure third-party integrations, and rotate
+credentials before traffic reaches the target project.
 
 Verify at minimum:
 

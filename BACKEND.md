@@ -206,20 +206,28 @@ has it set, as it refuses a disabled account; clear it in the database
 
 Password recovery and email change are requested from Supabase Auth. Auth hands each email to the
 `send-auth-email` Edge Function through its Send Email hook; the function sends it through Resend
-with the owner's template and logs it. Enable the hook in this order, so Auth never calls a
+with the owner's template and logs it. The hook is enabled in the Supabase dashboard;
+`supabase/config.toml` does not declare it. Enable it in this order, so Auth never calls a
 function that cannot answer:
 
-1. Deploy `send-auth-email`.
-2. In the Supabase dashboard open Authentication → Hooks → Send Email, choose HTTPS, enter
-   `https://<project-ref>.supabase.co/functions/v1/send-auth-email` and generate a secret. Do not
-   enable the hook yet. The secret has the form `v1,whsec_<base64>`.
-3. Store that exact value as the function secret:
-   `npx supabase secrets set SEND_EMAIL_HOOK_SECRET='v1,whsec_<base64>'`.
-4. Enable the hook. Request a password reset from `/login` and check Mejl → Leveransstatus for
-   the `auth_recovery` row.
+1. Deploy `send-auth-email` and confirm `npx supabase functions list` shows it.
+2. Create the secret, `printf 'v1,whsec_%s\n' "$(openssl rand -base64 32)"`, and store it as the
+   function secret: `npx supabase secrets set SEND_EMAIL_HOOK_SECRET='v1,whsec_<base64>'`.
+3. In the dashboard open Authentication → Hooks → Send Email, choose HTTPS, enter
+   `https://<project-ref>.supabase.co/functions/v1/send-auth-email` and the same secret, and
+   enable the hook. If the dashboard generated its own secret, set that value in step 2 again.
+4. Request a password reset from `/login` and check Mejl → Leveransstatus for the `auth_recovery`
+   row.
 
-Until the hook is enabled, Auth sends these two emails itself over the SMTP settings above with
-the Swedish templates in `supabase/templates/`. See `docs/operations/EMAIL_DELIVERY.md`.
+Until the hook is enabled, and whenever it is disabled, Auth sends these two emails itself over
+the SMTP settings above with the two templates in `supabase/templates/` (Swedish, not logged).
+That is why the SMTP block and the templates stay in the repository.
+
+`supabase config push` sends the Auth settings `config.toml` declares, and it declares no Send
+Email hook. In the source of the pinned CLI (2.114.0) a push sends hook fields only for a hook
+the file declares, so it leaves a hook enabled in the dashboard as it is. This was read from the
+CLI, not run against the project: after every `config push`, open Authentication → Hooks and
+confirm the Send Email hook is still enabled. See `docs/operations/EMAIL_DELIVERY.md`.
 
 ## Verification
 

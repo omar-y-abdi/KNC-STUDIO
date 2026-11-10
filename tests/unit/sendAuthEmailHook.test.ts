@@ -218,11 +218,14 @@ describe('password recovery through the hook', () => {
     expect(sentMessage().body['subject']).toBe('Återställ lösenord')
   })
 
-  it('answers success and sends nothing when the address is rate limited', async () => {
+  it('refuses a rate-limited address without sending, so Auth keeps the earlier link', async () => {
     limited = true
     const response = await hook()
-    expect(response.status).toBe(200)
-    await expect(response.json()).resolves.toEqual({})
+    expect(response.status).toBe(429)
+    expect(response.headers.get('retry-after')).toBeNull()
+    await expect(response.json()).resolves.toEqual({
+      error: { http_code: 429, message: 'rate_limited' },
+    })
     expectNothingSent()
   })
 
@@ -233,22 +236,40 @@ describe('password recovery through the hook', () => {
     ],
     ['the provider cannot be reached', () => resend.mockRejectedValue(new TypeError('offline'))],
     ['delivery is not configured', () => delete config['RESEND_API_KEY']],
-  ])('answers success when %s', async (_name, arrange) => {
+  ])('reports a failed send to Auth when %s', async (_name, arrange) => {
     arrange()
     const response = await hook()
-    expect(response.status).toBe(200)
-    await expect(response.json()).resolves.toEqual({})
+    expect(response.status).toBe(502)
+    await expect(response.json()).resolves.toEqual({
+      error: { http_code: 502, message: 'send_failed' },
+    })
   })
 
-  it('answers success at the deadline while the provider is still silent', async () => {
+  it('answers a failure at the deadline and never sends a link Auth has dropped', async () => {
     vi.useFakeTimers()
-    resend.mockReturnValue(new Promise(() => undefined))
+    let release = (): void => undefined
+    const consume = boundary.rpc.getMockImplementation()
+    boundary.rpc.mockImplementation((name: string, ...rest: unknown[]) =>
+      name === 'consume_auth_email_send'
+        ? new Promise((resolve) => {
+            release = () => resolve({ data: true, error: null })
+          })
+        : consume?.(name, ...rest),
+    )
     const pending = hook()
-    await vi.waitFor(() => expect(resend).toHaveBeenCalledOnce())
+    await vi.waitFor(() =>
+      expect(boundary.rpc).toHaveBeenCalledWith('consume_auth_email_send', expect.anything()),
+    )
     await vi.advanceTimersByTimeAsync(3_500)
     const response = await pending
-    expect(response.status).toBe(200)
-    await expect(response.json()).resolves.toEqual({})
+    expect(response.status).toBe(504)
+    await expect(response.json()).resolves.toEqual({
+      error: { http_code: 504, message: 'timeout' },
+    })
+    release()
+    await vi.waitFor(() => expect(boundary.rpc).toHaveBeenCalledWith('public_business_discovery'))
+    await vi.advanceTimersByTimeAsync(0)
+    expectNothingSent()
   })
 })
 

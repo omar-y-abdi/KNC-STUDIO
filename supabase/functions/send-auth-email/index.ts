@@ -17,8 +17,9 @@ import { requestSchema, type HookPayload } from './request.ts'
 const SITE = 'https://bladeblendstudio.se'
 
 /**
- * Auth gives a hook five seconds in total and discards the token it issued when no answer came.
- * The handler answers by this deadline whatever is still in flight.
+ * Auth gives a hook five seconds in total. On an error or no answer it drops the token it just
+ * issued, and a link it emailed earlier stays valid. The handler answers by this deadline whatever
+ * is still in flight.
  */
 const ANSWER_DEADLINE_MS = 3_500
 
@@ -60,6 +61,7 @@ async function sendRecovery(
   service: SupabaseClient,
   resendKey: string,
   { user, email_data: data }: HookPayload,
+  answered: () => boolean,
 ): Promise<Refusal | null> {
   if (!(await withinLimit(service, 'recovery', `recovery:${user.email}`))) return 'rate_limited'
   const lang = languageOf(data.redirect_to)
@@ -71,6 +73,8 @@ async function sendRecovery(
     { to: user.email, lang, copy, ctaHref: link, business },
     null,
   )
+  // Auth was already told this send failed and has dropped the token the link carries.
+  if (answered()) return 'timeout'
   await sendViaResend(message, resendKey, `auth-recovery/${data.token_hash.slice(0, 48)}`, service)
   return null
 }
@@ -142,7 +146,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const service = createClient(url, key, { auth: { persistSession: false } })
     return type === 'email_change' && newEmail
       ? sendEmailChange(service, resendKey, parsed.data, newEmail, () => answered)
-      : sendRecovery(service, resendKey, parsed.data)
+      : sendRecovery(service, resendKey, parsed.data, () => answered)
   }
   const sending = retainTaskUntilSettled(deliver()).catch((error: unknown): Refusal => {
     console.error('send-auth-email:', error instanceof Error ? error.message : 'unknown error')
@@ -159,6 +163,5 @@ Deno.serve(async (req: Request): Promise<Response> => {
   answered = true
   if (refusal === null) return json({})
   console.error('send-auth-email: not sent', type, refusal)
-  // Auth calls the hook only for an existing account, so an error here would confirm the address.
-  return type === 'recovery' ? json({}) : refuse(REFUSAL_STATUS[refusal], refusal)
+  return refuse(REFUSAL_STATUS[refusal], refusal)
 })
