@@ -245,13 +245,7 @@ export function NativeSiteProvider({
     )
   }
   return (
-    <NativeContext.Provider
-      value={{
-        presentation: presentation === undefined ? published : presentation,
-        source,
-        projectSource,
-      }}
-    >
+    <NativeContext.Provider value={{ presentation: current, source, projectSource }}>
       {fonts && <style>{fonts}</style>}
       {children}
     </NativeContext.Provider>
