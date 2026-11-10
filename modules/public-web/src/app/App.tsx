@@ -462,7 +462,6 @@ export function App({
     setEmailLinkCode(undefined)
     setState({ myBookingsOpen: false })
   }
-  const openPrivacy = (): void => privacy.openPreferences()
 
   // --- shared chrome (nav controls) ---
   const chromeIconStyle = chromeIcon(dark)
@@ -592,77 +591,45 @@ export function App({
     </LazySurface>
   ) : null
 
-  if (isMobile) {
-    return (
-      <>
-        <MobileSite
-          privacy={privacy}
-          onManagePrivacy={openPrivacy}
-          mode={state.mode}
-          lang={lang}
-          tx={tx}
-          {...(customerProfile === undefined ? {} : { initialContact: customerProfile })}
-          {...(deviceBookingContact === undefined
-            ? {}
-            : { initialBookingContact: deviceBookingContact })}
-          onBookingComplete={() => setBookingRefresh((value) => value + 1)}
-          dark={dark}
-          c={c}
-          view={view}
-          mobMutedColor={mobMutedColor}
-          mobBtnBgColor={mobBtnBgColor}
-          business={business}
-          chromeIconStyle={chromeIconStyle}
-          themeToggle={themeToggle}
-          langToggle={langToggle}
-          openMobBooking={openMobBooking}
-          scrollToAbout={scrollToAbout}
-          scrollMobToHero={scrollMobToHero}
-          openCancel={openMyBookings}
-          openMyBookings={openMyBookings}
-          homepageScale={chrome.homepageScale}
-          homepageLogo={chrome.homepageLogo}
-          aboutScale={chrome.aboutScale}
-          bookingPopupText={bookingPopupText}
-        />
-        {myBookingsDialog}
-        {(!preview || preview.interactive) && (
-          <PrivacyBanner lang={lang} dark={dark} controls={privacy} />
-        )}
-      </>
-    )
+  // The props both layouts receive.
+  const shell = {
+    privacy,
+    onManagePrivacy: privacy.openPreferences,
+    mode: state.mode,
+    lang,
+    tx,
+    ...(customerProfile === undefined ? {} : { initialContact: customerProfile }),
+    ...(deviceBookingContact === undefined ? {} : { initialBookingContact: deviceBookingContact }),
+    onBookingComplete: () => setBookingRefresh((value) => value + 1),
+    dark,
+    c,
+    view,
+    business,
+    chromeIconStyle,
+    themeToggle,
+    langToggle,
+    scrollToAbout,
+    openCancel: openMyBookings,
+    openMyBookings,
+    homepageScale: chrome.homepageScale,
+    homepageLogo: chrome.homepageLogo,
+    aboutScale: chrome.aboutScale,
+    bookingPopupText,
   }
 
   return (
     <>
-      <DesktopSite
-        privacy={privacy}
-        onManagePrivacy={openPrivacy}
-        mode={state.mode}
-        lang={lang}
-        dark={dark}
-        c={c}
-        business={business}
-        themeToggle={themeToggle}
-        langToggle={langToggle}
-        chromeIconStyle={chromeIconStyle}
-        tx={tx}
-        {...(customerProfile === undefined ? {} : { initialContact: customerProfile })}
-        {...(deviceBookingContact === undefined
-          ? {}
-          : { initialBookingContact: deviceBookingContact })}
-        onBookingComplete={() => setBookingRefresh((value) => value + 1)}
-        view={view}
-        toggleDeskBooking={toggleDeskBooking}
-        scrollToAbout={scrollToAbout}
-        findUsStyle={findUsStyle}
-        openCancel={openMyBookings}
-        openMyBookings={openMyBookings}
-        homepageScale={chrome.homepageScale}
-        homepageLogo={chrome.homepageLogo}
-        aboutScale={chrome.aboutScale}
-        bookingPopupText={bookingPopupText}
-      />
+      {isMobile ? (
+        <MobileSite
+          {...shell}
+          mobMutedColor={mobMutedColor}
+          mobBtnBgColor={mobBtnBgColor}
+          openMobBooking={openMobBooking}
+          scrollMobToHero={scrollMobToHero}
+        />
+      ) : (
+        <DesktopSite {...shell} toggleDeskBooking={toggleDeskBooking} findUsStyle={findUsStyle} />
+      )}
       {myBookingsDialog}
       {(!preview || preview.interactive) && (
         <PrivacyBanner lang={lang} dark={dark} controls={privacy} />
