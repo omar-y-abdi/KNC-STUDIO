@@ -1,9 +1,7 @@
 import { vi } from 'vitest'
 
-// Stand-ins for the part of the DOM that focus code touches. `focusQuietly` (ui/pageFocus.ts) reads
-// and writes attributes, listens for blur, focuses, and asks the document what holds the focus; a
-// control is focused with a plain `.focus()`. As in a browser, an element takes the focus only when
-// it can: a control always, a text only while it carries a `tabindex`.
+// Stand-ins for the DOM that focus code touches (`focusQuietly`, a control's `.focus()`).
+// As in a browser, a control always takes the focus, a text only while it carries a `tabindex`.
 
 type Listener = () => void
 type Focus = (options?: { readonly preventScroll?: boolean }) => void
@@ -25,7 +23,6 @@ export interface FakeElement {
 }
 
 export interface FakePage {
-  /** The element that holds the focus; `null` while none does. */
   activeElement: FakeElement | null
 }
 
@@ -36,9 +33,8 @@ export function installFakePage(): FakePage {
   return page
 }
 
-/** An element of `page`. A `control` takes the focus by itself, as a button does; a `text` (a
- * paragraph, a heading) takes it only while it carries a `tabindex`. Moving the focus to another
- * element tells the one that had it. */
+/** An element of `page`: a `control` takes the focus as a button does, a `text` only with a
+ * `tabindex`. Moving the focus elsewhere blurs the element that had it. */
 export function fakeElement(page: FakePage, kind: 'control' | 'text' = 'text'): FakeElement {
   const attributes = new Map<string, string>()
   const blurListeners = new Map<Listener, boolean>()

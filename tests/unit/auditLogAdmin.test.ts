@@ -1,5 +1,4 @@
-// The admin log adapter against a mocked client: the exact RPC name and parameter names, the row
-// mapping (who, what, which columns), and every answer mapped to its typed result.
+// The admin log adapter against a mocked client: RPC and parameters, row mapping, every answer.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -11,7 +10,9 @@ vi.mock('../../modules/staff-admin/src/adminClient', () => ({
 
 import { listAuditLog } from '../../modules/staff-admin/src/adapters/auditLogAdmin'
 
-beforeEach(() => rpc.mockReset())
+beforeEach(() => {
+  rpc.mockReset()
+})
 
 const ENTRY = '66666666-6666-4666-8666-666666666661'
 const ACTOR = '77777777-7777-4777-8777-777777777771'
@@ -175,8 +176,7 @@ describe('admin log list', () => {
     })
   })
 
-  // A later migration can log an action or give an account a role this panel has no name for. Such
-  // an entry is kept, with the stored name, so that it does not hide the rest of its page.
+  // An action or role a later migration added must not hide the rest of its page.
   it('keeps an entry whose action or role it has no name for, with the stored name', async () => {
     const longest = 'a'.repeat(64)
     rpc.mockResolvedValue({
@@ -226,8 +226,7 @@ describe('admin log list', () => {
     })
   })
 
-  // A request without a valid session is answered with HTTP 401: with the anonymous role's refusal
-  // (42501, the code a signed-in caller who is not the owner gets too) or the token's own error.
+  // HTTP 401 is no valid session, even with the 42501 a signed-in non-owner gets as well.
   it.each([
     [
       'a request the API ran as the anonymous role',

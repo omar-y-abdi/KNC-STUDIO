@@ -491,6 +491,11 @@ function isAlternativeList(node: CssNode): boolean {
   )
 }
 
+/** A node `parseCanvasCss` refuses with `unkeptSyntax`. */
+export function isUnkeptSyntax(node: CssNode): boolean {
+  return node.type === 'Raw' || isLayer(node) || isAlternativeList(node)
+}
+
 /** Whether a stored sheet holds a cascade layer. Only the text `@layer`, or an escape that can
  * spell it, parses to one. */
 export function storesLayer(css: string): boolean {
@@ -515,8 +520,7 @@ export function parseCanvasCss(
   // Masking declaration names is destructive; retain the prepared tree for deferred previews.
   const tree = typeof css === 'string' ? parseCanvasSheet(css) : clone(css)
   walk(tree, (node) => {
-    if (node.type === 'Raw' || isLayer(node) || isAlternativeList(node))
-      throw new Error(unkeptSyntax)
+    if (isUnkeptSyntax(node)) throw new Error(unkeptSyntax)
   })
   if (tree.type === 'StyleSheet')
     tree.children.forEach((node, item) => {

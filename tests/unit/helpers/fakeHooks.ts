@@ -27,7 +27,6 @@ export const useState = vi.fn((initial: unknown) => {
 
 type Deps = readonly unknown[] | undefined
 
-/** An effect `commit()` ran: the dependencies it ran with and the cleanup it handed back. */
 interface CommittedEffect {
   readonly deps: Deps
   readonly cleanup: (() => void) | undefined
@@ -83,13 +82,8 @@ function sameDeps(before: Deps, now: Deps): boolean {
   return before.every((value, index) => Object.is(value, now[index]))
 }
 
-/**
- * Run the effects of the last render the way the renderer does after each render, where `mount()`
- * runs all of them once. An effect whose dependencies are the ones it last ran with is left alone.
- * Any other effect is cleaned up, when it ran before, and runs again. An effect that ran before and
- * was not rendered this time is cleaned up: its component is gone. Effects are told apart by the
- * order they were rendered in; state and refs of a component that is gone stay as they were.
- */
+/** Run the last render's effects as the renderer does: one with unchanged deps is kept, any other
+ * is cleaned up and rerun, one no longer rendered is cleaned up. Told apart by render order. */
 export function commit(): void {
   const before = committed
   const kept = hooks.effects.map((_, index) => {

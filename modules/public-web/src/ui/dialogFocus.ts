@@ -1,26 +1,21 @@
-// Keyboard focus around the shared dialog (ui/Dialog.tsx): which of a dialog's controls Tab can
-// stop at, keeping focus in the topmost open dialog, and where focus settles when a dialog closes.
-// Nothing here runs at import time.
+// Keyboard focus around the shared dialog (ui/Dialog.tsx): Tab stops, holding focus in the topmost
+// open dialog, and where focus settles when one closes.
 
 import { focusQuietly, hasSkipLink, mainLandmark } from './pageFocus'
 
 const FOCUSABLE =
   'a[href],button:not([disabled]),textarea,input,select,[tabindex]:not([tabindex="-1"])'
 
-/** An embedded widget: a frame, or the container of one that sits in a closed shadow root and is
- * marked for that reason (booking/Turnstile.tsx). What is inside it is out of this document's
- * sight, so only the browser moves keyboard focus into it: by Tab from the control before it, by
- * Shift+Tab from the control after it. */
+/** A frame, or the marked host of one in a closed shadow root (booking/Turnstile.tsx): only the
+ * browser's own Tab moves focus into it. */
 const WIDGET = 'iframe,[data-knc-widget]'
 
-/** A surface that covers an open dialog and has a control of its own: the error state of an
- * overlay `LazySurface` (ui/LazySurface.tsx sets the attribute). Focus inside it is left there,
- * and so is Tab pressed inside it. */
+/** A surface over an open dialog with a control of its own (the error state of ui/LazySurface.tsx):
+ * focus and Tab inside it are left alone. */
 const ABOVE_DIALOG = '[data-above-dialog]'
 
-/** Whether `node` is within reach of the keyboard as far as the markup tells. A selector match
- * alone also covers a hidden input (Turnstile's response field), a disabled field and whatever
- * sits in a part that is inert or hidden. */
+/** Within keyboard reach as far as the markup tells: not a hidden input or a disabled field, and
+ * not in a part that is inert or hidden. */
 function reachable(node: HTMLElement): boolean {
   return (
     !node.matches('input[type="hidden"],:disabled') && node.closest('[inert],[hidden]') === null
@@ -32,9 +27,8 @@ export function tabStops(card: HTMLElement): HTMLElement[] {
   return [...card.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(reachable)
 }
 
-/** Moves focus into `card`: to its first control, or to its last when `backwards`, passing over a
- * control that does not take it (one that is not rendered, say). The card itself holds the focus
- * when none does. */
+/** Focuses the first control of `card` (the last when `backwards`) that takes focus, else the card
+ * itself. */
 export function focusIntoCard(card: HTMLElement, backwards: boolean): void {
   const stops = tabStops(card)
   for (const stop of backwards ? stops.reverse() : stops) {
@@ -44,15 +38,8 @@ export function focusIntoCard(card: HTMLElement, backwards: boolean): void {
   card.focus()
 }
 
-/**
- * Whether Tab, or Shift+Tab when `backwards`, would take focus out of `card` from where it is, so
- * that the dialog has to wrap it: forwards from the last control, backwards from the first one or
- * from the card itself. A card without a control is always left.
- *
- * An embedded widget that lies beyond that control is still inside the card. The step into it,
- * Tab from the last control or Shift+Tab from the first, is the browser's and the only way in: a
- * verification challenge under a submit button that is disabled until it is solved.
- */
+/** Whether Tab (Shift+Tab when `backwards`) leaves `card`, so the dialog must wrap it. A widget
+ * past the edge control is entered by the browser (a challenge under a disabled submit). */
 export function tabLeavesCard(card: HTMLElement, backwards: boolean): boolean {
   const active = document.activeElement
   // Shift+Tab from the card itself leaves it whatever it holds: all of it comes after.
@@ -69,9 +56,8 @@ export function tabLeavesCard(card: HTMLElement, backwards: boolean): boolean {
 /** The cards of the open dialogs in the order they opened. */
 const openCards: HTMLElement[] = []
 
-/** The dialog keyboard focus belongs in: the last one opened that can hold it. A dialog left open
- * inside a part of the page that has since become inert (the closed desktop booking fold keeps its
- * content mounted) holds nothing until that part returns. */
+/** The last opened dialog that can hold focus: one left open in a part that has become inert (the
+ * closed desktop booking fold) holds nothing until that part returns. */
 function topCard(): HTMLElement | undefined {
   for (let index = openCards.length - 1; index >= 0; index--) {
     const card = openCards[index]
@@ -97,10 +83,8 @@ function enterTopDialogOnTab(event: KeyboardEvent): void {
   focusIntoCard(card, event.shiftKey)
 }
 
-/** Keeps keyboard focus in `card` while it is the topmost open dialog: focus that lands outside it
- * returns to it, and Tab pressed while focus is outside it enters it. Focus on a widget embedded in
- * the card is inside it: the event names the widget's host element. A surface above the dialog
- * keeps both its focus and its Tab. Returns the release. */
+/** While `card` is the topmost open dialog, focus that lands outside it returns and Tab outside it
+ * enters it; a surface above the dialog keeps its focus and Tab. Returns the release. */
 export function holdKeyboardFocus(card: HTMLElement): () => void {
   if (openCards.length === 0) {
     document.addEventListener('focusin', returnFocusToTopDialog)
@@ -116,16 +100,8 @@ export function holdKeyboardFocus(card: HTMLElement): () => void {
   }
 }
 
-/**
- * Settles keyboard focus once a closed dialog has left the document. `opener` held the focus when
- * the dialog opened and has been given it back once already. Focus that rests on something is left
- * alone. Otherwise, in order: the opener, if it is still in the document and takes focus; the
- * dialog below; the page's main landmark, without a visible change.
- *
- * Only a page that has declared its main landmark a focus target does this (`hasSkipLink`: the
- * public shell). On the staff pages, in Studio and in the frames Studio embeds, closing a dialog
- * gives focus back to the opener and nothing more.
- */
+/** Once a closed dialog has left the document and nothing holds focus: the opener, else the dialog
+ * below, else the main landmark. Only in the public shell (`hasSkipLink`). */
 export function settleFocusAfterClose(opener: HTMLElement | null): void {
   if (!hasSkipLink()) return
   const active = document.activeElement
@@ -134,8 +110,7 @@ export function settleFocusAfterClose(opener: HTMLElement | null): void {
     opener.focus()
     if (document.activeElement === opener) return
   }
-  // The opener is gone (a booked time, a cancelled row), was the document body (nothing held focus
-  // when the dialog opened) or sits in a part that cannot hold focus now.
+  // The opener is gone, was the body, or sits in a part that cannot hold focus now.
   const below = topCard()
   if (below !== undefined) below.focus({ preventScroll: true })
   else focusQuietly(mainLandmark())

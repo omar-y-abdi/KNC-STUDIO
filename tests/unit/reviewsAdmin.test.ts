@@ -1,5 +1,4 @@
-// The review moderation adapter against a mocked client: the exact RPC names and parameter names,
-// the row mapping, and every answer the database can give mapped to its typed result.
+// The review moderation adapter against a mocked client: RPC and parameter names, rows, answers.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -15,16 +14,14 @@ import {
   setReviewPublished,
 } from '../../modules/staff-admin/src/adapters/reviewsAdmin'
 
-beforeEach(() => rpc.mockReset())
+beforeEach(() => {
+  rpc.mockReset()
+})
 
 const ID = '55555555-5555-4555-8555-555555555551'
 const OTHER_ID = '55555555-5555-4555-8555-555555555552'
 
-/**
- * What the API answers a request without a valid session: HTTP 401, with the anonymous role's
- * refusal (42501, the code a signed-in caller who is not the owner gets too) or with the token's own
- * error.
- */
+/** HTTP 401 answers: the anonymous role's 42501 (a signed-in non-owner's too) or a token error. */
 const sessionless: [string, unknown][] = [
   [
     'a request the API ran as the anonymous role',

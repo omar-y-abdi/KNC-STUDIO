@@ -19,7 +19,11 @@ import { matchesSelector, type SelectorSubject } from './helpers/fakeSelector'
 // The dialog component is rendered as a plain function: its hooks are the fakes, its surface is the
 // markup it returns, and a Studio source frame is a switch.
 const studio = vi.hoisted(() => ({ sourceFrame: false }))
-vi.mock('preact/hooks', () => import('./helpers/fakeHooks'))
+// The dialog focuses in its opening commit (a layout effect): `mount()` runs it as that commit.
+vi.mock('preact/hooks', async () => {
+  const hooks = await import('./helpers/fakeHooks')
+  return { ...hooks, useLayoutEffect: hooks.useEffect }
+})
 vi.mock('../../modules/public-web/src/cms/NativeSurface', () => ({
   useNativeSurface: (node: unknown) => node,
   useNativeSource: () => studio.sourceFrame,
@@ -28,10 +32,8 @@ vi.mock('../../modules/public-web/src/ui/reducedMotion', () => ({
   prefersReducedMotion: () => false,
 }))
 
-// Stand-ins for the part of the DOM the focus code reads: a tree of elements with a tag name and
-// attributes, and a document that knows which element holds the focus. A selector the code asks
-// with is applied to that markup for real (helpers/fakeSelector.ts). What takes focus is the
-// stand-in's own knowledge of a browser, written apart from the selectors under test.
+// A stand-in DOM: selectors are applied for real (helpers/fakeSelector.ts), while what takes focus
+// is the stand-in's own knowledge of a browser, written apart from the selectors under test.
 
 const FORM_CONTROLS: ReadonlySet<string> = new Set(['button', 'input', 'select', 'textarea'])
 
@@ -77,7 +79,6 @@ class FakeElement implements SelectorSubject {
     return this.matches(selector) ? this : (this.parent?.closest(selector) ?? null)
   }
 
-  /** The descendants that match, in document order. */
   querySelectorAll(selector: string): FakeElement[] {
     return this.children.flatMap((child) => [
       ...(child.matches(selector) ? [child] : []),
@@ -105,9 +106,8 @@ class FakeElement implements SelectorSubject {
     if (type === 'blur') this.blurListeners.delete(listener)
   }
 
-  /** What a browser lets hold the focus: a link with an address, a frame, an enabled form control
-   * that is not a hidden input, and anything that carries a `tabindex`; none of them while it is
-   * not rendered, out of the document or inside an inert or hidden part. */
+  /** A link with an address, a frame, an enabled control but a hidden input, or a `tabindex`; none
+   * while unrendered, out of the document or in an inert or hidden part. */
   private takesFocus(): boolean {
     const control =
       (this.tag === 'a' && this.attributes.has('href')) ||
@@ -162,9 +162,8 @@ const unrendered = (): FakeElement => {
   control.rendered = false
   return control
 }
-/** The container Turnstile renders into (booking/Turnstile.tsx): marked as a widget, holding the
- * response field the widget leaves in it. The frame itself is in a closed shadow root, out of the
- * document's sight. */
+/** Turnstile's marked container (booking/Turnstile.tsx) with its response field; the frame itself
+ * is in a closed shadow root, out of the document's sight. */
 const challenge = (): FakeElement => {
   const container = box({ 'data-knc-widget': '' })
   container.add(hiddenInput())

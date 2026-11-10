@@ -12,9 +12,8 @@ import { fakeElement, installFakePage, type FakeElement, type FakePage } from '.
 import { mount, nodes, render, reset, useEffect, type RenderedNode } from './helpers/fakeHooks'
 import { unhandledRejectionsDuring } from './helpers/unhandledRejections'
 
-// The booking flow's three reads (barbers, services, times) each have a loading, an empty, a ready
-// and a failed outcome, and a submit has more answers than "booked". These tests drive the real
-// component through each and read what it renders.
+// The real booking flow driven through each outcome of its three reads (loading, empty, ready,
+// failed) and through the answers a submit can have besides "booked".
 
 const reads = vi.hoisted(() => ({ roster: vi.fn(), services: vi.fn() }))
 vi.mock('preact/hooks', () => import('./helpers/fakeHooks'))
@@ -442,9 +441,8 @@ describe('booking flow: times', () => {
   })
 })
 
-// An answer belongs to the selection it was read for. Changing only the service goes straight from
-// one complete selection to another, and the first render after it happens before any effect has
-// run: it must already show the new selection as loading.
+// Changing only the service goes from one complete selection to another: the first render after
+// it, before any effect has run, must already show the new selection as loading.
 describe('booking flow: the times of another selection', () => {
   const shave = { id: 's2', name: 'Shave', price: 200, dur: 20 }
 
@@ -486,10 +484,8 @@ describe('booking flow: the times of another selection', () => {
     },
   )
 
-  // The times on screen are the answer to the newest read. An earlier read of the same selection
-  // can answer later (the visitor went to another service and came back while it was on its way):
-  // its answer, or its failure, is dropped. Each `mount()` starts a read and hands back what stops
-  // the reads before it, as leaving a selection does.
+  // An earlier read of the same selection that answers or fails after a newer one is dropped. Each
+  // `mount()` starts a read and hands back what stops the reads before it.
   type TimesRead = ReturnType<typeof deferred<AvailabilityResult>>
   it.each<[string, (read: TimesRead) => void]>([
     ['answers', (read) => read.resolve(times('09:00'))],
@@ -766,6 +762,7 @@ describe('booking flow: a refused time', () => {
     const details = await fillDetails(port)
     await book(details)
     close(details)
+    expect(screen(port).details).toBeUndefined()
     const depsWhenClosed = availabilityDeps(port)
 
     answer.resolve(rateLimited)
@@ -831,9 +828,8 @@ describe('booking flow: a refused time', () => {
     expect(en.errRateLimited).not.toBe(t.errRateLimited)
   })
 
-  // The refusal takes the focus to the time step only when the focus is the flow's to move:
-  // inside the flow, or on nothing in particular. A visitor who is typing somewhere else (in
-  // "Mina bokningar", say) keeps their place; the line is announced all the same.
+  // A visitor typing somewhere else (in "Mina bokningar", say) keeps their place; the line is
+  // announced all the same.
   it.each([
     ['inside the flow', 'inside', true],
     ['on the page itself', 'body', true],
@@ -935,9 +931,8 @@ describe('booking flow: one submit at a time', () => {
     expect(screen(port).alerts.map(text)).toEqual([t.errSlotTaken])
   })
 
-  // The submit for one time is on its way and the visitor presses Book in the popup of another.
-  // Nothing is sent, and that popup says why until the first submit is answered. The popup whose
-  // submit is on its way is marked busy for assistive technology, and only that one.
+  // Book pressed in another time's popup while a submit is on its way sends nothing and says why
+  // there; only the popup whose submit is on its way is marked busy.
   it.each([
     ['a refusal', rateLimited, null, [t.errRateLimited]],
     ['no answer', unanswered, t.errUnconfirmed, []],
@@ -1023,10 +1018,8 @@ describe('booking flow: one submit at a time', () => {
   })
 })
 
-// A submit that ended without an answer may have booked the time. Saying only "try again" sends
-// the visitor on to book another time, and then two bookings can exist. Every details popup
-// therefore warns, for whichever time it is open, until a booking goes through or the visitor
-// starts over. It warns; it does not block.
+// Such a submit may have booked the time, so every details popup warns, without blocking, until a
+// booking goes through or the visitor starts over.
 describe('booking flow: a submit that ended without an answer', () => {
   it.each([
     ['came back without a readable answer', async (): Promise<BookingResult> => unanswered],
@@ -1085,9 +1078,8 @@ describe('booking flow: a submit that ended without an answer', () => {
     expect(submit).toHaveBeenCalledOnce()
   })
 
-  // The visitor closed the popup while the submit was on its way, and it ends without an answer.
-  // No popup is there to carry the warning, so the time step says it: nothing is deselected and
-  // nothing is read again. Choosing a time answers that line, and its popup carries the warning.
+  // With the popup closed meanwhile, the time step carries the warning, nothing deselected or read
+  // again, until a time is chosen: its popup carries it then.
   type SubmitAnswer = ReturnType<typeof deferred<BookingResult>>
   it.each<[string, (answer: SubmitAnswer) => void]>([
     ['came back without a readable answer', (answer) => answer.resolve(unanswered)],
@@ -1139,6 +1131,7 @@ describe('booking flow: a submit that ended without an answer', () => {
     await book(details)
     close(details)
     click(screen(port).chips[1])
+    expect(screen(port).details?.props['sumWhen']).toContain('10:30')
 
     answer.resolve(unanswered)
     await flush()
@@ -1199,9 +1192,8 @@ describe('booking flow: a submit that ended without an answer', () => {
     expect(popup(port).props).toMatchObject({ submitError: null })
   })
 
-  // "Book another time" is offered by the confirmation, which a booking shows after it has ended
-  // the doubt itself. The handler is kept from that confirmation here, so that starting over is
-  // what ends a doubt that arose after it.
+  // A booking ends the doubt itself, so the confirmation's "Book another time" handler is kept to
+  // start over after a doubt that arose later.
   it('ends when the visitor starts over', async () => {
     const submit = vi
       .fn<BookingPort['submit']>()
@@ -1219,9 +1211,8 @@ describe('booking flow: a submit that ended without an answer', () => {
   })
 })
 
-// A submit that ended without an answer may have booked the time. If the next submit for that same
-// time is refused as unavailable, the refusal can be about the visitor's own booking: sending them
-// on to "choose another time" would have them book twice.
+// After an unanswered submit, an "unavailable" for that same time may be about the visitor's own
+// booking: sending them on to choose another time would have them book twice.
 describe('booking flow: a refusal after an unanswered submit', () => {
   it.each([
     ['came back without a readable answer', async (): Promise<BookingResult> => unanswered],
@@ -1437,9 +1428,8 @@ describe('booking flow: a refusal after an unanswered submit', () => {
   })
 })
 
-// A booking's answer can arrive after the visitor has closed the popup and chosen something else.
-// The confirmation must name the booking that was made, never the selection that happens to be on
-// the page.
+// The confirmation must name the booking that was made, never the selection on the page when the
+// answer arrives.
 describe('booking flow: a booking answered after the visitor chose something else', () => {
   const barberTwo = {
     barber: { id: 'b2', name: 'Barber Two', ig: 'two' },

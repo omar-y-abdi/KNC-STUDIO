@@ -1,30 +1,19 @@
-// Admin log adapter (owner only): one page of `admin_list_audit_log`, newest first. An entry says who
-// changed which row of which staff-managed table, and for an update which columns; it never holds a
-// value. The database refuses every caller but an enabled owner with SQLSTATE 42501, which arrives
-// here as `forbidden`. A request without a valid session is answered with HTTP 401 and arrives as
-// `auth`.
-//
-// Boundary discipline: every answer is Zod-parsed; failure -> AdminError. Never throws to the UI.
+// Admin log adapter (owner only): one newest-first page of `admin_list_audit_log`, never a value.
+// SQLSTATE 42501 is `forbidden`, HTTP 401 is `auth`; answers are Zod-parsed, nothing throws.
 
 import { getAdminClient } from '../adminClient'
 import { auditLogPage, parseWith, type AuditLogEntryRow } from '../adminSchemas'
 import type { AdminBarberId, AdminResult } from '../types'
 import { err, ok } from '../types'
 
-/**
- * Who made the change, as the staff account is now: `removed` once it no longer exists, `unknown`
- * for a role this panel has no name for (a later migration added it).
- */
+/** The actor's account as it is now: `removed` once deleted, `unknown` for a role named later. */
 export type AuditActor =
   | { readonly kind: 'owner' }
   | { readonly kind: 'barber'; readonly barberId: AdminBarberId | null }
   | { readonly kind: 'removed' }
   | { readonly kind: 'unknown'; readonly role: string }
 
-/**
- * What was done to the row. Only an update names columns, and it names at least one. `unknown` is an
- * action this panel has no name for, by its stored name, with the columns it names (none: empty).
- */
+/** Only an update names columns (at least one); `unknown` keeps an action's stored name. */
 export type AuditChange =
   | { readonly action: 'insert' }
   | { readonly action: 'delete' }
@@ -41,9 +30,7 @@ export interface AuditLogEntry {
   readonly createdAt: string
   readonly actor: AuditActor
   readonly change: AuditChange
-  /** The table name as stored; the panel names the fourteen it knows. */
   readonly targetTable: string
-  /** The row's primary key as stored. */
   readonly targetId: string
 }
 
@@ -102,8 +89,7 @@ export async function listAuditLog(
       p_before_id: cursor?.beforeId ?? null,
       p_limit: PAGE_SIZE,
     })
-    // 401: the request carried no valid session (expired, missing, or the anonymous role, whose
-    // refusal is a 42501 as well). A signed-in caller who is not the owner is refused with 403.
+    // 401: no valid session, also for the anonymous role, whose refusal is a 42501 too.
     if (status === 401) return err('auth', SESSION_EXPIRED)
     if (error?.code === '42501') return err('forbidden', 'Endast ägaren kan läsa adminloggen.')
     if (error !== null || data === null) return err('network', READ_ERROR)

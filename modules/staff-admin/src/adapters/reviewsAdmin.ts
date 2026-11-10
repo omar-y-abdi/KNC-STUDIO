@@ -1,9 +1,5 @@
-// Review moderation adapter (owner only). Three RPCs: read every review, published and hidden, in
-// pages; hide or publish one again; delete one. The database refuses every caller but an enabled
-// owner with SQLSTATE 42501, which arrives here as `forbidden`. A request without a valid session is
-// answered with HTTP 401 and arrives as `auth`.
-//
-// Boundary discipline: every answer is Zod-parsed; failure -> AdminError. Never throws to the UI.
+// Review moderation adapter (owner only): list every review in pages, hide, publish, delete one.
+// SQLSTATE 42501 is `forbidden`, HTTP 401 is `auth`; answers are Zod-parsed, nothing throws.
 
 import { getAdminClient } from '../adminClient'
 import {
@@ -19,7 +15,6 @@ export interface AdminReview {
   readonly id: string
   /** The database timestamp verbatim: it is also the paging cursor, so never round it. */
   readonly createdAt: string
-  /** The display name the customer's review carries ("Anna S."). */
   readonly name: string
   readonly rating: number
   readonly text: string
@@ -44,11 +39,7 @@ const FORBIDDEN = 'Endast ägaren kan hantera recensioner.'
 const SESSION_EXPIRED = 'Din session har gått ut. Logga in igen.'
 const PAGE_SIZE = 50
 
-/**
- * Whether the answer says the request carried no valid session. PostgREST answers 401 for an
- * expired or missing token and for the anonymous role, whose refusal is a 42501 as well; a
- * signed-in caller who is not the owner is refused with 403.
- */
+/** No valid session: PostgREST answers 401, also for the anonymous role (refused with 42501). */
 const sessionEnded = (status: number): boolean => status === 401
 
 function toReview(row: AdminReviewRow): AdminReview {
@@ -82,10 +73,7 @@ export async function listReviews(
   }
 }
 
-/**
- * Hide, publish and delete answer `{ ok }` or one of two refusals alike. `failure` names what was
- * attempted, for a result that says no more than that it failed.
- */
+/** Hide, publish and delete answer alike; `failure` is the message that names the attempt. */
 async function moderate(
   rpc: 'admin_set_review_published' | 'admin_delete_review',
   args: Readonly<Record<string, unknown>>,
@@ -119,7 +107,7 @@ export function setReviewPublished(id: string, published: boolean): Promise<Admi
   )
 }
 
-/** Delete the review. Its booking is untouched and, while it exists, can be reviewed again. */
+/** Its booking is untouched and, while it exists, can be reviewed again. */
 export function deleteReview(id: string): Promise<AdminResult<void>> {
   return moderate('admin_delete_review', { p_id: id }, DELETE_ERROR)
 }

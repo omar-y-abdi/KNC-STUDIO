@@ -1,7 +1,5 @@
-// Reads the CSS selectors the app's DOM code asks for, for the stand-in elements of the unit tests:
-// a selector list whose members are compounds of a tag name, `.class`, `[name]`, `[name="value"]`,
-// `:disabled` and `:not(...)` over the same. A combinator or anything else throws, so no test passes
-// on a selector the stand-in does not apply.
+// The selectors the app's DOM code asks, applied to the tests' stand-ins: lists of compounds of
+// tag, `.class`, `[name]`, `[name="value"]`, `:disabled`, `:not(...)`. Anything else throws.
 
 export interface SelectorSubject {
   /** The element's tag name, in lower case. */

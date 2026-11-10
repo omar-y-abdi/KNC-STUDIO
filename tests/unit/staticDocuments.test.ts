@@ -7,9 +7,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_BUSINESS } from '../../modules/public-web/src/site/business'
 import worker, { PublicContent } from '../../supabase/worker/index'
 
-// The documents and icons the site serves as plain files: the 404, error and maintenance pages, the
-// raster icons and the manifest, the skip link and paper styles of public/info.css, and the social
-// defaults of the shell and the Contact fallback (checklist items 1, 11, 39, 43 and 91).
+// The plain files the site serves: static pages, icons, manifest, public/info.css's skip link and
+// paper styles, and the social defaults (checklist items 1, 11, 39, 43 and 91).
 
 type Node = DefaultTreeAdapterMap['node']
 type Element = DefaultTreeAdapterMap['element']
@@ -319,7 +318,8 @@ describe('error and maintenance documents', () => {
       )
       expect(defaults).toHaveLength(2)
       const all = document(name)
-      const english = only(all, (element) => attr(element, 'lang') === 'en')
+      const main = only(all, (element) => element.tagName === 'main')
+      const english = only(elements(main), (element) => attr(element, 'lang') === 'en')
       expect(contactLinks(elements(english))).toEqual(defaults)
       expect([...new Set(contactLinks(all))]).toEqual(defaults)
       expect(contactLinks(all)).toHaveLength(4)
@@ -420,9 +420,8 @@ describe('paper styles of the static documents', () => {
     expect(page).toEqual(['margin'])
   })
 
-  // public/info.css as it was before the skip link and the paper styles (commit 93ff3298,
-  // `git show 93ff3298:public/info.css | shasum -a 256`): those bytes still open the file, so
-  // everything added since comes after them.
+  // public/info.css before the skip link and paper styles (`git show 93ff3298:public/info.css`):
+  // those bytes still open the file, so everything added since comes after them.
   const EARLIER = {
     bytes: 1550,
     sha256: '95d68144ad1f9d9a19e5f3f72f22a665332394dcb20c4877052be9a2f28cc7c3',

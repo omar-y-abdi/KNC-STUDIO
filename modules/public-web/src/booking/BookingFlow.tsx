@@ -49,9 +49,8 @@ type Mode = 'light' | 'dark'
 /** Pristine per-field error state — nothing flagged (the default popup). */
 const NO_FIELD_ERRORS: FieldErrors = { name: false, phone: false, email: false }
 
-/** The availability read for one barber+date+service selection (`key`). A failed read is its own
- * state, so the "no times" message can only follow a real, empty answer; the key ties an answer
- * to the selection it was read for, so it is never shown for another one. */
+/** The availability read for one selection (`key`): a failed read is its own state, so "no times"
+ * only follows a real, empty answer, and an answer is never shown for another selection. */
 type SlotsState =
   | { readonly status: 'loading' }
   | { readonly status: 'ready'; readonly key: string; readonly times: readonly string[] }
@@ -59,12 +58,8 @@ type SlotsState =
 
 const SLOTS_LOADING: SlotsState = { status: 'loading' }
 
-/** Why the flow shows an error line about a submit: in the details popup, or in the time step when
- * the line cannot stand in the popup it belongs to. A reason, never a text: the line is written at
- * each render, in the language on screen then. A refusal keeps the name the port gave it; the other
- * two are the flow's own. `possiblyBooked`: the time whose last submit ended without an answer was
- * refused as unavailable. `pending`: the book button was pressed while the submit for another time
- * was still on its way. */
+/** Why a line about a submit is shown, never its text (written at each render, in the language on
+ * screen). `possiblyBooked`: the time in doubt was refused; `pending`: another is on its way. */
 type SubmitNotice = BookingError['kind'] | 'possiblyBooked' | 'pending'
 
 const SUBMIT_NOTICE_TEXT: Readonly<Record<SubmitNotice, keyof BookingStrings>> = {
@@ -79,9 +74,8 @@ const SUBMIT_NOTICE_TEXT: Readonly<Record<SubmitNotice, keyof BookingStrings>> =
   pending: 'errSubmitPending',
 }
 
-/** A line about a submit shown in the time step (a refusal, or the warning that a submit ended
- * without an answer while no popup was open), tied to the selection whose times are on screen when
- * it is shown. For a refused start time that is the selection the refusal was given for. */
+/** A line about a submit shown in the time step (a refusal, or a no-answer warning while no popup
+ * was open), tied to the selection whose times are on screen. */
 interface RefusedSlot {
   readonly key: string
   readonly notice: SubmitNotice
@@ -104,9 +98,8 @@ function slotKeyAt(selection: string | null, time: string | null): string | null
   return selection === null || time === null ? null : `${selection}|${time}`
 }
 
-/** What the visitor has in front of them at one moment: the selection whose times are shown, the
- * chosen slot, whether its details popup is open, and the Turnstile token the flow holds for that
- * popup. */
+/** What the visitor has in front of them at one moment: the selection shown, the chosen slot,
+ * whether its popup is open, and the Turnstile token the flow holds for that popup. */
 interface ChosenNow {
   readonly selection: string | null
   readonly slot: string | null
@@ -116,9 +109,8 @@ interface ChosenNow {
 
 const NOTHING_CHOSEN: ChosenNow = { selection: null, slot: null, popupOpen: false, token: '' }
 
-// The CMS identifies an unkeyed element by its position among its siblings, and the published
-// presentation stores those positions. A message that moved into a step's status region therefore
-// leaves this in its old place, so the siblings after it keep their position.
+// The CMS identifies an unkeyed element by its position among its siblings: a message moved into a
+// step's status region leaves this in its old place, so the siblings after it keep theirs.
 const KEPT_POSITION = null
 
 // A failed read: one line and a retry button, in the look of the Turnstile failure line (the
@@ -134,11 +126,8 @@ const RETRY_BUTTON_STYLE: JSX.CSSProperties = {
   cursor: 'pointer',
 }
 
-/** Move keyboard focus to the title of the step that holds `region`. Used when the focused control
- * is about to leave the page (a retry button, or the time chip a closed popup returns focus to).
- * The title is found from the region, not through a ref of its own: a ref would make the CMS
- * treat the title as a code-owned control. The title is text, not a control: it takes the focus
- * without a focus outline and without staying focusable (`focusQuietly`). */
+/** Quietly focus the title of the step that holds `region`, when the focused control leaves the
+ * page. Found from the region: a ref of its own would make the CMS treat it as a control. */
 function focusStepTitle(region: HTMLElement | null): void {
   focusQuietly(region?.parentElement?.querySelector<HTMLElement>('[role="heading"]') ?? null)
 }
@@ -146,19 +135,16 @@ function focusStepTitle(region: HTMLElement | null): void {
 // The flow's root element, by the name it carries (`data-knc-fold`, set where the flow renders).
 const FLOW_ROOT = '[data-knc-fold="booking-flow"]'
 
-/** Whether the keyboard focus is the flow's to move: it is inside the flow that holds `region`, or
- * nowhere in particular (on the `body`, or on nothing). A focus held anywhere else is the
- * visitor's (they may be typing in another dialog): the flow leaves it where it is. */
+/** Whether the focus is the flow's to move: inside the flow that holds `region`, or on nothing in
+ * particular. Focus held anywhere else is the visitor's (another dialog, say). */
 function focusIsTheFlows(region: HTMLElement | null): boolean {
   const active = document.activeElement
   if (active === null || active === document.body) return true
   return region?.closest(FLOW_ROOT)?.contains(active) === true
 }
 
-/** Bring the refusal line of the step that holds `region` into view. The step's title takes the
- * focus without scrolling, and on a narrow screen the line stands below the times. `nearest` moves
- * nothing when the line is already in view, and the scroll is never animated, so it is the same
- * for a visitor who asked for reduced motion. */
+/** Bring the refusal line of the step that holds `region` into view (the title took the focus
+ * without scrolling): `nearest`, never animated, so the same under reduced motion. */
 function showStepRefusal(region: HTMLElement | null): void {
   region?.parentElement
     ?.querySelector<HTMLElement>('[role="alert"]')
@@ -197,19 +183,15 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   const scene = useContext(CmsSceneContext)?.booking
   const [state, setRaw] = useState<BookingDraft>(initialDraft)
   const typedContact = useRef({ name: false, phone: false, email: false })
-  // Port result, per-FIELD validation errors, and the details popup's own error line all live
-  // OUTSIDE the domain draft. The line is kept as its reason, not as text (`SubmitNotice`). An
-  // answer shown in the popup clears the field errors, and a failed validation clears the line.
+  // Port result, per-FIELD validation errors, and the details popup's own error line (kept as its
+  // reason, `SubmitNotice`) all live OUTSIDE the domain draft.
   const [result, setResult] = useState<BookingResult | null>(null)
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>(NO_FIELD_ERRORS)
   const [submitError, setSubmitError] = useState<SubmitNotice | null>(null)
   // Real availability: the AVAILABLE start times for the chosen barber+date+service, loaded through
   // the port (DB-backed when configured, the deterministic `packSlots` grid under the mock). The grid
-  // renders exactly these as selectable chips. `loading` covers the in-flight fetch and the time
-  // before a full selection exists; `error` is a failed read. `loadedSlots` is the last answer and
-  // names the selection it was read for; `slots` (below) is what this render may show of it.
-  // `slotsAttempt` is bumped to read the same selection again (a retry, or after the server refused
-  // the chosen time).
+  // renders exactly these as selectable chips. `loadedSlots` names the selection it was read for;
+  // `slotsAttempt` is bumped to read the same selection again (a retry, or a refused time).
   const [loadedSlots, setLoadedSlots] = useState<SlotsState>(SLOTS_LOADING)
   const [slotsAttempt, setSlotsAttempt] = useState<number>(0)
   const [refusedSlot, setRefusedSlot] = useState<RefusedSlot | null>(null)
@@ -220,20 +202,14 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   // Set when the time step must take focus after the next render (the chosen time was refused, and
   // the focus was the flow's to move).
   const focusTimesNext = useRef(false)
-  // What `onBook` must know at the moment it is called or answered, which the state of the render
-  // that created it cannot promise (a second activation, or an answer, can arrive before the next
-  // render): the slot whose submit is on its way; a booking exists; the slot chosen now and whether
-  // its popup is open; and the slot whose last submit ended without an answer, so the server may
-  // have booked it all the same. That doubt stays while the visitor looks at other times: only a
-  // submit that succeeds, or starting over, ends it (a later unanswered submit for another slot
-  // replaces it).
+  // What `onBook` must read when called or answered, newer than the render that created it: the
+  // pending slot, a booking exists, the slot and popup on screen, and the slot in doubt.
   const pendingSubmit = useRef<string | null>(null)
   const booked = useRef(false)
   const chosenNow = useRef<ChosenNow>(NOTHING_CHOSEN)
   const unconfirmedSlot = useRef<string | null>(null)
-  // Two of these are also drawn, so each has a state that is set together with it: the slot whose
-  // submit is on its way marks its popup's book button as busy, and the doubt puts its warning in
-  // every details popup.
+  // Two of these are also drawn, so each has a state set together with it: the busy book button,
+  // and the doubt's warning in every details popup.
   const [busySlot, setBusySlot] = useState<string | null>(null)
   const [doubt, setDoubt] = useState<boolean>(false)
   const markPending = (slot: string | null): void => {
@@ -245,9 +221,8 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
     setDoubt(slot !== null)
   }
   // Turnstile token (proves the submitter is human; verified by the submit-booking gateway) + a
-  // nonce bumped after a submit attempt, when the flow still holds the token that attempt sent, to
-  // force a FRESH token (Turnstile tokens are single-use and expire ~5 min). Empty token =
-  // unconfigured/offline → the gateway fails open.
+  // nonce bumped after a submit whose token the flow still holds, to force a FRESH token (single
+  // use, expires ~5 min). Empty token = unconfigured/offline → the gateway fails open.
   const [turnstileToken, setTurnstileToken] = useState<string>('')
   const [turnstileNonce, setTurnstileNonce] = useState<number>(0)
 
@@ -355,8 +330,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   // Load real availability whenever barber + date + service are all chosen. The result is the list of
   // AVAILABLE start times; the grid renders exactly those as chips. A `cancelled` flag drops stale
   // responses so fast re-selection can't show the wrong day's slots. On any failure we fail closed:
-  // no chip is offered and the step says the read failed, with a retry (never the empty-state
-  // message; create_booking still validates the slot on submit).
+  // no chip, the step says the read failed, with a retry (create_booking still validates the slot).
   const serviceDur = S.service?.dur
   const serviceId = S.service?.id
   const slotKey = slotSelectionKey(S.barberId, S.dateIso, serviceId)
@@ -419,9 +393,8 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
       cancelled = true
     }
   }, [port, S.barberId, S.dateIso, serviceDur, serviceId, slotsAttempt])
-  // After a refused time the details popup closes and returns focus to the chip that opened it,
-  // which the reload then removes. Move focus to the step's title once that render has happened,
-  // and bring the line that says why into view.
+  // After a refused time the closed popup returns focus to a chip the reload removes: once that
+  // render is done, focus the step's title and bring the line that says why into view.
   useEffect(() => {
     if (!focusTimesNext.current) return
     focusTimesNext.current = false
@@ -639,9 +612,8 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
               transition: 'background .12s',
             } satisfies JSX.CSSProperties,
             onClick: () => {
-              // Choosing a time answers a refusal of the previous one. Its popup opens without the
-              // line of any other popup: an answer that arrived while no popup was open is not
-              // shown in this one.
+              // Choosing a time answers a refusal of the previous one; its popup opens without a
+              // line from an answer that arrived while no popup was open.
               setRefusedSlot(null)
               setSubmitError(null)
               setState({ time, showPopup: true })
@@ -708,27 +680,15 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
     }
 
   // Submit seam: validate, build a real Booking, send it through the BookingPort, store the
-  // result, then advance. One submit at a time, and none once a booking exists. While one is on
-  // its way, a second press in the popup of the same time changes nothing (its button is marked
-  // busy for assistive technology and looks as it did), and a press in the popup of another time
-  // puts a line there that says a booking is already being sent, until that one is answered.
-  // Four distinct failure modes:
+  // result, then advance. One submit at a time, none once booked; a press in another time's popup
+  // meanwhile says a booking is being sent. Four distinct failure modes:
   //  - VALIDATION failure → flag the offending field(s) red (per-field notes), no system error.
-  //  - UNAVAILABLE time (the server refused the chosen start time) → the popup closes with the
-  //    entered details kept, the time is deselected, the day's times are read again and the time
-  //    step says why. Two exceptions. If the visitor has chosen another time meanwhile, only the
-  //    times are read again: their new time and its popup stay. If the previous submit for this
-  //    same slot ended without an answer, the refusal may be about the visitor's own booking: the
-  //    popup stays open and says so, instead of sending them on to book a second time.
-  //  - NO ANSWER (a throw, or an answer that does not say what happened) → the booking may exist.
-  //    The slot is remembered as in doubt, and every details popup, open or opened later, for
-  //    whichever time, warns about it until a submit succeeds or the visitor starts over. It
-  //    warns; it does not block. If no popup is open when the submit ends, the time step says it,
-  //    with nothing deselected and nothing read again, until a time is chosen.
-  //  - Any OTHER refusal (any other result.ok === false) → its own line, fields left untouched: in
-  //    the popup while the popup of the refused time is the one open; otherwise in the time step,
-  //    with nothing deselected and nothing read again. It is never shown in the popup of another
-  //    time. (The local adapter never fails; a future networked one might.)
+  //  - UNAVAILABLE time → popup closed (details kept), time deselected, times read again, step says
+  //    why. Only a re-read if another time was chosen since; slot in doubt, popup open: it says so.
+  //  - NO ANSWER (a throw, or an unreadable answer) → the slot is in doubt: every popup warns until
+  //    a booking succeeds or the visitor starts over; with no popup open, the time step does.
+  //  - Any OTHER refusal → its line in the popup of the refused time while open, else in the time
+  //    step. (The local adapter never fails; a future networked one might.)
   const onBook = async (): Promise<void> => {
     if (booked.current) return
     if (bookDisabled) return
@@ -783,10 +743,8 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
     // The popup of another time may be saying that this submit was on its way.
     setSubmitError((shown) => (shown === 'pending' ? null : shown))
     const now = chosenNow.current
-    // The Turnstile token is single-use. If the flow still holds the one this submit sent, the
-    // widget that gave it is still on screen and must give a fresh one (e.g. for a rate_limited
-    // retry, where the popup stays open). A popup opened since has a widget and a token of its
-    // own, which this answer leaves alone.
+    // The Turnstile token is single-use: if the flow still holds the one this submit sent, its
+    // widget must give a fresh one (a popup opened since has a widget and token of its own).
     if (now.token === booking.turnstileToken) setTurnstileNonce((n) => n + 1)
     const ownPopupOpen = now.slot === submittedSlot && now.popupOpen
     if (!answer.ok) {
@@ -843,9 +801,8 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
     setSubmitError(null)
     // A refusal of an earlier submit may still stand in the time step; the booking answers it.
     setRefusedSlot(null)
-    // The visitor may have chosen something else while this submit was on its way. The
-    // confirmation is built from the selection, so the selection this booking was made from goes
-    // back in the same update that shows it: it names the booking that exists, never another.
+    // The visitor may have chosen something else meanwhile: the booked selection goes back in the
+    // update that shows the confirmation, so it names the booking that exists.
     setState({
       barberId: S.barberId,
       dateIso: S.dateIso,
@@ -875,9 +832,8 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
       </span>
     </div>
   )
-  // One persistent polite live region per step that reads data. Its content changes between a
-  // loading message, an empty-state message and nothing, so assistive technology hears each change;
-  // with nothing in it, it takes no space.
+  // One persistent polite live region per step that reads data, so assistive technology hears each
+  // change between loading, empty and nothing; empty, it takes no space.
   const statusRegion = (
     key: string,
     region: RefObject<HTMLDivElement>,

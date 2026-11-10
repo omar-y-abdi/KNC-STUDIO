@@ -6,13 +6,8 @@ import { parse, type DefaultTreeAdapterMap } from 'parse5'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import worker, { PublicContent } from '../../supabase/worker/index'
 
-// Every link and reference in the files the site ships as written (checklist items 33 and 82):
-// index.html, public/*.html, public/*.css, llms.txt, robots.txt, sitemap.xml and the manifest. A
-// reference on the site's own origin must reach something: a deployed file, a bundler input named by
-// index.html, or a route of the real Worker (supabase/worker/index.ts), asked through its own fetch
-// handler, so a route the Worker gains or loses changes the answer here without a list to update.
-// A fragment must name an id in the document it lands on. Links elsewhere are checked for syntax
-// only; nothing is fetched.
+// Every reference the shipped files write (checklist items 33 and 82): one on the site's origin
+// must reach a deployed file, a bundler input or a real Worker route; a fragment must name an id.
 
 type Node = DefaultTreeAdapterMap['node']
 type Element = DefaultTreeAdapterMap['element']
@@ -264,8 +259,9 @@ function manifestReferences(file: string, text: string): Reference[] {
     }
     if (value === null || typeof value !== 'object') return
     for (const [key, member] of Object.entries(value)) {
-      const at = text.indexOf(JSON.stringify(key), cursor)
-      if (at >= 0) cursor = at
+      const quoted = JSON.stringify(key)
+      const at = text.indexOf(quoted, cursor)
+      if (at >= 0) cursor = at + quoted.length
       const memberPath = [...path, key]
       if (typeof member === 'string' && holds(memberPath))
         found.push({ file, line: lineAt(text, cursor), holder: named(memberPath), value: member })
@@ -466,10 +462,8 @@ interface Answer {
 
 const answers = new Map<string, Promise<Answer>>()
 
-/** The Worker's own fetch handler is the oracle. For every path wrangler.jsonc lets the asset layer
- * answer without the Worker (`run_worker_first` exclusions), the Worker passes the deployed file
- * through, so its answer is the asset layer's. No database is configured, so every page answers as
- * it does when the publication cannot be read. */
+/** The Worker's own fetch handler is the oracle; it passes the deployed file through where the
+ * asset layer answers. No database: each page answers as when its publication cannot be read. */
 function answerOf(url: URL): Promise<Answer> {
   const target = new URL(url.href)
   target.hash = ''
