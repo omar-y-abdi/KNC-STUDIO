@@ -103,13 +103,8 @@ export interface ShellProps {
   readonly chromeIconStyle: JSX.CSSProperties
 }
 
-/**
- * The business settings a part of the app may act on as the owner's own: those of the site chrome
- * once it has loaded for the language shown, `'unknown'` until then, and for good when that load
- * fails. Until it has loaded the chrome is the shipped default (site/useSiteChrome.ts), whose
- * 24-hour cancellation deadline and contact details are not the owner's. Without a backend the
- * default is all there is, and is ready at once.
- */
+/** `'unknown'` until the site chrome has loaded (for good if that fails): the shipped default's
+ * cancellation deadline and contact details are not the owner's. */
 export function ownerBusiness(site: SiteChromeSnapshot): BusinessSettings | 'unknown' {
   return site.metadataReady ? site.chrome.business : 'unknown'
 }

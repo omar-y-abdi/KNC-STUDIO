@@ -579,7 +579,6 @@ export function renderSitePage(
   }
 }
 
-/** The text a new created page's body holds, in each language, until the owner writes their own. */
 export const NEW_SITE_PAGE_TEXT: Localized = {
   sv: 'Skriv din text här.',
   en: 'Write your page here.',

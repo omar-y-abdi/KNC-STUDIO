@@ -32,9 +32,8 @@ export interface BookingPort {
    * The AVAILABLE start times to render for `barberId` on `dateIso` given `durationMin` — ascending
    * `"HH:MM"` (e.g. `['09:00','09:30','10:30']`), duration-stepped and packed around existing
    * bookings/blocks (all packing math lives inside the adapter). An empty `times` array means "no
-   * bookable times" (barber off/on time-off, fully booked). A read error — for the backend adapter —
-   * is `{ ok: false }`: still fail-closed (no chip is offered), but reported as a failure. The UI
-   * renders each returned time as a selectable chip.
+   * bookable times" (barber off/on time-off, fully booked). The UI renders each returned time as a
+   * selectable chip.
    */
   availability(params: AvailabilityParams): Promise<AvailabilityResult>
 }

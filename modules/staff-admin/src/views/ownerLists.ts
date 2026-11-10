@@ -1,6 +1,4 @@
-// Pure decisions shared by the two owner lists in Settings (review moderation and the admin log):
-// where the next page starts, what a list holds after a page arrived, what a refused or failed call
-// says and how a stored instant reads. No effects: the sections own the state and make the calls.
+// Pure decisions shared by the two Settings owner lists (review moderation and the admin log).
 
 import { monthLabel, pad2 } from '@bladeblend/public-web/calendar'
 import type { Lang } from '@bladeblend/public-web/localization'
@@ -20,32 +18,24 @@ export interface KeysetCursor {
   readonly beforeId: string
 }
 
-/** One answer of a list RPC. */
 export interface KeysetPage<T extends KeysetEntry> {
   readonly entries: readonly T[]
   readonly hasMore: boolean
 }
 
-/** Everything read so far, and where the next page starts (`null`: nothing more to read). */
+/** `next` is null when there is nothing more to read. */
 export interface KeysetList<T extends KeysetEntry> {
   readonly entries: readonly T[]
   readonly next: KeysetCursor | null
 }
 
-/**
- * The cursor of the page after `page`: its last entry, timestamp verbatim, while the server says more
- * rows exist. A page that claims more rows but holds none has no entry to continue from, so it ends
- * the list.
- */
+/** A page claiming more rows but holding none ends the list: no entry to continue from. */
 export function cursorAfter<T extends KeysetEntry>(page: KeysetPage<T>): KeysetCursor | null {
   const last = page.entries.at(-1)
   return page.hasMore && last !== undefined ? { before: last.createdAt, beforeId: last.id } : null
 }
 
-/**
- * The list after `page` arrived. The cursor belongs to the page that was read, not to the rows the
- * list still shows: removing a row from the list afterwards does not move it.
- */
+/** The cursor belongs to the page read, so removing a shown row afterwards does not move it. */
 export function appendPage<T extends KeysetEntry>(
   entries: readonly T[],
   page: KeysetPage<T>,
@@ -58,11 +48,7 @@ export type OwnerListErrorText = Pick<
   'ownerListForbidden' | 'ownerListSessionExpired'
 >
 
-/**
- * What a refused or failed call says in the panel's language. A refusal for not being the owner and
- * an ended session have their own sentence; everything else says `fallback`, which names what was
- * attempted.
- */
+/** `fallback` names what was attempted. */
 export function ownerListErrorText(
   error: AdminError,
   fallback: string,
@@ -87,10 +73,8 @@ export function fillSlot(template: string, slot: string, value: string): string 
   return template.replace(slot, () => value)
 }
 
-/**
- * "10 november 2026, 14:05": a stored instant in salon time, with its year (a review can be older
- * than a year and the log covers twelve months). Text that is not an instant is returned as it is.
- */
+/** "10 november 2026, 14:05", in salon time and always with the year (the log covers twelve
+ * months). Text that is not an instant is returned as it is. */
 export function instantLabel(lang: Lang, iso: string): string {
   const instant = new Date(iso)
   if (Number.isNaN(instant.getTime())) return iso

@@ -28,13 +28,11 @@ export interface DetailsDialogProps {
   readonly phoneValue: string
   readonly emailValue: string
   readonly bookDisabled: boolean
-  /** The submit for this popup's time is on its way. Said to assistive technology on the book
-   * button; the button looks and works as it does otherwise. */
+  /** A submit is on its way: `aria-busy` only; the button looks and works as before. */
   readonly bookBusy: boolean
   /** Per-field error flags from the last failed submit (all false = pristine popup). */
   readonly fieldErrors: FieldErrors
-  /** The line above the book button about a submit (a refusal, a submit without an answer, a
-   * submit still on its way), or null. Distinct from field errors. */
+  /** The line above the book button about a submit, or null. Distinct from field errors. */
   readonly submitError: string | null
   readonly onName: (e: JSX.TargetedInputEvent<HTMLInputElement>) => void
   readonly onPhone: (e: JSX.TargetedInputEvent<HTMLInputElement>) => void
@@ -97,8 +95,7 @@ export function DetailsDialog(props: DetailsDialogProps): JSX.Element {
       cardStyle={s.overlayCardStyle}
     >
       <div style={s.overlayHeaderStyle}>
-        {/* A heading by role, not by tag: the published presentation stores this element as a
-            `span`, and its look must not change. */}
+        {/* A heading by role, not tag: the published presentation stores it as a span. */}
         <span
           id="knc-details-title"
           role="heading"

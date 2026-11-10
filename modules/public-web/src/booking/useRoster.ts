@@ -8,10 +8,8 @@ import { defaultBarbersPort, subscribeBookingCatalog } from './adapters/barbersI
 export interface RosterState {
   /** Active rows returned by selected port; empty with `ready` means no configured/active barbers. */
   readonly roster: readonly RosterBarber[]
-  /** `loading` while the selected port fetch is in flight or deferred (`enabled` false); `error`
-   * when it failed — a failed read is never reported as a `ready` empty roster. */
+  /** `loading` also while the fetch is deferred (`enabled` false). */
   readonly status: 'loading' | 'ready' | 'error'
-  /** Run the read again (the way out of `error`). */
   readonly retry: () => void
 }
 

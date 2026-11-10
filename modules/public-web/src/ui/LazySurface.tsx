@@ -85,8 +85,7 @@ function ErrorMessage(props: {
   return (
     <div
       role="alert"
-      // An overlay covers an open dialog: the dialog's focus guard leaves focus that is in here
-      // (ui/dialogFocus.ts).
+      // The dialog's focus guard (ui/dialogFocus.ts) leaves focus inside an overlay alone.
       data-above-dialog={props.overlay ? '' : undefined}
       style={frameStyle(props.overlay, props.minHeight)}
     >

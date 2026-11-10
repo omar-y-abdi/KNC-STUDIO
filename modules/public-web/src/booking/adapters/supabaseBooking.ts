@@ -20,9 +20,7 @@ import { localWallClockToStockholmIso } from '../stockholmTime'
 import { buildLinks } from './localCalendar'
 import type { BusinessSettings } from '../../site/siteChrome'
 
-/** The error for a request that ended without a readable answer (transport failure, timeout, HTTP
- * error, malformed body): the `unconfirmed` kind records that the server may have booked the time
- * all the same, and its message says so. */
+/** No readable answer: the server may have booked the time all the same. */
 function submitError(booking: Booking): BookingError {
   return { kind: 'unconfirmed', message: bookingStrings(booking.lang).errUnconfirmed }
 }
@@ -31,10 +29,7 @@ function submitError(booking: Booking): BookingError {
 const UNAVAILABLE_CODES: readonly string[] = ['slot_taken', 'outside_hours', 'invalid_time']
 
 /** Map a gateway/RPC error code to a localized `BookingError`. `rate_limited` + `failed_challenge`
- * (added by the submit-booking gateway) keep their names as kinds and get their own messages; the
- * create_booking codes that refuse the chosen time (slot_taken, outside_hours, invalid_time) become
- * the `unavailable` kind with its own message; every other create_booking error code collapses to
- * the generic submit error. */
+ * come from the submit-booking gateway; the other codes from create_booking. */
 function bookingErrorFor(booking: Booking, code: string): BookingError {
   const t = bookingStrings(booking.lang)
   if (UNAVAILABLE_CODES.includes(code)) return { kind: 'unavailable', message: t.errSlotTaken }
@@ -132,8 +127,7 @@ export const supabaseBookingAdapter: BookingPort = {
       const parsed = parseWith(availableSlotsResponse, data)
       if (!parsed.ok) return { ok: false }
       // The RPC already returns the AVAILABLE start times, ascending — render them as-is. Any failure
-      // (transport, malformed) returned `{ ok: false }` above: fail closed rather than show wrong
-      // times, and say it failed rather than "no times".
+      // (transport, malformed) returned `{ ok: false }` above rather than show wrong times.
       return { ok: true, times: parsed.value }
     } catch {
       return { ok: false }

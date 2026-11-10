@@ -24,8 +24,7 @@ export function readOnlyHomepagePreviewPorts(
   return {
     booking: {
       availability: (params) => read.booking.availability(params),
-      // A kind of its own: the flow writes its line from the kind, and "could not be sent, try
-      // again" would be untrue of a preview that never sends.
+      // Its own kind: "could not be sent, try again" is untrue of a preview that never sends.
       submit: () =>
         Promise.resolve({
           ok: false,

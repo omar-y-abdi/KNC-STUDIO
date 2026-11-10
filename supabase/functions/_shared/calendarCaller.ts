@@ -4,7 +4,7 @@
 
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
 
-/** The CORS headers are added by `staffCors` (_shared/staffCors.ts), which wraps both handlers. */
+/** CORS headers come from `staffCors`, which wraps both handlers. */
 export function json(body: unknown, status: number): Response {
   return new Response(JSON.stringify(body), {
     status,

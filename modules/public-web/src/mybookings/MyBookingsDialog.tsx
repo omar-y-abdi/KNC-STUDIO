@@ -49,18 +49,13 @@ type Step = 'loading' | 'lookup' | 'sent' | 'list'
 /** Where keyboard focus goes once the control that had it has left the dialog. */
 type FocusTarget = 'sent' | 'notice' | 'cancelButton' | 'cancelQuestion' | 'cancelClosed'
 
-/** Why the list is read. `opened`: with a link token, or because the customer asked; a refusal says
- * the link is invalid. `restored`: looking for a saved session; a refusal is silent. `afterCancel`:
- * a cancel was just answered and the rows may be out of date; only they are read again, so the open
- * row, its question and any message stay as they are. */
+/** `opened`: a refusal says the link is invalid. `restored`: a refusal is silent. `afterCancel`:
+ * only the rows are read again; the open row, its question and any message stay. */
 type ListRead = 'opened' | 'restored' | 'afterCancel'
 
-/** What the list's note says: the cancel went through, or a cancel the server did not carry out
- * left the list without the booking. Kept as the reason: the text is written at render. */
+/** The list note's reason; its text is written at render. */
 type ListNotice = 'cancelled' | 'gone'
 
-/** The salon settings this dialog acts on: the online cancellation deadline (hours before the
- * visit) and how to reach the salon once it has passed. */
 export type CancellationTerms = Pick<
   BusinessSettings,
   'cancellationPolicyHours' | 'phoneTel' | 'phoneDisplay' | 'email'
@@ -81,11 +76,8 @@ export interface MyBookingsDialogProps {
   readonly accessError?: 'invalid' | 'cookies_disabled' | 'system'
   readonly onProfile?: (profile: CustomerProfile | undefined) => void
   readonly emailLinkCode?: string | null
-  /** Current owner-managed business settings: the online cancellation deadline (hours before the
-   * visit) and how to reach the salon once it has passed. `'unknown'` from a mount that has not
-   * loaded them: the shipped defaults are not the owner's settings, so a dialog that does not know
-   * the deadline always offers the cancel button (the server decides), never shows the deadline
-   * note, and states no number of hours. */
+  /** `'unknown'` from a mount without loaded settings (the shipped defaults are not the owner's):
+   * the cancel button always shows and the server decides. */
   readonly business: CancellationTerms | 'unknown'
   /** Injected clock — "now" for the cancellation deadline (default: env-selected). */
   readonly clock?: Clock
@@ -127,8 +119,6 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
   const port: MyBookingsPort = props.port ?? defaultMyBookingsPort
   const terms = props.business
   const clock: Clock = props.clock ?? defaultClock
-  /** The salon's terms once the online cancellation deadline for `b` has passed at `at`;
-   * `undefined` while it is open, and always when this mount does not know the deadline. */
   const passedDeadline = (b: MyBooking, at: Date): CancellationTerms | undefined =>
     terms !== 'unknown' && !onlineCancellationOpen(b.start, at, terms.cancellationPolicyHours)
       ? terms
@@ -179,11 +169,8 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
     if (step === 'lookup') emailInputRef.current?.focus()
   }, [step])
 
-  // An action can remove the control that has focus (the lookup button, the cancel button, the
-  // confirm buttons, a whole row). Focus would then fall to <body>, outside the dialog's Tab trap.
-  // The action names what should take focus instead; it is focused once that render has happened.
-  // A text takes it quietly (no outline, focusable only while it holds the focus); the cancel
-  // button is a control and takes it as one.
+  // An action that removes the focused control names its successor here, focused after the render,
+  // so focus never falls to <body> outside the dialog's Tab trap.
   const focusNext = useRef<FocusTarget | null>(null)
   const sentRef = useRef<HTMLParagraphElement>(null)
   const noticeRef = useRef<HTMLDivElement>(null)
@@ -207,8 +194,7 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
     focusQuietly(texts[target].current)
   })
 
-  /** Reads the list. Resolves to the rows it showed, or `null` when it showed none (the read
-   * failed, or another read or session replaced it meanwhile). */
+  /** The rows it showed, or null (the read failed, or a newer read or session replaced it). */
   async function loadBookings(
     token: string,
     purpose: ListRead = 'opened',
@@ -362,11 +348,8 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
     setExpandedId((prev) => (prev === id ? null : id))
   }
 
-  /** Reads the rows again after a cancel the server did not carry out. If the booking is no longer
-   * among them, its row is gone, and with it the question, the message and the button that held
-   * the focus: the list's note says what the customer now sees, and takes the focus. Which
-   * question is open, and its message, are left as they are: nothing draws them without their
-   * row, and the customer may have opened another booking's question while these rows were read. */
+  /** The open question and its message are left as they are: nothing draws them without their row,
+   * and the customer may have opened another booking's question meanwhile. */
   const rereadAfterRefusal = async (b: MyBooking): Promise<void> => {
     const rows = await loadBookings('', 'afterCancel')
     if (rows !== null && !rows.upcoming.some((x) => x.id === b.id)) {
@@ -379,7 +362,6 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
     const owner = lifetime.current
     if (!owner.active || owner.cancel) return
     owner.cancel = true
-    // The list read whose rows this cancel is asked from.
     const rowsRead = owner.read
     setCancelBusy(true)
     setCancelError(null)
@@ -392,24 +374,18 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
       if (!owner.active) return
       if (!result.ok) {
         if (result.error === 'not_found') {
-          // The customer has left those rows while the answer was on its way (to ask for a link
-          // for another e-mail address), or a newer read has replaced them: nothing is said about
-          // this cancel, and nothing is read that would put a list back in front of them.
+          // The customer has left these rows, or a newer read replaced them: say and read nothing.
           if (owner.read !== rowsRead) return
-          // The server gives this one answer for every cancel that changed nothing: the deadline has
-          // passed by its clock and setting, or the booking is already cancelled (an earlier try
-          // whose answer was lost), or it is no longer this customer's. It does not say which.
+          // The server's one answer for every cancel that changed nothing: deadline passed by its
+          // clock, already cancelled (a lost answer), or no longer this customer's.
           if (passedDeadline(b, clock()) !== undefined) {
-            // The deadline has passed here too (it can pass while the row is open). The render that
-            // follows reads the clock again and shows the deadline note in place of the question.
+            // Passed here too: the next render shows the deadline note in place of the question.
             setCancelFor(null)
             focusNext.current = 'cancelClosed'
             return
           }
-          // Otherwise the rows are out of date in a way this dialog cannot tell (or it does not
-          // know the deadline): say that the cancel failed and read them again. The cancel itself
-          // is over: the read is not awaited, so the `finally` below releases the question's
-          // buttons before the rows have come back.
+          // Rows out of date in a way this dialog cannot tell. The read is not awaited, so the
+          // `finally` below releases the question's buttons first.
           setCancelError(t.errCancel)
           void rereadAfterRefusal(b)
           return
@@ -430,7 +406,6 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
       setNotice('cancelled')
       focusNext.current = 'notice'
       // A merge-triggered list read may have captured this booking before cancellation committed.
-      // It reads the rows only: the note above stays, and keeps the focus.
       if (reload) void loadBookings('', 'afterCancel')
     } catch {
       if (owner.active) setCancelError(t.errCancel)
@@ -465,11 +440,7 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
     </div>
   )
 
-  // The online cancellation deadline, in the customer's words, followed by the salon's contact
-  // links. Shown in place of the cancel button once the deadline has passed. It is keyed and placed
-  // after the row's other details: the CMS identifies those by position, and they keep theirs.
-  // A link is shown only for contact details the business has: a phone needs both its number and
-  // its written form.
+  // Keyed and placed after the row's other details: the CMS identifies those by position.
   const now = clock()
   const cancelClosedNote = (salon: CancellationTerms): JSX.Element => {
     const hasPhone = salon.phoneTel !== '' && salon.phoneDisplay !== ''
@@ -499,11 +470,8 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
   const bookingRow = (b: MyBooking, upcoming: boolean): JSX.Element => {
     const open = expandedId === b.id
     const confirming = cancelFor === b.id
-    // The server refuses a cancellation closer to the start than the policy allows, by its own
-    // clock and setting. This comparison is the dialog's own, read at each render, and only hides
-    // the button ahead of that refusal; a mount that does not know the deadline never hides it.
-    // An example booking in the Studio never takes this branch: its scene stores the cancel
-    // button, whatever deadline the owner has set.
+    // Only hides the button ahead of the server's own refusal. A Studio example never hides it: its
+    // scene stores the cancel button whatever the deadline.
     const pastDeadline = upcoming && !example ? passedDeadline(b, now) : undefined
     const instanceOptions: NativeInstanceOptions = example
       ? {}
@@ -696,8 +664,7 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
       cardStyle={s.overlayCardStyle}
     >
       <div style={s.overlayHeaderStyle}>
-        {/* A heading by role, not by tag: the published presentation stores this element as a
-            `span`, and its look must not change. */}
+        {/* A heading by role, not tag: the published presentation stores it as a span. */}
         <span
           id={step === 'list' ? 'knc-mybookings-list-title' : 'knc-mybookings-title'}
           role="heading"
@@ -811,9 +778,8 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
                 </button>
               </div>
             ) : null}
-            {/* The checkmark says that something went through. The note about a booking that is no
-                longer in the list is not that: there the icon stays in its place in the tree (the
-                published presentation identifies it by position) and is not shown. */}
+            {/* For `gone` the checkmark stays in the tree, which the presentation identifies by
+                position, but is hidden: nothing went through. */}
             {notice !== null ? (
               <div
                 ref={noticeRef}

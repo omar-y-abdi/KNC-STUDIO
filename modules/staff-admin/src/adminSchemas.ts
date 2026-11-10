@@ -263,7 +263,7 @@ export const emailSendLogCopy = emailSendLogEntryFields
 
 // --- reviews (owner moderation) ------------------------------------------------------------------
 
-/** One `admin_list_reviews` entry: a published or a hidden review, with no contact data. */
+/** One `admin_list_reviews` entry; it carries no contact data. */
 const adminReviewRow = z.object({
   id: z.guid(),
   created_at: isoTimestamp,
@@ -285,7 +285,6 @@ export const reviewModerationResponse = z.discriminatedUnion('ok', [
 
 // --- admin_audit_log (owner read) ----------------------------------------------------------------
 
-/** A role or an action as the database names it: never empty, and short. */
 const auditName = z.string().min(1).max(64)
 const KNOWN_AUDIT_ACTIONS: readonly string[] = ['insert', 'update', 'delete']
 
@@ -293,20 +292,15 @@ const auditLogEntryFields = {
   id: z.guid(),
   created_at: isoTimestamp,
   actor_id: z.guid(),
-  // Both are null once the staff account is gone. A role a later migration adds is shown under a
-  // general label, so any name parses.
+  // Both null once the staff account is gone. Any role parses; an unknown one gets a general label.
   actor_role: auditName.nullable(),
   actor_barber_id: z.string().nullable(),
-  // A table a later migration starts to log is shown by its stored name, so any name parses.
+  // Any table parses; an unknown one is shown by its stored name.
   target_table: z.string().min(1),
   target_id: z.string().min(1),
 }
-/**
- * One `admin_list_audit_log` entry. An update names the columns it changed and an insert or a delete
- * names none, as the table's own check has it; a row that says otherwise matches neither member.
- * An action a later migration starts to log is shown by its stored name with the columns it names,
- * if any: one entry the panel has no words for must not hide the rest of the page.
- */
+/** Mirrors the table's own check: an update names its columns, insert and delete none. An unknown
+ * action still parses, so one entry the panel has no words for cannot hide the rest of the page. */
 const auditLogEntryRow = z.union([
   z.object({
     ...auditLogEntryFields,

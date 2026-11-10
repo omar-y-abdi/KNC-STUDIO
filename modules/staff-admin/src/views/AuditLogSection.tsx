@@ -1,8 +1,5 @@
-// The admin log in Settings (owner only): who in the staff created, changed or deleted which row, and
-// when, newest first. The log is read when the owner opens the section, never when Settings opens:
-// nothing here calls the backend until `AuditLogList` mounts. What an entry's lines read is decided in
-// `auditLogEntries.ts`, where the focus goes in `ownerListFocus.ts`; this component renders them and
-// owns the data effects.
+// The admin log in Settings (owner only). Nothing here calls the backend until `AuditLogList`
+// mounts: the log is read when the owner opens the section, never when Settings opens.
 
 import type { JSX, RefObject } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
@@ -30,14 +27,11 @@ export type AuditLogPort = typeof defaultPort
 export interface AuditLogSectionProps {
   readonly lang: Lang
   readonly s: AdminStylesBundle
-  /** The Settings view's subheading style, so the section reads as one of its forms. */
   readonly headingStyle: JSX.CSSProperties
   readonly port?: AuditLogPort
-  /** How the focus is moved once an answer has rendered; the page's own way unless a test says. */
   readonly moveFocus?: MoveOwnerListFocus
 }
 
-/** Reads of the log run as the panel's other operations do: a read whose session ended says so. */
 const RESOURCE = 'audit:log'
 const LIST_ID = 'settings-audit-list'
 
@@ -101,19 +95,14 @@ interface AuditLogListProps {
 function AuditLogList(props: AuditLogListProps): JSX.Element {
   const { s, lang, port } = props
   const t = adminText(lang)
-  // The roster names the barbers; until it arrives, or when it cannot be read, an entry shows the
-  // stored barber id instead.
   const { barbers } = useBarbers()
   const [loaded, setLoaded] = useState<Loaded>({ state: 'loading' })
   const [reload, setReload] = useState(0)
-  /** A further page that could not be read; the entries already shown stay. */
   const [moreError, setMoreError] = useState<AdminError | null>(null)
-  /** Where the focus goes once the answer that asked for it has rendered. */
   const [focusRequest, setFocusRequest] = useState<FocusTarget | null>(null)
-  // Bumped when the log is read anew and when it closes: an answer that belongs to an earlier
-  // reading is dropped.
+  // Bumped on each new reading and on close: an answer from an earlier reading is dropped.
   const generation = useRef(0)
-  /** The reading of the log whose further page is being read; a second press starts nothing. */
+  /** Set while a further page is read, so a second press starts nothing. */
   const readingMore = useRef<number | null>(null)
   const list = useRef<HTMLDivElement>(null)
 

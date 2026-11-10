@@ -111,15 +111,12 @@ type SurfacePagePath = (typeof SURFACE_PAGE_PATHS)[number]
 const CMS_LANGS = ['sv', 'en'] as const satisfies readonly CmsLang[]
 const CMS_MODES = ['light', 'dark'] as const satisfies readonly CmsMode[]
 
-/** The text prefilter of `repairDesktopCss` (content-contracts `cms-device-css`), which returns a
- * sheet without this text unchanged. Keep the two literals identical: a narrower one here would
- * render a legacy sheet unrepaired. */
+/** The text prefilter of `repairDesktopCss` (content-contracts `cms-device-css`). Keep the two
+ * literals identical: a narrower one here would render a legacy sheet unrepaired. */
 const LEGACY_DESKTOP_TEXT = /max-width\s*:\s*1440px/
 
-/** `repairDesktopCss` for one stored sheet. */
 export type DesktopRepair = (css: string) => string
 
-/** The chunk with `repairDesktopCss` (and css-tree) could not be loaded. */
 export class DesktopRepairUnavailable extends Error {
   constructor(cause: unknown) {
     super('The Desktop CSS repair could not be loaded', { cause })
@@ -134,9 +131,8 @@ export type DesktopRepairLoad =
 
 const REPAIR_MISSING: DesktopRepairLoad = { state: 'missing' }
 
-/** Older Studio builds wrote `@media (max-width:1440px)` element-ID rules that `repairDesktopCss`
- * rewrites with css-tree, the CSS grammar the visitor otherwise never needs. It is therefore loaded
- * on demand, for a presentation that has such a sheet, and never on the boot path. */
+/** Older Studio builds wrote `@media (max-width:1440px)` rules whose repair needs css-tree: loaded
+ * on demand, for a presentation with such a sheet, never on the boot path. */
 export async function loadDesktopRepair(
   load: () => Promise<{ readonly repairDesktopCss: DesktopRepair }> = () =>
     import('@bladeblend/content-contracts/cms-device-css'),
@@ -153,7 +149,6 @@ function isSurfacePage(page: CmsPage): boolean {
   return SURFACE_PAGE_PATHS.some((path) => path === page.path)
 }
 
-/** Whether a sheet a native surface renders carries the text `repairDesktopCss` repairs. */
 export function hasLegacyDesktopCss(presentation: CmsPresentation): boolean {
   return presentation.pages.some(
     (page) =>
@@ -164,8 +159,7 @@ export function hasLegacyDesktopCss(presentation: CmsPresentation): boolean {
   )
 }
 
-/** Every surface sheet as `repair` returns it. Unchanged pages, and an unchanged presentation, keep
- * their identity. */
+/** Unchanged pages, and an unchanged presentation, keep their identity. */
 function repairSurfaceSheets(
   presentation: CmsPresentation,
   repair: DesktopRepair,
@@ -194,9 +188,7 @@ export type RepairedPresentation =
   | { readonly state: 'waiting' }
   | { readonly state: 'failed'; readonly error: DesktopRepairUnavailable }
 
-/** The presentation the native surfaces may render now. One with a legacy sheet is ready only
- * repaired: it waits while the repair is missing, so its stored sheet is never painted. Any other
- * presentation is ready as it is, the same object, without the repair. */
+/** One with a legacy sheet is ready only repaired, so its stored sheet is never painted. */
 export function desktopRepaired(
   presentation: CmsPresentation | null,
   load: DesktopRepairLoad,
@@ -230,9 +222,7 @@ export interface OutageLink {
   readonly label: string
 }
 
-/** The pages a visitor can still read while the site itself cannot load: they are served without
- * the presentation. `search` is the address query; it names the language as it does for the app
- * (`lang=en` is English, everything else Swedish). */
+/** Pages served without the presentation, readable while the site itself cannot load. */
 export function outageLinks(search: string): readonly OutageLink[] {
   const lang: Lang = new URLSearchParams(search).get('lang') === 'en' ? 'en' : 'sv'
   const about = aboutStrings(lang)
@@ -243,10 +233,8 @@ export function outageLinks(search: string): readonly OutageLink[] {
   ]
 }
 
-/** While the presentation is read, and while a legacy sheet waits for its repair, the page is its
- * pre-painted background (R12); only assistive technology hears the status. A read failure after
- * the last retry, or a failed load of the repair, stays visible with a manual retry and the links
- * of `outageLinks`. */
+/** While the presentation is read or awaits its repair, the page is its pre-painted background
+ * (R12); only assistive technology hears the status. A failure stays visible with a manual retry. */
 function PublicPresentationGate({
   error,
   onRetry,
@@ -374,8 +362,7 @@ export function NativeSiteProvider({
     return () => controller.abort()
   }, [presentation, source, publicNativeRoute, published, retryCount])
   const current = presentation === undefined ? published : presentation
-  // Read and passed presentations alike: one with a legacy sheet renders only once repaired (a
-  // History review in the Studio passes stored revisions that were never repaired).
+  // Passed presentations too: a Studio History review passes stored revisions never repaired.
   const shown = useMemo(() => desktopRepaired(current, repair), [current, repair])
   const waiting = shown.state === 'waiting'
   useEffect(() => {

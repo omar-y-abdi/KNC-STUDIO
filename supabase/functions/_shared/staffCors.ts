@@ -1,14 +1,9 @@
-// CORS for the functions the admin panel invokes from another origin. This module imports nothing, so
-// every staff function can use it: the calendar-* functions deploy without an import map.
+// Imports nothing on purpose: the calendar-* functions that use it deploy without an import map.
 
 const STAFF_ORIGINS = ['https://bladeblendstudio.se', 'https://www.bladeblendstudio.se']
 
-/**
- * Every response of `handler`, preflight and errors included, names the caller's Origin only when the
- * panel is served there: production, an origin in `configured` (CMS_ALLOWED_ORIGINS, the list
- * cms-studio accepts) or loopback http in development. A browser on any other origin gets no
- * Access-Control-Allow-Origin and refuses the answer; a caller without an Origin is not a browser.
- */
+/** Every response, preflight and errors included, names the caller's Origin only for the panel's
+ * origins: production, `configured` (CMS_ALLOWED_ORIGINS, as cms-studio) or loopback http. */
 export function staffCors(
   configured: string | undefined,
   handler: (req: Request) => Promise<Response>,

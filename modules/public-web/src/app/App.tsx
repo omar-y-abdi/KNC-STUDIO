@@ -67,12 +67,8 @@ import {
 } from './shared'
 
 /**
- * Brings the document head in step with the business settings. The site name, the image text and
- * the structured data are the settings' own on every route; the Worker writes the same three from
- * the same settings. The title and the descriptions belong to the address, and to what the owner
- * wrote for its page in Studio (`pages`): `headWrite` leaves those the Worker rendered as they are
- * until the app changes the address itself. The identity of the address is written apart, without
- * waiting for the settings (the effect beside this one's).
+ * Brings the document head in step with the business settings. `headWrite` keeps the title and
+ * descriptions the Worker rendered until the app changes the address itself.
  */
 function updateDocumentMetadata(
   chrome: SiteChrome,
@@ -126,7 +122,6 @@ export interface SitePreview {
   readonly onReady: (snapshot: SitePreviewSnapshot) => void
 }
 
-/** Scrolls the mobile layout back to its hero. The desktop layout has no such scroll root. */
 function showMobileHero(): void {
   window.requestAnimationFrame(() => {
     document.querySelector<HTMLElement>('[data-testid="mobile-site-scroll"]')?.scrollTo({
@@ -170,8 +165,6 @@ export function App({
       myBookingsOpen: preview?.myBookings ?? addressed?.myBookingsOpen ?? false,
     }
   })
-  // The handlers of browser events (`popstate`, the timer behind `history.back()`) read the state
-  // of the latest render.
   const stateRef = useRef(state)
   stateRef.current = state
   const setState = (u: Partial<AppState> | ((s: AppState) => Partial<AppState>)): void =>
@@ -214,10 +207,8 @@ export function App({
     undefined,
   )
   const [bookingRefresh, setBookingRefresh] = useState(0)
-  // Browser history: siteHistory.ts decides, siteHistoryDriver.ts applies it to `window`. A Studio
-  // frame has no driver: it never changes its own or its parent's address. `headAddress` is the
-  // address the head was last written for: null until the app itself changes path or query, so a
-  // server-rendered head stays.
+  // A Studio frame has no history driver: it never changes an address. `headAddress` stays null
+  // until the app itself changes path or query, so a server-rendered head stays.
   const [headAddress, setHeadAddress] = useState<string | null>(null)
   const [siteHistory] = useState(() =>
     preview
@@ -497,9 +488,8 @@ export function App({
     color: on ? (dark ? '#1c1c1e' : '#fff') : dark ? 'rgba(255,255,255,.55)' : 'rgba(0,0,0,.5)',
   })
 
-  // The interface language is the page's language at once. So is the identity of an address the
-  // app itself moved to: it needs the path, the language and the origin, and nothing that loads.
-  // The title and the descriptions wait for the business settings of that language.
+  // Language and address identity are written at once; title and descriptions wait for the
+  // business settings of that language.
   useEffect(() => {
     if (!preview) document.documentElement.lang = lang
   }, [lang])
@@ -524,12 +514,8 @@ export function App({
       )
     }
   }, [chrome, initialStructuredData, lang, metadataReady, headAddress, cmsPresentation])
-  // A change of view can strand keyboard focus: the control that held it is gone (the other view's
-  // content) or inert by now (the folded mobile hero, the closed desktop fold), and nothing else
-  // announces the change. Only then focus moves into the new view; a control that is still usable
-  // keeps it, as the desktop "Boka tid" toggle does, whose `aria-expanded` tells the change.
-  // Booking is the desktop fold or the mobile main landmark; the start view is the desktop main
-  // landmark or the mobile panel, whose hero is that view's top.
+  // Focus moves only when the view change stranded it (its control gone or inert). Each selector
+  // matches one layout; the other layout falls back to its main landmark.
   const focusedView = useRef(state.view)
   useEffect(() => {
     if (focusedView.current === state.view) return
@@ -573,9 +559,8 @@ export function App({
       })
   }
   const scrollMobToHero = (): void => {
-    // The control that asks for this is in the compact panel only: MobileSite hides it once the
-    // hero is back, and focus it held would fall to the `body`. It moves now to the panel, the top
-    // of the view being returned to, without a visible change.
+    // MobileSite hides the return control once the hero is back: move its focus to the panel
+    // first, so it does not fall to `body`.
     const site = document.querySelector<HTMLElement>('[data-testid="mobile-site-scroll"]')
     if (
       focusIsWithin(document.activeElement, site?.querySelector('[data-knc-fold="return"]') ?? null)
@@ -721,9 +706,8 @@ export function App({
       </span>
     </button>
   )
-  // The first stop of the tab order, outside every presentation surface, so no stored element id
-  // shifts. It is off-screen until it holds keyboard focus (global.css). Its presence also tells
-  // the shared dialog that this page's main landmark may take focus (ui/pageFocus.ts).
+  // Outside every presentation surface, so no stored element id shifts. Its presence tells the
+  // shared dialog that the main landmark may take focus (ui/pageFocus.ts).
   const skipLink = preview ? null : (
     <a
       href="#main"

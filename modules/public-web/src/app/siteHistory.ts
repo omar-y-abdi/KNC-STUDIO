@@ -1,22 +1,6 @@
-// Browser history of the public shell. The address names one of three places: the start view (`/`
-// and `/about`), the booking view (`/booking`) and the "Mina bokningar" dialog (`/my-bookings`),
-// which lies over whichever view was showing. Any other path is not this shell's: it says nothing
-// about the view and is never rewritten. Everything here is pure: App reads the address, applies
-// the answer and listens for `popstate`.
-//
-// What `viewStateAfterTraversal` answers, for a step through history (Back, Forward, a fragment):
-//  - a step that arrives in another place shows what that place names;
-//  - a step within one place (only the fragment or the query differs) changes nothing, so a dialog
-//    a customer link opened over `/` survives the fragment step that delivered the link.
-//
-// What `historyStep` answers:
-//  - the view decides between `/` and `/booking`, and a change of view pushes one entry;
-//  - a dialog at `/my-bookings` keeps that address while it is open. Once it has closed, the address
-//    goes back to the entry the dialog was opened from when this document pushed it from the view
-//    now showing; otherwise the dialog's entry is replaced by the view's address;
-//  - a dialog opened by a customer link has no entry of its own, so the address stays the view's;
-//  - the `lang` parameter follows the interface language: `lang=en` in English, none in Swedish
-//    (an explicit `lang=sv` is left as it is).
+// Browser history of the public shell; pure, App applies it. A path that is not this shell's is
+// never rewritten. A step within one place changes nothing, so a dialog a customer link opened
+// over `/` survives the fragment step that delivered the link.
 
 import type { Lang } from '../i18n/index'
 import { nativePublicPath } from '../site/routeMetadata'
@@ -41,7 +25,7 @@ export type HistoryStep =
   | { readonly kind: 'push'; readonly url: string }
   | { readonly kind: 'back' }
 
-/** Where a pushed entry came from: the path it was pushed from and the document that pushed it. */
+/** The path an entry was pushed from, and the pushing document (`HistoryBrowser.document`). */
 export interface EntryOrigin {
   readonly path: string
   readonly document: number

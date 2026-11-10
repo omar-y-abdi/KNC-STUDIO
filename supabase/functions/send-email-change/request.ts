@@ -2,9 +2,8 @@ import { z } from 'zod'
 
 /**
  * A non-text address reads as empty so the handler answers `invalid_email`; any language but `en` is Swedish.
- * The current password is required and passed on as typed. Its bound is 72 UTF-16 code units, the
- * length this schema counts. The Auth server stores no password longer than 72 bytes, and a text has
- * at least as many UTF-8 bytes as UTF-16 code units, so the bound never rejects a stored password.
+ * The password bound (72 UTF-16 units) never rejects a stored one: Auth stores at most 72 bytes, and
+ * a text has at least as many UTF-8 bytes as UTF-16 units.
  */
 export const requestSchema = z
   .object({

@@ -78,9 +78,7 @@ interface Env {
   SUPABASE_URL?: string
   SUPABASE_ANON_KEY?: string
   CUSTOMER_GATEWAY_SECRET?: string
-  /** The maintenance switch of wrangler.jsonc, read through maintenanceMode. */
   MAINTENANCE?: string
-  /** Counts gateway requests; absent where no `ratelimits` binding is configured. */
   GATEWAY_RATE_LIMIT?: GatewayRateLimit
 }
 
@@ -103,8 +101,6 @@ const PUBLIC_FILE_ALIASES: Readonly<Record<string, string>> = {
 }
 const SITEMAP_PATH = '/sitemap.xml'
 const SECURITY_TXT_PATH = '/.well-known/security.txt'
-/** The deployed documents that answer a failed request and a closed site. Each also answers under
- * its own file name, and is never a search result there. */
 const FAILURE_DOCUMENT = '/500.html'
 const MAINTENANCE_DOCUMENT = '/maintenance.html'
 type OutageDocument = typeof FAILURE_DOCUMENT | typeof MAINTENANCE_DOCUMENT
@@ -137,11 +133,8 @@ export function isSpaPath(pathname: string): boolean {
   return path === '/' || isPrivatePath(path)
 }
 
-/** The one path a fixed route answers at, for a request path that names the route in any letter
- * case, with trailing slashes or by its file name: the path itself when it is already that one,
- * null when it names no fixed route. The fixed routes are the native pages, the static pages and
- * the staff routes. Below /admin/ the app reads the rest of the path, so only trailing slashes go
- * there and the letters stay as written. */
+/** The one path of the fixed route `pathname` names in any letter case, with trailing slashes or
+ * by its file name; null for none. Below /admin/ the app reads the path, so its letters stay. */
 export function fixedRoutePath(pathname: string): string | null {
   const clean = withoutTrailingSlash(pathname)
   if (clean.startsWith('/admin/')) return clean
@@ -190,8 +183,7 @@ function notFoundPage(request: Request, missing: Response): Response {
   )
 }
 
-/** The asset layer serves GET and HEAD. Its answer to any other method names neither, so a 405
- * that passes through the Worker says which methods the file accepts. */
+/** The asset layer's 405 has no Allow header; it serves GET and HEAD. */
 function withAllowedMethods(refused: Response): Response {
   const headers = ownHeaders(refused.headers)
   headers.set('Allow', 'GET, HEAD')
@@ -202,16 +194,13 @@ function withAllowedMethods(refused: Response): Response {
   })
 }
 
-/** `url` on the apex host. The www host is the only other one the Worker answers for; any other
- * host, a local one too, stays as it is. */
 function onApex(url: URL): URL {
   const apex = new URL(url)
   if (apex.hostname === WWW_HOST) apex.hostname = CANONICAL_HOST
   return apex
 }
 
-/** The one permanent redirect to where a request is answered: the apex host and `pathname`, with
- * the query of the request. Its target is answered without another redirect. */
+/** One hop: the target is answered without another redirect. */
 function redirectTo(url: URL, pathname: string): Response {
   const target = onApex(url)
   target.pathname = pathname
@@ -221,8 +210,7 @@ function redirectTo(url: URL, pathname: string): Response {
   })
 }
 
-/** A customer link carries its credential in the path. Its one answer moves the credential into a
- * fragment on the apex host, which no server, log or Referer header receives. */
+/** Moves the customer access token from the path into the URL fragment. */
 function customerLinkRedirect(url: URL, token: string): Response {
   return new Response(null, {
     status: 302,
@@ -440,10 +428,8 @@ async function publishedCmsPage(
   return method === 'HEAD' ? { read: 'exists' } : { read: 'page', cms, page }
 }
 
-/** The path a request is answered at. A fixed route has one spelling. Any other path may name a
- * created page in another letter case or with trailing slashes: it does when the publication holds
- * a page at its folded form, which only a GET or HEAD asks. Every path that is neither is answered
- * as written: the letters of a file name mean what they say. */
+/** The path a request is answered at. Only fixed routes and published created pages get one
+ * spelling: the letters of any other path, such as a file name, mean what they say. */
 async function canonicalPath(env: Env, pathname: string, getOrHead: boolean): Promise<string> {
   const fixed = fixedRoutePath(pathname)
   if (fixed !== null) return fixed
@@ -573,14 +559,12 @@ const DESCRIPTION_META_IDS = [
   'business-twitter-description',
 ] as const
 
-/** `html` without the tag that carries this id. */
 function removeTag(html: string, id: string): string {
   const bounds = tagBounds(html, id)
   return bounds === null ? html : html.slice(0, bounds.start) + html.slice(bounds.end + 1)
 }
 
-/** The page's description in the shell's three description tags. A page without one has none of
- * the tags: the shell's own sentence describes the booking, not this page. */
+/** A blank description removes the tags: the shell's own sentence describes the booking. */
 function withDescription(html: string, description: string): string {
   const blank = description.trim() === ''
   return DESCRIPTION_META_IDS.reduce(
@@ -590,15 +574,12 @@ function withDescription(html: string, description: string): string {
   )
 }
 
-/** The URL a page answers at in each language: Swedish is the default and carries no query. */
 type LanguageUrls = Readonly<Record<CmsLang, string>>
 
 function languageUrls(path: string): LanguageUrls {
   return { sv: `${SITE_URL}${path}`, en: `${SITE_URL}${path}?lang=en` }
 }
 
-/** The language alternates of an indexable page that is its own canonical; Swedish is the
- * default. */
 function hreflangLinks(urls: LanguageUrls): string {
   return (
     [
@@ -614,13 +595,9 @@ function hreflangLinks(urls: LanguageUrls): string {
     .join('')
 }
 
-/** How a native route presents itself to search engines and link previews. */
 type NativeIdentity =
-  /** Indexable under its own URL in each language. */
   | { readonly kind: 'indexable'; readonly urls: LanguageUrls }
-  /** The homepage document under another URL: the homepage is its canonical. */
   | { readonly kind: 'alias'; readonly canonical: LanguageUrls }
-  /** An account page: kept out of the index, without a canonical. */
   | { readonly kind: 'account'; readonly urls: LanguageUrls }
 
 function nativeIdentity(path: NativePublicPath): NativeIdentity {
@@ -635,16 +612,12 @@ function nativeIdentity(path: NativePublicPath): NativeIdentity {
   }
 }
 
-/** How a CMS page presents itself to search engines across its two languages. */
 type CmsPageIdentity =
-  /** Its English body is a version of its own: each language is indexable under its own URL. */
   | { readonly kind: 'translated'; readonly urls: LanguageUrls }
-  /** One text answers both languages: the Swedish URL is the page's only identity. */
   | { readonly kind: 'untranslated'; readonly canonical: string }
 
-/** Whether `html` holds a paragraph whose whole text is `text`: a `<p>` start tag, with any
- * attributes, followed at once by `text` and `</p>`. A linear search of the stored bytes: the
- * request path has no CPU for parsing a body. */
+/** Whether a `<p>` in `html` holds exactly `text`. Byte search: the request path has no CPU to
+ * parse a body. */
 function hasParagraphOf(html: string, text: string): boolean {
   const ending = `>${text}</p>`
   for (let at = html.indexOf(ending); at >= 0; at = html.indexOf(ending, at + 1)) {
@@ -656,22 +629,10 @@ function hasParagraphOf(html: string, text: string): boolean {
   return false
 }
 
-/** How the bilingual document of /privacy and /terms marks its English part. */
 const ENGLISH_SECTION = '<section lang="en"'
 
-/** A page is untranslated when its English body is one of these, and translated otherwise:
- * - the Swedish body, byte for byte: one text is stored for both languages;
- * - empty or only whitespace: nothing is written in English;
- * - a body that still holds the sentence a new page is created with (NEW_SITE_PAGE_TEXT) as the
- *   whole text of a paragraph. createSitePage writes that paragraph and nobody has written over
- *   it. It is the same in the current format and in the frozen one, whatever its id, the heading
- *   above it and the header and footer around it. English written into, before or after the
- *   sentence in its paragraph is a translation;
- * - on a page of kind `privacy` or `terms` only, a body that still holds the start of a
- *   `<section lang="en"`. Studio seeds both pages with one bilingual document in both languages
- *   (studio nativePages.ts, from public/privacy.html and public/terms.html), and a body that marks
- *   one part of itself as English is that document, also after a save of the Swedish variant alone
- *   has made the two bodies differ. */
+/** Untranslated includes a page still holding createSitePage's paragraph, and privacy/terms still
+ * holding Studio's bilingual seed (also after a Swedish-only save). */
 function cmsPageIdentity(page: CmsPage): CmsPageIdentity {
   const urls = languageUrls(page.path)
   const english = page.content.en.html
@@ -686,9 +647,7 @@ function cmsPageIdentity(page: CmsPage): CmsPageIdentity {
 
 const CANONICAL_LINK = /<link\b[^>]*rel="canonical"[^>]*>/i
 
-/** The shell's canonical, og:url, robots and language alternates for one native route. og:url is
- * the canonical; an account page has no canonical and names its own URL. Every edit looks for one
- * of the shell's own tags, so `html` is the shell's bytes before any owner text is in them. */
+/** Edits find the shell's own tags, so `html` is the shell before any owner text is in it. */
 function withNativeIdentity(html: string, identity: NativeIdentity, lang: CmsLang): string {
   if (identity.kind === 'account') {
     let rendered = replaceShellMetadata(html, 'link', 'rel="canonical"', 'href', null)
@@ -709,9 +668,7 @@ function withNativeIdentity(html: string, identity: NativeIdentity, lang: CmsLan
     : rendered
 }
 
-/** What a native route changes in the shell's own tags: the document language, the booking view,
- * the CMS revision, the Open Graph locales and the route's identity. `head` is the shell's bytes
- * before any owner text is in them, as in renderCmsPage. */
+/** `head` is the shell before any owner text is in it, as in renderCmsPage. */
 function nativeShellHead(
   head: string,
   path: NativePublicPath,
@@ -720,7 +677,7 @@ function nativeShellHead(
 ): string {
   // The booking view paints the panel surface on phones too; the shell pre-paints it (index.html).
   const view = path === '/booking' ? ' data-knc-view="booking"' : ''
-  // The app reads this revision and asks the edge for that revision's immutable presentation.
+  // The app fetches this revision's immutable presentation.
   const published = revision === null ? '' : ` ${CMS_REVISION_ATTRIBUTE}="${revision}"`
   let rendered = head.replace(
     /<html\b[^>]*lang=(['"])[^'"]*\1/i,
@@ -737,8 +694,6 @@ function nativeShellHead(
   return withNativeIdentity(rendered, nativeIdentity(path), lang)
 }
 
-/** The homepage title: its CMS title, led by the business name and city unless it already says
- * barbershop; the Företag & SEO title when the CMS page has none. */
 function homepageTitle(business: BusinessSettings, lang: CmsLang, cmsTitle: string | null): string {
   if (cmsTitle === null || cmsTitle.trim() === '') return business.seo[lang].title
   return cmsTitle.toLowerCase().includes('barbershop')
@@ -746,8 +701,8 @@ function homepageTitle(business: BusinessSettings, lang: CmsLang, cmsTitle: stri
     : `${business.name} – Barbershop ${lang === 'sv' ? 'i' : 'in'} ${business.city} | ${cmsTitle}`
 }
 
-/** A native route's title. Studio seeds every native page with the homepage's title, so on the
- * other routes a title that is missing, blank or the homepage's gives way to the route's name. */
+/** Studio seeds every native page with the homepage's title: off the homepage, that title, or
+ * none, gives way to the route's name. */
 export function nativePageTitle(
   path: NativePublicPath,
   lang: CmsLang,
@@ -763,8 +718,6 @@ export function nativePageTitle(
     : own
 }
 
-/** A native route's description: its CMS page's, else the booking page's own default, else the
- * homepage's from Företag & SEO. */
 function nativePageDescription(
   path: NativePublicPath,
   lang: CmsLang,
@@ -794,45 +747,36 @@ const CMS_RESET = '<style id="cms-reset">html,body{background:none}</style>'
 const RUNTIME_ISLAND = /\bid="knc-(?:about|booking|my-bookings)-runtime"/
 const COLOR_SCHEME_META = /(<meta\b[^>]*\bname="color-scheme"[^>]*\bcontent=")[^"]*(")/i
 
-/** Where the skip link of an authored page leads. */
 export type SkipTarget =
-  /** The shell's own #root: on an information page it holds the page's content and nothing else. */
+  /** The shell's #root: on an information page, only the page's content. */
   | 'root'
   /** The content of a created page, below its site header. */
   | 'site-content'
 
-/** The words of the skip link, as the static documents and the app say them. */
 const SKIP_LABEL: Readonly<Record<CmsLang, string>> = {
   sv: 'Hoppa till innehållet',
   en: 'Skip to content',
 }
-/** The legal fallbacks are one document in both languages, as public/404.html is. */
+/** For the legal fallbacks: one document in both languages. */
 const BILINGUAL_SKIP_LABEL = `${SKIP_LABEL.sv} / <span lang="en">${SKIP_LABEL.en}</span>`
 /** The id renderSitePage gives the content of a created page. */
 const SITE_CONTENT_ID = 'cms-site-content'
 
-/** The skip link the static documents carry (public/404.html): the first element a keyboard
- * reaches. `label` is the Worker's own markup, never owner text. */
+/** `label` is inserted unescaped: the Worker's own markup, never owner text. */
 function skipLink(target: string, label: string): string {
   return `<a class="bb-skip bb-btn" href="#${target}">${label}</a>`
 }
 
-/** How an authored page shows that link, after the page's own sheets: above the viewport until it
- * has focus, as public/info.css keeps the skip link of the static documents, and legible where
- * neither that file nor /tokens.css is loaded. The
- * shell's #root takes the focus of an information page's link and shows no ring around the whole
- * page, as .bb-doc does in that file. */
+/** Mirrors public/info.css's skip link, with fallbacks for pages that load neither it nor
+ * /tokens.css; #root takes focus without a ring, as .bb-doc does there. */
 const SKIP_LINK_CSS =
   '.bb-skip{position:absolute;top:.75rem;left:.75rem;z-index:2147483647;max-width:calc(100% - 1.5rem);padding:.75rem 1.4rem;border-radius:999px;background:var(--bb-accent,#1c1c1e);color:var(--bb-accent-text,#fff);font-weight:600;text-decoration:none;transform:translateY(-200%)}' +
   '.bb-skip:focus{transform:none;outline:3px solid var(--bb-text,currentColor);outline-offset:4px}' +
   '#root:focus{outline:none}' +
   '@media print{.bb-skip{display:none}}'
 
-/** A deployed information page with the skip link the other static documents carry in their own
- * markup: the link first in its body, and its main as the link's target. These pages cannot carry
- * it themselves, because Studio seeds a CMS page from their body. `html` is the deployed file as it
- * is, before any owner text is in it. A file without a body or a main, or whose main already has
- * an id or a tabindex, is served as it is. */
+/** Studio seeds CMS pages from these files' bodies, so the link is added here, not in the file.
+ * `html` is the deployed file before any owner text is in it. */
 export function withFallbackSkipLink(html: string, label: string): string {
   const body = firstStartTag(html, BODY_TAG_OPENING, 0)
   if (body === null) return html
@@ -849,20 +793,16 @@ export function withFallbackSkipLink(html: string, label: string): string {
   )
 }
 
-/** The `<` and the name of a start tag named exactly `body` or `main`: `<main-menu` is neither. */
+/** Exact names: `<main-menu` is neither. */
 const BODY_TAG_OPENING = /<body(?=[\s>])/i
 const MAIN_TAG_OPENING = /<main(?=[\s>])/i
 
-/** Where a start tag is in a document. */
 interface StartTag {
-  /** The offset of its `<`. */
   readonly start: number
   /** The offset after its `>`. */
   readonly end: number
 }
 
-/** The first start tag `opening` matches at or after `from`; null when there is none, or when the
- * tag it opens never ends. */
 function firstStartTag(html: string, opening: RegExp, from: number): StartTag | null {
   const found = opening.exec(html.slice(from))
   if (found === null) return null
@@ -871,9 +811,6 @@ function firstStartTag(html: string, opening: RegExp, from: number): StartTag | 
   return end === null ? null : { start, end }
 }
 
-/** The offset after the `>` that ends the start tag whose name ends at `from`. A `>` inside a
- * quoted attribute value ends no tag, as a browser reads it; null when the tag never ends. One
- * pass over the tag, whatever it holds. */
 function startTagEnd(html: string, from: number): number | null {
   let quote: '"' | "'" | null = null
   for (let at = from; at < html.length; at += 1) {
@@ -1091,9 +1028,8 @@ export function renderCmsPage(
   contact: SiteContact = DEFAULT_BUSINESS,
   /** Företag & SEO, when it could be read: its name and structured data fill the head. */
   discovery: BusinessDiscovery | null = null,
-  /** The page's URL in each language, when it is indexable under `canonicalUrl` itself. */
+  /** Only when the page is indexable under `canonicalUrl` itself. */
   alternates: LanguageUrls | null = null,
-  /** Where the page's skip link leads; null serves the page without one. */
   skipTo: SkipTarget | null = null,
 ): string {
   const plan = planCmsRender(page, lang, requested, contact, presentation)
@@ -1105,12 +1041,8 @@ export function renderCmsPage(
     pageSheets(variant, plan.mode) +
     themeSheets(plan.mode, presentation)
   const layout = shellLayout(html)
-  // The skip link is the Worker's own element in front of the shell's #root, and it leads to the
-  // #root itself or to the content wrapper of a created page, the first element with that id in
-  // the document. No owner markup is searched for a place or edited, so an owner id `main`, a
-  // second `root` or a body without a <main> changes nothing. Markup the app owns gets no link,
-  // and neither does a created page whose rendered markup does not name its content: the id is only
-  // looked for, and the link and its sheet only ever sit at the shell's own offsets.
+  // The link and its sheet go only at the shell's own offsets. Owner markup is never edited and
+  // is searched only for SITE_CONTENT_ID, so an owner `main` or second `root` changes nothing.
   const skipTarget =
     !authored || layout.root === null || layout.headEnd === null || skipTo === null
       ? null
@@ -1224,9 +1156,7 @@ export function renderHomepageMetadata(
   discovery: BusinessDiscovery,
   path: NativePublicPath = '/',
   lang: CmsLang = 'sv',
-  /** The title and description of this route; the homepage's from Företag & SEO by default. */
   seo: SeoSettings = discovery.business.seo[lang],
-  /** The revision of the published document this route renders; null when none could be read. */
   revision: number | null = null,
 ): string {
   const { business, facts } = discovery
@@ -1248,8 +1178,7 @@ export function renderHomepageMetadata(
   // The root is located in the trusted shell, before the owner's SEO title is in it.
   const { root } = shellLayout(html)
   if (root === null) return metadata(html)
-  // Every native route carries the intro: index.html keeps it hidden until the app has had 8 s to
-  // boot, so a visitor whose bundle is blocked still gets text, contact details and links.
+  // index.html reveals this intro when the app has not booted after 8 s (a blocked bundle).
   return assembleShell(
     html,
     [],
@@ -1316,7 +1245,6 @@ export function renderPrivateMetadata(html: string, pathname: string): string {
 
 type LegalPath = '/terms' | '/privacy'
 
-/** The description a legal page carries when the owner has set none. */
 export function legalDescription(
   pathname: LegalPath,
   business: BusinessSettings,
@@ -1331,7 +1259,6 @@ export function legalDescription(
     : `How ${business.name} handles booking details, cookies, email and calendar connection.`
 }
 
-/** A CMS page for one language, with `fallback` where the owner wrote no description. */
 function withDefaultDescription(page: CmsPage, lang: CmsLang, fallback: string): CmsPage {
   if (page.description[lang].trim() !== '') return page
   return { ...page, description: { ...page.description, [lang]: fallback } }
@@ -1418,8 +1345,8 @@ export function renderLlmsText(discovery: BusinessDiscovery): string {
   ].join('\n')
 }
 
-/** The indexable pages every publication has, as public/sitemap.xml lists them. /about is the
- * homepage document and /my-bookings an account page: neither is listed. */
+/** As public/sitemap.xml lists them. /about, the homepage under another URL, and the account page
+ * /my-bookings are left out. */
 const SITEMAP_CORE_PAGES = [
   { path: '/', changefreq: 'monthly', priority: '1.0' },
   { path: '/booking', changefreq: 'monthly', priority: '0.8' },
@@ -1429,14 +1356,12 @@ const SITEMAP_CORE_PAGES = [
 ] as const
 
 declare const createdPagePath: unique symbol
-/** The path of a created page. isCreatedPagePath accepts only `/`, `-`, a–z and 0–9, so XML holds
- * such a path as it is written. */
+/** isCreatedPagePath allows only `/`, `-`, a–z and 0–9: safe in XML unescaped. */
 type CreatedPagePath = string & { readonly [createdPagePath]: true }
 
-/** A path the sitemap may list. A `<loc>` is written unescaped, and no other string reaches one. */
+/** A `<loc>` is written unescaped: only these paths reach one. */
 type SitemapPath = (typeof SITEMAP_CORE_PAGES)[number]['path'] | CreatedPagePath
 
-/** What the sitemap reads of a published page: its kind and path, and its Swedish body. */
 interface SitemapPage {
   readonly kind: CmsPage['kind']
   readonly path: string
@@ -1449,10 +1374,7 @@ function isCreatedPage(
   return isSitePage(page)
 }
 
-/** The sitemap of a publication: the core pages, then each created page among `pages`, in their
- * order. Every entry is the canonical Swedish URL, so a created page whose Swedish body still
- * holds the sentence it was created with (NEW_SITE_PAGE_TEXT, as the whole text of a paragraph) is
- * left out: nothing is written on it yet. */
+/** Entries are Swedish URLs, so only the Swedish body decides whether a page is still new. */
 export function renderSitemap(pages: readonly SitemapPage[]): string {
   const entry = (path: SitemapPath, hints: string): string =>
     `  <url>\n    <loc>${SITE_URL}${path}</loc>\n${hints}  </url>\n`
@@ -1477,32 +1399,26 @@ export function renderSitemap(pages: readonly SitemapPage[]): string {
 const SECURITY_TXT_VALID_DAYS = 180
 
 declare const contactAddress: unique symbol
-/** An e-mail address security.txt names as it is written: a local part of letters, digits and
- * `._+-`, one `@`, and a domain of letters, digits, `.` and `-` with at least one dot. Such an
- * address can add no line, and behind `mailto:` it is one recipient and needs no encoding. */
+/** Written into security.txt as is: it can add no line and needs no `mailto:` encoding. */
 type ContactAddress = string & { readonly [contactAddress]: true }
 
 function isContactAddress(email: string): email is ContactAddress {
   return /^[A-Za-z0-9._+-]+@[A-Za-z0-9.-]+$/.test(email) && email.includes('.', email.indexOf('@'))
 }
 
-/** Who security.txt names. */
 export type SecurityContact =
   /** The business e-mail from Företag & SEO. */
   | { readonly kind: 'business'; readonly email: ContactAddress }
-  /** The default address: the stored one could not be read, or cannot be written as it is. */
+  /** The stored address could not be read, or cannot be written as it is. */
   | { readonly kind: 'default' }
 
-/** The contact for the business e-mail as Företag & SEO holds it; `stored` is null when it could
- * not be read. */
 export function securityContact(stored: string | null): SecurityContact {
   return stored !== null && isContactAddress(stored)
     ? { kind: 'business', email: stored }
     : { kind: 'default' }
 }
 
-/** security.txt (RFC 9116) as issued on the day `today` falls on: it expires 180 days after that
- * day's 00:00 UTC. */
+/** security.txt per RFC 9116. */
 export function renderSecurityTxt(contact: SecurityContact, today: Date): string {
   const expires = new Date(
     Date.UTC(
@@ -1524,13 +1440,10 @@ const SECURITY_TXT_HEADERS = {
   'Content-Type': 'text/plain; charset=utf-8',
   'Cache-Control': 'public, max-age=300',
 }
-/** A security.txt that names the default address because the business could not be read answers
- * a failure: no cache keeps it, and the next request reads again. */
+/** For a failed business read: not cached, so the next request reads again. */
 const UNREAD_SECURITY_TXT_HEADERS = { ...SECURITY_TXT_HEADERS, 'Cache-Control': 'no-store' }
 
-/** security.txt naming `contact`, as issued today. */
 function issueSecurityTxt(contact: SecurityContact): string {
-  // The one place the Worker reads the clock: the day this answer is issued on.
   return renderSecurityTxt(contact, new Date())
 }
 
@@ -1607,18 +1520,15 @@ const REVISION_OPENING = /^\s*\{\s*"revision"\s*:\s*(0|[1-9][0-9]*)\s*[,}]/
 const REVISION_OPENING_BYTES = 64
 /** One day at the edge, never served stale after expiry (a failed refresh must not revive old bytes). */
 const IMMUTABLE_EDGE_CACHE = 'max-age=86400, must-revalidate'
-/** The presentation is data the pages render from, never a search result of its own. */
 const PRESENTATION_HEADERS = {
   'Content-Type': 'application/json',
   'Cache-Control': 'no-store',
   'X-Robots-Tag': 'noindex',
 } as const
-/** A presentation read fails on a database read that was refused or cut off after 1.8 seconds, and
- * the next read may succeed: the app asks again within two seconds by itself. */
+/** A refused or timed-out read may succeed next time; the app retries within 2 s itself. */
 const PRESENTATION_RETRY = { 'Retry-After': '1' } as const
 
-/** The presentation's answer when there is no document to send. Its client reads the status and
- * never the body, which stays the one it has always been. */
+/** Its client reads only the status; the body stays as it always was. */
 function presentationUnavailable(
   method: string,
   status: 500 | 503,
@@ -1708,23 +1618,19 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
     }
   }
 
-  // The sitemap lists the pages of the current publication. When that cannot be read, the static
-  // file below answers with the core pages.
+  // A failed publication read falls through to the static file below.
   if (pathname === SITEMAP_PATH && getOrHead) {
     const headers = ownHeaders({
       'Content-Type': 'application/xml; charset=utf-8',
       'Cache-Control': 'public, max-age=300',
     })
-    // HEAD reads nothing, so it cannot know whether GET would read the publication: it answers
-    // with the headers of the generated sitemap, also when GET would serve the static file.
+    // HEAD reads nothing and answers as the generated sitemap would, even if GET falls back.
     if (request.method === 'HEAD') return new Response(null, { headers })
     const cms = await loadPublicCms(env)
     if (cms !== null) return new Response(renderSitemap(cms.presentation.pages), { headers })
   }
 
-  // The only /.well-known/ path the Worker answers itself; any other is a file or a 404 below.
   if (pathname === SECURITY_TXT_PATH && getOrHead) {
-    // HEAD reads nothing and answers with the headers of a read that succeeded.
     if (request.method === 'HEAD') {
       return new Response(null, { headers: ownHeaders(SECURITY_TXT_HEADERS) })
     }
@@ -1741,15 +1647,11 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
     const [asset, metadata, homeMetadata, discovery] = await Promise.all([
       serveAsset(request, env, '/index.html', true),
       nativeMetadata(env, nativePath, lang),
-      // The other native routes are told apart from the homepage by its title.
       nativePath === '/' ? null : nativeMetadata(env, '/', lang),
       loadDiscovery(env),
     ])
     const resolved = discovery ?? { business: DEFAULT_BUSINESS, facts: EMPTY_BUSINESS_FACTS }
     const identity = nativeIdentity(nativePath)
-    // The title and description are final before the head is filled: the title keeps quotes, so
-    // nothing may be looked up by id once it is in the shell. Nothing is looked up in the rendered
-    // document at all: the route's own edits to the shell are part of the same head fill.
     const body = renderHomepageMetadata(
       await asset.text(),
       resolved,
@@ -1822,15 +1724,11 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
       if (published.read === 'exists') return new Response(null, { status: index.status, headers })
       const { cms, page: cmsPage } = published
       const mode = requestedCmsMode(url.searchParams.get('mode'))
-      // A translated page is indexable under its own URL in each language, with its alternates;
-      // any other declares its Swedish URL in both languages and has no alternates.
       const identity = cmsPageIdentity(cmsPage)
       const legalPath =
         cmsPage.path === '/privacy' || cmsPage.path === '/terms' ? cmsPage.path : null
       const business = discovery?.business ?? DEFAULT_BUSINESS
       // Fill only the authored fragment. The SPA shell must never be parsed or reserialised here.
-      // An information page without an owner description carries its own default; a created page
-      // carries none.
       const page =
         cmsPage.path === '/contact'
           ? withDefaultDescription(
@@ -1937,8 +1835,7 @@ function isPublicContentRequest(request: Request, url: URL): boolean {
   // Only HTML and versioned presentations use the cached public-content export. Markdown is
   // handled by the uncached entrypoint, preventing a URL-only edge cache from mixing
   // representations. A presentation read without exactly `?rev=<digits>` is never cacheable, so
-  // it skips the cache and is answered by the uncached entrypoint. llms.txt, the sitemap and
-  // security.txt have one representation each and use the cached export too.
+  // it skips the cache and is answered by the uncached entrypoint.
   return (
     request.method === 'GET' &&
     ((NATIVE_PUBLIC_PATHS.includes(url.pathname) &&
@@ -1950,17 +1847,12 @@ function isPublicContentRequest(request: Request, url: URL): boolean {
   )
 }
 
-/** What answers a public-content path whose renderer failed. Nothing it needs is read from the
- * database. */
+/** A failed renderer's stand-in; it reads nothing from the database. */
 type PublicContentFallback =
-  /** The deployed shell with the native route's own edits to it. */
   | { readonly kind: 'shell'; readonly path: NativePublicPath }
-  /** The deployed sitemap file. */
   | { readonly kind: 'sitemap' }
-  /** security.txt naming the default contact: no deployed file holds it. */
   | { readonly kind: 'security-txt' }
 
-/** The fallback of a public-content path; null when a failed renderer is the answer. */
 function publicContentFallback(pathname: string): PublicContentFallback | null {
   const path = nativePublicPath(pathname)
   if (path !== null) return { kind: 'shell', path }
@@ -1968,25 +1860,17 @@ function publicContentFallback(pathname: string): PublicContentFallback | null {
   return pathname === SECURITY_TXT_PATH ? { kind: 'security-txt' } : null
 }
 
-/** The maintenance switch, as the MAINTENANCE variable of wrangler.jsonc sets it. */
 export type Maintenance = 'on' | 'off'
 
-/** Only the exact value "on" closes the site: a variable that is absent or misspelt leaves it
- * open. */
 export function maintenanceMode(value: string | undefined): Maintenance {
   return value === 'on' ? 'on' : 'off'
 }
 
-/** An answer the Worker gives in place of the one that was asked for. */
 interface Outage {
   readonly status: 500 | 503
-  /** The deployed page a visitor reads. */
   readonly document: OutageDocument
-  /** What a client of the gateway is told. */
   readonly code: GatewayErrorCode
-  /** What the status needs beside the headers every such answer has. */
   readonly headers: Readonly<Record<string, string>>
-  /** The page's message in both languages, for when the page itself cannot be read. */
   readonly text: string
 }
 
@@ -1998,8 +1882,7 @@ const OUTAGES = {
     headers: {},
     text: 'Något gick fel. Försök igen om en stund.\nSomething went wrong. Please try again shortly.\n',
   },
-  // The Worker cannot know how long the site stays closed: clients and crawlers are asked to come
-  // back in an hour.
+  // The closure's length is unknown: ask clients and crawlers back in an hour.
   maintenance: {
     status: 503,
     document: MAINTENANCE_DOCUMENT,
@@ -2009,7 +1892,6 @@ const OUTAGES = {
   },
 } as const satisfies Readonly<Record<string, Outage>>
 
-/** A deployed outage page; null when the asset layer cannot give it. */
 async function deployedDocument(
   request: Request,
   env: Env,
@@ -2023,10 +1905,6 @@ async function deployedDocument(
   }
 }
 
-/** The answer to `request` while the site is closed or after its handling failed. An /api/ path
- * answers in the JSON its client reads; every other path answers with the deployed page, or with
- * the page's message as plain text when the page cannot be read. Never stored, never a search
- * result. */
 async function outageResponse(
   request: Request,
   env: Env,
@@ -2058,9 +1936,7 @@ async function respond(request: Request, env: Env, context: WorkerContext): Prom
     return customerLinkRedirect(url, customerAccessToken)
   }
 
-  // One redirect answers every other spelling of a URL: the www host, and a path that names a
-  // route in another letter case, with trailing slashes or by its file name. The /api/ paths have
-  // one spelling each; only their host is corrected.
+  // /api/ paths have one spelling each: only their host is corrected.
   const pathname = url.pathname.startsWith('/api/')
     ? url.pathname
     : await canonicalPath(env, url.pathname, getOrHead)
@@ -2082,9 +1958,7 @@ async function respond(request: Request, env: Env, context: WorkerContext): Prom
     switch (fallback.kind) {
       case 'shell': {
         const asset = await serveAsset(request, env, '/index.html', true)
-        // The unrendered shell still names the route's own language, canonical, og:url and
-        // alternates, and the account page stays out of the index in its header and its tags.
-        // The deployed shell holds no owner text, so the edits run on the whole document.
+        // The deployed shell holds no owner text: nativeShellHead may edit all of it.
         const headers = renderedHeaders(asset)
         if (nativeIdentity(fallback.path).kind === 'account') headers.set('X-Robots-Tag', 'noindex')
         const lang: CmsLang = url.searchParams.get('lang') === 'en' ? 'en' : 'sv'
@@ -2111,13 +1985,11 @@ async function respond(request: Request, env: Env, context: WorkerContext): Prom
 }
 
 export default {
-  /** Whatever fails while a request is handled, the visitor gets the deployed failure page and a
-   * client of /api/ the JSON it reads. */
   async fetch(request: Request, env: Env, context: WorkerContext): Promise<Response> {
     try {
       return await respond(request, env, context)
     } catch (error) {
-      // The runtime no longer logs it: log the error alone (a request path can be a credential).
+      // A caught error reaches no log unless it is written here.
       // eslint-disable-next-line no-console
       console.error(error)
       return outageResponse(request, env, 'failure')

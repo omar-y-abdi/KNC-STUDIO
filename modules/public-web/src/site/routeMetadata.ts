@@ -4,27 +4,23 @@ const NATIVE_PATHS = ['/', '/about', '/booking', '/my-bookings'] as const
 
 export type NativePublicPath = (typeof NATIVE_PATHS)[number]
 
-/** A native route that is not the homepage: it has a name of its own. */
 export type NativeSubpage = Exclude<NativePublicPath, '/'>
 
 /** Native site routes use the same saved presentation across pages. */
 export const NATIVE_PUBLIC_PATHS: readonly string[] = NATIVE_PATHS
 
-/** `pathname` as the native route it names exactly; null for every other path. */
 export function nativePublicPath(pathname: string): NativePublicPath | null {
   return NATIVE_PATHS.find((path) => path === pathname) ?? null
 }
 
-/** /about and /booking are named as the site menu labels them (menuLinks in content-contracts
- * site-page.ts). The menu has no /my-bookings: that name is the one Studio's page list gives the
- * page (studio nativePages.ts), which lists /booking as "Bokning"/"Booking". */
+/** /about and /booking as the site menu labels them (menuLinks in content-contracts site-page.ts);
+ * /my-bookings as Studio's page list names it (studio nativePages.ts). */
 const NATIVE_SUBPAGE_NAMES: Readonly<Record<NativeSubpage, Readonly<Record<Lang, string>>>> = {
   '/about': { sv: 'Om oss', en: 'About' },
   '/booking': { sv: 'Boka tid', en: 'Book' },
   '/my-bookings': { sv: 'Mina bokningar', en: 'My bookings' },
 }
 
-/** The title of a native subpage whose CMS page has no title of its own. */
 export function nativeRouteTitle(path: NativeSubpage, lang: Lang, businessName: string): string {
   return `${NATIVE_SUBPAGE_NAMES[path][lang]} – ${businessName}`
 }

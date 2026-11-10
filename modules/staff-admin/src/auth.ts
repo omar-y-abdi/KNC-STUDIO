@@ -215,11 +215,8 @@ async function updatePasswordForCurrentSession(
   }
 }
 
-/**
- * Outcome of `requestOwnEmailChange`. Not an `AdminResult`: a refused password and the one-a-minute
- * limit are branches the Settings form words itself, in its own language, and no `AdminError` kind
- * means "wait". Every other failure keeps its `AdminError`.
- */
+/** Not an `AdminResult`: the Settings form words a refused password and the one-a-minute limit
+ * itself, and no `AdminError` kind means "wait". */
 export type EmailChangeOutcome =
   | { readonly kind: 'sent' }
   | { readonly kind: 'wrong_password' }
@@ -235,10 +232,7 @@ function functionStatus(error: unknown): number | null {
   return typeof status === 'number' ? status : null
 }
 
-/**
- * Request an email change that the user confirms from the new address. The function verifies the
- * current password before it sends the link, and takes one request a minute for each account.
- */
+/** Request an email change that the user confirms from the new address. */
 export async function requestOwnEmailChange(
   newEmail: string,
   currentPassword: string,

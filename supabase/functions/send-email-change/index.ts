@@ -55,11 +55,8 @@ async function handle(req: Request): Promise<Response> {
     p_scope_hash: scope,
   })
   if (limited.error || limited.data !== true) return json({ ok: false, error: 'rate_limited' }, 429)
-  // This function sends its link only to a caller who proves the current password by signing in to
-  // their own account. That sign-in's session is revoked at once and never leaves this function. The
-  // password is neither logged nor echoed. Auth's own endpoint (PUT /auth/v1/user) asks for no
-  // password; it is closed by supabase/templates/email-change.html, which carries no link, once the
-  // Auth configuration has been pushed.
+  // The current password is proven by a sign-in whose session is revoked at once and never leaves
+  // this function. Auth's own PUT /auth/v1/user is closed by the linkless email-change template.
   const reauth = createClient(url, anonKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   })

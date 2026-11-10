@@ -5,9 +5,8 @@
 // Effect: atomically marks disconnect pending and queues durable deletion for every mapped event.
 // Background cleanup revokes the Google grant and removes the token only after mappings drain.
 //
-// Admin log: a request that marks a calendar link for disconnect is recorded under the barber's
-// account (_shared/adminAudit.ts). The background cleanup that later removes the token is not a
-// staff action and records nothing.
+// Admin log: only the disconnect request is recorded; the later background cleanup is not a staff
+// action.
 //
 // Run locally: npx supabase functions serve calendar-disconnect --env-file supabase/functions/.env
 
@@ -16,12 +15,8 @@ import { recordOrLogAdminAction, withinAdminLogBound } from '../_shared/adminAud
 import { callerBarberId, json } from '../_shared/calendarCaller.ts'
 import { staffCors } from '../_shared/staffCors.ts'
 
-/**
- * The signed-in barber's auth user id, for the admin log. `callerBarberId` has verified the same
- * token and answers with the barber id only, so the verified user is read once more here. `null`
- * when it cannot be read; the disconnect does not depend on it, so this never throws and never
- * waits past the admin log's bound.
- */
+/** `callerBarberId` returns only the barber id, so the verified user is read once more. Never throws
+ * or waits past the admin log's bound: the disconnect does not depend on it. */
 async function callerUserId(req: Request, service: SupabaseClient): Promise<string | null> {
   const jwt = (req.headers.get('authorization') ?? '').slice('Bearer '.length)
   try {
@@ -73,9 +68,8 @@ async function handle(req: Request): Promise<Response> {
     return json({ ok: false, error: 'disconnect_failed' }, 500)
   }
 
-  // `pending` says a calendar link exists and is marked for disconnect; without one nothing was
-  // written. The mark is set with the service role, which the database cannot attribute to the
-  // barber by itself. A failed entry is logged and the answer is the same.
+  // `pending`: a link exists and is now marked; without one nothing was written.
+  // ADMIN LOG: the database cannot attribute a service-role write; a failed entry is only logged.
   if (result['pending'] === true) {
     const actorId = await callerUserId(req, service)
     if (actorId !== null) {

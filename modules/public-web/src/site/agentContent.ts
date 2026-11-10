@@ -9,14 +9,12 @@ import { renderContactFragment } from './contactPage'
 import { nativeRouteTitle, type NativePublicPath } from './routeMetadata'
 
 export type InformationPage = '/' | '/about' | '/contact'
-/** A link inside a section's text, to another native page of the site. */
 interface PageLink {
   readonly label: string
   readonly href: NativePublicPath
 }
 interface Section {
   readonly heading: string
-  /** Plain text, or text with links in it, in reading order. */
   readonly content: string | readonly (string | PageLink)[]
 }
 interface PageCopy {
@@ -180,19 +178,16 @@ export function escapeMarkdown(text: string): string {
     .join('')
 }
 
-/** A section's text in reading order: its plain text and its links. */
 function textRuns(content: Section['content']): readonly (string | PageLink)[] {
   return typeof content === 'string' ? [content] : content
 }
 
-/** Address, phone, e-mail and opening hours: the Contact page's slots, filled as that page fills
- * them. */
+/** The Contact page's slots, filled as that page fills them. */
 const CONTACT_DETAILS =
   '<section><h2>Besöksadress och kontaktuppgifter</h2><div id="contact-details"></div></section>'
 const CONTACT_HOURS = '<section><h2>Öppettider</h2><div id="contact-hours"></div></section>'
 
-/** The intro a native route carries in its HTML until the app boots. Its text is Swedish, so it is
- * marked as Swedish when the page language is not. */
+/** The intro a native route carries in its HTML until the app boots; its text is Swedish. */
 export function renderPublicFallback(
   business: BusinessSettings,
   facts: BusinessDiscoveryFacts,

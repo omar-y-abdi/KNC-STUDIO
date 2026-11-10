@@ -12,11 +12,8 @@ import { subscribeBookingCatalog } from './adapters/barbersIndex'
 export interface ServicesState {
   /** Active rows returned by selected port; empty with `ready` means no configured services. */
   readonly services: readonly ServiceItem[]
-  /** `loading` while the selected port fetch is in flight, and before a barber and date are chosen
-   * (nothing has been read yet); `error` when it failed — a failed read is never reported as a
-   * `ready` empty menu. */
+  /** `loading` also before a barber and date are chosen (nothing read yet). */
   readonly status: 'loading' | 'ready' | 'error'
-  /** Run the read again (the way out of `error`). */
   readonly retry: () => void
 }
 

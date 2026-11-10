@@ -79,10 +79,8 @@ export function CustomerEmailLink(props: CustomerEmailLinkProps): JSX.Element | 
       owner.sequence++
     }
   }, [owner])
-  // A result removes the button that was pressed (the request or the confirm button), so focus
-  // moves to the result message instead of falling to <body>, outside the dialog's Tab trap. The
-  // message is text, not a control: it takes the focus without an outline and without staying
-  // focusable.
+  // A result removes the pressed button: focus moves to the message, not to <body> outside the
+  // dialog's Tab trap.
   const statusNote = useRef<HTMLParagraphElement>(null)
   useEffect(() => {
     if (state.status !== null) focusQuietly(statusNote.current)

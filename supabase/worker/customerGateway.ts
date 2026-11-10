@@ -6,24 +6,22 @@ import {
 import { ownHeaders } from './responseHeaders'
 const MAX_BODY_BYTES = 16_384
 
-/** Every gateway answer is JSON for the app alone: never stored, never a search result. */
 const GATEWAY_HEADERS = {
   'Content-Type': 'application/json',
   'Cache-Control': 'no-store',
   'X-Robots-Tag': 'noindex, nofollow',
 } as const
 
-/** The Workers Rate Limiting binding (`ratelimits` in wrangler.jsonc), as the gateway uses it. */
+/** The `ratelimits` binding in wrangler.jsonc. */
 export interface GatewayRateLimit {
   limit(options: { readonly key: string }): Promise<{ readonly success: boolean }>
 }
 
-/** The period of that binding's limit, in seconds: how long a refused client is told to wait.
- * tests/unit/workerHttp.test.ts keeps it equal to the period in wrangler.jsonc. */
+/** Equal to the period in wrangler.jsonc (tests/unit/workerHttp.test.ts); sent as Retry-After. */
 export const GATEWAY_RATE_LIMIT_PERIOD_SECONDS = 60
 
-/** The actions of public-booking-actions (its request.ts). Each is counted on its own, so reading
- * the booking list never uses up what a cancellation needs. */
+/** public-booking-actions' actions (its request.ts), each counted on its own: reading the list
+ * never uses up what a cancellation needs. */
 export const BOOKING_ACTIONS = [
   'request_access',
   'exchange_access',
@@ -35,8 +33,7 @@ export const BOOKING_ACTIONS = [
   'confirm_link',
 ] as const
 
-/** A gateway without its Supabase address, key or signing secret answers again only after a new
- * deploy has given it them: minutes, not seconds. */
+/** Missing configuration returns only with a new deploy: minutes, not seconds. */
 const NOT_CONFIGURED_RETRY_SECONDS = 300
 
 /** Why the Worker itself, not Edge, answered a gateway request. */
@@ -49,8 +46,6 @@ export type GatewayErrorCode =
   | 'maintenance'
   | 'system'
 
-/** The Worker's own answer on a gateway path: the JSON shape its clients read, with `extra`
- * headers for what the status needs (Allow, Retry-After). */
 export function gatewayError(
   code: GatewayErrorCode,
   status: number,
@@ -62,9 +57,8 @@ export function gatewayError(
   )
 }
 
-/** What a request to public-booking-actions counts against: the action its body names, or `other`
- * for a body that names none of them. Edge refuses such a body; here it still counts, in one
- * bucket, so invented action names cannot multiply the allowance. */
+/** A body naming no known action counts as `other`, one bucket, so invented action names cannot
+ * multiply the allowance. */
 function countedAction(body: string): (typeof BOOKING_ACTIONS)[number] | 'other' {
   let parsed: unknown
   try {
@@ -77,11 +71,8 @@ function countedAction(body: string): (typeof BOOKING_ACTIONS)[number] | 'other'
   return BOOKING_ACTIONS.find((name) => name === action) ?? 'other'
 }
 
-/** Whom a request to public-booking-actions is counted for. An IPv6 client is the /64 it is in,
- * which one customer line usually holds whole: its first four groups in one spelling, so another
- * address in it, or another way of writing it, gives no new allowance. An IPv4 address written as
- * IPv6 (::ffff:203.0.113.10, also in hex) is that IPv4 address, as the plain one is. Any other
- * value, a plain IPv4 address too, is counted as it was received. */
+/** An IPv6 client is its /64 in one spelling, so another address or spelling in it gives no new
+ * allowance; an IPv4-mapped address is its IPv4 address. Anything else counts as received. */
 function limiterClient(ip: string): string {
   const groups = ipv6Groups(ip)
   if (groups === null) return ip
@@ -95,10 +86,8 @@ function limiterClient(ip: string): string {
   return `${prefix.join(':')}::/64`
 }
 
-/** The eight 16-bit groups of an IPv6 address in any of its text forms: one to four hex digits a
- * group in either letter case, at most one `::` for one or more zero groups, a dotted IPv4 address
- * as the last two groups, and a zone (`%eth0`), which is dropped. Null for any other text. Each
- * character is read a bounded number of times. */
+/** The eight groups of an IPv6 address in any text form (a zone is dropped); null for any other
+ * text. Each character is read a bounded number of times. */
 function ipv6Groups(text: string): readonly number[] | null {
   const zone = text.indexOf('%')
   const address = zone < 0 ? text : text.slice(0, zone)
@@ -114,8 +103,6 @@ function ipv6Groups(text: string): readonly number[] | null {
   return [...head, ...new Array<number>(8 - head.length - tail.length).fill(0), ...tail]
 }
 
-/** The groups `text` writes between single colons; a last part that is a dotted IPv4 address is
- * two groups when `ipv4Last`. Null when a part is neither. */
 function ipv6GroupList(text: string, ipv4Last: boolean): number[] | null {
   if (text === '') return []
   const parts = text.split(':')
@@ -134,8 +121,6 @@ function ipv6GroupList(text: string, ipv4Last: boolean): number[] | null {
   return groups
 }
 
-/** The 32-bit value of a dotted IPv4 address: four decimal numbers up to 255, none written with a
- * leading zero; null for any other text. */
 function ipv4Value(text: string): number | null {
   const parts = text.split('.')
   if (parts.length !== 4) return null
@@ -148,8 +133,6 @@ function ipv4Value(text: string): number | null {
   return value
 }
 
-/** The number `text` writes with one to `width` digits of `radix` (hex in either letter case);
- * null for any other text. */
 function digitsValue(text: string, radix: 10 | 16, width: number): number | null {
   if (text.length === 0 || text.length > width) return null
   let value = 0
@@ -161,8 +144,7 @@ function digitsValue(text: string, radix: 10 | 16, width: number): number | null
   return value
 }
 
-/** Whether a request counted under `key` is within the limit. Without the binding nothing is
- * counted, and a limiter that fails is no reason to refuse a customer: both let the request on. */
+/** Fails open: without the binding, or when it fails, the request goes on. */
 async function withinRateLimit(
   limiter: GatewayRateLimit | undefined,
   key: string,
@@ -239,9 +221,8 @@ export async function customerGateway(
   const ip = request.headers.get('CF-Connecting-IP')
   if (!ip) return gatewayError('system', 502)
   const textBody = new TextDecoder().decode(body)
-  // One count for each client and action, an IPv6 client being its /64 (limiterClient). The
-  // booking submission is not counted here: its database limiter is the limit on that path, and a
-  // second one could only refuse sooner. The signature below carries the address as received.
+  // The booking submission is not counted here: its database limiter is that path's limit. The
+  // signature below carries the address as received.
   if (
     endpoint === 'public-booking-actions' &&
     !(await withinRateLimit(
@@ -269,8 +250,7 @@ export async function customerGateway(
       return gatewayError('system', 502)
     }
     const responseHeaders = ownHeaders(GATEWAY_HEADERS)
-    // The one 503 Edge itself answers is a function without its secrets, as the gateway's own is,
-    // and Edge names no time: the relayed answer carries the gateway's.
+    // Edge's only 503 is a function without its secrets, and it names no time: add the gateway's.
     if (upstream.status === 503) {
       responseHeaders.set('Retry-After', String(NOT_CONFIGURED_RETRY_SECONDS))
     }

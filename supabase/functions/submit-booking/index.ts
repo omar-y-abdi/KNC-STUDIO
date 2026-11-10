@@ -155,8 +155,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     }
     return reply(rpc.data, 200)
   } catch (err) {
-    // Only the code and the kind of error are logged, never its message: the rest of a database
-    // error (Postgres DETAIL) can quote customer data.
+    // Code and error kind only: a database error's message or DETAIL can quote customer data.
     const code = typeof err === 'object' && err !== null && 'code' in err ? err.code : null
     console.error(
       'submit-booking: unhandled error:',

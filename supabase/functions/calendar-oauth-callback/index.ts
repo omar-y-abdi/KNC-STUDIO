@@ -9,11 +9,8 @@
 // render a small success page. The refresh token is written ONLY through the service_role definer RPC
 // and never leaves the server.
 //
-// Admin log: a stored token is recorded under the barber's own staff account (_shared/adminAudit.ts):
-// a first connect as a new calendar link, a reconnect as a change that names the columns the store
-// rewrote. This request carries no JWT, so the account is the one the access check reads for the
-// barber id of the signed state; a barber id has at most one staff account
-// (profiles_one_account_per_barber_idx).
+// Admin log: this request carries no JWT, so the entry names the one staff account of the signed
+// state's barber id (profiles_one_account_per_barber_idx).
 //
 // Run locally: npx supabase functions serve calendar-oauth-callback --env-file supabase/functions/.env
 
@@ -54,20 +51,13 @@ function done(
   return page(title, message, status)
 }
 
-/** The id of the staff account the access check read, for the admin log. `null` when the row holds
- *  no id to name. */
 function staffAccountId(row: unknown): string | null {
   if (typeof row !== 'object' || row === null || !('id' in row)) return null
   return typeof row.id === 'string' && row.id !== '' ? row.id : null
 }
 
-/**
- * The admin log entry for a token `calendar_store_token` has stored. The store answers
- * `cleanup_pending` or `repair_pending` when it renewed the access of a link it kept: the Google
- * account and the disconnect mark stay as they were. Every other success wrote the whole link: a
- * new row when the barber had none, and otherwise the same columns of the row that was there
- * (`connected_at` is set only on a new row).
- */
+/** `cleanup_pending` or `repair_pending` means the store renewed a kept link: its Google account and
+ * disconnect mark stay. `connected_at` is set only on a new row. */
 function storedTokenRecord(
   actorId: string,
   barberId: string,
@@ -194,10 +184,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
       )
     }
 
-    // The token is stored with the service role, which the database cannot attribute to the barber
-    // by itself. The signed state comes only from that barber's own signed-in start, and the access
-    // check above read the one staff account of its barber id, so the entry names that account. A
-    // failed entry is logged and the answer is the same.
+    // ADMIN LOG: the database cannot attribute a service-role write; a failed entry is only logged.
+    // The signed state comes only from this barber's own signed-in start.
     const actorId = staffAccountId(profile.data)
     if (actorId === null) {
       console.error('calendar-oauth-callback: admin log actor lookup failed:', 'no account id')

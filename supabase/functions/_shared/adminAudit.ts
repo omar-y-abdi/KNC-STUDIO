@@ -1,30 +1,13 @@
-// The admin log entry for a change a staff function makes with the service role on behalf of a
-// signed-in member of staff. A change made with the member's own JWT is recorded by the database
-// itself (the audit trigger reads the JWT). A service-role write carries no staff identity, so the
-// function that made it says who acted, through `internal_record_admin_action`.
-//
-// An entry names the actor, the action, the table, the row and, for an update, the changed columns.
-// It never holds a value.
-//
-// This module imports nothing, so every staff function can use it: the calendar-* functions deploy
-// without an import map.
-//
-// The staff action has already happened when its entry is written, so no function waits long for
-// the admin log: the write, and every read a function makes only for it, is given up after
-// `ADMIN_LOG_BOUND_MS` (`withinAdminLogBound`), and the function answers as it would have.
+// Admin log entries for service-role writes, which carry no JWT for the database's audit trigger to
+// read. An entry never holds a value. Imports nothing: the calendar-* functions have no import map.
+// The staff action has already happened, so the log never makes a function wait past its bound.
 
-/** How long a staff function waits for the admin log, or for a read it makes on its behalf. */
 export const ADMIN_LOG_BOUND_MS = 3000
 
-/** A call that answered within the bound, or one that was given up on. */
 export type BoundedAnswer<T> =
   { readonly timedOut: false; readonly value: T } | { readonly timedOut: true }
 
-/**
- * Wait for `call`, but no longer than `ADMIN_LOG_BOUND_MS`. A call that answers in time clears the
- * timer; one that throws or rejects in time rejects here. A call that is given up on keeps running:
- * its late answer or rejection ends in the handlers below and is never an unhandled rejection.
- */
+/** A call given up on keeps running; its late answer or rejection is handled, never unhandled. */
 export function withinAdminLogBound<T>(call: () => PromiseLike<T>): Promise<BoundedAnswer<T>> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => resolve({ timedOut: true }), ADMIN_LOG_BOUND_MS)
@@ -44,16 +27,12 @@ export function withinAdminLogBound<T>(call: () => PromiseLike<T>): Promise<Boun
   })
 }
 
-/** The service-role client, as far as this module uses it. */
 export interface AdminAuditService {
   rpc(name: string, args: Record<string, unknown>): PromiseLike<{ error: { code?: string } | null }>
 }
 
-/**
- * The tables `internal_record_admin_action` accepts, each with its columns other than the key. The
- * database refuses a column name the table does not have, and a refused entry is only a log line:
- * naming the columns here turns a misspelt one into a compile error instead.
- */
+/** The database refuses an unknown column, and a refused entry is only a log line: naming the
+ * columns here makes a misspelt one a compile error. */
 interface AuditedColumns {
   readonly profiles:
     | 'role'
@@ -78,9 +57,8 @@ interface AuditedColumns {
 type AuditedTable = keyof AuditedColumns
 
 type AdminActionOn<Table extends AuditedTable> = {
-  /** The auth user id of the signed-in member of staff, taken from the verified JWT. The calendar
-   *  OAuth callback carries no JWT: there it is the one staff account of the barber id in the
-   *  signed state. */
+  /** The auth user id from the verified JWT; in the calendar OAuth callback (no JWT), the staff
+   *  account of the signed state's barber id. */
   readonly actorId: string
   readonly table: Table
   /** `profiles.id` or `staff_invitations.user_id`; for a photo or a calendar link the barber id. */
@@ -93,22 +71,12 @@ type AdminActionOn<Table extends AuditedTable> = {
     }
 )
 
-/**
- * One staff action. An update names at least one column of its table; an insert or a delete concerns
- * the whole row and names none.
- */
 export type AdminActionRecord = { [Table in AuditedTable]: AdminActionOn<Table> }[AuditedTable]
 
-/**
- * `code` is the database's error code, the name of what was thrown, or `timeout` when the write did
- * not answer within the bound; never a message.
- */
+/** `code`: the database's error code, a thrown error's name or `timeout`; never a message. */
 export type AdminAuditResult = { readonly ok: true } | { readonly ok: false; readonly code: string }
 
-/**
- * Write the entry. Never throws and never waits past the bound: a failure is the `ok: false`
- * result.
- */
+/** Never throws or waits past the bound. */
 export async function recordAdminAction(
   service: AdminAuditService,
   record: AdminActionRecord,
@@ -135,11 +103,7 @@ export async function recordAdminAction(
   }
 }
 
-/**
- * Write the entry for a staff action that has already happened. The caller answers as it would
- * without the admin log, so a failure is only logged: the function's name and the error code,
- * nothing of the record.
- */
+/** A failure is only logged, with the function's name and error code, nothing of the record. */
 export async function recordOrLogAdminAction(
   source: string,
   service: AdminAuditService,

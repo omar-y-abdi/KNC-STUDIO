@@ -238,8 +238,7 @@ async function handle(req: Request): Promise<Response> {
       return json({ ok: false, error: 'not_found' }, 404)
     }
 
-    // ADMIN LOG: the photo row is deleted, with the service role, which the database cannot
-    // attribute to the caller by itself. A failed entry is logged and the answer is the same.
+    // ADMIN LOG: the database cannot attribute a service-role write; a failed entry is only logged.
     await recordOrLogAdminAction('upload-image', service, {
       actorId: callerData.user.id,
       action: 'delete',
@@ -388,9 +387,7 @@ async function handle(req: Request): Promise<Response> {
     )
   }
 
-  // ADMIN LOG: the photo row is written, with the service role, which the database cannot attribute
-  // to the caller by itself: a first photo is a new row, a replaced one a changed path. A failed
-  // entry is logged and the answer is the same.
+  // ADMIN LOG: the database cannot attribute a service-role write; a failed entry is only logged.
   if (replaced.data.previous_path === null) {
     await recordOrLogAdminAction('upload-image', service, {
       actorId: callerData.user.id,

@@ -270,9 +270,7 @@ export function openingHours(facts: BusinessDiscoveryFacts): readonly BusinessOp
   })
 }
 
-/** A Swedish national number (digits behind a single leading 0, whatever separates them) in
- * international form; a number behind the international prefix 00 with `+` in its place; every
- * other shape as it is stored. */
+/** A Swedish national number (one leading 0) as +46…, 00… as +…; any other shape as stored. */
 function structuredTelephone(value: string): string {
   const digits = value.replace(/[\s().-]/g, '')
   if (/^00[1-9][0-9]*$/.test(digits)) return `+${digits.slice(2)}`

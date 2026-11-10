@@ -1,5 +1,4 @@
-// Pure decisions of the Settings email form: what a submit may send, and what the form holds and
-// shows after the function answered. No effects: the view owns the state and makes the call.
+// Pure decisions of the Settings email form; the view owns the state and makes the call.
 
 import type { AdminStrings } from '../adminStrings'
 import type { EmailChangeOutcome } from '../auth'
@@ -26,17 +25,12 @@ export type EmailFormText = Pick<
   | 'settingsEmailRateLimited'
 >
 
-/** The id of the element that shows the form's error; the password field points at it. */
 export const EMAIL_ERROR_ID = 'settings-email-error'
 
 function validEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
 }
 
-/**
- * Check the typed values before anything is sent: the address first, then the password. The address
- * goes out trimmed and lower-cased, the password as typed.
- */
 export function checkEmailChange(
   fields: EmailFormFields,
   currentEmail: string,
@@ -60,10 +54,6 @@ export function checkEmailChange(
   return { ok: true, email, password: fields.password }
 }
 
-/**
- * What the form holds and shows after the function answered. Only a sent link empties the fields: a
- * failure keeps the address and the password. Only a refused password marks the password field.
- */
 export function afterEmailChange(
   outcome: EmailChangeOutcome,
   fields: EmailFormFields,
@@ -81,7 +71,6 @@ export function afterEmailChange(
   }
 }
 
-/** The ARIA state of the current-password input: invalid and described by the error only for its own. */
 export function passwordFieldAria(status: EmailFormStatus): {
   readonly 'aria-invalid': boolean
   readonly 'aria-describedby': string | undefined

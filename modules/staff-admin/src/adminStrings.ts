@@ -52,25 +52,21 @@ const SV = {
   reviewsLoading: 'Laddar recensioner …',
   reviewsEmpty: 'Det finns inga recensioner.',
   reviewsListLabel: 'Recensioner',
-  /** Shown above the list: what hiding does to the customer's booking. */
   reviewsHideHelp:
     'En dold recension visas inte på webbplatsen men finns kvar. Om bokningen finns kvar kan kunden därför inte skriva en ny recension för den.',
   reviewsStatusPublished: 'Publicerad',
   reviewsStatusHidden: 'Dold',
-  /** `{rating}` is interpolated with the stars the customer gave, 1 to 5. */
+  /** `{rating}`: the stars the customer gave, 1 to 5. */
   reviewsRating: 'Betyg {rating} av 5',
   reviewsHide: 'Dölj',
   reviewsPublish: 'Publicera igen',
   reviewsDelete: 'Ta bort',
-  /**
-   * Accessible names of a row's buttons. `{name}` and `{date}` identify the review; each name
-   * starts with the button's visible text.
-   */
+  /** Each accessible name starts with its button's visible text. */
   reviewsHideAria: 'Dölj recensionen från {name}, {date}',
   reviewsPublishAria: 'Publicera igen: recensionen från {name}, {date}',
   reviewsDeleteAria: 'Ta bort recensionen från {name}, {date}',
   reviewsDeleteTitle: 'Ta bort recensionen?',
-  /** Body of the delete confirmation. `{name}` is interpolated with the review's display name. */
+  /** `{name}`: the review's display name. */
   reviewsDeleteBody:
     'Recensionen från {name} tas bort permanent. Om bokningen finns kvar kan kunden sedan skriva en ny recension för den.',
   reviewsDeleteConfirm: 'Ta bort',
@@ -82,10 +78,9 @@ const SV = {
   reviewsLoadError: 'Kunde inte läsa recensionerna. Försök igen.',
   /** The database refused the request as it was sent; sending it again changes nothing. */
   reviewsInvalid: 'Begäran godkändes inte. Recensionen är oförändrad.',
-  /** No answer, or one that cannot be read: the action may or may not have been applied. */
   reviewsOutcomeUnknownReloaded:
     'Det är oklart om ändringen gick igenom. Listan har lästs in igen.',
-  /** As above, when the list could not be read again either; the list says so itself. */
+  /** When the list could not be read again either; the list says so itself. */
   reviewsOutcomeUnknown: 'Det är oklart om ändringen gick igenom.',
   // Settings — admin log (owner)
   auditTitle: 'Adminlogg',
@@ -103,16 +98,13 @@ const SV = {
   /** Followed by the barber's name: "Barberare Hassan". */
   auditActorBarber: 'Barberare',
   auditActorRemoved: 'Kontot borttaget',
-  /** A role this panel has no name for. `{role}` is interpolated with the role as it is stored. */
+  /** A role this panel has no name for; `{role}` as stored. */
   auditActorUnknown: 'Personal ({role})',
   /** Followed by what was changed: "Ändrade recension". */
   auditActionInsert: 'Skapade',
   auditActionUpdate: 'Ändrade',
   auditActionDelete: 'Tog bort',
-  /**
-   * An action this panel has no name for, followed by what it concerned. `{action}` is interpolated
-   * with the action as it is stored.
-   */
+  /** An action this panel has no name for, followed by its target; `{action}` as stored. */
   auditActionUnknown: 'Okänd åtgärd ({action}):',
   auditTargetBookings: 'bokning',
   auditTargetBarbers: 'barberare',
@@ -129,9 +121,9 @@ const SV = {
   auditTargetBarberCalendarTokens: 'kalenderkoppling',
   /** One publish from CMS Studio; the row id is the revision number. */
   auditTargetCmsRevisions: 'publicering av webbplatsen',
-  /** `{columns}` is interpolated with the column names as they are stored. */
+  /** `{columns}`: the column names as stored. */
   auditChangedColumns: 'Ändrade fält: {columns}',
-  /** `{id}` is interpolated with the row's key as it is stored. */
+  /** `{id}`: the row's key as stored. */
   auditRowId: 'Id: {id}',
   // Profil (barber photo) view.
   profileTitle: 'Profilbild',

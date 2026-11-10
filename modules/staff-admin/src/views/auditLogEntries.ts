@@ -1,5 +1,4 @@
-// Pure decisions of the admin log list in Settings: how a table is named, who an entry says acted
-// and what its lines read. No effects: the section owns the state and makes the calls.
+// Pure decisions of the Settings admin log list; AuditLogSection owns the state and the calls.
 
 import type { AuditActor, AuditChange, AuditLogEntry } from '../adapters/auditLogAdmin'
 import type { AdminStrings } from '../adminStrings'
@@ -8,7 +7,6 @@ import type { AdminBarber } from './viewTypes'
 
 type TargetLabelKey = Extract<keyof AdminStrings, `auditTarget${string}`>
 
-/** The fourteen tables the log can name, each with the string that names one row of it. */
 const TARGET_LABEL_KEYS: ReadonlyMap<string, TargetLabelKey> = new Map<string, TargetLabelKey>([
   ['bookings', 'auditTargetBookings'],
   ['barbers', 'auditTargetBarbers'],
@@ -28,7 +26,6 @@ const TARGET_LABEL_KEYS: ReadonlyMap<string, TargetLabelKey> = new Map<string, T
 
 export type AuditTargetText = Pick<AdminStrings, TargetLabelKey>
 
-/** The kind of thing a table holds, in the panel's language; a table it does not know by its name. */
 export function auditTargetLabel(table: string, t: AuditTargetText): string {
   const key = TARGET_LABEL_KEYS.get(table)
   return key === undefined ? table : t[key]
@@ -39,11 +36,7 @@ export type AuditActorText = Pick<
   'auditActorOwner' | 'auditActorBarber' | 'auditActorRemoved' | 'auditActorUnknown'
 >
 
-/**
- * Who acted: the owner, a barber by the roster's name, or a staff account that no longer exists. A
- * barber the roster does not hold (deleted, or the roster has not arrived) is named by the stored id.
- * An account with a role this panel has no name for is staff with that role as it is stored.
- */
+/** A barber the roster does not hold (deleted, or not arrived yet) is named by the stored id. */
 export function auditActorLabel(
   actor: AuditActor,
   barbers: readonly Pick<AdminBarber, 'id' | 'name'>[],
@@ -69,7 +62,6 @@ export type AuditActionText = Pick<
   'auditActionInsert' | 'auditActionUpdate' | 'auditActionDelete' | 'auditActionUnknown'
 >
 
-/** Created, changed or deleted; an action this panel has no name for by its stored name. */
 export function auditActionLabel(change: AuditChange, t: AuditActionText): string {
   switch (change.action) {
     case 'insert':
@@ -83,7 +75,6 @@ export function auditActionLabel(change: AuditChange, t: AuditActionText): strin
   }
 }
 
-/** The columns an entry names, as they are stored: an update always, another action when it does. */
 function namedColumns(change: AuditChange): readonly string[] {
   switch (change.action) {
     case 'insert':
@@ -100,15 +91,13 @@ export type AuditLineText = AuditTargetText &
   AuditActionText &
   Pick<AdminStrings, 'auditChangedColumns' | 'auditRowId'>
 
-/** The lines one entry shows, apart from its time. */
 export interface AuditLine {
   /** "Ägare", "Barberare Hassan", "Kontot borttaget". */
   readonly who: string
   /** "Ändrade recension". */
   readonly what: string
-  /** The changed column names as they are stored; `null` for a created or deleted row. */
+  /** `null` when the entry names no columns. */
   readonly columns: string | null
-  /** The row's key as it is stored. */
   readonly target: string
 }
 

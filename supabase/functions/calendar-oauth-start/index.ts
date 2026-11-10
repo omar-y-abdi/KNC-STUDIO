@@ -18,8 +18,7 @@ import { staffCors } from '../_shared/staffCors.ts'
 
 const DEFAULT_ORIGINS = ['https://bladeblendstudio.se', 'https://www.bladeblendstudio.se']
 
-/** The site's origins from PUBLIC_SITE_ORIGINS, read exactly as `allowedOrigins` in
- *  public-booking-actions/index.ts reads them. */
+/** Read exactly as `allowedOrigins` in public-booking-actions/index.ts reads them. */
 function siteOrigins(configured: string | undefined): readonly string[] {
   if (!configured) return DEFAULT_ORIGINS
   return configured
@@ -33,9 +32,8 @@ type ReturnOrigin =
   | { readonly kind: 'site'; readonly origin: string }
   | { readonly kind: 'foreign' }
 
-/** The app origin the callback redirects the barber's browser back to: an https origin of the site.
- *  A missing, unreadable or non-https Origin (local http development) gives none and the callback
- *  shows its own page; any other https origin is foreign and the request is refused. */
+/** A missing, unreadable or http Origin (local development) gives none: the callback shows its own
+ *  page. An https origin not of the site is foreign and refused. */
 function returnOrigin(raw: string | null, allowed: readonly string[]): ReturnOrigin {
   if (raw === null) return { kind: 'none' }
   let url: URL

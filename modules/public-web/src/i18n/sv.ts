@@ -58,30 +58,21 @@ export const bookingSv = {
   errRateLimited: 'För många bokningsförsök. Vänta en stund och försök igen.',
   /** Gateway rejection: the Turnstile human-verification challenge failed. */
   errChallenge: 'Vi kunde inte verifiera att du är en människa. Ladda om sidan och försök igen.',
-  /** A failed read of the barbers, the services or the times: never an empty-state message. Each
-   * is followed by the `retry` button. */
+  /** A failed read, never an empty-state message; the `retry` button follows each. */
   errLoadBarbers: 'Barberarna kunde inte hämtas.',
   errLoadServices: 'Behandlingarna kunde inte hämtas.',
   errLoadTimes: 'Tiderna kunde inte hämtas.',
   retry: 'Försök igen',
-  /** The server refused the chosen start time (taken meanwhile, outside opening hours or no longer
-   * a valid start). Shown in the time column after the details popup closes. */
+  /** The server refused the chosen start time. Shown in the time column after the popup closes. */
   errSlotTaken: 'Tiden går inte längre att boka. Välj en annan tid.',
-  /** The server refused the chosen time right after a submit for that same time ended without an
-   * answer: the refusal may be about the customer's own booking. Shown in the details popup, or in
-   * the time column when the customer has closed the popup meanwhile. */
+  /** Refused after an unanswered submit for the same time: maybe the customer's own booking. */
   errPossiblyBooked:
     'Tiden kan redan vara bokad av dig. Kontrollera din e-post eller Mina bokningar innan du bokar en ny tid.',
-  /** A submit ended without an answer that says what happened: the booking may exist. Shown in
-   * the details popup, for whichever time it is open, until a booking succeeds or the customer
-   * starts over; and in the time column when no popup was open as the submit ended, until a time
-   * is chosen. */
   errUnconfirmed:
     'Vi fick inget svar på din bokning och vet inte om den gick igenom. Kontrollera din e-post eller Mina bokningar innan du bokar igen.',
-  /** The book button was pressed in the popup of one time while the submit for another time was
-   * still on its way. Shown in that popup until the other submit is answered. */
+  /** Book pressed in one time's popup while another time's submit is on its way. */
   errSubmitPending: 'En bokning skickas redan. Vänta en stund och försök igen.',
-  /** The booking port does not book: the Studio's preview of the site. Shown where a refusal is. */
+  /** From the Studio preview's port, which does not book. */
   errReadOnly: 'Förhandsvisningen är skrivskyddad.',
 }
 
@@ -103,9 +94,8 @@ export const appSv = {
   lazyBookingError: 'Kunde inte ladda bokningen.',
   lazyMyBookingsError: 'Kunde inte ladda bokningarna.',
   lazyReload: 'Ladda om',
-  /** The skip link: the first stop of the tab order, shown only while it holds keyboard focus. */
   skipToContent: 'Hoppa till innehållet',
-  /** Link to the contact page from the notice shown when the site could not be loaded. */
+  /** On the notice shown when the site could not be loaded. */
   contactLink: 'Kontakt',
 }
 
@@ -239,8 +229,7 @@ export const myBookingsSv = {
    * cancellation policy; the salon's phone and e-mail links follow the sentence. */
   cancelClosed:
     'Tidsgränsen för avbokning online ({hours} h före besöket) har passerat. Kontakta salongen:',
-  /** A cancel the server did not carry out, after which the list no longer holds the booking (it
-   * was already cancelled, or is no longer this customer's). Shown where `cancelledNote` is. */
+  /** After a refused cancel, when the list no longer holds the booking. */
   bookingGoneNote: 'Bokningen finns inte längre bland dina kommande bokningar.',
 }
 

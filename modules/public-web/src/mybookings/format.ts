@@ -14,12 +14,8 @@ export function formatRowLabel(lang: Lang, date: Date, sep: string): string {
   return `${dayLabel(lang, date)} ${sep}${pad2(date.getHours())}:${pad2(date.getMinutes())}`
 }
 
-/**
- * Whether a booking looks cancellable online from here: its start is more than `policyHours` after
- * `now`. The server decides with the same operator (strictly later), but on its own clock and its
- * current setting, so the two can disagree; the dialog uses this only as a courtesy, to hide the
- * cancel button and say why before the customer tries. Pure (injected `now`).
- */
+/** A courtesy only: the server decides with the same operator (strictly later) but on its own
+ * clock and current setting, so the two can disagree. */
 export function onlineCancellationOpen(start: Date, now: Date, policyHours: number): boolean {
   return start.getTime() > now.getTime() + policyHours * 3_600_000
 }

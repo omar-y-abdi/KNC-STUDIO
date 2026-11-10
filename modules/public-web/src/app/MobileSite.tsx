@@ -186,8 +186,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
   // Muted, theme-aware colour for the underlined hero links (sits on the panel surface).
   const heroLinkColor = dark ? 'rgba(255,255,255,.72)' : 'rgba(0,0,0,.6)'
   const brandMotion = mobileBrandMotion(collapse, viewportHeight, reduceMotion)
-  // The folded hero is inert and takes its level-1 heading with it: the compact mark, fully faded
-  // in by then, is the page's heading for exactly that long.
+  // While the folded hero is inert, the compact mark is the page's level-1 heading.
   const heroInert = brandMotion.brand === 0 && brandMotion.actions === 0
   // While the entry tween pins the panel, its rendered height is the fold progress; otherwise the
   // resting fold state is.
@@ -269,7 +268,6 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     display: 'block',
   }
   // The banner receives the moving brand before the phone and emblem rules fade in.
-  // It never takes pointer input from the controls beneath it.
   const headerMarkStyle: JSX.CSSProperties = {
     position: 'absolute',
     zIndex: 6,

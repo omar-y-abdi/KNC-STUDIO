@@ -1,9 +1,5 @@
-// Review moderation in Settings (owner only): every review, published and hidden, newest first, with
-// hide / publish again / delete. The list is read when the owner opens the section, never when
-// Settings opens: nothing here calls the backend until `ReviewModerationList` mounts. The decisions
-// (rows after an action, status line, button names, where the focus goes) live in
-// `reviewModeration.ts` and `ownerListFocus.ts`; this component renders them and owns the data
-// effects.
+// Review moderation in Settings (owner only). Nothing here calls the backend until
+// `ReviewModerationList` mounts: the list is read when the owner opens the section.
 
 import type { JSX, RefObject } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
@@ -53,14 +49,12 @@ export interface ReviewModerationSectionProps {
   readonly dark: boolean
   readonly lang: Lang
   readonly s: AdminStylesBundle
-  /** The Settings view's subheading style, so the section reads as one of its forms. */
   readonly headingStyle: JSX.CSSProperties
   readonly port?: ReviewModerationPort
-  /** How the focus is moved once an answer has rendered; the page's own way unless a test says. */
   readonly moveFocus?: MoveOwnerListFocus
 }
 
-/** Reads and writes of the reviews are ordered: a reopened list reads after a write still running. */
+/** Ordered: a reopened list reads after a write still running. */
 const RESOURCE = 'reviews:moderation'
 const LIST_ID = 'settings-reviews-list'
 const HIDE_HELP_ID = 'settings-reviews-hide-help'
@@ -129,18 +123,15 @@ function ReviewModerationList(props: ReviewModerationListProps): JSX.Element {
   const t = adminText(lang)
   const [loaded, setLoaded] = useState<Loaded>({ state: 'loading' })
   const [reload, setReload] = useState(0)
-  /** The review an action is running on; every action waits for it. */
   const [busyId, setBusyId] = useState<string | null>(null)
   const [pendingDelete, setPendingDelete] = useState<AdminReview | null>(null)
   const [message, setMessage] = useState<StatusMessage | null>(null)
-  /** Where the focus goes once the answer that asked for it has rendered. */
   const [focusRequest, setFocusRequest] = useState<FocusTarget | null>(null)
-  // Bumped when the list is read anew and when it closes: an answer that belongs to an earlier
-  // reading (a further page, an action) is dropped.
+  // Bumped on each new reading and on close: an answer from an earlier reading is dropped.
   const generation = useRef(0)
-  /** An action that has not been answered yet. A second press starts nothing. */
+  /** Set until an action is answered, so a second press starts nothing. */
   const acting = useRef(false)
-  /** The reading of the list whose further page is being read; a second press starts nothing. */
+  /** Set while a further page is read, so a second press starts nothing. */
   const readingMore = useRef<number | null>(null)
   /** The rows as they were last rendered, for deciding where the focus goes. */
   const shown = useRef<readonly AdminReview[]>([])
@@ -164,9 +155,8 @@ function ReviewModerationList(props: ReviewModerationListProps): JSX.Element {
     }
   }, [port, reload])
 
-  // After the render that shows an answer: the control the owner pressed may be gone or was
-  // disabled while the answer was awaited, and a closing dialog has already tried to hand the focus
-  // back to it.
+  // After the render that shows an answer: the pressed control may be gone or disabled, and a
+  // closing dialog has already tried to hand the focus back to it.
   useEffect(() => {
     if (focusRequest === null) return
     props.moveFocus(focusRequest, {
@@ -215,9 +205,7 @@ function ReviewModerationList(props: ReviewModerationListProps): JSX.Element {
         ? port.remove(review.id)
         : port.setPublished(review.id, action === 'publish'),
     )
-    // No answer, or one that cannot be read: the database may have applied the action all the same.
-    // Only the list itself says what the row is now, so it is read again from its first page,
-    // unless the list the action started in is gone by now.
+    // An unknown outcome: read the list again from its first page, unless that list is gone by now.
     const fresh =
       generation.current !== mine || reviewOutcomeIsKnown(result)
         ? null
