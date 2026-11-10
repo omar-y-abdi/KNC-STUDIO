@@ -69,5 +69,4 @@ Ordinary confirmation/reminder emails reuse the current encrypted permanent toke
 fails after a key change, `replace_customer_booking_access_token` must receive the generation read
 by `ensure_customer_booking_access_token`. A concurrent rotation wins: reload/decrypt that winner
 once, or fail for the existing durable retry path. Never replace a newer link unconditionally.
-Apply migration `20260910133329_guard_customer_token_repair.sql` before deploying this function;
-see `BACKEND.md` (Apply backend changes).
+See `BACKEND.md` (Apply backend changes) for release order.

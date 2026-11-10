@@ -8,7 +8,7 @@ import {
 import { SITE_TEXT_KEYS } from '../../modules/public-web/src/site/siteChrome'
 
 // The migration that last defines internal_cms_document is the read model the database runs.
-const DEFINITION = /create (?:or replace )?function public\.internal_cms_document\(\)/g
+const DEFINITION = /create (?:or replace )?function "?public"?\."?internal_cms_document"?\(\)/gi
 const readModel = readdirSync('supabase/migrations')
   .filter((name) => name.endsWith('.sql'))
   .sort()

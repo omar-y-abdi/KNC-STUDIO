@@ -1,9 +1,11 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
-const sql = readFileSync('supabase/migrations/20260918003000_cms_asset_trash_lifecycle.sql', 'utf8')
+const sql = readFileSync('supabase/migrations/20261105182545_baseline.sql', 'utf8')
+const TRANSITION =
+  'FUNCTION "public"."internal_cms_asset_transition"("p_actor" "uuid", "p_id" "uuid", "p_version" integer, "p_action" "text")'
 
-describe('CMS asset trash lifecycle migration', () => {
+describe('CMS asset trash lifecycle', () => {
   it('requires current references to be clear before trash and all retained references before delete', () => {
     expect(sql).toContain("p_action='trash' and v_current>0")
     expect(sql).toContain(
@@ -14,11 +16,9 @@ describe('CMS asset trash lifecycle migration', () => {
   })
 
   it('keeps lifecycle RPCs service-only behind the cms-studio owner boundary', () => {
-    expect(sql).toContain(
-      'revoke all on function public.internal_cms_asset_transition(uuid,uuid,integer,text) from public,anon,authenticated',
-    )
-    expect(sql).toContain(
-      'grant execute on function public.internal_cms_asset_transition(uuid,uuid,integer,text) to service_role',
-    )
+    expect(sql).toContain(`REVOKE ALL ON ${TRANSITION} FROM PUBLIC;`)
+    expect(
+      sql.split('\n').filter((line) => line.startsWith(`GRANT ALL ON ${TRANSITION} TO `)),
+    ).toEqual([`GRANT ALL ON ${TRANSITION} TO "service_role";`])
   })
 })

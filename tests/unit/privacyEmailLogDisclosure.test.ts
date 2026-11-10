@@ -25,12 +25,14 @@ async function servedPrivacyPolicy(): Promise<string> {
 describe('public privacy disclosure of stored email copies', () => {
   it('keeps the retention it states equal to the delivery log purge', () => {
     const migration = readFileSync(
-      'supabase/migrations/20261028100000_email_send_log.sql',
+      'supabase/migrations/20261105182545_baseline.sql',
       'utf8',
     ).replace(/\s+/g, ' ')
     expect(migration).toContain("where l.created_at < pg_catalog.now() - interval '30 days'")
     expect(migration).toContain("'email-send-log-purge', '29 3 * * *'")
-    expect(migration).toContain('booking_id uuid references public.bookings(id) on delete set null')
+    expect(migration).toContain(
+      'FOREIGN KEY ("booking_id") REFERENCES "public"."bookings"("id") ON DELETE SET NULL',
+    )
   })
 
   it('describes the stored copy and its retention in Swedish', async () => {

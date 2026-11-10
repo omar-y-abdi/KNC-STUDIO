@@ -110,8 +110,7 @@ Search `useBarberMarquee` and `gaplessLoopFloor` to find the live strip and edit
 
 - Booking rules, prices, permissions and publication validation belong on the server.
 - Studio owns page, site/About copy, business/appearance, gallery/logo and email-template publication.
-  The forward migration `supabase/migrations/20261028185110_cms_single_writer_authority.sql`
-  removes authenticated REST content writes and limits direct owner `site_settings` writes to
+  The schema in `supabase/migrations/` denies authenticated REST content writes and limits direct owner `site_settings` writes to
   `cancellation_policy_hours`. That operational setting stays in `modules/staff-admin/src/views/SettingsView.tsx`
   and outside CMS history/fingerprints. See `docs/operations/CMS_RELEASE.md` before rollout.
 - Public routes use the narrow REST/Realtime seams; the full Auth client belongs to admin.

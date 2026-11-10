@@ -6,9 +6,8 @@ const PAGE_READS = ['public_cms_page_metadata', 'public_cms_page']
 
 /**
  * A fetch mock that also answers the Worker's bounded page reads as the database does, from the
- * publication `answer` serves for public_cms_presentation: public_cms_page_metadata
- * (supabase/migrations/20260921164356_public_cms_page_metadata.sql) and public_cms_page
- * (supabase/migrations/20261104200000_public_cms_page.sql), each null when no page has the path.
+ * publication `answer` serves for public_cms_presentation: public_cms_page_metadata and
+ * public_cms_page, each null when no page has the path.
  * When the publication read fails or stalls, so does the page read.
  */
 export function withPageReads(answer: FetchAnswer): FetchAnswer {

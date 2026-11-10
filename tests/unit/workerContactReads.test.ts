@@ -9,8 +9,8 @@ import worker from '../../supabase/worker/index'
 // all of it before serving the static fallback, and HEAD rendered an authored Contact only to drop
 // the body. Supabase is answered as the database answers: public_cms_page_metadata returns the
 // page's title, description and revision, or null when no page has that path; public_cms_page
-// (supabase/migrations/20261104200000_public_cms_page.sql) returns the page with the publication's
-// themes and fonts, or null. A database without that migration answers 404 PGRST202 for it.
+// returns the page with the publication's themes and fonts, or null. A database without that
+// function answers 404 PGRST202 for it.
 
 const shell = readFileSync(new URL('../../index.html', import.meta.url), 'utf8')
 const publicFile = (path: string): string =>
