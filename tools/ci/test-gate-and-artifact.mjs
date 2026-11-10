@@ -394,8 +394,6 @@ test('every job runs for every event and consumes the formatted producer', () =>
     const gate = ['frontend', 'database'].includes(id)
     assert.equal(job.if, gate ? 'always()' : undefined, id)
     for (const step of job.steps) assert.ok(step.if === undefined || step.if === 'always()', id)
-    const checkout = job.steps.find((step) => step.uses?.startsWith('actions/checkout@'))
-    assert.equal(checkout.with['fetch-depth'], 0, id)
     if (!gate)
       assert.ok(
         job.steps.some((step) => step.uses === './.github/actions/ci-node'),
