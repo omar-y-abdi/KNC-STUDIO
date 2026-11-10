@@ -1,4 +1,5 @@
 import { isCustomerAccessToken } from './customerAccess.ts'
+import { sha256Hex } from './encoding.ts'
 
 export const CUSTOMER_SESSION_COOKIE = '__Host-bladeblend_customer_session'
 export const CUSTOMER_RECEIPT_COOKIE = '__Host-bladeblend_booking_receipts'
@@ -26,13 +27,6 @@ export function customerCookieHeader(
 }
 
 /** Non-bearer digest lets the browser prove that its intended HttpOnly credential survived. */
-export async function customerCookieProof(
-  token: string,
-  kind: 'session' | 'receipt',
-): Promise<string> {
-  const digest = await crypto.subtle.digest(
-    'SHA-256',
-    new TextEncoder().encode(`customer-${kind}-proof/v1\n${token}`),
-  )
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
+export function customerCookieProof(token: string, kind: 'session' | 'receipt'): Promise<string> {
+  return sha256Hex(`customer-${kind}-proof/v1\n${token}`)
 }

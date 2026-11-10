@@ -1,12 +1,10 @@
+import { hex, sha256Hex } from './encoding.ts'
+
 const SITE_URL = 'https://bladeblendstudio.se'
 const TOKEN = /^[0-9a-f]{64}$/
 const CIPHERTEXT_PREFIX = 'v1.'
 const KEY_CONTEXT = 'bladeblend/customer-access/aes-gcm/v1'
 const AUTH_CONTEXT = new TextEncoder().encode('bladeblend/customer-access-token/v1')
-
-function hex(bytes: Uint8Array): string {
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
-}
 
 function base64Url(bytes: Uint8Array): string {
   let binary = ''
@@ -44,9 +42,8 @@ export function isCustomerAccessToken(value: unknown): value is string {
   return typeof value === 'string' && TOKEN.test(value)
 }
 
-export async function hashCustomerAccessToken(token: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token))
-  return hex(new Uint8Array(digest))
+export function hashCustomerAccessToken(token: string): Promise<string> {
+  return sha256Hex(token)
 }
 
 export async function encryptCustomerAccessToken(token: string, secret: string): Promise<string> {

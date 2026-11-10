@@ -1,3 +1,5 @@
+import { hex } from './encoding.ts'
+
 const IP_HEADER = 'x-customer-gateway-ip'
 const TIME_HEADER = 'x-customer-gateway-time'
 const SIGNATURE_HEADER = 'x-customer-gateway-signature'
@@ -31,9 +33,7 @@ export async function signCustomerGateway(
   return {
     [IP_HEADER]: ip,
     [TIME_HEADER]: time,
-    [SIGNATURE_HEADER]: Array.from(new Uint8Array(signature), (byte) =>
-      byte.toString(16).padStart(2, '0'),
-    ).join(''),
+    [SIGNATURE_HEADER]: hex(new Uint8Array(signature)),
   }
 }
 

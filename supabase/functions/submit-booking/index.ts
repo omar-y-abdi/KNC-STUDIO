@@ -22,6 +22,7 @@ import { verifyTurnstile, turnstilePolicy } from '../_shared/turnstile.ts'
 
 import { createClient } from '@supabase/supabase-js'
 import { verifyCustomerGateway } from '../_shared/customerGatewayAuth.ts'
+import { sha256Hex } from '../_shared/encoding.ts'
 import { json, parse } from '../_shared/http.ts'
 import { createCustomerAccessToken, hashCustomerAccessToken } from '../_shared/customerAccess.ts'
 import {
@@ -49,18 +50,6 @@ function reply(body: unknown, status: number, cookie?: string): Response {
     ...(cookie ? { 'Set-Cookie': cookie } : {}),
   })
 }
-
-// SHA-256 hex of (ip + salt) via Web Crypto. We persist the HASH, never the raw IP -> PII-minimal.
-async function sha256Hex(input: string): Promise<string> {
-  const bytes = new TextEncoder().encode(input)
-  const digest = await crypto.subtle.digest('SHA-256', bytes)
-  return Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('')
-}
-
-// Turnstile siteverify. Configuration is checked before this helper; missing/invalid tokens and
-// verification failures all fail closed.
 
 // --- HTTP handler -----------------------------------------------------------------------------
 
@@ -109,7 +98,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
 
   try {
-    // 2. IP hash.
+    // 2. IP hash: SHA-256 hex of (ip + salt). We persist the HASH, never the raw IP -> PII-minimal.
     const ipHash = await sha256Hex(ip + ipSalt)
 
     // 3. One database transaction locks both rate-limit keys, checks both windows, records the
