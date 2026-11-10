@@ -395,8 +395,7 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
         data-dir={String(props.initialDir)}
       >
         {tiles.map((j) => {
-          const logicalIndex = itemCount > 0 ? j % itemCount : 0
-          const photo = props.photos[logicalIndex]
+          const photo = props.photos[j % itemCount]
           if (photo === undefined) return null
           const logicalKey = photo.id
           const alt = photo.alt.trim() || props.alt
