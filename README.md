@@ -146,6 +146,11 @@ and public response. Contact is a protected information route alongside Privacy 
 existing owner-authored Contact bodies remain supported. Mejl includes template editing and
 owner-only delivery status.
 
+Admin Inställningar asks for the current password before it sends a link to a new login email.
+For the owner it also holds review moderation (hide, publish again or delete a review) and the
+admin log of staff changes; both read nothing until they are opened. `BACKEND.md` describes the
+database side.
+
 ### The clock is injectable
 
 The booking calendar's "today" comes from a `Clock` (`modules/public-web/src/config.ts`), never a bare `new Date()`:
@@ -181,6 +186,8 @@ for server-side security. Current controls:
   header or parameter injection).
 - **No secrets in the client.** `.env` holds only public `VITE_*` config. Resend, Turnstile secret,
   webhook secret, and Supabase service-role key stay server-side.
+- **Staff functions:** the Edge Functions the admin panel calls send their CORS header only to the
+  panel's origins, and an email change needs the current password (see `BACKEND.md`).
 - **Tooling gates:** `tsc` strict (no `any`, no `@ts-ignore`, exhaustive types), ESLint strict +
   `eslint-plugin-security` + `eslint-plugin-no-unsanitized` (DOM-sink XSS), Prettier.
 
@@ -248,6 +255,10 @@ Current deployment boundaries and local verification: [BACKEND.md](BACKEND.md#ap
 3. Publish: `npm run deploy`.
 4. `wrangler.jsonc` attaches `bladeblendstudio.se` and `www.bladeblendstudio.se` as Custom Domains;
    canonical metadata points to apex. `public/_headers` applies CSP/security/cache headers to static assets.
+5. To close the site for maintenance, set `MAINTENANCE` in `wrangler.jsonc` to `on` and deploy the
+   Worker; set it back to `off` and deploy again to open it (see `BACKEND.md`).
 
-> `VITE_SITE_URL` feeds the canonical link, Open Graph/Twitter tags, sitemap and JSON-LD. It is
-> fixed to `https://bladeblendstudio.se` for production.
+> `VITE_SITE_URL` fills the canonical link, `og:url`, `og:image` and `twitter:image` of the
+> `index.html` shell at build time. It is fixed to `https://bladeblendstudio.se` for production.
+> The Worker rewrites the canonical link and `og:url` for each route and writes the JSON-LD,
+> `/sitemap.xml` and `/.well-known/security.txt` from its own `https://bladeblendstudio.se`.

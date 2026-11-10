@@ -24,7 +24,7 @@
 // invitation, so the earlier link no longer works.
 //
 // CORS: the admin panel is served from Cloudflare (different origin); CORS headers + OPTIONS preflight
-// handling (from _shared/http.ts) are required for browser-originated requests.
+// handling (from _shared/staffCors.ts) are required for browser-originated requests.
 //
 // Invocation: admin panel -> supabase.functions.invoke('admin-create-barber', { body, headers })
 // Run locally: npx supabase functions serve admin-create-barber --env-file supabase/functions/.env
