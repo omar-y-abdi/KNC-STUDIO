@@ -270,27 +270,22 @@ async function nativeMetadata(
   }
 }
 
-async function loadPublicCms(env: Env): Promise<PublicCmsPresentation | null> {
-  if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) return null
+/** A public RPC's JSON answer as `read` decodes it; null when it cannot be read. */
+async function publicRpc<T>(
+  env: Env,
+  operation: string,
+  read: (value: unknown) => T | null,
+): Promise<T | null> {
   try {
-    const response = await fetch(
-      `${env.SUPABASE_URL.replace(/\/$/, '')}/rest/v1/rpc/public_cms_presentation`,
-      {
-        method: 'POST',
-        headers: {
-          apikey: env.SUPABASE_ANON_KEY,
-          Authorization: `Bearer ${env.SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: '{}',
-        signal: AbortSignal.timeout(1800),
-      },
-    )
-    if (!response.ok) return null
-    return publicCmsFromWire(await response.json())
+    const response = await publicCmsResponse(env, operation)
+    return response?.ok ? read(await response.json()) : null
   } catch {
     return null
   }
+}
+
+function loadPublicCms(env: Env): Promise<PublicCmsPresentation | null> {
+  return publicRpc(env, 'public_cms_presentation', publicCmsFromWire)
 }
 
 /** One published page with the themes and fonts it renders with (public_cms_page), validated as
@@ -365,27 +360,8 @@ function discoveryFromWire(value: unknown): BusinessDiscovery | null {
   }
 }
 
-async function loadDiscovery(env: Env): Promise<BusinessDiscovery | null> {
-  if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) return null
-  try {
-    const response = await fetch(
-      `${env.SUPABASE_URL.replace(/\/$/, '')}/rest/v1/rpc/public_business_discovery`,
-      {
-        method: 'POST',
-        headers: {
-          apikey: env.SUPABASE_ANON_KEY,
-          Authorization: `Bearer ${env.SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: '{}',
-        signal: AbortSignal.timeout(1800),
-      },
-    )
-    if (!response.ok) return null
-    return discoveryFromWire(await response.json())
-  } catch {
-    return null
-  }
+function loadDiscovery(env: Env): Promise<BusinessDiscovery | null> {
+  return publicRpc(env, 'public_business_discovery', discoveryFromWire)
 }
 
 function tagBounds(
