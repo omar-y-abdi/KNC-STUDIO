@@ -185,6 +185,14 @@ const blockGlyphs = {
   divider: 'M3 12h18M7 6h10M7 18h10',
 } as const
 
+/** One-pixel moves, by arrow key on the canvas and by button in the inspector. */
+const nudges = [
+  { key: 'ArrowLeft', name: 'Flytta åt vänster', icon: 'arrowLeft', dx: -1, dy: 0 },
+  { key: 'ArrowUp', name: 'Flytta uppåt', icon: 'arrowUp', dx: 0, dy: -1 },
+  { key: 'ArrowDown', name: 'Flytta nedåt', icon: 'arrowDown', dx: 0, dy: 1 },
+  { key: 'ArrowRight', name: 'Flytta åt höger', icon: 'arrowRight', dx: 1, dy: 0 },
+] as const
+
 function label(component: Component | null): string {
   if (!component) return 'Sida'
   const tag = String(component.get('tagName') ?? 'div').toUpperCase()
@@ -557,19 +565,12 @@ export function CmsEditor(props: Props): JSX.Element {
         (target instanceof HTMLElement && target.isContentEditable)
       )
         return
-      if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return
+      const move = nudges.find((item) => item.key === event.key)
+      if (!move) return
       const component = editor.getSelected()
       if (!component || isProtected(component) || isReadOnlyPreview(component)) return
-      const delta: [number, number] =
-        event.key === 'ArrowLeft'
-          ? [-1, 0]
-          : event.key === 'ArrowRight'
-            ? [1, 0]
-            : event.key === 'ArrowUp'
-              ? [0, -1]
-              : [0, 1]
       component.setStyle(
-        nudgeStyle(component.getStyle(), delta[0], delta[1], event.shiftKey ? 10 : 1),
+        nudgeStyle(component.getStyle(), move.dx, move.dy, event.shiftKey ? 10 : 1),
       )
       event.preventDefault()
     }
@@ -1504,38 +1505,16 @@ export function CmsEditor(props: Props): JSX.Element {
               )}
               <h3 hidden={!stylable}>Finjustera</h3>
               <div class="cms-nudge-grid" hidden={!stylable}>
-                <button
-                  type="button"
-                  aria-label="Flytta åt vänster"
-                  title="Flytta åt vänster · 1 px, Skift 10 px"
-                  onClick={(e) => nudge(-1, 0, e.shiftKey ? 10 : 1)}
-                >
-                  <CmsIcon name="arrowLeft" />
-                </button>
-                <button
-                  type="button"
-                  aria-label="Flytta uppåt"
-                  title="Flytta uppåt · 1 px, Skift 10 px"
-                  onClick={(e) => nudge(0, -1, e.shiftKey ? 10 : 1)}
-                >
-                  <CmsIcon name="arrowUp" />
-                </button>
-                <button
-                  type="button"
-                  aria-label="Flytta nedåt"
-                  title="Flytta nedåt · 1 px, Skift 10 px"
-                  onClick={(e) => nudge(0, 1, e.shiftKey ? 10 : 1)}
-                >
-                  <CmsIcon name="arrowDown" />
-                </button>
-                <button
-                  type="button"
-                  aria-label="Flytta åt höger"
-                  title="Flytta åt höger · 1 px, Skift 10 px"
-                  onClick={(e) => nudge(1, 0, e.shiftKey ? 10 : 1)}
-                >
-                  <CmsIcon name="arrowRight" />
-                </button>
+                {nudges.map((move) => (
+                  <button
+                    type="button"
+                    aria-label={move.name}
+                    title={`${move.name} · 1 px, Skift 10 px`}
+                    onClick={(e) => nudge(move.dx, move.dy, e.shiftKey ? 10 : 1)}
+                  >
+                    <CmsIcon name={move.icon} />
+                  </button>
+                ))}
                 <button
                   type="button"
                   onClick={() =>
