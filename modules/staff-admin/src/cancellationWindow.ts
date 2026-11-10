@@ -1,6 +1,5 @@
 // The customer cancellation window ("Avbokningsfrist") in whole hours. The bounds mirror the
-// database trigger `normalize_site_setting_value`, which rejects any other value
-// (supabase/migrations/20260913145001_cms_legal_business_identity.sql:66-69):
+// database trigger `normalize_site_setting_value`, which rejects any other value:
 // the text must match ^[0-9]{1,3}$ and be between 1 and 168.
 
 export const CANCELLATION_HOURS_MIN = 1

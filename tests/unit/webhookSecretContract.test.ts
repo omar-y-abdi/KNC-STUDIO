@@ -1,9 +1,11 @@
 import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+const BASELINE = 'supabase/migrations/20261105182545_baseline.sql'
 const databaseDispatchers = [
-  'supabase/migrations/20260813095925_durable_booking_email_delivery.sql',
-  'supabase/migrations/20260813115438_durable_storage_cleanup.sql',
+  'queue_due_booking_email_deliveries',
+  'queue_due_booking_reminders',
+  'queue_due_external_actions',
 ] as const
 
 describe('webhook secret contract', () => {
@@ -51,10 +53,13 @@ describe('webhook secret contract', () => {
 
   // This is a cross-runtime deployment name: the SQL Vault key must match the Edge preflight.
   it('uses booking_webhook_secret as the database Vault key', () => {
-    for (const path of databaseDispatchers) {
-      const source = readFileSync(path, 'utf8')
-      expect(source, path).toContain("ds.name = 'booking_webhook_secret'")
-      expect(source, path).not.toContain('BOOKING_WEBHOOK_SECRET')
+    const baseline = readFileSync(BASELINE, 'utf8')
+    expect(baseline).not.toContain('BOOKING_WEBHOOK_SECRET')
+    for (const name of databaseDispatchers) {
+      const start = baseline.indexOf(`CREATE OR REPLACE FUNCTION "public"."${name}"()`)
+      expect(start, name).toBeGreaterThan(-1)
+      const definition = baseline.slice(start, baseline.indexOf('ALTER FUNCTION', start))
+      expect(definition, name).toContain("ds.name = 'booking_webhook_secret'")
     }
   })
 })

@@ -31,9 +31,8 @@ remain separate. The list response may include `booking_contact` from the latest
 booking for device authority. This unverified form hint never becomes `profile` or grants authority.
 Email linking and earlier history still require verified access. Verified profile contact takes
 precedence. Form hints live only in component memory; consent withdrawal, receipt expiry/revocation, and focus revalidation clear them
-without replacing fields the customer has edited. Apply
-`20261105074335_device_booking_contact_prefill.sql` before deploying the frontend to enable this
-additive response field; the frontend tolerates older gateways without it.
+without replacing fields the customer has edited. The frontend tolerates older gateways without
+this additive response field.
 
 After the [device-review rollout](docs/operations/DEVICE_REVIEW_RELEASE.md), the same receipt also
 allows a review for an exact owned booking without an email click. The service-only
@@ -112,6 +111,27 @@ release; repository source alone does not prove a hosted environment matches it.
 
 Follow `docs/operations/CMS_RELEASE.md` for backend/frontend compatibility, publication checks
 and recovery. Follow `docs/operations/BACKUP_RESTORE.md` before database changes.
+
+### Migration baseline
+
+`supabase/migrations/20261105182545_baseline.sql` replaces the 106 migrations that built the schema
+up to 2026-11-05. A database built from it has the same schema dump (every schema, owners and
+privileges included) and the same seeded rows, scheduled jobs and buckets as one built from the
+original chain. It keeps the version of the last original migration, so a database that ran the
+chain treats it as applied. Add new migrations after it and do not edit it.
+
+Production ran the original chain, so its history lists 106 versions and the repository now has
+one. The Supabase CLI refuses to push migrations while the remote history names versions the
+repository lacks. Remove the 105 older rows once, when this change is released:
+
+```sql
+delete from supabase_migrations.schema_migrations where version <> '20261105182545';
+```
+
+The statement changes no schema or data. A backup taken before it restores the 106-row history and
+needs the same statement after `docs/operations/BACKUP_RESTORE.md`'s history restore. Migration
+file names from before the baseline in older release records refer to the original chain;
+`git log -- supabase/migrations` has them.
 
 ### Recovery compatibility
 
