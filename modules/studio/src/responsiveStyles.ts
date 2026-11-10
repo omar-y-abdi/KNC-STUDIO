@@ -164,8 +164,8 @@ function contextHeader(node: Rule | Atrule): string {
   return `@${name}${prelude ? ` ${prelude}` : ''}`
 }
 
-/** At-rules around a plain rule compare by header, and a layer also by its order among the
- * same-header layers. */
+/** The conditions around a plain rule compare by header, and a rule among them also by its order
+ * among the same-header rules. */
 const conditionKeys = (conditions: readonly LayoutContext[]): string[] =>
   conditions.map(({ header, occurrence }) => JSON.stringify([header, occurrence ?? null]))
 
@@ -221,15 +221,6 @@ function guardKey({ path, conditions, selector }: LayoutLocation, property: stri
   return `${scope}${selector}{${property}`
 }
 
-function isLayerOrder(node: Rule | Atrule): boolean {
-  return (
-    node.type === 'Atrule' &&
-    ident.decode(node.name).toLowerCase() === 'layer' &&
-    Boolean(node.prelude) &&
-    (!node.block || node.block.children.isEmpty)
-  )
-}
-
 function nests(node: Rule | Atrule): boolean {
   return (
     node.type === 'Rule' &&
@@ -282,18 +273,17 @@ function declarations(tree: StyleSheet): Declarations {
       if (node.type !== 'Rule' && node.type !== 'Atrule') return
       const header = contextHeader(node)
       const occurrence = occurrences.get(header) ?? 0
-      if (!isLayerOrder(node)) occurrences.set(header, occurrence + 1)
+      occurrences.set(header, occurrence + 1)
       const nesting = nests(node) ? (nestings.get(header) ?? 0) : undefined
       if (nesting !== undefined) nestings.set(header, nesting + 1)
       siblings.push({ node, header, occurrence, ...(nesting === undefined ? {} : { nesting }) })
     })
     // Same-header neighbors can be harmless media splitting. Only a distinct owner
-    // condition bounds a guard; layer-order placeholders are not such conditions.
+    // condition bounds a guard.
     for (const direction of ['preceding', 'following'] as const) {
       let previous: (typeof siblings)[number] | undefined
       let boundary: LayoutSibling | undefined
       for (const sibling of direction === 'preceding' ? siblings : [...siblings].reverse()) {
-        if (isLayerOrder(sibling.node)) continue
         if (previous?.header !== sibling.header)
           boundary = previous
             ? {
@@ -307,9 +297,7 @@ function declarations(tree: StyleSheet): Declarations {
       }
     }
     siblings.forEach(({ node, header, occurrence, nesting, preceding, following }, position) => {
-      const ordered =
-        !isLayerOrder(node) &&
-        (node.type === 'Rule' || ident.decode(node.name).toLowerCase() === 'layer')
+      const ordered = node.type === 'Rule'
       const declaring =
         nesting === undefined || node.type !== 'Rule'
           ? undefined
@@ -468,9 +456,7 @@ function mapContext(
 
 function siblingIndex(siblings: (Rule | Atrule)[], sibling?: LayoutSibling): number {
   if (!sibling) return -1
-  const same = siblings.filter(
-    (node) => !isLayerOrder(node) && contextHeader(node) === sibling.header,
-  )
+  const same = siblings.filter((node) => contextHeader(node) === sibling.header)
   // Only the other sheets drop the rules a sync emptied, which renumbers the siblings after them.
   // Where a sheet holds fewer under the header than the path's sheet, an occurrence may name
   // another sibling, so it bounds nothing. A sync appends after every earlier sibling.
@@ -491,7 +477,6 @@ function matchingContexts(
   const matches = siblings.filter(
     (node, index) =>
       Boolean(node.block) &&
-      !isLayerOrder(node) &&
       contextHeader(node) === context.header &&
       (preceding < 0 || index > preceding) &&
       (following < 0 || index < following),
@@ -551,11 +536,9 @@ function insertContext(block: LayoutBlock, context: LayoutContext): Block {
   if (preceding >= 0) position = Math.max(position, preceding + 1)
   if (following >= 0) position = Math.min(position, following)
   if (context.occurrence !== undefined) {
-    // Missing anonymous layers reserve real ordinal slots. Their populated successor
-    // must follow those placeholders even when their source insertion position is earlier.
-    const previous = siblings.findLast(
-      (child) => !isLayerOrder(child) && contextHeader(child) === context.header,
-    )
+    // Missing same-header rules reserve real ordinal slots. Their populated successor
+    // must follow those placeholders even when its source insertion position is earlier.
+    const previous = siblings.findLast((child) => contextHeader(child) === context.header)
     if (previous) position = Math.max(position, siblings.indexOf(previous) + 1)
   }
   const before = siblings[position]
@@ -573,7 +556,7 @@ function ensureContext(block: LayoutBlock, path: LayoutContext[]): Block {
   }
   const candidates = matchingContexts(block, context)
   // Prefer the existing complete path, even when equivalent media groups were split or
-  // combined differently between themes. Anonymous layers retain their own occurrence.
+  // combined differently between themes. Same-header rules retain their own occurrence.
   const candidate = candidates.reduce<Rule | Atrule | undefined>((best, current) => {
     if (!current.block) return best
     return !best?.block ||
@@ -589,7 +572,6 @@ function ensureContext(block: LayoutBlock, path: LayoutContext[]): Block {
         .filter(
           (node) =>
             (node.type === 'Rule' || node.type === 'Atrule') &&
-            !isLayerOrder(node) &&
             contextHeader(node) === context.header,
         ).length
       for (let index = existing; index < context.occurrence; index++)
@@ -683,12 +665,11 @@ function keepGuardsLast(
 }
 
 /** Rules a sync emptied leave the sheet with their emptied conditions. Authored empty blocks
- * and every layer stay: a layer holds its ordinal even with nothing inside it. */
+ * stay. */
 function dropEmptied(tree: StyleSheet, shrunk: Set<List<CssNode>>): void {
   walk(tree, {
     leave(node: CssNode, item: ListItem<CssNode>, list: List<CssNode>) {
       if (node.type !== 'Rule' && node.type !== 'Atrule') return
-      if (node.type === 'Atrule' && ident.decode(node.name).toLowerCase() === 'layer') return
       const children = node.block?.children
       if (children?.isEmpty && shrunk.has(children) && item && list) {
         list.remove(item)
@@ -706,8 +687,8 @@ interface PlainRule {
   readonly items: readonly { readonly block: LayoutBlock; readonly item: ListItem<CssNode> }[]
 }
 
-/** Every plain component rule in source order, also one a layer inside another rule holds, with
- * its conditions numbered as `declarations()` numbers them. */
+/** Every plain component rule in source order, with its conditions numbered as `declarations()`
+ * numbers them. */
 function plainRules(
   block: LayoutBlock,
   conditions: LayoutContext[] = [],
@@ -720,7 +701,7 @@ function plainRules(
     if (node.type !== 'Rule' && node.type !== 'Atrule') return
     const header = contextHeader(node)
     const occurrence = occurrences.get(header) ?? 0
-    if (!isLayerOrder(node)) occurrences.set(header, occurrence + 1)
+    occurrences.set(header, occurrence + 1)
     const index = position++
     const here = [...items, { block, item }]
     if (node.type === 'Rule') {
@@ -728,10 +709,11 @@ function plainRules(
       if (selector) rules.push({ rule: node, selector, conditions, items: here })
     }
     if (!node.block) return
-    const ordered =
-      !isLayerOrder(node) &&
-      (node.type === 'Rule' || ident.decode(node.name).toLowerCase() === 'layer')
-    const context = { header, position: index, ...(ordered ? { occurrence } : {}) }
+    const context = {
+      header,
+      position: index,
+      ...(node.type === 'Rule' ? { occurrence } : {}),
+    }
     rules.push(...plainRules(node.block, [...conditions, context], here))
   })
   return rules
@@ -739,8 +721,7 @@ function plainRules(
 
 /** A changed plain rule goes back ahead of the first rule for the same element that the edited
  * sheet holds after it, in the deepest block whose conditions both share. Otherwise it goes last
- * in its layer, or in the sheet. It never leaves its layer block, because a new anonymous layer
- * block would be another layer. */
+ * in the sheet. */
 function insertPlain(tree: StyleSheet, change: LayoutChange): void {
   const { location, values, later } = change
   const body = [...values.values()]
@@ -753,19 +734,16 @@ function insertPlain(tree: StyleSheet, change: LayoutChange): void {
     const index = conditionKeys(conditions).findIndex((key, depth) => key !== keys[depth])
     return index < 0 ? conditions.length : index
   }
-  const layer =
-    location.conditions.findLastIndex(({ header }) => /^@layer(?:\s|$)/.test(header)) + 1
   const anchor = plainRules(tree).find(
     ({ rule, selector, conditions }) =>
       selector === location.selector &&
-      shared(conditions) >= layer &&
       rule.block.children.some(
         (child) =>
           child.type === 'Declaration' &&
           Boolean(later.get(child.property)?.has(JSON.stringify(conditionKeys(conditions)))),
       ),
   )
-  const depth = anchor ? shared(anchor.conditions) : layer
+  const depth = anchor ? shared(anchor.conditions) : 0
   const added = parseSheet(
     location.conditions
       .slice(depth)
@@ -773,12 +751,7 @@ function insertPlain(tree: StyleSheet, change: LayoutChange): void {
   )
   const at = anchor?.items[depth]
   if (at) at.block.children.insertList(added.children, at.item)
-  else if (!layer) tree.children.appendList(added.children)
-  else {
-    const scope = location.conditions.slice(0, layer)
-    const block = contextBlocks(tree, scope).at(-1) ?? ensureContext(tree, scope)
-    block.children.appendList(added.children)
-  }
+  else tree.children.appendList(added.children)
 }
 
 /** Apply one delta to a theme or language. `source` only corrects clipping in the edited sheet. */

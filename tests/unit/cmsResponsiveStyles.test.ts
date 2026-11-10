@@ -247,13 +247,13 @@ describe('independent device geometry', () => {
 })
 
 describe('targeted cascade geometry', () => {
-  it('maps only matched component IDs while retaining selector branches, layers and conditions', () => {
+  it('maps only matched component IDs while retaining selector branches and conditions', () => {
     const id = '10000000-0000-4000-8000-000000000001'
     const before = createSitePage({ id, path: '/offers', name: { sv: 'Ny', en: 'New' } })
     const frame = (lang: string) => `cms-body-${id}-${lang}-frame`
     const card = (lang: string) => `cms-body-${id}-${lang}-card`
     const css = (lang: string) =>
-      `@layer owners{@supports(display:grid){@container(min-width:300px){@media(min-width:769px){#foreign-sv #${frame(lang)} .card:where(#${card(lang)}){width:70%;color:blue}}}}}.owner{--owner-width:70%;color:var(--owner-color)}`
+      `@supports(display:grid){@container(min-width:300px){@media(min-width:769px){#foreign-sv #${frame(lang)} .card:where(#${card(lang)}){width:70%;color:blue}}}}.owner{--owner-width:70%;color:var(--owner-color)}`
     for (const lang of ['sv', 'en'] as const)
       before.content[lang] = {
         html: `<div id="${frame(lang)}" class="owner"><div id="${card(lang)}" class="card"><img src="/og-image.png"></div></div>`,
@@ -269,7 +269,7 @@ describe('targeted cascade geometry', () => {
         const result = generate(parse(next.content[lang].css[mode]))
         expect(result).toContain(`#foreign-sv #${frame(lang)} .card:where(#${card(lang)})`)
         expect(result).toContain(
-          '@layer owners{@supports (display:grid){@container (min-width:300px){@media (min-width:769px)',
+          '@supports (display:grid){@container (min-width:300px){@media (min-width:769px)',
         )
         expect(result).toContain('width:56%;zoom:0.8!important')
         expect(result).toContain('--owner-width:70%')
@@ -281,25 +281,6 @@ describe('targeted cascade geometry', () => {
         if (lang === 'en') expect(result).not.toContain(`#${card('sv')}`)
       }
     expect(next.content.en.html).toBe(before.content.en.html)
-  })
-
-  it('keeps repeated anonymous layers separate when one component override changes', () => {
-    const before =
-      '@layer{.card:where(#photo){width:70%!important;color:red}}@layer{.card:where(#photo){width:40%!important;color:gray}}'
-    const after = before.replace('70%', '56%')
-    const result = syncLayout(before, after, before.replace('red', 'blue').replace('gray', 'white'))
-    expect(result).toBe(
-      '@layer{.card:where(#photo){color:blue;width:56%!important}}@layer{.card:where(#photo){width:40%!important;color:white}}',
-    )
-  })
-
-  it('does not turn equivalent layer-order serialization into a geometry edit', () => {
-    const before = '@layer base,overrides;@layer base{.card:where(#photo){width:70%;color:red}}'
-    const after =
-      '@layer base{}@layer overrides{}@layer base{.card:where(#photo){width:70%;color:orange}}'
-    const other =
-      ' /* independent geometry */ @layer base{.card:where(#photo){width:90%;color:blue}}'
-    expect(syncLayout(before, after, other)).toBe(other)
   })
 
   it('inserts a new nested override before later owner conditions in an existing media group', () => {
@@ -353,21 +334,6 @@ describe('targeted cascade geometry', () => {
         node.type === 'Declaration' && node.property === 'color' ? [generate(node.value)] : [],
       ),
     ).toEqual(['blue'])
-  })
-
-  it('keeps a missing anonymous layer ordinal stable across repeated important geometry edits', () => {
-    const before = '@layer{.appearance{color:red}}@layer{.card:where(#photo){width:40%!important}}'
-    const after = before.replace('40%', '56%')
-    const first = syncLayout(before, after, '.appearance{color:blue}')
-    expect(first).toBe(
-      '.appearance{color:blue}@layer{}@layer{.card:where(#photo){width:56%!important}}',
-    )
-    const second = syncLayout(after, after.replace('56%', '64%'), first)
-    // Important declarations in the earlier layer would beat the next edit in the later
-    // layer, so retaining a stale 56% in the placeholder is observably wrong.
-    expect(second).toBe(
-      '.appearance{color:blue}@layer{}@layer{.card:where(#photo){width:64%!important}}',
-    )
   })
 
   it('does not mistake equivalent flat media splitting for geometry edits', () => {
@@ -527,10 +493,10 @@ describe('resize guards on a component rule', () => {
     const result = syncLayout(
       before,
       before.replace('zoom:1', 'zoom:.8'),
-      `${before}#authored{}@layer{#card{color:blue}}`,
+      `${before}#authored{}@supports (display:grid){#card{color:blue}}`,
     )
     expect(result).toBe(
-      '#authored{}@layer{#card{color:blue}}@media (min-width:769px){#card{zoom:.8}}',
+      '#authored{}@supports (display:grid){#card{color:blue}}@media (min-width:769px){#card{zoom:.8}}',
     )
   })
 
@@ -688,14 +654,12 @@ describe('resize guards on a component rule', () => {
     for (const variant of others) expect(valuesOf(variant, 'width')).toEqual(['70%', '40%', '95%'])
   })
 
-  for (const wrapper of ['@supports (display:grid)', '@layer'])
-    it(`keeps a guard behind a width changed inside ${wrapper}`, () => {
-      const sheet = (width: string): string =>
-        `#card{width:70%!important;${guard('card', '40%')}}${wrapper}{#card{width:${width}!important}}`
-      const [, ...others] = editSheet(sheet('90%'), sheet('95%'))
-      for (const variant of others)
-        expect(valuesOf(variant, 'width')).toEqual(['70%', '40%', '95%'])
-    })
+  it('keeps a guard behind a width changed inside @supports (display:grid)', () => {
+    const sheet = (width: string): string =>
+      `#card{width:70%!important;${guard('card', '40%')}}@supports (display:grid){#card{width:${width}!important}}`
+    const [, ...others] = editSheet(sheet('90%'), sheet('95%'))
+    for (const variant of others) expect(valuesOf(variant, 'width')).toEqual(['70%', '40%', '95%'])
+  })
 
   // One grouped Desktop block: a resize guard, then a deliberate narrow-Desktop rule. All three
   // widths apply at 820px, so the 90% rule wins there only while it stays last.
@@ -1158,14 +1122,9 @@ describe('conditional component geometry', () => {
     return found
   }
 
-  // A plain component rule inside @supports, @layer or @container applies under its own
+  // A plain component rule inside @supports or @container applies under its own
   // conditions, so a change of the unconditional rule must neither remove nor absorb it.
-  for (const wrapper of [
-    '@supports (display:grid)',
-    '@layer',
-    '@layer owners',
-    '@container (min-width:300px)',
-  ]) {
+  for (const wrapper of ['@supports (display:grid)', '@container (min-width:300px)']) {
     it(`keeps a same-selector rule inside ${wrapper} when the top-level rule after it changes`, () => {
       const before = `${wrapper}{#card{width:20px}}#card{width:10px}`
       const after = before.replace('10px', '11px')
@@ -1208,10 +1167,6 @@ describe('conditional component geometry', () => {
     [
       'narrow-Desktop media inside Desktop media',
       (rule: string) => `@media (min-width:769px){@media (max-width:1100px){${rule}}}`,
-    ],
-    [
-      'Desktop media inside a named layer',
-      (rule: string) => `@layer owners{@media (min-width:769px){${rule}}}`,
     ],
     ['a container query', (rule: string) => `@container (min-width:300px){${rule}}`],
   ] as const)
@@ -1295,44 +1250,14 @@ describe('conditional component geometry', () => {
       ])
     })
 
-  // Each anonymous layer is a layer of its own, so a change stays in the layer it was made in.
-  for (const [layer, after] of [
-    ['the first', '@layer{#card{width:25px}}@layer{#card{width:30px}}'],
-    ['the second', '@layer{#card{width:20px}}@layer{#card{width:35px}}'],
-  ] as const)
-    it(`keeps a width changed in ${layer} of two anonymous layers inside that layer`, () => {
-      const before = '@layer{#card{width:20px}}@layer{#card{width:30px}}'
-      expect(syncLayout(before, after, before)).toBe(after)
-    })
-
   // A new conditional rule arrives under its conditions and leaves the unconditional rule alone.
-  for (const wrapper of ['@supports (display:grid)', '@layer owners'])
-    it(`adds a same-selector rule inside ${wrapper} that another sheet lacks`, () => {
-      const before = '#card{width:10px;color:blue}'
-      const after = `#card{width:10px;color:red}${wrapper}{#card{width:20px}}`
-      expect(syncLayout(before, after, before)).toBe(`${before}${wrapper}{#card{width:20px}}`)
-    })
-
-  // A rule can hold another element's rule inside a layer. The change replaces that copy.
-  for (const layer of ['@layer', '@layer owners'])
-    it(`replaces a width changed in ${layer} nested in a parent rule`, () => {
-      const sheet = (width: string): string => `#parent{${layer}{#card{width:${width}}}}`
-      expect(syncLayout(sheet('10px'), sheet('11px'), sheet('10px'))).toBe(sheet('11px'))
-    })
-
-  // The nested copy has conditions of its own, so a change outside the parent rule leaves it.
-  for (const [shape, changed] of [
-    ['a top-level rule for the element', (width: string): string => `#card{width:${width}}`],
-    [
-      'the element in a top-level layer',
-      (width: string): string => `@layer{#card{width:${width}}}`,
-    ],
-  ] as const)
-    it(`leaves a width in a layer nested in a parent rule alone when ${shape} changes`, () => {
-      const sheet = (width: string): string => `${changed(width)}#parent{@layer{#card{width:20px}}}`
-      const result = syncLayout(sheet('10px'), sheet('11px'), sheet('10px'))
-      expect(scoped(result, 'width').sort()).toEqual(scoped(sheet('11px'), 'width').sort())
-    })
+  it('adds a same-selector rule inside @supports (display:grid) that another sheet lacks', () => {
+    const before = '#card{width:10px;color:blue}'
+    const after = '#card{width:10px;color:red}@supports (display:grid){#card{width:20px}}'
+    expect(syncLayout(before, after, before)).toBe(
+      `${before}@supports (display:grid){#card{width:20px}}`,
+    )
+  })
 })
 
 describe('site theme defaults and owner overrides', () => {
