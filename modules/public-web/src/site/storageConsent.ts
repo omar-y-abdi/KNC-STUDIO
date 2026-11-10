@@ -31,8 +31,7 @@ function secureAttribute(): string {
 }
 
 /** Null means no optional-storage choice has been recorded yet. */
-function parseStoragePreferences(cookie: string): StoragePreferences | null {
-  const value = cookieValue(cookie, STORAGE_PREFERENCES_COOKIE)
+function parseStoragePreferences(value: string | null): StoragePreferences | null {
   if (value === FUNCTIONAL_PREFERENCES_VALUE) return { functional: true }
   if (value === ESSENTIAL_ONLY_PREFERENCES_VALUE) return { functional: false }
   return null
@@ -51,7 +50,7 @@ export function readStoragePreferences(): StoragePreferences | null {
   const value = storedValue()
   if (sessionChoice !== undefined && value === cookieAtChoice) return sessionChoice
   sessionChoice = undefined
-  return parseStoragePreferences(`${STORAGE_PREFERENCES_COOKIE}=${value ?? ''}`)
+  return parseStoragePreferences(value)
 }
 
 export function subscribeStoragePreferences(listener: () => void): () => void {
