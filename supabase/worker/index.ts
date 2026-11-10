@@ -1276,10 +1276,12 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
   const url = new URL(request.url)
   const pathname = url.pathname
   const cleanPathname = withoutTrailingSlash(pathname)
+  const getOrHead = request.method === 'GET' || request.method === 'HEAD'
+  const lang: CmsLang = url.searchParams.get('lang') === 'en' ? 'en' : 'sv'
 
   const informationPath: InformationPage | null =
     pathname === '/' || pathname === '/about' || pathname === '/contact' ? pathname : null
-  if (informationPath !== null && (request.method === 'GET' || request.method === 'HEAD')) {
+  if (informationPath !== null && getOrHead) {
     const representation = preferredRepresentation(request.headers.get('Accept'))
     if (representation === null) return notAcceptable(request)
     if (representation === 'markdown') {
@@ -1289,7 +1291,7 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
   }
 
   if (pathname === PRESENTATION_PATH) {
-    if (!['GET', 'HEAD'].includes(request.method)) return new Response(null, { status: 405 })
+    if (!getOrHead) return new Response(null, { status: 405 })
     // Publication validates the database document; the browser validates its copy on receipt.
     // Stream this public RPC without cloning/parsing/stringifying megabytes at the edge.
     const response = await publicCmsResponse(env, 'public_cms_presentation')
@@ -1308,7 +1310,7 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
     )
   }
 
-  if (pathname === '/cms-public/source' && ['GET', 'HEAD'].includes(request.method)) {
+  if (pathname === '/cms-public/source' && getOrHead) {
     return cmsFrameResponse(await serveAsset(request, env, '/index.html', true), true)
   }
 
@@ -1325,7 +1327,7 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
   }
 
   const customerAccessToken = customerAccessTokenFromPath(pathname)
-  if (customerAccessToken !== null && (request.method === 'GET' || request.method === 'HEAD')) {
+  if (customerAccessToken !== null && getOrHead) {
     return new Response(null, {
       status: 302,
       headers: {
@@ -1366,10 +1368,9 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
 
   if (pathname === '/index.html') return redirectTo(url, '/')
 
-  if (NATIVE_PUBLIC_PATHS.includes(pathname) && ['GET', 'HEAD'].includes(request.method)) {
+  if (NATIVE_PUBLIC_PATHS.includes(pathname) && getOrHead) {
     // Native pages already render their CMS document in App. Parsing and embedding the entire
     // editor tree here duplicated that work and exhausted the production 10ms CPU budget.
-    const lang: CmsLang = url.searchParams.get('lang') === 'en' ? 'en' : 'sv'
     const [asset, metadata, discovery] = await Promise.all([
       serveAsset(request, env, '/index.html', true),
       nativeMetadata(env, pathname, lang),
@@ -1428,22 +1429,18 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
     return new Response(request.method === 'HEAD' ? null : body, { status: asset.status, headers })
   }
 
-  const dynamicLegal =
-    (pathname === '/terms' || pathname === '/privacy') &&
-    (request.method === 'GET' || request.method === 'HEAD')
-  const dynamicContact =
-    pathname === '/contact' && (request.method === 'GET' || request.method === 'HEAD')
+  const dynamicLegal = (pathname === '/terms' || pathname === '/privacy') && getOrHead
+  const dynamicContact = pathname === '/contact' && getOrHead
   // Information pages render the business whether the CMS holds them or the static file answers, so
   // discovery is read while the CMS lookup runs, not after it. HEAD never reads it.
   const informationDiscovery =
     (dynamicLegal || dynamicContact) && request.method === 'GET' ? loadDiscovery(env) : null
   if (
-    (request.method === 'GET' || request.method === 'HEAD') &&
+    getOrHead &&
     isCmsPagePath(cleanPathname) &&
     !isPrivatePath(pathname) &&
     pathname !== '/google-calendar'
   ) {
-    const lang: CmsLang = url.searchParams.get('lang') === 'en' ? 'en' : 'sv'
     const published = await publishedCmsPage(
       env,
       cleanPathname,
@@ -1476,7 +1473,7 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
       if (published.read === 'exists') return new Response(null, { status: index.status, headers })
       const { cms, page: cmsPage } = published
       const mode = requestedCmsMode(url.searchParams.get('mode'))
-      const canonicalUrl = `${SITE_URL}${cmsPage.path === '/' ? '/' : cmsPage.path}`
+      const canonicalUrl = `${SITE_URL}${cmsPage.path}`
       // Fill only the authored fragment. The SPA shell must never be parsed or reserialised here.
       const page =
         cmsPage.path === '/contact'
@@ -1544,7 +1541,7 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
     return isNoIndexPath(pathname) ? withNoIndex(asset) : asset
   }
 
-  if (request.method === 'GET' || request.method === 'HEAD') {
+  if (getOrHead) {
     if (isSpaPath(pathname)) {
       const index = await serveAsset(request, env, '/index.html')
       const headers = new Headers(index.headers)
