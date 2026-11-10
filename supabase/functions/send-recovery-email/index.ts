@@ -1,12 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import {
-  loadEmailBusiness,
-  loadEmailTemplate,
-  prepareEmail,
-  sendViaResend,
-} from '../_shared/email.ts'
 import { verifyTurnstile, turnstilePolicy } from '../_shared/turnstile.ts'
-import { sha256Hex } from '../_shared/encoding.ts'
 import { corsHeaders, corsJson as json, parse } from '../_shared/http.ts'
 import { requestSchema } from './request.ts'
 
@@ -41,36 +34,15 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
   const url = Deno.env.get('SUPABASE_URL')
   const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-  const resendKey = Deno.env.get('RESEND_API_KEY')
-  if (!url || !key || !resendKey) return json({ ok: false, error: 'not_configured' }, 503)
+  if (!url || !key) return json({ ok: false, error: 'not_configured' }, 503)
   const service = createClient(url, key, { auth: { persistSession: false } })
-  const scope = await sha256Hex(`recovery:${email}`)
-  const limited = await service.rpc('consume_auth_email_send', {
-    p_kind: 'recovery',
-    p_scope_hash: scope,
-  })
-  if (limited.error || limited.data !== true) return json({ ok: true })
-  const generated = await service.auth.admin.generateLink({
-    type: 'recovery',
-    email,
-    options: { redirectTo: 'https://bladeblendstudio.se/reset' },
-  })
-  if (generated.error) return json({ ok: true })
   try {
-    const copy = await loadEmailTemplate(service, 'auth_recovery', lang)
-    const business = await loadEmailBusiness(service)
-    const link = `https://bladeblendstudio.se/reset?token_hash=${encodeURIComponent(generated.data.properties.hashed_token)}&type=recovery`
-    const message = prepareEmail(
-      'auth_recovery',
-      { to: email, lang, copy, ctaHref: link, business },
-      null,
-    )
-    await sendViaResend(
-      message,
-      resendKey,
-      `auth-recovery/${generated.data.properties.hashed_token.slice(0, 48)}`,
-      service,
-    )
+    // Auth emails only an existing account, so its answer can differ between a known and an
+    // unknown address. It never reaches the caller.
+    const requested = await service.auth.resetPasswordForEmail(email, {
+      redirectTo: `https://bladeblendstudio.se/reset?lang=${lang}`,
+    })
+    if (requested.error) console.error('send-recovery-email:', requested.error.message)
   } catch (error) {
     console.error('send-recovery-email:', error instanceof Error ? error.message : 'unknown error')
   }

@@ -1,7 +1,7 @@
 import type * as TurnstileModule from '../../supabase/functions/_shared/turnstile'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const boundary = vi.hoisted(() => ({ verify: vi.fn(), createClient: vi.fn(), rpc: vi.fn() }))
+const boundary = vi.hoisted(() => ({ verify: vi.fn(), createClient: vi.fn(), recover: vi.fn() }))
 vi.mock('@supabase/supabase-js', () => ({ createClient: boundary.createClient }))
 vi.mock('../../supabase/functions/_shared/turnstile', async (original) => ({
   ...(await original<typeof TurnstileModule>()),
@@ -13,8 +13,10 @@ let config: Record<string, string>
 beforeEach(async () => {
   vi.resetModules()
   boundary.verify.mockReset().mockResolvedValue(false)
-  boundary.createClient.mockReset().mockReturnValue({ rpc: boundary.rpc })
-  boundary.rpc.mockReset().mockResolvedValue({ data: false, error: null })
+  boundary.createClient
+    .mockReset()
+    .mockReturnValue({ auth: { resetPasswordForEmail: boundary.recover } })
+  boundary.recover.mockReset().mockResolvedValue({ data: {}, error: null })
   config = { TURNSTILE_SECRET: 'unit-secret', PUBLIC_SITE_ORIGINS: 'https://salon.example.test' }
   vi.stubGlobal(
     'fetch',
@@ -45,7 +47,7 @@ function recover(email = 'staff@example.test', token = 'challenge'): Promise<Res
 
 describe('password recovery challenge boundary', () => {
   it.each(['unknown@example.test', 'staff@example.test'])(
-    'rejects a failed challenge neutrally for %s without delivery configuration or limiter consumption',
+    'rejects a failed challenge neutrally for %s without Auth configuration or a recovery request',
     async (email) => {
       const response = await recover(email)
       expect(response.status).toBe(200)
@@ -55,29 +57,61 @@ describe('password recovery challenge boundary', () => {
         hostnames: ['salon.example.test'],
       })
       expect(boundary.createClient).not.toHaveBeenCalled()
-      expect(boundary.rpc).not.toHaveBeenCalled()
+      expect(boundary.recover).not.toHaveBeenCalled()
       expect(fetch).not.toHaveBeenCalled()
     },
   )
 
-  it('consumes the email limiter only after verification succeeds', async () => {
+  const configureAuth = (): void => {
     Object.assign(config, {
       SUPABASE_URL: 'https://db.example.test',
       SUPABASE_SERVICE_ROLE_KEY: 'unit-service',
-      RESEND_API_KEY: 'unit-resend',
     })
     boundary.verify.mockResolvedValue(true)
+  }
+
+  it('asks Auth for the recovery email only after verification succeeds', async () => {
+    configureAuth()
     const response = await recover()
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toEqual({ ok: true })
-    expect(boundary.rpc).toHaveBeenCalledWith('consume_auth_email_send', {
-      p_kind: 'recovery',
-      p_scope_hash: expect.stringMatching(/^[a-f0-9]{64}$/),
+    expect(boundary.createClient).toHaveBeenCalledWith('https://db.example.test', 'unit-service', {
+      auth: { persistSession: false },
+    })
+    expect(boundary.recover).toHaveBeenCalledExactlyOnceWith('staff@example.test', {
+      redirectTo: 'https://bladeblendstudio.se/reset?lang=en',
     })
     expect(boundary.verify.mock.invocationCallOrder[0]).toBeLessThan(
-      boundary.rpc.mock.invocationCallOrder[0] ?? 0,
+      boundary.recover.mock.invocationCallOrder[0] ?? 0,
     )
     expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['accepts the request', () => boundary.recover.mockResolvedValue({ data: {}, error: null })],
+    [
+      'limits the address',
+      () =>
+        boundary.recover.mockResolvedValue({
+          data: null,
+          error: { status: 429, message: 'email rate limit exceeded' },
+        }),
+    ],
+    [
+      'fails in its email hook',
+      () =>
+        boundary.recover.mockResolvedValue({
+          data: null,
+          error: { status: 500, message: 'Unexpected status code returned from hook: 503' },
+        }),
+    ],
+    ['cannot be reached', () => boundary.recover.mockRejectedValue(new TypeError('offline'))],
+  ])('answers the same success when Auth %s', async (_name, arrange) => {
+    configureAuth()
+    arrange()
+    const response = await recover()
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({ ok: true })
   })
 
   it('rejects unknown request keys before challenge verification', async () => {
@@ -94,6 +128,6 @@ describe('password recovery challenge boundary', () => {
     )
     expect(response.status).toBe(400)
     expect(boundary.verify).not.toHaveBeenCalled()
-    expect(boundary.rpc).not.toHaveBeenCalled()
+    expect(boundary.recover).not.toHaveBeenCalled()
   })
 })

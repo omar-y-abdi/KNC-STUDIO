@@ -16,7 +16,7 @@ describe.skipIf(!backendReady())('password recovery Edge function', () => {
           body: JSON.stringify({
             email,
             lang: 'en',
-            // An empty token is deterministically rejected before Auth, Resend, or the limiter.
+            // An empty token is deterministically rejected before Auth is asked for a recovery.
             turnstileToken: '',
           }),
           signal: AbortSignal.timeout(2_000),
