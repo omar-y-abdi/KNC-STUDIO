@@ -34,7 +34,8 @@ const escape = (value: string): string =>
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#039;')
-const expand = (value: string, variables: Readonly<Record<string, string>>): string =>
+/** `{variable}` placeholders replaced by their values; an unknown one stays as written. */
+export const expand = (value: string, variables: Readonly<Record<string, string>>): string =>
   value.replace(/\{([a-z_]+)\}/g, (match, key: string) => variables[key] ?? match)
 const copy = (value: string, variables: Readonly<Record<string, string>>): string =>
   escape(expand(value, variables)).replaceAll('\n', '<br>')

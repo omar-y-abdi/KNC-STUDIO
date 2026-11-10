@@ -1,5 +1,5 @@
 // One renderer for delivered transactional emails and the owner's CMS preview.
-import { renderDesignedEmail } from './cms-email.ts'
+import { expand, renderDesignedEmail } from './cms-email.ts'
 import type { EmailDesign } from './email-design.ts'
 
 export type EmailLanguage = 'sv' | 'en'
@@ -65,21 +65,17 @@ export interface EmailBusiness {
   readonly cancellationPolicyHours: number
 }
 
-function interpolate(value: string, variables: Readonly<Record<string, string>>): string {
-  return value.replace(/\{([a-z_]+)\}/g, (match, key: string) => variables[key] ?? match)
-}
-
 export function buildEmailMessage(input: EmailBuildInput): EmailMessage {
   const variables = { business_name: input.business.name, ...input.variables }
-  const subject = interpolate(input.copy.subject, variables)
-  const title = interpolate(input.copy.title, variables)
-  const intro = interpolate(input.copy.intro, variables)
+  const subject = expand(input.copy.subject, variables)
+  const title = expand(input.copy.title, variables)
+  const intro = expand(input.copy.intro, variables)
   const sectionTitle =
-    input.copy.sectionTitle === null ? null : interpolate(input.copy.sectionTitle, variables)
-  const note = interpolate(input.copy.note, variables)
-  const ctaLabel = interpolate(input.copy.ctaLabel, variables)
+    input.copy.sectionTitle === null ? null : expand(input.copy.sectionTitle, variables)
+  const note = expand(input.copy.note, variables)
+  const ctaLabel = expand(input.copy.ctaLabel, variables)
   const contactLead =
-    input.copy.contactLead === null ? null : interpolate(input.copy.contactLead, variables)
+    input.copy.contactLead === null ? null : expand(input.copy.contactLead, variables)
   const rows = input.rows ?? []
   const business = input.business
   const html = renderDesignedEmail(input, input.copy.design ?? undefined)
