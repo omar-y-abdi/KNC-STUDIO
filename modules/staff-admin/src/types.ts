@@ -44,28 +44,10 @@ export interface AdminBarber {
 }
 
 /** Fields the owner may set when creating a barber. */
-export interface NewBarber {
-  readonly id: AdminBarberId
-  readonly name: string
-  readonly ig: string
-  readonly roleSv: string
-  readonly roleEn: string
-  readonly bioSv: string
-  readonly bioEn: string
-  readonly sortOrder: number
-}
+export type NewBarber = Omit<AdminBarber, 'active'>
 
 /** Fields the owner may edit on an existing barber (id is the immutable key). */
-export interface BarberEdit {
-  readonly name: string
-  readonly ig: string
-  readonly roleSv: string
-  readonly roleEn: string
-  readonly bioSv: string
-  readonly bioEn: string
-  readonly active: boolean
-  readonly sortOrder: number
-}
+export type BarberEdit = Omit<AdminBarber, 'id'>
 
 /** A per-barber service-menu row as the admin manages it (the full row, incl. inactive). */
 export interface AdminService {
@@ -222,13 +204,7 @@ export type DeleteBarberOutcome =
       readonly authCleanupPending: boolean
     }
   | {
-      readonly kind: 'has_bookings'
-      readonly count: number
-      readonly past: number
-      readonly upcoming: number
-    }
-  | {
-      readonly kind: 'has_upcoming'
+      readonly kind: 'has_bookings' | 'has_upcoming'
       readonly count: number
       readonly past: number
       readonly upcoming: number

@@ -193,11 +193,8 @@ export async function deleteBarber(
         authCleanupPending: r.auth_cleanup_pending,
       }
     }
-    if (r.error === 'has_bookings') {
-      return { kind: 'has_bookings', count: r.count, past: r.past, upcoming: r.upcoming }
-    }
-    if (r.error === 'has_upcoming') {
-      return { kind: 'has_upcoming', count: r.count, past: r.past, upcoming: r.upcoming }
+    if (r.error === 'has_bookings' || r.error === 'has_upcoming') {
+      return { kind: r.error, count: r.count, past: r.past, upcoming: r.upcoming }
     }
     if (r.error === 'external_cleanup_pending') {
       return { kind: 'external_cleanup_pending', calendarEvents: r.calendar_events }
