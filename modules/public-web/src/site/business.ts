@@ -87,28 +87,10 @@ export const DEFAULT_BUSINESS: BusinessSettings = {
   phoneTel: '0793043671',
   mapsHref: 'https://maps.apple.com/?q=Geijersgatan%2010,%20G%C3%B6teborg',
   cancellationPolicyHours: 24,
-  seo: {
-    sv: {
-      title: interpolateSeo(DEFAULT_SEO_TEMPLATES.sv.title, {
-        name: DEFAULT_BUSINESS_NAME,
-        city: DEFAULT_BUSINESS_CITY,
-      }),
-      description: interpolateSeo(DEFAULT_SEO_TEMPLATES.sv.description, {
-        name: DEFAULT_BUSINESS_NAME,
-        city: DEFAULT_BUSINESS_CITY,
-      }),
-    },
-    en: {
-      title: interpolateSeo(DEFAULT_SEO_TEMPLATES.en.title, {
-        name: DEFAULT_BUSINESS_NAME,
-        city: DEFAULT_BUSINESS_CITY,
-      }),
-      description: interpolateSeo(DEFAULT_SEO_TEMPLATES.en.description, {
-        name: DEFAULT_BUSINESS_NAME,
-        city: DEFAULT_BUSINESS_CITY,
-      }),
-    },
-  },
+  seo: seoSettings(
+    { name: DEFAULT_BUSINESS_NAME, city: DEFAULT_BUSINESS_CITY },
+    (lang, field) => DEFAULT_SEO_TEMPLATES[lang][field],
+  ),
 }
 
 function textOrDefault(value: string | undefined, fallback: string): string {
@@ -146,6 +128,18 @@ export function parseCancellationPolicyHours(value: string | null | undefined): 
 
 function interpolateSeo(value: string, business: Pick<BusinessSettings, 'name' | 'city'>): string {
   return value.split('{business_name}').join(business.name).split('{city}').join(business.city)
+}
+
+/** Both languages' SEO texts: each template with the business name and city filled in. */
+function seoSettings(
+  business: Pick<BusinessSettings, 'name' | 'city'>,
+  template: (lang: Lang, field: keyof SeoSettings) => string,
+): Readonly<Record<Lang, SeoSettings>> {
+  const seo = (lang: Lang): SeoSettings => ({
+    title: interpolateSeo(template(lang, 'title'), business),
+    description: interpolateSeo(template(lang, 'description'), business),
+  })
+  return { sv: seo('sv'), en: seo('en') }
 }
 
 export function resolveBusinessSettings(settings: ReadonlyMap<string, string>): BusinessSettings {
@@ -190,36 +184,13 @@ export function resolveBusinessSettings(settings: ReadonlyMap<string, string>): 
   }
   return {
     ...base,
-    seo: {
-      sv: {
-        title: interpolateSeo(
-          settingText(settings, BUSINESS_SETTING_KEYS.seo.sv.title, DEFAULT_SEO_TEMPLATES.sv.title),
-          base,
-        ),
-        description: interpolateSeo(
-          settingText(
-            settings,
-            BUSINESS_SETTING_KEYS.seo.sv.description,
-            DEFAULT_SEO_TEMPLATES.sv.description,
-          ),
-          base,
-        ),
-      },
-      en: {
-        title: interpolateSeo(
-          settingText(settings, BUSINESS_SETTING_KEYS.seo.en.title, DEFAULT_SEO_TEMPLATES.en.title),
-          base,
-        ),
-        description: interpolateSeo(
-          settingText(
-            settings,
-            BUSINESS_SETTING_KEYS.seo.en.description,
-            DEFAULT_SEO_TEMPLATES.en.description,
-          ),
-          base,
-        ),
-      },
-    },
+    seo: seoSettings(base, (lang, field) =>
+      settingText(
+        settings,
+        BUSINESS_SETTING_KEYS.seo[lang][field],
+        DEFAULT_SEO_TEMPLATES[lang][field],
+      ),
+    ),
   }
 }
 
