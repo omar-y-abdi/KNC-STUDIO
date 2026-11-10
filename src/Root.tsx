@@ -35,6 +35,13 @@ function AdminFallback(): JSX.Element {
   return <div class="bb-status bb-muted">Laddar …</div>
 }
 
+/** The admin entry behind its loading fallback, as a route's render child. */
+const adminEntry = (): JSX.Element => (
+  <Suspense fallback={<AdminFallback />}>
+    <AdminEntry />
+  </Suspense>
+)
+
 /** The one lazy boundary on the Studio path: its loading state covers this route module, and its
  *  error state (with the reload) also receives a failed Studio chunk thrown by CmsRoute. */
 function CmsEntry(): JSX.Element {
@@ -77,44 +84,20 @@ export function Root(): JSX.Element {
         </Route>
 
         {/* Admin surface — lazy-loaded. /login, /reset and /admin/* all resolve inside the admin entry. */}
-        <Route path="/login">
-          <Suspense fallback={<AdminFallback />}>
-            <AdminEntry />
-          </Suspense>
-        </Route>
+        <Route path="/login">{adminEntry}</Route>
         {/* Password-recovery landing (the email link target). Lazy, same chunk as login. */}
-        <Route path="/reset">
-          <Suspense fallback={<AdminFallback />}>
-            <AdminEntry />
-          </Suspense>
-        </Route>
+        <Route path="/reset">{adminEntry}</Route>
         {/* Staff invitation landing. Token verification waits for an explicit button click. */}
-        <Route path="/invite">
-          <Suspense fallback={<AdminFallback />}>
-            <AdminEntry />
-          </Suspense>
-        </Route>
+        <Route path="/invite">{adminEntry}</Route>
         {/* An email scanner may load this route, but only a real button click consumes the token. */}
-        <Route path="/auth/confirm">
-          <Suspense fallback={<AdminFallback />}>
-            <AdminEntry />
-          </Suspense>
-        </Route>
+        <Route path="/auth/confirm">{adminEntry}</Route>
         {/* Match BOTH the bare `/admin` and any subpath. wouter's `:rest*` matches `/admin/...` and
             `/admin/` but NOT bare `/admin`, so the explicit `/admin` route is required (otherwise a
             post-login navigate('/admin') falls through to the catch-all and redirects home). */}
         <Route path="/admin/cms/" component={CmsEntry} />
         <Route path="/admin/cms" component={CmsEntry} />
-        <Route path="/admin">
-          <Suspense fallback={<AdminFallback />}>
-            <AdminEntry />
-          </Suspense>
-        </Route>
-        <Route path="/admin/:rest*">
-          <Suspense fallback={<AdminFallback />}>
-            <AdminEntry />
-          </Suspense>
-        </Route>
+        <Route path="/admin">{adminEntry}</Route>
+        <Route path="/admin/:rest*">{adminEntry}</Route>
 
         {/* Permanent customer tokens are random one-segment paths. The production Worker redirects
             them into a fragment before assets load; this route preserves direct Vite/dev visits. */}
