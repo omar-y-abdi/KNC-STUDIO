@@ -194,7 +194,12 @@ describe('agent-ready public representations', () => {
       const visible = visibleText(body)
       expect(visible.text.length, path).toBeGreaterThanOrEqual(500)
       expect(visible.headings[0], path).toBe('h1')
-      expect(body, path).toContain(`https://bladeblendstudio.se${path}`)
+      // /about is the homepage document under another URL, so the homepage is its canonical.
+      expect(body, path).toContain(
+        path === '/about'
+          ? `rel="canonical" href="${SITE}/"`
+          : `https://bladeblendstudio.se${path}`,
+      )
     }
     const redirect = await get('/contact.html')
     expect(redirect.status).toBe(308)
@@ -273,8 +278,11 @@ describe('agent-ready public representations', () => {
     expect(response.status).toBe(200)
     expect(response.headers.get('Content-Type')).toContain('application/xml')
     const sitemap = await response.text()
-    for (const path of ['/', '/about', '/contact', '/privacy', '/terms'])
+    for (const path of ['/', '/booking', '/contact', '/privacy', '/terms'])
       expect(sitemap).toContain(`<loc>${SITE}${path}</loc>`)
+    // /about carries the homepage's canonical and /my-bookings is an account page.
+    for (const path of ['/about', '/my-bookings'])
+      expect(sitemap).not.toContain(`<loc>${SITE}${path}</loc>`)
     // This static artifact has no authoritative per-page modification-date source.
     expect(sitemap).not.toMatch(/<lastmod(?:\s|>)/i)
   })

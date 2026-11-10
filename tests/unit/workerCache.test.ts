@@ -8,6 +8,7 @@ import {
 import { resolveBusinessSettings } from '../../modules/public-web/src/site/business'
 import {
   CMS_REVISION_ATTRIBUTE,
+  bookingDescription,
   parseCmsRevision,
   presentationPath,
   requestedPresentationRevision,
@@ -15,8 +16,8 @@ import {
 import worker, { PublicContent, isCmsPagePath, renderCmsPage } from '../../supabase/worker/index'
 
 // E2 (worker-cache): non-page requests skip the CMS, independent reads overlap, the presentation is
-// versioned and cached per revision, empty descriptions keep the defaults, and the static layer
-// serves icons and info.css as assets.
+// versioned and cached per revision, an empty description gives way to its route's default or to no
+// description tags at all, and the static layer serves icons and info.css as assets.
 const SITE = 'https://bladeblendstudio.se'
 const SHELL = readFileSync(new URL('../../index.html', import.meta.url), 'utf8')
 const DISCOVERY = { settings: {}, barbers: [], services: [], schedules: [] }
@@ -503,20 +504,28 @@ describe('native shells', () => {
       (id) => metaContent(html, id) ?? 'missing',
     )
 
-  it.each(['/', '/booking'])(
-    'keeps the business description on %s when the CMS page has none and replaces it otherwise',
-    async (path) => {
+  const business = resolveBusinessSettings(new Map())
+
+  it.each([
+    ['/', business.seo.sv.description],
+    // The booking page has a default of its own, not the homepage's.
+    ['/booking', bookingDescription('sv', business)],
+  ])(
+    'gives %s its default description when the CMS page has none and replaces it otherwise',
+    async (path, fallback) => {
       // As the attribute carries it: the default business name is "Blade & Blend Studio".
-      const business = resolveBusinessSettings(new Map()).seo.sv.description.replaceAll(
-        '&',
-        '&amp;',
-      )
+      const expected = fallback.replaceAll('&', '&amp;')
       const empty = await shellFor(path, { ...metadata, description: '', revision: 1 })
-      expect(descriptions(await empty.text())).toEqual([business, business, business])
+      expect(descriptions(await empty.text())).toEqual([expected, expected, expected])
       const written = await shellFor(path, { ...metadata, description: 'CMS description' })
       expect(descriptions(await written.text())).toEqual(Array(3).fill('CMS description'))
     },
   )
+
+  it('describes the booking page differently from the homepage', () => {
+    for (const lang of ['sv', 'en'] as const)
+      expect(bookingDescription(lang, business)).not.toBe(business.seo[lang].description)
+  })
 })
 
 function metaContent(html: string, id: string): string | undefined {
@@ -534,10 +543,11 @@ describe('page descriptions', () => {
     )
   }
 
-  it('keeps the shell description for a page without one and replaces it otherwise', () => {
+  it('leaves the description tags out for a page without one and fills them otherwise', () => {
+    // The shell's own sentence describes the booking, so a created page must not inherit it.
     expect(shellDefault).toBeTruthy()
-    expect(read('')).toEqual([shellDefault, shellDefault, shellDefault])
-    expect(read('   ')).toEqual([shellDefault, shellDefault, shellDefault])
+    expect(read('')).toEqual(['missing', 'missing', 'missing'])
+    expect(read('   ')).toEqual(['missing', 'missing', 'missing'])
     expect(read('Erbjudanden hos oss')).toEqual(Array(3).fill('Erbjudanden hos oss'))
   })
 })

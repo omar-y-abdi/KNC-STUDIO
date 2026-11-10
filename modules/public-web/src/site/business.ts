@@ -270,6 +270,15 @@ export function openingHours(facts: BusinessDiscoveryFacts): readonly BusinessOp
   })
 }
 
+/** A Swedish national number (digits behind a single leading 0, whatever separates them) in
+ * international form; a number behind the international prefix 00 with `+` in its place; every
+ * other shape as it is stored. */
+function structuredTelephone(value: string): string {
+  const digits = value.replace(/[\s().-]/g, '')
+  if (/^00[1-9][0-9]*$/.test(digits)) return `+${digits.slice(2)}`
+  return /^0[1-9][0-9]*$/.test(digits) ? `+46${digits.slice(1)}` : value
+}
+
 export function buildBusinessStructuredData(
   business: BusinessSettings,
   facts: BusinessDiscoveryFacts,
@@ -302,7 +311,7 @@ export function buildBusinessStructuredData(
       value: business.organizationNumber,
     }
   }
-  if (business.phoneTel !== '') structured['telephone'] = business.phoneTel
+  if (business.phoneTel !== '') structured['telephone'] = structuredTelephone(business.phoneTel)
   if (business.mapsHref !== '') structured['hasMap'] = business.mapsHref
 
   const hours = openingHours(facts)

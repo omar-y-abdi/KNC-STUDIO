@@ -598,6 +598,12 @@ export function renderSitePage(
   }
 }
 
+/** The text a new created page's body holds, in each language, until the owner writes their own. */
+export const NEW_SITE_PAGE_TEXT: Localized = {
+  sv: 'Skriv din text här.',
+  en: 'Write your page here.',
+}
+
 /** A new created page: only its body, a small homepage-style template whose own CSS is the same
  * for both schemes. The header is never stored; renderSitePage adds the live one. */
 export function createSitePage(identity: {
@@ -609,7 +615,7 @@ export function createSitePage(identity: {
     const id = `cms-body-${identity.id}-${lang}`
     const css = `[id="${id}"]{max-width:1120px;min-height:55vh;margin:0 auto;padding:64px 32px}[id="${id}-title"]{margin:0 0 24px;font-size:40px;line-height:1.15;letter-spacing:-1px}[id="${id}-text"]{font-size:17px;line-height:1.7}@media (max-width:768px){[id="${id}"]{padding:40px 24px}}`
     return {
-      html: `<main id="${id}"><h1 id="${id}-title">${escape(identity.name[lang])}</h1><p id="${id}-text">${lang === 'sv' ? 'Skriv din text här.' : 'Write your page here.'}</p></main>`,
+      html: `<main id="${id}"><h1 id="${id}-title">${escape(identity.name[lang])}</h1><p id="${id}-text">${NEW_SITE_PAGE_TEXT[lang]}</p></main>`,
       css: { light: css, dark: css },
     }
   }

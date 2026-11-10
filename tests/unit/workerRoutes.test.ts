@@ -200,6 +200,10 @@ describe('Worker route policy', () => {
         )
         expect(response.status).toBe(200)
         expect(response.headers.get('Cache-Control')).toBe('no-store')
+        // The account page stays out of the index although its head was not rendered.
+        expect(response.headers.get('X-Robots-Tag')).toBe(
+          path === '/my-bookings' ? 'noindex' : null,
+        )
         expect(await response.text()).toBe('<main>homepage</main>')
       }
     },
@@ -337,10 +341,15 @@ describe('Worker route policy', () => {
   it.each(['/', '/about', '/booking', '/my-bookings'])(
     'serves bounded native metadata for %s',
     async (path) => {
-      const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
         const url = String(input)
         const body = url.includes('public_cms_page_metadata')
-          ? { revision: 2, title: 'CMS title', description: 'CMS description' }
+          ? {
+              revision: 2,
+              // Each page has a title of its own, as the database answers per path.
+              title: `CMS title ${(JSON.parse(String(init?.body)) as { p_path: string }).p_path}`,
+              description: 'CMS description',
+            }
           : { settings: {}, barbers: [], services: [], schedules: [] }
         return new Response(JSON.stringify(body), {
           status: 200,
@@ -364,11 +373,12 @@ describe('Worker route policy', () => {
           createWorkerContext(env),
         )
         expect(response.headers.get('Cache-Control')).toBe('no-store')
-        expect(await response.text()).toContain('CMS title')
+        expect(await response.text()).toContain(`CMS title ${path}`)
         expect(
           fetchMock.mock.calls.some(([input]) => String(input).includes('public_cms_presentation')),
         ).toBe(false)
-        expect(fetchMock).toHaveBeenCalledTimes(2)
+        // Discovery and the page's metadata; the other routes also read the homepage's title.
+        expect(fetchMock).toHaveBeenCalledTimes(path === '/' ? 2 : 3)
       } finally {
         fetchMock.mockRestore()
       }

@@ -299,8 +299,10 @@ describe('Worker CMS contact and static fallback', () => {
     const html = await (await requestContact()).text()
     const title = 'Kontakta Aktuell &amp; Salong – barbershop i Malmö'
     expect(html).toContain(`<title id="business-title">${title}</title>`)
-    expect(html).toContain(`id="business-og-title" property="og:title" content="${title}"`)
-    expect(html).toContain(`id="business-twitter-title" name="twitter:title" content="${title}"`)
+    // The shell writes these two tags over several lines.
+    const flat = html.replace(/\s+/g, ' ')
+    expect(flat).toContain(`id="business-og-title" property="og:title" content="${title}"`)
+    expect(flat).toContain(`id="business-twitter-title" name="twitter:title" content="${title}"`)
     expect(html).toMatch(
       /id="business-description"\s+name="description"\s+content="Officiell kontakt, adress och bokningsinformation för Aktuell &amp; Salong i Malmö\."/,
     )
@@ -949,15 +951,17 @@ describe('Worker CMS Contact Open Graph identity (A.R05)', () => {
   const canonical = (html: string): string | undefined =>
     /<link\b[^>]*rel="canonical"[^>]*href="([^"]*)"/i.exec(html)?.[1]
 
-  it.each(['/contact', '/contact?lang=en', '/contact?mode=dark'])(
-    'gives the CMS-rendered Contact its own og:url matching canonical (%s)',
-    async (path) => {
-      const html = await serveContact({ ...presentation, pages: [adoptedContact] }, path)
-      expect(html).toContain('data-cms-public="1"')
-      expect(canonical(html)).toBe('https://bladeblendstudio.se/contact')
-      expect(ogUrl(html)).toBe('https://bladeblendstudio.se/contact')
-    },
-  )
+  // The English page is its own canonical; the colour scheme never enters a URL.
+  it.each([
+    ['/contact', 'https://bladeblendstudio.se/contact'],
+    ['/contact?lang=en', 'https://bladeblendstudio.se/contact?lang=en'],
+    ['/contact?mode=dark', 'https://bladeblendstudio.se/contact'],
+  ])('gives the CMS-rendered Contact its own og:url matching canonical (%s)', async (path, url) => {
+    const html = await serveContact({ ...presentation, pages: [adoptedContact] }, path)
+    expect(html).toContain('data-cms-public="1"')
+    expect(canonical(html)).toBe(url)
+    expect(ogUrl(html)).toBe(url)
+  })
 
   it('keeps the static Contact fallback og:url when the CMS lookup fails', async () => {
     const html = await serveContact(null, '/contact')

@@ -6,9 +6,9 @@
     <priority>1.0</priority>
   </url>
   <url>
-    <loc>https://bladeblendstudio.se/about</loc>
+    <loc>https://bladeblendstudio.se/booking</loc>
     <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
+    <priority>0.8</priority>
   </url>
   <url>
     <loc>https://bladeblendstudio.se/contact</loc>

@@ -1,9 +1,23 @@
-import { formatBusinessAddress, type BusinessSettings } from './business'
+import type { Lang } from '../i18n/index'
+import {
+  formatBusinessAddress,
+  openingHours,
+  type BusinessDiscoveryFacts,
+  type BusinessSettings,
+} from './business'
+import { renderContactFragment } from './contactPage'
+import { nativeRouteTitle, type NativePublicPath } from './routeMetadata'
 
 export type InformationPage = '/' | '/about' | '/contact'
+/** A link inside a section's text, to another native page of the site. */
+interface PageLink {
+  readonly label: string
+  readonly href: NativePublicPath
+}
 interface Section {
   readonly heading: string
-  readonly content: string
+  /** Plain text, or text with links in it, in reading order. */
+  readonly content: string | readonly (string | PageLink)[]
 }
 interface PageCopy {
   readonly title: string
@@ -19,10 +33,45 @@ const LINKS = [
   ['Bokningsvillkor', '/terms'],
 ] as const
 
-function pageCopy(business: BusinessSettings, path: InformationPage): PageCopy {
+function pageCopy(business: BusinessSettings, path: InformationPage | NativePublicPath): PageCopy {
   const name = business.name
   const address = formatBusinessAddress(business)
   const city = business.city
+  if (path === '/booking')
+    return {
+      title: nativeRouteTitle(path, 'sv', name),
+      intro:
+        'Här bokar du tid hos ' +
+        name +
+        ' på ' +
+        address +
+        '. Du väljer barberare, behandling, datum och en ledig tid. Aktuella priser och tillgänglighet visas i bokningen.',
+      sections: [
+        {
+          heading: 'Om bokningen inte laddas',
+          content: [
+            'Bokningen är interaktiv och kräver JavaScript. Om den inte visas kan du kontakta salongen via kontaktuppgifterna nedan. För en befintlig bokning använder du ',
+            { label: 'Mina bokningar', href: '/my-bookings' },
+            '.',
+          ],
+        },
+      ],
+    }
+  if (path === '/my-bookings')
+    return {
+      title: nativeRouteTitle(path, 'sv', name),
+      intro:
+        'I Mina bokningar hanterar du en befintlig bokning hos ' +
+        name +
+        '. Sidan är interaktiv, och du kan behöva verifiera dig via länken i bekräftelsemejlet.',
+      sections: [
+        {
+          heading: 'Om sidan inte laddas',
+          content:
+            'Mina bokningar kräver JavaScript. Om sidan inte visas och du behöver hjälp med en befintlig bokning kan du kontakta salongen via kontaktuppgifterna nedan.',
+        },
+      ],
+    }
   if (path === '/about')
     return {
       title: 'Om ' + name + ' – barbershop i ' + city,
@@ -131,7 +180,25 @@ export function escapeMarkdown(text: string): string {
     .join('')
 }
 
-export function renderPublicFallback(business: BusinessSettings, path: InformationPage): string {
+/** A section's text in reading order: its plain text and its links. */
+function textRuns(content: Section['content']): readonly (string | PageLink)[] {
+  return typeof content === 'string' ? [content] : content
+}
+
+/** Address, phone, e-mail and opening hours: the Contact page's slots, filled as that page fills
+ * them. */
+const CONTACT_DETAILS =
+  '<section><h2>Besöksadress och kontaktuppgifter</h2><div id="contact-details"></div></section>'
+const CONTACT_HOURS = '<section><h2>Öppettider</h2><div id="contact-hours"></div></section>'
+
+/** The intro a native route carries in its HTML until the app boots. Its text is Swedish, so it is
+ * marked as Swedish when the page language is not. */
+export function renderPublicFallback(
+  business: BusinessSettings,
+  facts: BusinessDiscoveryFacts,
+  path: NativePublicPath,
+  lang: Lang,
+): string {
   const page = pageCopy(business, path)
   const body = page.sections
     .map(
@@ -139,22 +206,37 @@ export function renderPublicFallback(business: BusinessSettings, path: Informati
         '<section><h2>' +
         escapeHtml(section.heading) +
         '</h2><p>' +
-        escapeHtml(section.content) +
+        textRuns(section.content)
+          .map((run) =>
+            typeof run === 'string'
+              ? escapeHtml(run)
+              : '<a href="' + run.href + '">' + escapeHtml(run.label) + '</a>',
+          )
+          .join('') +
         '</p></section>',
     )
     .join('')
+  // Without a schedule the hours slot holds one sentence that links to the booking. On the booking
+  // page that link leads to the page itself, so the section is left out there.
+  const contactFacts =
+    path === '/booking' && openingHours(facts).length === 0
+      ? CONTACT_DETAILS
+      : CONTACT_DETAILS + CONTACT_HOURS
   const links = LINKS.map(
     ([label, path]) =>
       '<a href="' + path + '" style="display:inline-block;margin-right:1rem">' + label + '</a>',
   ).join('')
   return (
-    '<main aria-labelledby="public-intro-heading" style="max-width:48rem;margin:3rem auto;padding:1.5rem;font-family:system-ui,sans-serif;line-height:1.65;color:inherit">' +
+    '<main' +
+    (lang === 'sv' ? '' : ' lang="sv"') +
+    ' aria-labelledby="public-intro-heading" style="max-width:48rem;margin:3rem auto;padding:1.5rem;font-family:system-ui,sans-serif;line-height:1.65;color:inherit">' +
     '<h1 id="public-intro-heading">' +
     escapeHtml(page.title) +
     '</h1><p>' +
     escapeHtml(page.intro) +
     '</p>' +
     body +
+    renderContactFragment(contactFacts, business, 'sv', facts) +
     '<nav aria-label="Salongens sidor"><h2>Mer information</h2>' +
     links +
     '</nav>' +
@@ -172,7 +254,13 @@ export function renderPublicMarkdown(business: BusinessSettings, path: Informati
     ...page.sections.flatMap(({ heading, content }) => [
       '## ' + escapeMarkdown(heading),
       '',
-      escapeMarkdown(content),
+      textRuns(content)
+        .map((run) =>
+          typeof run === 'string'
+            ? escapeMarkdown(run)
+            : '[' + escapeMarkdown(run.label) + '](' + SITE_URL + run.href + ')',
+        )
+        .join(''),
       '',
     ]),
     '## Officiella länkar',
