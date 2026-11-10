@@ -30,7 +30,6 @@ export interface AdminStyles {
   primaryBtn: JSX.CSSProperties
   ghostBtn: JSX.CSSProperties
   dangerBtn: JSX.CSSProperties
-  iconBtn: JSX.CSSProperties
   pill: JSX.CSSProperties
   emptyState: JSX.CSSProperties
   fieldRow: JSX.CSSProperties
@@ -229,19 +228,6 @@ export function buildAdminStyles(c: Palette, dark: boolean): AdminStyles {
       cursor: 'pointer',
       background: 'transparent',
       color: red,
-    },
-    iconBtn: {
-      border: 'none',
-      background: c.closeBg,
-      width: '30px',
-      height: '30px',
-      borderRadius: '8px',
-      cursor: 'pointer',
-      color: c.text,
-      display: 'inline-flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      fontSize: '14px',
     },
     pill: {
       display: 'inline-flex',
