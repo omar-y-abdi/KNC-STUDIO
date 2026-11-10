@@ -9,7 +9,10 @@ import {
   type CmsDocument,
   type CmsState,
 } from '../../../packages/content-contracts/src/cms.ts'
-import { validateDocumentMarkupPlacements } from '../../../packages/content-contracts/src/cms-markup.ts'
+import {
+  validateDocumentMarkupPlacements,
+  validateNoFrozenSitePages,
+} from '../../../packages/content-contracts/src/cms-markup.ts'
 import { CMS_BUILT_ASSETS } from '../../../packages/content-contracts/src/cms-built-assets.ts'
 import { CMS_RELEASE } from '../../../packages/content-contracts/src/cms-release.ts'
 import { parse } from '../_shared/http.ts'
@@ -225,6 +228,8 @@ Deno.serve(async (request) => {
       await invoke('internal_cms_check_media', { p_document: document })
       return json({ document })
     }
+    // Publication only: validation above still returns such a document for the Studio to migrate.
+    validateNoFrozenSitePages(document)
     const result = await invoke('internal_cms_publish', {
       p_document: document,
       p_base_revision: body.baseRevision,

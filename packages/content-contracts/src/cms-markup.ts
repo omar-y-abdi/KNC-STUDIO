@@ -6,11 +6,13 @@ import {
   CMS_HTML_LIMIT,
   CMS_NATIVE_HTML_LIMIT,
   INFORMATION_PAGE_PATHS,
+  isSitePage,
   validMediaRef,
   type CmsDocument,
   type MediaPlacement,
   type MediaRef,
 } from './cms.ts'
+import { isFrozenSitePage } from './cms-frozen-page.ts'
 
 type HtmlNode = DefaultTreeAdapterMap['node']
 const TAGS = new Set(
@@ -612,4 +614,17 @@ export function validateDocumentMarkupPlacements(
     }
 
   return placements
+}
+
+const FROZEN_SITE_PAGE =
+  'Sidan har ett element med id cms-site-shell eller är sparad i ett äldre format med en egen kopia av sidhuvudet. Byt elementets id, eller ladda om Studion så att sidan konverteras, och publicera igen.'
+
+/** Publication only: a created page still in the frozen format (isFrozenSitePage) is refused,
+ * because every created page is served under the live header. Validating an import, a preview or
+ * a stored revision does not apply this rule, so the Studio can still take such a document in,
+ * migrate it (dropFrozenChrome) and publish the result. */
+export function validateNoFrozenSitePages(document: CmsDocument): void {
+  for (const page of document.presentation.pages)
+    if (isSitePage(page) && isFrozenSitePage(page))
+      reject(`presentation.${page.path}`, FROZEN_SITE_PAGE)
 }

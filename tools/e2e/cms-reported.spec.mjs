@@ -1710,6 +1710,11 @@ for (const lang of ['sv', 'en']) {
     studio,
   }) => {
     const { today, older } = await businessDocuments(studio)
+    // The older revision also holds the Desktop breakpoint earlier Studio builds stored. The
+    // preview shows a created page's sheet as it is given, so the review repairs what it reads.
+    const stored = older.presentation.pages.find((item) => item.path === '/visit').content[lang]
+    const legacy = '@media(max-width:1440px){#legacy-offset{translate:12px 0!important}}'
+    stored.css = { light: stored.css.light + legacy, dark: stored.css.dark + legacy }
     // Revision 9 holds today's draft and revision 7 an older business. This route answers both
     // history reads; every other request reaches the native backend.
     const revisions = new Map([
@@ -1756,6 +1761,12 @@ for (const lang of ['sv', 'en']) {
       await expectPreviewContact(preview, lang, own, other)
       await pages.selectOption({ label: names.visit })
       await expectPreviewHeader(preview, own)
+      const sheet = await page.locator('.cms-history-preview iframe').getAttribute('srcdoc')
+      expect(sheet.includes('max-width:1440px'), `revision ${revision}`).toBe(false)
+      expect(
+        sheet.includes('@media (min-width:769px){#legacy-offset{translate:12px 0!important}}'),
+        `revision ${revision}`,
+      ).toBe(revision === 7)
       await page.keyboard.press('Escape')
       await review.waitFor({ state: 'detached' })
     }
@@ -3122,7 +3133,7 @@ const collisionStudio = async (page, context, body) => {
     return collision(backend.document).content.sv
   }
   await open(false)
-  return { frame, publishHeading, reopen: () => open(true) }
+  return { backend, frame, publishHeading, reopen: () => open(true) }
 }
 
 // The ids of the generated chrome. An accepted owner body can carry any of them, so capture must
@@ -3175,6 +3186,39 @@ for (const chromeId of CHROME_IDS)
     )
     assert.deepEqual(errors, [], 'no unhandled browser errors')
   })
+
+// cms-site-shell is the id that marks the page format from before the live header. The Studio
+// migrates that format whenever it takes a document in, so a draft holds it only when the owner
+// gives an element that id; publication then refuses the page and says why.
+test('publication refuses an owner element renamed to cms-site-shell until the id is changed', async ({
+  page,
+  context,
+}) => {
+  const studio = await collisionStudio(
+    page,
+    context,
+    '<main id="owner-main"><h1 id="editme">Redigera mig</h1></main>',
+  )
+  const rename = async (from, to) => {
+    await select(page, `#${from}`)
+    const id = page.locator('#cms-traits').getByPlaceholder('Elementets id', { exact: true })
+    await id.fill(to)
+    await id.press('Enter')
+    await studio.frame.locator(`main#${to}`).waitFor()
+  }
+  await rename('owner-main', 'cms-site-shell')
+  await page.getByRole('button', { name: 'Publicera', exact: true }).click()
+  await expect(
+    page.getByRole('alert').filter({ hasText: 'presentation./collision:' }),
+  ).toContainText(
+    'Sidan har ett element med id cms-site-shell eller är sparad i ett äldre format med en egen kopia av sidhuvudet. Byt elementets id,',
+  )
+  await expect(page.locator('.cms-status')).toHaveText('Opublicerade ändringar')
+  expect(studio.backend.writes, 'nothing is published').toEqual([])
+  await rename('cms-site-shell', 'owner-main')
+  const published = await studio.publishHeading('Publicerad rubrik', 2)
+  expect(published.html).toBe('<main id="owner-main"><h1 id="editme">Publicerad rubrik</h1></main>')
+})
 
 test('the canvas locks only the generated header and footer when owner sections carry their ids', async ({
   page,

@@ -83,6 +83,34 @@ of a CMS setting can instead affect zero rows under RLS; a successful HTTP respo
 establish that a write occurred. Use the current Studio, publish, and verify the persisted revision
 and public result. Do not restore legacy table write grants to make an old editor work.
 
+## Frozen created pages
+
+`cms-studio` refuses to publish a document in which a created page is stored in the format that
+predates the live header: `layout: 'independent'`, or an element with id `cms-site-shell` in either
+language (`validateNoFrozenSitePages`). The answer is HTTP 422 with a Swedish message naming the
+page, and nothing is written. The rule runs on publication only. `validate` (JSON import, locked
+preview), `state`, `history` and `revision` still return such a document, Studio migrates it when
+it takes the document in, and the migrated page publishes. Production revisions 52 to 54 hold one
+such page (`/vilkor`); they open and restore as before.
+
+The Worker has no serving path for that format. It renders every created page the same way, so a
+frozen page in a published head would show its stored markup, frozen header copy included, as the
+body under the live header and base sheet.
+
+The matching `cms-studio` and Worker reach production in no enforced order, and either order is
+safe:
+
+- `cms-studio` first: a publication that would store a frozen page is refused. The previous Worker
+  could still serve one, but the published head holds no created page and none can be stored.
+- Worker first, which the frontend release check (step 4 above) prevents unless it is bypassed:
+  the previous `cms-studio` still accepts a frozen page, and the new Worker renders it as described
+  above. Studio adopts the published document already migrated and shows unpublished changes, so
+  the next publication stores the current format.
+
+An owner meets the refusal only by giving an element of a created page the id `cms-site-shell`.
+Changing that id lets the page publish. So does reloading Studio: the local draft is migrated like
+any other document, which removes that element's own tags and keeps what is inside it.
+
 ## Incident: 21 September 2026
 
 PR #67 shipped an updated frontend while production `cms-studio` v3 still contained old shared
@@ -168,13 +196,15 @@ terms footer below it, in the editor, locked preview and public Worker. The head
 locked in a created page's canvas; neither is materialized into another page-owned copy. Menus use
 the current draft in Studio and the published presentation in public responses.
 
-Legacy pages with `layout: 'independent'` or an actual frozen shell remain readable. Studio drops
+Legacy created pages with `layout: 'independent'` or an actual frozen shell (an element with id
+`cms-site-shell`) remain readable: validation, history and revision reads return them. Studio drops
 their frozen chrome on load, restore and import while preserving body content and its styles;
-publication is explicit. The Worker serves still-frozen publications as stored and does not perform
-that migration. Comments and quoted attribute values naming the old shell do not mark a live page
-as frozen. Existing owner Contact bodies remain supported. New managed Contact templates opt into
-their required slots with `data-business-contact-page="1"`; information pages use the token/layout
-base, not created-page chrome.
+publication is explicit, and `cms-studio` refuses to publish a created page still in that format
+(see [Frozen created pages](#frozen-created-pages)). Comments and quoted attribute values naming
+the old shell do not mark a page as frozen. Existing owner Contact bodies remain supported, with or
+without the layout flag. New managed Contact templates opt into their required slots with
+`data-business-contact-page="1"`; information pages use the token/layout base, not created-page
+chrome.
 
 Update `packages/content-contracts/src/cms-release.ts` with shared validator changes and deploy the matching `cms-studio`
 Function before the frontend. A source stamp or fixture publication does not prove that the

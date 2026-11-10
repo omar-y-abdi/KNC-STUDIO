@@ -20,7 +20,6 @@ import {
   homepageLogo,
   homepageLogoElement,
   isFrozenSitePage,
-  isLiveSitePage,
   menuLinks,
   normalizeSitePageContent,
   renderSitePage,
@@ -361,21 +360,15 @@ describe('the Worker response of created and legal pages', () => {
 })
 
 describe('the Worker never migrates a frozen page', () => {
-  it('classifies a frozen page as served as stored without migrating it', () => {
+  it('renders a frozen page it is handed as any created page, the stored markup as the body', () => {
     const frozen = frozenPage(ownerBody)
     const unflagged: CmsPage = { ...frozen }
     delete unflagged.layout
     const flagged: CmsPage = { ...created('/flag', 'Flag'), layout: 'independent' }
-    for (const page of [frozen, unflagged, flagged]) {
-      expect(isFrozenSitePage(page)).toBe(true)
-      expect(isLiveSitePage(page)).toBe(false)
-    }
-    expect(isLiveSitePage(created('/hemsida', 'Ny sida'))).toBe(true)
-    expect(isLiveSitePage(dropFrozenChrome(frozen))).toBe(true)
+    for (const page of [frozen, unflagged, flagged]) expect(isFrozenSitePage(page)).toBe(true)
+    expect(isFrozenSitePage(created('/hemsida', 'Ny sida'))).toBe(false)
+    expect(isFrozenSitePage(dropFrozenChrome(frozen))).toBe(false)
     const presentation = presentationWith(frozen)
-    const about = presentation.pages.find((item) => item.path === '/about')
-    if (!about) throw new Error('The fixture has no /about page')
-    expect(isLiveSitePage(about)).toBe(false)
     const html = renderCmsPage(
       indexHtml,
       frozen,
@@ -387,10 +380,10 @@ describe('the Worker never migrates a frozen page', () => {
       '',
       contact,
     )
-    expect(html).toContain('Old logo')
-    expect(html).toContain('Integritetspolicy')
-    expect(withId(html, 'cms-site-header')).toHaveLength(1)
-    expect(html).not.toContain('cms-site-bar')
+    expect(html).toContain(
+      `</header><div id="cms-site-content">${frozen.content.sv.html}</div><footer id="cms-site-footer">`,
+    )
+    expect(html).toContain('<header id="cms-site-header"><div class="cms-site-bar">')
   })
 })
 
@@ -579,7 +572,6 @@ describe('which created pages the Worker treats as frozen', () => {
       live('<main><p>Hej</p></main>', '<main><p>cms-site-shell</p></main>'),
     ]) {
       expect(isFrozenSitePage(page)).toBe(false)
-      expect(isLiveSitePage(page)).toBe(true)
     }
     for (const page of [
       live('<main id="CMS-SITE-SHELL"></main>'),
@@ -612,7 +604,6 @@ describe('which created pages the Worker treats as frozen', () => {
         dark: '#cms-site-header{color:#abcdef}',
       }
       expect(isFrozenSitePage(page)).toBe(false)
-      expect(isLiveSitePage(page)).toBe(true)
       expect(dropFrozenChrome(page)).toBe(page)
       const document = emptyDocument()
       document.presentation.pages = [page]

@@ -255,8 +255,10 @@ export function unresolvedMarqueeZoom(
   return [...values]
 }
 
-/** Repair stored Desktop breakpoints without changing the server or history snapshot. */
-function normalizeDesktopCss(document: CmsDocument): CmsDocument {
+/** Repair stored Desktop breakpoints without changing the server or history snapshot. The canvas
+ * and the created-page renderer show a sheet as they are given it, so a history review, which
+ * shows a revision without adopting it, applies this step alone. */
+export function normalizeDesktopCss(document: CmsDocument): CmsDocument {
   const pages = document.presentation.pages.map((page) => {
     const content = { ...page.content }
     for (const lang of ['sv', 'en'] as const) {

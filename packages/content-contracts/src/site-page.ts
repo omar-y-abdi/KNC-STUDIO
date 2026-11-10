@@ -1,4 +1,4 @@
-import { repairDesktopCss } from './cms-device-css.ts'
+import { isFrozenSitePage } from './cms-frozen-page.ts'
 import { generate, ident, parse, walk, type Atrule, type CssNode, type Rule } from 'css-tree'
 import { parseFragment, serialize, serializeOuter, type DefaultTreeAdapterMap } from 'parse5'
 import {
@@ -14,6 +14,7 @@ import {
 } from './cms.ts'
 
 export { isSitePage } from './cms.ts'
+export { isFrozenSitePage } from './cms-frozen-page.ts'
 
 type Node = DefaultTreeAdapterMap['node']
 type Element = DefaultTreeAdapterMap['element']
@@ -560,30 +561,10 @@ export interface SitePageRender {
   readonly css: Record<CmsMode, string>
 }
 
-/** Most bodies never name the old shell. Parse only candidates so comments and quoted attribute
- * values cannot impersonate an actual shell element. HTML ids remain case-sensitive. */
-function hasFrozenShell(html: string): boolean {
-  return (
-    html.includes('cms-site-shell') &&
-    find(parseFragment(html), (node) => attr(node, 'id') === 'cms-site-shell') !== undefined
-  )
-}
-
-/** A created page an earlier Studio stored with its own frozen header copy. The Worker serves it as
- * stored without migrating its markup; the Studio migrates it on load with dropFrozenChrome.
- * The explicit legacy flag avoids inspecting either variant. */
-export const isFrozenSitePage = (page: CmsPage): boolean =>
-  page.layout === 'independent' ||
-  hasFrozenShell(page.content.sv.html) ||
-  hasFrozenShell(page.content.en.html)
-
-/** A created page in the current format: its stored body goes under the live header. */
-export const isLiveSitePage = (page: CmsPage): boolean =>
-  isSitePage(page) && !isFrozenSitePage(page)
-
 /** One renderer for the Worker, the editor canvas and the locked preview: the live header built
- * from the current presentation above the stored body, and the live footer below it. Takes
- * current-format pages only (isLiveSitePage); migrate a frozen page with dropFrozenChrome first. */
+ * from the current presentation above the stored body, and the live footer below it. The stored
+ * markup is the body whatever it holds; the Studio migrates a frozen page with dropFrozenChrome
+ * before it renders one. */
 export function renderSitePage(
   presentation: CmsPresentation,
   page: CmsPage,
@@ -594,7 +575,7 @@ export function renderSitePage(
   const { variant: body, ids } = normalizedSitePageBody(page.content[lang], `${page.id}-${lang}`)
   return {
     html: `${siteHeader(presentation, page, lang, mode, contact, ids)}<div id="cms-site-content">${body.html}</div>${siteFooter(lang, mode)}`,
-    css: { light: repairDesktopCss(body.css.light), dark: repairDesktopCss(body.css.dark) },
+    css: body.css,
   }
 }
 
