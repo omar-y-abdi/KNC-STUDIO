@@ -272,14 +272,12 @@ export function ensureCorePages(
       if (page.path === '/contact' && !admits()) next.presentation.pages.pop()
       else paths.add(page.path)
     } else {
+      const existing = next.presentation.pages.find((item) => item.path === page.path)
       // Information pages are authored bodies, not native scenes. Keep their bytes intact;
       // normalizeDocument separately handles the recognized legacy legal upgrade. Only an empty
       // historical Contact variant takes the source, under the same publication rule.
       if (INFORMATION_PAGE_PATHS.includes(page.path)) {
-        const contact =
-          page.path === '/contact'
-            ? next.presentation.pages.find((item) => item.path === page.path)
-            : undefined
+        const contact = page.path === '/contact' ? existing : undefined
         const filled = contact ? filledContent(contact, page) : null
         if (!contact || !filled) continue
         const authored = contact.content
@@ -287,7 +285,6 @@ export function ensureCorePages(
         if (!admits()) contact.content = authored
         continue
       }
-      const existing = next.presentation.pages.find((item) => item.path === page.path)
       if (existing)
         for (const lang of ['sv', 'en'] as const) {
           existing.content[lang].html = repairReadOnlyPreviews(
@@ -335,8 +332,7 @@ export function ensureCorePages(
                 ? sourceNodes.get(sourceId)
                 : undefined
               : current.getElementById(node.id)
-            if (target)
-              target.setAttribute('data-knc-fold', node.getAttribute('data-knc-fold') ?? '')
+            if (target) target.setAttribute('data-knc-fold', fold ?? '')
           }
           if (
             page.path === '/about' &&
