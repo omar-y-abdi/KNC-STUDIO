@@ -33,7 +33,6 @@
     "test": "node ../../tools/modules/run.mjs content-contracts test",
     "lint": "node ../../tools/modules/run.mjs content-contracts lint",
     "typecheck": "node ../../tools/modules/run.mjs content-contracts typecheck",
-    "build": "node ../../tools/modules/run.mjs content-contracts build",
-    "plan": "node ../../tools/modules/run.mjs content-contracts plan"
+    "build": "node ../../tools/modules/run.mjs content-contracts build"
   }
 }
