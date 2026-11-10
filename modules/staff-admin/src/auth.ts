@@ -232,18 +232,24 @@ export async function requestOwnEmailChange(
   }
 }
 
-/** Confirm a pending email change from the one-time token in the branded callback URL. */
-export async function confirmOwnEmailChange(tokenHash: string): Promise<AdminResult<void>> {
+/** Redeem a one-time token hash of the given type; `rejected` is the message for a refused token. */
+async function verifyTokenHash(
+  tokenHash: string,
+  type: 'email_change' | 'recovery' | 'invite',
+  rejected: string,
+): Promise<AdminResult<void>> {
   try {
-    const { error } = await getAdminClient().auth.verifyOtp({
-      token_hash: tokenHash,
-      type: 'email_change',
-    })
-    if (error !== null) return err('auth', EMAIL_CONFIRM_FAILED)
+    const { error } = await getAdminClient().auth.verifyOtp({ token_hash: tokenHash, type })
+    if (error !== null) return err('auth', rejected)
     return ok(undefined)
   } catch {
     return err('network', NETWORK_ERROR)
   }
+}
+
+/** Confirm a pending email change from the one-time token in the branded callback URL. */
+export function confirmOwnEmailChange(tokenHash: string): Promise<AdminResult<void>> {
+  return verifyTokenHash(tokenHash, 'email_change', EMAIL_CONFIRM_FAILED)
 }
 
 /**
@@ -282,17 +288,8 @@ export async function requestPasswordReset(
 }
 
 /** Verify the branded recovery token and establish the short-lived password-reset session. */
-export async function verifyRecoveryTokenHash(tokenHash: string): Promise<AdminResult<void>> {
-  try {
-    const { error } = await getAdminClient().auth.verifyOtp({
-      token_hash: tokenHash,
-      type: 'recovery',
-    })
-    if (error !== null) return err('auth', RECOVERY_LINK_INVALID)
-    return ok(undefined)
-  } catch {
-    return err('network', NETWORK_ERROR)
-  }
+export function verifyRecoveryTokenHash(tokenHash: string): Promise<AdminResult<void>> {
+  return verifyTokenHash(tokenHash, 'recovery', RECOVERY_LINK_INVALID)
 }
 
 /** Verify a branded staff invite token and establish its short-lived password-setup session. */
@@ -318,17 +315,8 @@ export async function redeemStaffInvitation(token: string): Promise<AdminResult<
 }
 
 /** Compatibility for invitations sent before durable enrollment was introduced. */
-export async function verifyInviteTokenHash(tokenHash: string): Promise<AdminResult<void>> {
-  try {
-    const { error } = await getAdminClient().auth.verifyOtp({
-      token_hash: tokenHash,
-      type: 'invite',
-    })
-    if (error !== null) return err('auth', RECOVERY_LINK_INVALID)
-    return ok(undefined)
-  } catch {
-    return err('network', NETWORK_ERROR)
-  }
+export function verifyInviteTokenHash(tokenHash: string): Promise<AdminResult<void>> {
+  return verifyTokenHash(tokenHash, 'invite', RECOVERY_LINK_INVALID)
 }
 
 /**
