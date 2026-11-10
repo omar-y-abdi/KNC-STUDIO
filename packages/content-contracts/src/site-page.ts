@@ -1,4 +1,3 @@
-import { repairDesktopCss } from './cms-device-css.ts'
 import { isFrozenSitePage } from './cms-frozen-page.ts'
 import { generate, ident, parse, walk, type Atrule, type CssNode, type Rule } from 'css-tree'
 import { parseFragment, serialize, serializeOuter, type DefaultTreeAdapterMap } from 'parse5'
@@ -576,7 +575,7 @@ export function renderSitePage(
   const { variant: body, ids } = normalizedSitePageBody(page.content[lang], `${page.id}-${lang}`)
   return {
     html: `${siteHeader(presentation, page, lang, mode, contact, ids)}<div id="cms-site-content">${body.html}</div>${siteFooter(lang, mode)}`,
-    css: { light: repairDesktopCss(body.css.light), dark: repairDesktopCss(body.css.dark) },
+    css: body.css,
   }
 }
 

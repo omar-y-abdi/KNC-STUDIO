@@ -54,12 +54,20 @@ The static, unit, build, browser, startup, Edge Function, database and integrati
 on the stack PRs (#119 to #138) and on #104. Those runs do not certify production authentication,
 delivery, migration or publication.
 
-E1b part 2 and render-repair removal remain deferred until the owner's post-rollout publication
-and a separate compatibility check of still-supported legacy inputs. A read-only production check
-on 2026-11-10 found that the publication has not happened: the published `/about` English CSS still
-holds legacy `@media (max-width:1440px)` id-only blocks, so every render-time `repairDesktopCss`
-call stays. Two legacy paths are gone. The Worker no longer serves a created page with its own
-frozen header copy: `cms-studio` refuses to publish a created page with `layout: 'independent'` or
+E1b part 2 remains deferred until a separate compatibility check of still-supported legacy inputs.
+The owner's post-rollout publication happened on 2026-11-10 (revision 60): a read-only production
+check found no `max-width:1440px` anywhere in the published head, while older revisions still hold
+the legacy id-only blocks. The render-time `repairDesktopCss` calls are therefore gone from the
+Worker's page sheets, the created-page renderer and the Studio canvas; Studio repairs a document
+when it takes it in, and a history review repairs the revision it reads. A sheet that still held
+such a block would be served as stored, its id rules applying at the wrong breakpoint. One
+render-time call stays, in the public app's `NativeSurface`: the committed browser fixture
+(`tools/e2e/fixtures/presentation.json.gz`, revision 56) still holds the blocks in the `/about`
+English sheets, and without that repair four stored mobile screenshots of the English homepage
+change. It can go once the fixture is refreshed from the republished head, and takes css-tree out
+of the public boot path with it. Two more legacy paths are gone. The Worker no longer serves a
+created page with its own frozen header copy: `cms-studio` refuses to publish a created page with
+`layout: 'independent'` or
 a `#cms-site-shell` element (`validateNoFrozenSitePages`, on publication only; validation and
 revision reads still return such a document so Studio's adoption step can migrate it), and the
 published head holds no created page. A frozen page the Worker is handed anyway is rendered as any

@@ -350,11 +350,12 @@ test('Missing scene upgrade preserves owner CSS precedence and is idempotent', a
   })
   assert.deepEqual(actual, { color: 'rgb(0, 128, 0)', stable: true, originalUnchanged: true })
 })
-test('Raw and adopted CSS preserve native canvas output in both schemes', async ({ page }) => {
+test('Reviewed and adopted CSS preserve native canvas output in both schemes', async ({ page }) => {
   await page.goto(`${base}/tools/e2e/admin-harness.html`)
   const result = await page.evaluate(async () => {
     const { emptyDocument } = await import('/packages/content-contracts/src/cms.ts')
-    const { normalizeDocument } = await import('/modules/studio/src/normalizeDocument.ts')
+    const { normalizeDesktopCss, normalizeDocument } =
+      await import('/modules/studio/src/normalizeDocument.ts')
     const { nativeCanvas } = await import('/modules/studio/src/nativeCanvas.ts')
     const html =
       '<main data-knc-native="1"><section id="owner-offset" data-knc-baseline="{}" ' +
@@ -382,8 +383,9 @@ test('Raw and adopted CSS preserve native canvas output in both schemes', async 
     return {
       stored: variant.css,
       original: document.presentation.pages[0].content.en.css,
-      rawOutputs: ['light', 'dark'].map((mode) =>
-        nativeCanvas(document.presentation.pages[0].content.en, mode),
+      // A history review repairs the revision it reads without adopting it.
+      reviewedOutputs: ['light', 'dark'].map((mode) =>
+        nativeCanvas(normalizeDesktopCss(document).presentation.pages[0].content.en, mode),
       ),
       outputs: ['light', 'dark'].map((mode) => nativeCanvas(variant, mode)),
       previous: ['light', 'dark'].map((mode) =>
@@ -395,7 +397,7 @@ test('Raw and adopted CSS preserve native canvas output in both schemes', async 
   assert.ok(result.stored.dark.includes('(min-width:769px)'))
   assert.ok(result.original.light.includes('(max-width:1440px)'))
   assert.deepEqual(result.outputs, result.previous)
-  assert.deepEqual(result.rawOutputs, result.previous)
+  assert.deepEqual(result.reviewedOutputs, result.previous)
   assert.deepEqual(
     result.outputs.map((output) => output.css),
     [

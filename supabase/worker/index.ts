@@ -15,7 +15,6 @@ import {
   renderContactPage,
 } from '@bladeblend/public-web/server/contact-page'
 import { renderLegalFragment, renderLegalPage } from '@bladeblend/public-web/server/legal-page'
-import { repairDesktopCss } from '@bladeblend/content-contracts/cms-device-css'
 import { siteThemeCss } from '@bladeblend/content-contracts/site-theme'
 import { WorkerEntrypoint } from 'cloudflare:workers'
 import {
@@ -530,7 +529,7 @@ function pageSheets(variant: PageVariant, mode: RenderedMode): string {
   return sheetSchemes(mode)
     .map(
       (scheme) =>
-        `<style id="cms-page-${scheme}"${schemeMedia(mode, scheme)}>${inertStyleText(modeCss(repairDesktopCss(variant.css[scheme]), scheme))}</style>`,
+        `<style id="cms-page-${scheme}"${schemeMedia(mode, scheme)}>${inertStyleText(modeCss(variant.css[scheme], scheme))}</style>`,
     )
     .join('')
 }

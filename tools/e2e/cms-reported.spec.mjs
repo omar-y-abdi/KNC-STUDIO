@@ -1710,6 +1710,11 @@ for (const lang of ['sv', 'en']) {
     studio,
   }) => {
     const { today, older } = await businessDocuments(studio)
+    // The older revision also holds the Desktop breakpoint earlier Studio builds stored. The
+    // preview shows a created page's sheet as it is given, so the review repairs what it reads.
+    const stored = older.presentation.pages.find((item) => item.path === '/visit').content[lang]
+    const legacy = '@media(max-width:1440px){#legacy-offset{translate:12px 0!important}}'
+    stored.css = { light: stored.css.light + legacy, dark: stored.css.dark + legacy }
     // Revision 9 holds today's draft and revision 7 an older business. This route answers both
     // history reads; every other request reaches the native backend.
     const revisions = new Map([
@@ -1756,6 +1761,12 @@ for (const lang of ['sv', 'en']) {
       await expectPreviewContact(preview, lang, own, other)
       await pages.selectOption({ label: names.visit })
       await expectPreviewHeader(preview, own)
+      const sheet = await page.locator('.cms-history-preview iframe').getAttribute('srcdoc')
+      expect(sheet.includes('max-width:1440px'), `revision ${revision}`).toBe(false)
+      expect(
+        sheet.includes('@media (min-width:769px){#legacy-offset{translate:12px 0!important}}'),
+        `revision ${revision}`,
+      ).toBe(revision === 7)
       await page.keyboard.press('Escape')
       await review.waitFor({ state: 'detached' })
     }
