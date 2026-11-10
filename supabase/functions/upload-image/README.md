@@ -27,19 +27,19 @@ merge may deploy this gateway and the migrations in either order. Removing them 
    orphan reconciliation and fenced worker dispatch stay. Already-queued gallery and logo deletion
    jobs keep their payloads and can still be dispatched.
 
-`magick.wasm` is pinned from `@imagemagick/magick-wasm@0.0.42` and bundled through the function's
-`static_files` configuration. SHA-256:
-`c903248c3b66a550b74bac5ea25d359e84455b8d82aa945a16f75f6fd8be610a`. Upstream license and notice
-files are vendored beside it. Deploy with local Docker bundling; API-side bundling has a lower size
-limit and does not support static files.
+`index.ts` reads `magick.wasm` from the pinned `@imagemagick/magick-wasm@0.0.42` npm package, beside
+the package entry that `import.meta.resolve` returns. The bundler packs the package's files into the
+function bundle, the 14.7 MB WASM and the upstream license and notice files included, so the
+function needs no `static_files` entry. Deploy with local Docker bundling; API-side bundling has a
+lower size limit.
 
 ```sh
 npx supabase functions deploy upload-image
 ```
 
 For non-interactive deployment (for example GitHub Actions), provide a Supabase management
-`SUPABASE_ACCESS_TOKEN`. Do not substitute `--use-api`: this function's vendored WASM is a
-configured static file and must use the CLI/Docker bundle path.
+`SUPABASE_ACCESS_TOKEN`. Do not substitute `--use-api`: the bundle carries the WASM and must use the
+CLI/Docker bundle path.
 
 ## JPEG/WebP corruption guard
 
