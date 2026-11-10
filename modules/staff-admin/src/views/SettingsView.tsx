@@ -14,6 +14,13 @@ import { orderedAdminOperation } from '../orderedOperations'
 import { validateNewPassword } from '../passwordPolicy'
 import { DEFAULT_SITE_SETTINGS } from '@bladeblend/public-web/site-chrome'
 import type { AdminProfile } from '../types'
+import {
+  afterEmailChange,
+  checkEmailChange,
+  EMAIL_ERROR_ID,
+  passwordFieldAria,
+  type EmailFormStatus,
+} from './emailChangeForm'
 import type { AdminStylesBundle } from './viewTypes'
 
 const defaultPort = { list: listSiteSettings, save: saveSiteSetting }
@@ -33,16 +40,13 @@ type FormStatus =
   | { readonly kind: 'error'; readonly message: string }
   | { readonly kind: 'done' }
 
-function validEmail(value: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
-}
-
 export function SettingsView(props: SettingsViewProps): JSX.Element {
   const { s, profile } = props
   const port = props.port ?? defaultPort
   const t = adminText(props.lang)
   const [newEmail, setNewEmail] = useState('')
-  const [emailStatus, setEmailStatus] = useState<FormStatus>({ kind: 'idle' })
+  const [emailPassword, setEmailPassword] = useState('')
+  const [emailStatus, setEmailStatus] = useState<EmailFormStatus>({ kind: 'idle' })
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -105,24 +109,19 @@ export function SettingsView(props: SettingsViewProps): JSX.Element {
   const submitEmail = async (event: JSX.TargetedEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault()
     if (emailStatus.kind === 'submitting') return
-    const email = newEmail.trim().toLowerCase()
-    if (!validEmail(email)) {
-      setEmailStatus({ kind: 'error', message: t.settingsEmailInvalid })
-      return
-    }
-    if (email === profile.email.toLowerCase()) {
-      setEmailStatus({ kind: 'error', message: t.settingsEmailSame })
+    const fields = { newEmail, password: emailPassword }
+    const check = checkEmailChange(fields, profile.email, t)
+    if (!check.ok) {
+      setEmailStatus(check.status)
       return
     }
 
     setEmailStatus({ kind: 'submitting' })
-    const result = await requestOwnEmailChange(email, props.lang)
-    if (!result.ok) {
-      setEmailStatus({ kind: 'error', message: result.error.message })
-      return
-    }
-    setNewEmail('')
-    setEmailStatus({ kind: 'done' })
+    const outcome = await requestOwnEmailChange(check.email, check.password, props.lang)
+    const next = afterEmailChange(outcome, fields, t)
+    setNewEmail(next.fields.newEmail)
+    setEmailPassword(next.fields.password)
+    setEmailStatus(next.status)
   }
 
   const submitPassword = async (event: JSX.TargetedEvent<HTMLFormElement>): Promise<void> => {
@@ -208,9 +207,30 @@ export function SettingsView(props: SettingsViewProps): JSX.Element {
               style={s.input}
             />
           </div>
+          <div style={s.fieldRow}>
+            <label htmlFor="settings-email-password" style={s.label}>
+              {t.changePwCurrentPassword}
+            </label>
+            <input
+              id="settings-email-password"
+              type="password"
+              autoComplete="current-password"
+              required
+              {...passwordFieldAria(emailStatus)}
+              value={emailPassword}
+              disabled={emailStatus.kind === 'submitting'}
+              onInput={(event) => {
+                setEmailPassword(event.currentTarget.value)
+                if (emailStatus.kind !== 'submitting') setEmailStatus({ kind: 'idle' })
+              }}
+              style={s.input}
+            />
+          </div>
           <div aria-live="polite" style={{ minHeight: '20px', marginBottom: '10px' }}>
-            {emailStatus.kind === 'error' ? (
-              <span style={s.errorText}>{emailStatus.message}</span>
+            {emailStatus.kind === 'error' || emailStatus.kind === 'password_error' ? (
+              <span id={EMAIL_ERROR_ID} style={s.errorText}>
+                {emailStatus.message}
+              </span>
             ) : null}
             {emailStatus.kind === 'done' ? (
               <span role="status" style={s.successText}>

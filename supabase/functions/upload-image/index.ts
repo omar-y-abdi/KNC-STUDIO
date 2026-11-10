@@ -9,7 +9,8 @@ import {
   parseExternalAction,
   type ExternalActionService,
 } from '../_shared/externalActions.ts'
-import { corsHeaders, corsJson as json } from '../_shared/http.ts'
+import { json } from '../_shared/http.ts'
+import { staffCors } from '../_shared/staffCors.ts'
 import { deleteSchema, formFields, uploadSchema } from './request.ts'
 
 const MAX_INPUT_BYTES = 5 * 1024 * 1024
@@ -56,9 +57,9 @@ function isReplacement(value: unknown): value is {
   )
 }
 
-Deno.serve(async (req: Request): Promise<Response> => {
+async function handle(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+    return new Response('ok')
   }
 
   if (req.method !== 'POST') {
@@ -404,4 +405,6 @@ Deno.serve(async (req: Request): Promise<Response> => {
     },
     200,
   )
-})
+}
+
+Deno.serve(staffCors(Deno.env.get('CMS_ALLOWED_ORIGINS'), handle))

@@ -4,16 +4,11 @@
 
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
 
-export const corsHeaders: Record<string, string> = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
-
+/** The CORS headers are added by `staffCors` (_shared/staffCors.ts), which wraps both handlers. */
 export function json(body: unknown, status: number): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json' },
   })
 }
 

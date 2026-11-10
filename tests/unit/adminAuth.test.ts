@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const authMocks = vi.hoisted(() => ({
@@ -198,24 +199,102 @@ describe('admin account settings auth', () => {
   it('requests a confirmed email change', async () => {
     authMocks.invoke.mockResolvedValue({ data: { ok: true }, error: null })
 
-    const result = await requestOwnEmailChange('new@example.com', 'sv')
+    const result = await requestOwnEmailChange('new@example.com', ' current password ', 'sv')
 
-    expect(result).toEqual({ ok: true, value: undefined })
+    expect(result).toEqual({ kind: 'sent' })
     expect(authMocks.invoke).toHaveBeenCalledWith('send-email-change', {
-      body: { new_email: 'new@example.com', lang: 'sv' },
+      body: { new_email: 'new@example.com', current_password: ' current password ', lang: 'sv' },
     })
   })
 
-  it('surfaces an email-change provider rejection', async () => {
-    authMocks.invoke.mockResolvedValue({
-      data: { ok: false, error: 'generate_failed' },
-      error: null,
+  const emailChangeFailed = {
+    kind: 'error',
+    error: { kind: 'validation', message: 'Kunde inte skicka bekräftelsen. Försök igen.' },
+  }
+
+  it.each([
+    { ok: false, error: 'generate_failed' },
+    { ok: false },
+    { ok: 'true' },
+    { error: 'wrong_password' },
+    'wrong_password',
+    null,
+  ])('surfaces an email-change answer that sent nothing as a failure: %j', async (data) => {
+    authMocks.invoke.mockResolvedValue({ data, error: null })
+
+    expect(await requestOwnEmailChange('taken@example.com', 'current-password', 'en')).toEqual(
+      emailChangeFailed,
+    )
+  })
+
+  it.each(['sv', 'en'] as const)(
+    'reports a current password the function refused as its own outcome (%s)',
+    async (lang) => {
+      authMocks.invoke.mockResolvedValue({
+        data: { ok: false, error: 'wrong_password' },
+        error: null,
+      })
+
+      expect(await requestOwnEmailChange('new@example.com', 'wrong-password', lang)).toEqual({
+        kind: 'wrong_password',
+      })
+    },
+  )
+
+  // functions-js answers a non-2xx status with a FunctionsHttpError that holds the Response.
+  const refusedWith = (status: number) => ({
+    data: null,
+    error: Object.assign(new Error('Edge Function returned a non-2xx status code'), {
+      name: 'FunctionsHttpError',
+      context: new Response('{"ok":false}', { status }),
+    }),
+  })
+
+  it('reports the one-a-minute limit of the function as its own outcome', async () => {
+    authMocks.invoke.mockResolvedValue(refusedWith(429))
+
+    expect(await requestOwnEmailChange('new@example.com', 'current-password', 'en')).toEqual({
+      kind: 'rate_limited',
     })
+  })
 
-    const result = await requestOwnEmailChange('taken@example.com', 'en')
+  it.each([400, 401, 403, 500, 502, 503])(
+    'keeps a refusal the function answers with status %s generic',
+    async (status) => {
+      authMocks.invoke.mockResolvedValue(refusedWith(status))
 
-    expect(result.ok).toBe(false)
-    if (!result.ok) expect(result.error.kind).toBe('validation')
+      expect(await requestOwnEmailChange('new@example.com', 'current-password', 'en')).toEqual(
+        emailChangeFailed,
+      )
+    },
+  )
+
+  it.each([
+    { name: 'FunctionsHttpError' },
+    { name: 'FunctionsFetchError', context: null },
+    { name: 'FunctionsRelayError', context: { status: '429' } },
+    'offline',
+  ])('keeps an email-change error without a readable status generic: %j', async (error) => {
+    authMocks.invoke.mockResolvedValue({ data: null, error })
+
+    expect(await requestOwnEmailChange('new@example.com', 'current-password', 'en')).toEqual(
+      emailChangeFailed,
+    )
+  })
+
+  it('reports an email-change request lost in transit as a network error', async () => {
+    authMocks.invoke.mockRejectedValue(new Error('offline'))
+
+    expect(await requestOwnEmailChange('new@example.com', 'current-password', 'sv')).toEqual({
+      kind: 'error',
+      error: { kind: 'network', message: 'Kunde inte nå servern. Försök igen.' },
+    })
+  })
+
+  it('leaves the wording of the Settings form out of the session path', () => {
+    // src/CmsRoute.tsx loads auth.ts through useAdminSession; the string table stays out of it.
+    const source = readFileSync('modules/staff-admin/src/auth.ts', 'utf8')
+    expect(source).not.toMatch(/from '\.\/adminStrings'/)
   })
 
   it('sends the password-recovery Turnstile token to the Edge function', async () => {

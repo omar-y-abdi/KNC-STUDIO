@@ -71,7 +71,7 @@ export interface StatePayload {
   readonly barber_id: string
   /** Issued-at, epoch SECONDS. verifyState rejects tokens older than maxAgeSec. */
   readonly iat: number
-  /** Optional app origin to link back to from the callback page (never auto-redirected). */
+  /** Optional app origin: when set, the callback redirects the barber's browser to its `/admin`. */
   readonly return_to?: string
 }
 

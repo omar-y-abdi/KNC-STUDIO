@@ -10,6 +10,7 @@ import {
   sendViaResend,
   type PreparedEmail,
 } from '../../supabase/functions/_shared/email'
+import { appStrings } from '../../modules/public-web/src/i18n/index'
 
 function discoveryClient(settings: Record<string, string>) {
   return {
@@ -65,7 +66,7 @@ describe('transactional email business data', () => {
     expect(message.replyTo).toBe('contact@current.example')
     expect(message.html).toContain('Current Street 7, 411 11 Göteborg')
     expect(message.html).toContain('031-12 34 56')
-    expect(message.html).toContain('avbokningsvillkor 36h')
+    expect(message.html).toContain('avboka senast 36 h före den bokade tiden')
     expect(message.html).not.toContain('Geijersgatan 10')
     expect(message.html).not.toContain('079-304 36 71')
   })
@@ -84,6 +85,45 @@ describe('transactional email business data', () => {
     expect(message.html).toContain('barberarpanelen hos Current Studio')
     expect(message.html).not.toContain('barberarpanelen hos Blade &amp; Blend Studio')
   })
+
+  // The setting allows 1 to 168: the wording must read right for one hour as for many.
+  it.each([
+    ['sv', '36', 'senast 36 h före den bokade tiden', 'Därefter kontaktar du oss direkt.'],
+    ['sv', '1', 'senast 1 h före den bokade tiden', 'Därefter kontaktar du oss direkt.'],
+    ['en', '36', 'up to 36 h before your appointment', 'After that, contact us directly.'],
+    ['en', '1', 'up to 1 h before your appointment', 'After that, contact us directly.'],
+  ] as const)(
+    'default customer notes say what the cancellation hours mean and where to cancel (%s, %s h)',
+    async (lang, hours, rule, afterDeadline) => {
+      const business = await loadEmailBusiness(
+        discoveryClient({ ...settings, cancellation_policy_hours: hours }) as never,
+      )
+      const text = (template: 'customer_confirmation' | 'customer_reminder'): string =>
+        buildEmailMessage({
+          to: 'customer@example.com',
+          lang,
+          copy: defaultEmailTemplate(template, lang),
+          variables: {
+            customer_name: 'Omar',
+            barber_name: 'Ada',
+            cancellation_hours: String(business.cancellationPolicyHours),
+          },
+          ctaHref: 'https://bladeblendstudio.se',
+          business,
+        }).text
+      for (const template of ['customer_confirmation', 'customer_reminder'] as const) {
+        // The place is named as the site names it.
+        expect(text(template)).toContain(`"${appStrings(lang).myBookings}"`)
+        expect(text(template)).toContain(rule)
+        expect(text(template)).not.toMatch(/avbokningsvillkor|cancellation policy|\{[a-z_]+\}/i)
+        // No word after the number takes a plural form.
+        expect(text(template)).not.toMatch(/\d\s*(timm|hours?\b)/i)
+      }
+      // The reminder can arrive after the online deadline, so it also says what applies then.
+      expect(text('customer_reminder')).toContain(afterDeadline)
+      expect(text('customer_confirmation')).not.toContain(afterDeadline)
+    },
+  )
 
   it('fails closed when required CMS contact data is missing', async () => {
     await expect(loadEmailBusiness(discoveryClient({}) as never)).rejects.toThrow(
@@ -138,6 +178,24 @@ describe('transactional email business data', () => {
       expect(source).not.toContain('079-304')
       expect(source).not.toContain('tel:+46793043671')
     }
+  })
+
+  it("gives Auth's own email-change message no way to confirm the change", () => {
+    // Auth mails this template when a session calls PUT /auth/v1/user with a new email, which asks
+    // for no password. A token, code or confirmation link here would move the login without one.
+    const source = readFileSync('supabase/templates/email-change.html', 'utf8')
+    for (const variable of ['TokenHash', 'Token', 'ConfirmationURL', 'RedirectTo']) {
+      expect(source).not.toContain(variable)
+    }
+    const actions = [...source.matchAll(/\{\{([^}]*)\}\}/g)].map(([, action = '']) => action.trim())
+    expect([...new Set(actions)].sort()).toEqual(['.NewEmail', '.SiteURL'])
+    const links = [...source.matchAll(/href="([^"]*)"/g)].map(([, href]) => href)
+    expect(links.length).toBeGreaterThan(0)
+    expect(links.every((href) => href === '{{ .SiteURL }}')).toBe(true)
+    expect(source).not.toMatch(/auth\/confirm|token_hash|type=email_change/)
+    const text = source.replace(/\s+/g, ' ')
+    expect(text).toContain('Adressen har inte ändrats')
+    expect(text).toContain('Logga in i adminpanelen och gör ändringen under Inställningar.')
   })
 })
 

@@ -152,23 +152,52 @@ describe('external-cleanup request', () => {
 })
 
 describe('send-email-change request', () => {
-  it('accepts a valid body and normalizes the address', () => {
-    expect(parse(sendEmailChange, { new_email: ' New@Mail.se ', lang: 'en' })).toEqual({
+  it('accepts a valid body, normalizes the address and keeps the password as typed', () => {
+    expect(
+      parse(sendEmailChange, {
+        new_email: ' New@Mail.se ',
+        current_password: ' Pass Word ',
+        lang: 'en',
+      }),
+    ).toEqual({
       ok: true,
-      data: { new_email: 'new@mail.se', lang: 'en' },
+      data: { new_email: 'new@mail.se', current_password: ' Pass Word ', lang: 'en' },
     })
   })
 
   it('reads a non-text address as empty and any other language as Swedish', () => {
-    expect(parse(sendEmailChange, { new_email: 5, lang: 'fr' })).toEqual({
+    expect(parse(sendEmailChange, { new_email: 5, current_password: 'p', lang: 'fr' })).toEqual({
       ok: true,
-      data: { new_email: '', lang: 'sv' },
+      data: { new_email: '', current_password: 'p', lang: 'sv' },
     })
   })
 
-  it.each([{ new_email: 'a@b.se', extra: 1 }, 'text', null, ['a@b.se']])('rejects %j', (raw) => {
+  it('accepts a current password of 1 to 72 characters', () => {
+    for (const length of [1, 72]) {
+      const password = 'p'.repeat(length)
+      expect(
+        parse(sendEmailChange, { new_email: 'a@b.se', current_password: password, lang: 'sv' }),
+      ).toEqual({ ok: true, data: { new_email: 'a@b.se', current_password: password, lang: 'sv' } })
+    }
+  })
+
+  it.each([
+    { new_email: 'a@b.se', lang: 'sv' },
+    { new_email: 'a@b.se', current_password: '', lang: 'sv' },
+    { new_email: 'a@b.se', current_password: 'p'.repeat(73), lang: 'sv' },
+    { new_email: 'a@b.se', current_password: 7, lang: 'sv' },
+    { new_email: 'a@b.se', current_password: null, lang: 'sv' },
+    { new_email: 'a@b.se', current_password: ['p'], lang: 'sv' },
+  ])('rejects a missing or unusable current password: %j', (raw) => {
     expect(parse(sendEmailChange, raw).ok).toBe(false)
   })
+
+  it.each([{ new_email: 'a@b.se', current_password: 'p', extra: 1 }, 'text', null, ['a@b.se']])(
+    'rejects %j',
+    (raw) => {
+      expect(parse(sendEmailChange, raw).ok).toBe(false)
+    },
+  )
 })
 
 describe('send-recovery-email request', () => {

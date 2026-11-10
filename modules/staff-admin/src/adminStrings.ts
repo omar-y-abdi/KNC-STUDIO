@@ -33,6 +33,9 @@ const SV = {
   settingsEmailSubmit: 'Skicka bekräftelse',
   settingsEmailSent:
     'En bekräftelselänk har skickats till den nya adressen. E‑postadressen ändras när den nya adressen har bekräftats.',
+  settingsEmailPasswordRequired: 'Ange ditt nuvarande lösenord.',
+  settingsEmailPasswordWrong: 'Fel lösenord. Vänta en minut och försök igen.',
+  settingsEmailRateLimited: 'Vänta en minut och försök igen.',
   settingsPasswordTitle: 'Lösenord',
   settingsPasswordLead: 'Ange ditt nuvarande lösenord innan du väljer ett nytt.',
   // Profil (barber photo) view.
@@ -464,6 +467,9 @@ const EN: AdminStrings = {
   settingsEmailSubmit: 'Send confirmation',
   settingsEmailSent:
     'A confirmation link has been sent to the new address. The email changes after the new address is confirmed.',
+  settingsEmailPasswordRequired: 'Enter your current password.',
+  settingsEmailPasswordWrong: 'Wrong password. Wait a minute and try again.',
+  settingsEmailRateLimited: 'Wait a minute and try again.',
   settingsPasswordTitle: 'Password',
   settingsPasswordLead: 'Enter your current password before choosing a new one.',
   profileTitle: 'Profile photo',

@@ -6,7 +6,8 @@ import {
   parseExternalAction,
   type ExternalActionService,
 } from '../_shared/externalActions.ts'
-import { corsHeaders, corsJson as json } from '../_shared/http.ts'
+import { json } from '../_shared/http.ts'
+import { staffCors } from '../_shared/staffCors.ts'
 import { requestSchema } from './request.ts'
 
 function isRpcError(value: unknown): value is { readonly ok: false; readonly error: string } {
@@ -61,8 +62,8 @@ async function processActionNow(service: SupabaseClient, id: string): Promise<bo
   return completed.error === null && completed.data === true
 }
 
-Deno.serve(async (req: Request): Promise<Response> => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
+async function handle(req: Request): Promise<Response> {
+  if (req.method === 'OPTIONS') return new Response('ok')
   if (req.method !== 'POST') return json({ ok: false, error: 'method_not_allowed' }, 405)
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')
@@ -156,4 +157,6 @@ Deno.serve(async (req: Request): Promise<Response> => {
     deleted_bookings: result.deleted_bookings,
     auth_cleanup_pending: authCleanupPending,
   })
-})
+}
+
+Deno.serve(staffCors(Deno.env.get('CMS_ALLOWED_ORIGINS'), handle))

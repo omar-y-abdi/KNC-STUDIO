@@ -30,16 +30,17 @@ import {
   prepareEmail,
   sendViaResend,
 } from '../_shared/email.ts'
-import { corsHeaders, corsJson as json, parse } from '../_shared/http.ts'
+import { json, parse } from '../_shared/http.ts'
+import { staffCors } from '../_shared/staffCors.ts'
 import { requestSchema } from './request.ts'
 import { hashStaffInvitationToken, newStaffInvitationToken } from '../_shared/staffInvitation.ts'
 
 // --- HTTP handler -----------------------------------------------------------------------------
 
-Deno.serve(async (req: Request): Promise<Response> => {
-  // CORS preflight — must be first, always returns 200 with CORS headers.
+async function handle(req: Request): Promise<Response> {
+  // CORS preflight — must be first, always returns 200; `staffCors` adds the CORS headers.
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+    return new Response('ok')
   }
   if (req.method !== 'POST') {
     return json({ ok: false, error: 'method_not_allowed' }, 405)
@@ -244,4 +245,6 @@ Deno.serve(async (req: Request): Promise<Response> => {
     }
     return json({ ok: false, error: 'invite_send_failed' }, 502)
   }
-})
+}
+
+Deno.serve(staffCors(Deno.env.get('CMS_ALLOWED_ORIGINS'), handle))

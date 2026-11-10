@@ -13,21 +13,43 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
 import { buildAuthUrl, signState } from '../_shared/calendar.ts'
-import { callerBarberId, corsHeaders, json } from '../_shared/calendarCaller.ts'
+import { callerBarberId, json } from '../_shared/calendarCaller.ts'
+import { staffCors } from '../_shared/staffCors.ts'
 
-/** A same-scheme https origin we may link back to from the callback page (never auto-redirected). */
-function safeOrigin(raw: string | null): string | undefined {
-  if (raw === null) return undefined
-  try {
-    const u = new URL(raw)
-    return u.protocol === 'https:' ? u.origin : undefined
-  } catch {
-    return undefined
-  }
+const DEFAULT_ORIGINS = ['https://bladeblendstudio.se', 'https://www.bladeblendstudio.se']
+
+/** The site's origins from PUBLIC_SITE_ORIGINS, read exactly as `allowedOrigins` in
+ *  public-booking-actions/index.ts reads them. */
+function siteOrigins(configured: string | undefined): readonly string[] {
+  if (!configured) return DEFAULT_ORIGINS
+  return configured
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0)
 }
 
-Deno.serve(async (req: Request): Promise<Response> => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
+type ReturnOrigin =
+  | { readonly kind: 'none' }
+  | { readonly kind: 'site'; readonly origin: string }
+  | { readonly kind: 'foreign' }
+
+/** The app origin the callback redirects the barber's browser back to: an https origin of the site.
+ *  A missing, unreadable or non-https Origin (local http development) gives none and the callback
+ *  shows its own page; any other https origin is foreign and the request is refused. */
+function returnOrigin(raw: string | null, allowed: readonly string[]): ReturnOrigin {
+  if (raw === null) return { kind: 'none' }
+  let url: URL
+  try {
+    url = new URL(raw)
+  } catch {
+    return { kind: 'none' }
+  }
+  if (url.protocol !== 'https:') return { kind: 'none' }
+  return allowed.includes(url.origin) ? { kind: 'site', origin: url.origin } : { kind: 'foreign' }
+}
+
+async function handle(req: Request): Promise<Response> {
+  if (req.method === 'OPTIONS') return new Response('ok')
   if (req.method !== 'POST') return json({ ok: false, error: 'method_not_allowed' }, 405)
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')
@@ -47,16 +69,23 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const barberId = await callerBarberId(req, service)
   if (barberId instanceof Response) return barberId
 
+  const returnTo = returnOrigin(
+    req.headers.get('origin'),
+    siteOrigins(Deno.env.get('PUBLIC_SITE_ORIGINS')),
+  )
+  if (returnTo.kind === 'foreign') return json({ ok: false, error: 'origin_not_allowed' }, 403)
+
   // Bind the barber id into a short-lived signed state (CSRF + identity). iat in epoch seconds.
   const nowSec = Math.floor(Date.now() / 1000)
-  const returnTo = safeOrigin(req.headers.get('origin'))
   const state = await signState(
-    returnTo === undefined
+    returnTo.kind === 'none'
       ? { barber_id: barberId, iat: nowSec }
-      : { barber_id: barberId, iat: nowSec, return_to: returnTo },
+      : { barber_id: barberId, iat: nowSec, return_to: returnTo.origin },
     stateSecret,
   )
 
   const redirectUri = `${supabaseUrl}/functions/v1/calendar-oauth-callback`
   return json({ ok: true, url: buildAuthUrl(clientId, redirectUri, state) }, 200)
-})
+}
+
+Deno.serve(staffCors(Deno.env.get('CMS_ALLOWED_ORIGINS'), handle))
