@@ -17,16 +17,7 @@ function parseAccept(header: string): Entry[] {
       const value = parameter.trim()
       if (!/^q\s*=/i.test(value)) continue
       const rawQuality = value.slice(value.indexOf('=') + 1).trim()
-      const parts = rawQuality.split('.')
-      if (
-        parts.length > 2 ||
-        !['0', '1'].includes(parts[0] ?? '') ||
-        (parts[1] !== undefined &&
-          (parts[1].length < 1 ||
-            parts[1].length > 3 ||
-            ![...parts[1]].every((digit) => digit >= '0' && digit <= '9')))
-      )
-        return []
+      if (!/^(?:[01]|[01]\.[0-9]{1,3})$/.test(rawQuality)) return []
       const quality = Number(rawQuality)
       if (quality > 1 || !Number.isFinite(quality)) return []
       q = quality
