@@ -37,7 +37,7 @@ export function readCanvasCss(editor: Editor): string {
   )
 }
 
-function canvasRules(editor: Editor): CssRule[] {
+export function canvasRules(editor: Editor): CssRule[] {
   // Keep every unused source rule, but selection can create empty component rules.
   // Empty layers live inside a nonempty envelope and remain in the export.
   return editor.Css.getAll().models.filter(
@@ -46,6 +46,9 @@ function canvasRules(editor: Editor): CssRule[] {
 }
 
 const canvasStyleOptions = { withNested: true, allowEmpty: true }
+/** Keyframe blocks hold frames, not element selectors. */
+export const isKeyframes = (node: Atrule): boolean =>
+  ['keyframes', '-webkit-keyframes'].includes(ident.decode(node.name).toLowerCase())
 const canvasStyleProjectors = new WeakMap<Editor, (css: string) => string>()
 
 /** Apply an editor-only style projection to DOM paint, never to model or export CSS. */
@@ -63,9 +66,7 @@ function canvasStyleCss(
       if (typeof value === 'object' && !Array.isArray(value)) {
         if (key.startsWith('@')) {
           const group = parse(`${key}{}`, { context: 'atrule' })
-          const frames =
-            group.type === 'Atrule' &&
-            ['keyframes', '-webkit-keyframes'].includes(ident.decode(group.name).toLowerCase())
+          const frames = group.type === 'Atrule' && isKeyframes(group)
           return `${key}{${canvasStyleCss(value, frames ? false : withinRule, important)}}`
         }
         if (!withinRule && !key.startsWith('& '))
@@ -510,8 +511,7 @@ function canvasNestedStyle(
         canvasNestedStyle(
           node.block,
           node.type === 'Rule' || withinRule,
-          node.type === 'Atrule' &&
-            ['keyframes', '-webkit-keyframes'].includes(ident.decode(node.name).toLowerCase()),
+          node.type === 'Atrule' && isKeyframes(node),
           envelope,
         ),
       )
@@ -551,7 +551,7 @@ export function parseCanvasCss(
           // Groups inside a qualified rule are already masked below. Keeping that
           // rule native preserves the component's editable Desktop ID style.
           !node.block?.children.some((child) => child.type === 'Atrule') &&
-          !['keyframes', '-webkit-keyframes'].includes(ident.decode(node.name).toLowerCase()))
+          !isKeyframes(node))
       )
         return
       const key = `--cms-internal-layer-${layerRoots.size}`

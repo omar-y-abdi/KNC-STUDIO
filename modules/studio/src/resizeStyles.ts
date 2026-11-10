@@ -16,6 +16,8 @@ import {
 import type { Component, CssRule, Editor, StyleProps } from 'grapesjs'
 import type { CmsMode } from '@bladeblend/content-contracts/cms'
 import {
+  canvasRules,
+  isKeyframes,
   normalizeNativeOwnerRules,
   parseCanvasCss,
   parseCanvasSheet,
@@ -233,17 +235,15 @@ function readSamples(
     )
   )
     throw new Error('Sidans färgläge saknas för storleksändringen.')
-  const roots: Root[] = editor.Css.getAll()
-    .models.filter((model) => !model.isNested() && Object.keys(model.get('style') ?? {}).length)
-    .map((model) => {
-      const element = model.getView()?.el
-      if (!element || element.nodeName !== 'STYLE')
-        throw new Error('En storleksregel saknar sin redigeringsvy.')
-      const tree = parseCanvasSheet(
-        readCanvasRuleCss(model, model === baseline?.target ? baseline.style : undefined),
-      )
-      return { model, element, tree, normalized: false }
-    })
+  const roots: Root[] = canvasRules(editor).map((model) => {
+    const element = model.getView()?.el
+    if (!element || element.nodeName !== 'STYLE')
+      throw new Error('En storleksregel saknar sin redigeringsvy.')
+    const tree = parseCanvasSheet(
+      readCanvasRuleCss(model, model === baseline?.target ? baseline.style : undefined),
+    )
+    return { model, element, tree, normalized: false }
+  })
   if (baseline?.mode) {
     const before = roots.map((root) => generate(root.tree))
     // One originals map and declaration pass covers every root, including inactive
@@ -288,8 +288,7 @@ function readSamples(
     if (node.type === 'Rule' || node.type === 'Atrule') {
       // Frames are animation data, not element selectors. Normal dimension edits
       // leave active owner animations authoritative and edit only their underlying rules.
-      if (node.type === 'Atrule' && ['keyframes', '-webkit-keyframes'].includes(keyword(node.name)))
-        return
+      if (node.type === 'Atrule' && isKeyframes(node)) return
       if (original.type !== 'Rule' && original.type !== 'Atrule')
         throw new Error('Storleksregelns källträd ändrades.')
       scopes = [...scopes, original]
@@ -318,25 +317,23 @@ function readSamples(
         const key = `r${sources.size}`
         sources.set(key, { root, scopes, declaration: sourceNode })
         const reset = ['revert', 'revert-layer'].includes(keyword(value)) ? value : key
-        const extras: CssNode[] = []
         for (const axis of [
           horizontal ? probes.horizontal : null,
           vertical ? probes.vertical : null,
         ])
           if (axis)
-            extras.push(
+            augmented.push(
               declaration(name(axis[0]), value, child.important),
               declaration(name(axis[1]), value, child.important),
               declaration(name(axis[2]), reset, child.important),
               declaration(name(axis[3]), key, child.important),
             )
         if (zoom)
-          extras.push(
+          augmented.push(
             declaration(name(probes.zoom[0]), value, child.important),
             declaration(name(probes.zoom[1]), reset, child.important),
             declaration(name(probes.zoom[2]), key, child.important),
           )
-        augmented.push(...extras)
       })
       node.block.children = new List<CssNode>().fromArray(augmented)
     } else if (node.type === 'StyleSheet' && original.type === 'StyleSheet') {
