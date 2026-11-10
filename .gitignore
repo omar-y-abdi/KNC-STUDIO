@@ -45,3 +45,5 @@ coverage
 /.ci-source/
 /.ci-build/
 /.ci-expected.json
+output
+.claude
