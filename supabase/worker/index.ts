@@ -17,7 +17,6 @@ import {
 import { renderLegalFragment, renderLegalPage } from '@bladeblend/public-web/server/legal-page'
 import { repairDesktopCss } from '@bladeblend/content-contracts/cms-device-css'
 import { siteThemeCss } from '@bladeblend/content-contracts/site-theme'
-import { themeDeclarations } from '@bladeblend/content-contracts/site-theme-declarations'
 import { WorkerEntrypoint } from 'cloudflare:workers'
 import {
   SITE_PAGE_CSS,
@@ -491,7 +490,7 @@ function requestedCmsMode(value: string | null): CmsMode | null {
 /** One explicit scheme, or both behind `prefers-color-scheme` media queries. */
 type RenderedMode = CmsMode | 'auto'
 
-/** Native markup is restored for one mode here and owned by the app after mount. Authored markup
+/** Native markup is served for one mode and owned by the app after mount. Authored markup
  * (legal and created pages) is complete without the app bundle. */
 type CmsRender =
   | { readonly markup: 'native'; readonly mode: CmsMode; readonly variant: PageVariant }
@@ -861,64 +860,8 @@ export function renderCmsPage(
     authored && !RUNTIME_ISLAND.test(variant.html)
       ? droppedBootAssets(layout, styles, variant.html)
       : []
-  let markup = variant.html
-  if (plan.markup === 'native') {
-    const mode = plan.mode
-    // Source styles are stored once in the document; restore them for the first HTML response.
-    const fragment = parseFragment(markup)
-    const restoreSource = (node: DefaultTreeAdapterMap['node']): void => {
-      if ('attrs' in node && node.attrs.some((attr) => attr.name === 'data-knc-baseline')) {
-        const style =
-          node.attrs.find((attr) => attr.name === `data-knc-${mode}`) ??
-          node.attrs.find((attr) => attr.name === 'data-knc-light')
-        if (style) {
-          node.attrs = node.attrs.filter((attr) => attr.name !== 'style')
-          node.attrs.push({
-            name: 'style',
-            value:
-              presentation && Object.keys(presentation.themes[mode]).length
-                ? themeDeclarations(style.value, mode)
-                : style.value,
-          })
-        }
-        if (mode === 'dark') {
-          const read = (name: string): Record<string, string> => {
-            try {
-              const value: unknown = JSON.parse(
-                node.attrs.find((attr) => attr.name === name)?.value ?? '{}',
-              )
-              return value && typeof value === 'object' && !Array.isArray(value)
-                ? (value as Record<string, string>)
-                : {}
-            } catch {
-              return {}
-            }
-          }
-          const light = read('data-knc-baseline')
-          const dark = node.attrs.some((attr) => attr.name === 'data-knc-dark-attrs')
-            ? read('data-knc-dark-attrs')
-            : light
-          for (const name of [
-            'class',
-            'title',
-            'href',
-            'target',
-            'rel',
-            'src',
-            'alt',
-            'aria-label',
-          ]) {
-            if (node.attrs.find((attr) => attr.name === name)?.value !== light[name]) continue
-            node.attrs = node.attrs.filter((attr) => attr.name !== name)
-            if (typeof dark[name] === 'string') node.attrs.push({ name, value: dark[name] })
-          }
-        }
-      }
-      if ('childNodes' in node) node.childNodes.forEach(restoreSource)
-    }
-    restoreSource(fragment)
-    markup = serialize(fragment)
-  }
+  // Markup that reads as native is served as the parser serialises it.
+  const markup = plan.markup === 'native' ? serialize(parseFragment(variant.html)) : variant.html
   const { headEnd, root, bodyEnd } = layout
   // The metadata is edited in the shell's own bytes, before the first fill that places page bytes.
   const headCut = headEnd ?? root?.tagStart ?? bodyEnd
