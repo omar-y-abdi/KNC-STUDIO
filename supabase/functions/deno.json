@@ -5,7 +5,8 @@
     "parse5": "npm:parse5@8.0.1",
     "css-tree": "npm:css-tree@3.2.1",
     "@imagemagick/magick-wasm": "npm:@imagemagick/magick-wasm@0.0.42",
-    "fontkit": "npm:fontkit@2.0.4"
+    "fontkit": "npm:fontkit@2.0.4",
+    "standardwebhooks": "npm:standardwebhooks@1.1.1"
   },
   "lock": "./deno.lock",
   "nodeModulesDir": "none"

@@ -412,6 +412,13 @@ deno_version = 2
 enabled = true
 verify_jwt = false
 
+# send-auth-email: the target of Supabase Auth's Send Email hook (Auth -> function, server to
+# server), so it receives no Supabase user JWT -> verify_jwt = false. It has no CORS and does
+# nothing for a request without a valid Standard Webhooks signature (SEND_EMAIL_HOOK_SECRET).
+[functions.send-auth-email]
+enabled = true
+verify_jwt = false
+
 [functions.send-recovery-email]
 enabled = true
 verify_jwt = false

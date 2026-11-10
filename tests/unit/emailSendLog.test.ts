@@ -795,6 +795,8 @@ describe('every Edge email sender records its delivery', () => {
       'supabase/functions/_shared/externalActions.ts',
       'supabase/functions/_shared/externalActions.ts',
       'supabase/functions/admin-create-barber/index.ts',
+      'supabase/functions/send-auth-email/index.ts',
+      'supabase/functions/send-auth-email/index.ts',
       'supabase/functions/send-confirmation/index.ts',
       'supabase/functions/send-email-change/index.ts',
       'supabase/functions/send-recovery-email/index.ts',
@@ -803,6 +805,8 @@ describe('every Edge email sender records its delivery', () => {
   })
 
   it.each([
+    ['supabase/functions/send-auth-email/index.ts', 'auth_recovery'],
+    ['supabase/functions/send-auth-email/index.ts', 'auth_email_change'],
     ['supabase/functions/send-recovery-email/index.ts', 'auth_recovery'],
     ['supabase/functions/send-email-change/index.ts', 'auth_email_change'],
     ['supabase/functions/admin-create-barber/index.ts', 'auth_invite'],
