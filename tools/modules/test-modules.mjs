@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import test from 'node:test'
 import { dependenciesOf, inspectBoundaries, modulePaths } from './boundaries.mjs'
-import { commandsFor, modulePlan } from './run.mjs'
+import { commandsFor } from './run.mjs'
 
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), 'bladeblend-modules-'))
@@ -42,13 +42,27 @@ test('TypeScript syntax analysis ignores strings/comments and captures every dep
     import y = require('./legacy'); require('./runtime');
     new Worker(new URL('./worker.ts', import . meta . url));
     import(name); import.meta.glob('./**/*.ts');
+    import.meta.resolve('./resolved'); import.meta.resolve(name);
   `,
   )
   assert.deepEqual(
     result.dependencies.map((entry) => entry.specifier),
-    ['./types', './export', './lazy', './shape', './legacy', './runtime', './worker.ts'],
+    [
+      './types',
+      './export',
+      './lazy',
+      './shape',
+      './legacy',
+      './runtime',
+      './worker.ts',
+      './resolved',
+    ],
   )
-  assert.equal(result.unsupported.length, 2)
+  assert.deepEqual(result.unsupported, [
+    'a.ts: nonliteral dynamic import',
+    'a.ts: unsupported import.meta dependency operation glob',
+    'a.ts: nonliteral import.meta.resolve',
+  ])
 })
 
 test('boundaries reject private/undeclared/forbidden production imports and missing workers', (t) => {
@@ -154,20 +168,11 @@ test('backend local commands check real Deno entrypoints and package Worker with
   assert.deepEqual(commandsFor('backend', 'database')[0].args.slice(-2), ['test', 'db'])
 })
 
-test('workspace tests run the whole native unit suite and the plan previews the CI jobs', () => {
-  for (const id of Object.keys(modulePaths)) {
+test('workspace tests run the whole native unit suite', () => {
+  for (const id of Object.keys(modulePaths))
     assert.deepEqual(commandsFor(id, 'test'), [
       { executable: process.execPath, args: ['node_modules/vitest/vitest.mjs', 'run'] },
     ])
-    const omitted = Object.entries(modulePlan(id).jobs)
-      .filter(([, job]) => !job.required)
-      .map(([job]) => job)
-    assert.deepEqual(
-      omitted,
-      ['studio', 'staff-admin'].includes(id) ? ['edge-functions', 'database-current'] : [],
-      id,
-    )
-  }
 })
 
 test('the workspace runner prints the whole browser group for a dry run', () => {

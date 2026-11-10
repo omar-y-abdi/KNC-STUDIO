@@ -4,19 +4,7 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { changeReasons, requiredJobs } from '../ci/impact-plan.mjs'
 import { modulePaths, repositoryRoot, walkFiles } from './boundaries.mjs'
-
-// The CI jobs a pull request confined to in-place source edits of one workspace would run.
-export function modulePlan(id) {
-  const path =
-    id === 'backend'
-      ? 'supabase/worker/__whole_module__.ts'
-      : `${modulePaths[id]}/src/__whole_module__.ts`
-  const reasons = changeReasons([{ path, status: 'M' }])
-  const full = reasons.length > 0
-  return { mode: full ? 'full' : 'affected', reasons, jobs: requiredJobs(full) }
-}
 
 export function commandsFor(id, task, root = repositoryRoot) {
   const boundary = { executable: process.execPath, args: ['tools/modules/boundaries.mjs'] }
@@ -134,19 +122,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     options.every((option) => option === '--dry-run'),
     'Only --dry-run is supported',
   )
-  if (task === 'plan')
-    console.log(
-      JSON.stringify(
-        {
-          module: id,
-          scope: 'Whole module local verification; not a CI omission authorization',
-          ...modulePlan(id),
-        },
-        null,
-        2,
-      ),
-    )
-  else if (task === 'browser') {
+  if (task === 'browser') {
     const group =
       id === 'studio'
         ? 'cms'
