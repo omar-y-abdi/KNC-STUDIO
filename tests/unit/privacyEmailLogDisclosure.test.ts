@@ -5,6 +5,12 @@ import {
   CUSTOMER_SESSION_COOKIE,
   customerCookieHeader,
 } from '../../supabase/functions/_shared/customerCookies'
+import {
+  BOOKING_ACTIONS,
+  customerGateway,
+  GATEWAY_RATE_LIMIT_PERIOD_SECONDS,
+  type GatewayRateLimit,
+} from '../../supabase/worker/customerGateway'
 import worker, { PublicContent } from '../../supabase/worker/index'
 
 /** A repository file as one line: runs of whitespace become one space, as in the served page. */
@@ -393,6 +399,17 @@ describe('public privacy disclosure of retention, backups, reviews and browser s
     expect(cleanup).toContain(
       'and e.profile_id = any (v_profiles) and not exists ( select 1 from public.customer_profile_emails sibling join in_use u on u.email = sibling.email where sibling.profile_id = e.profile_id );',
     )
+    // Step 0 makes "waiting to be sent" the whole rule: an unused access link whose e-mail can no
+    // longer be sent (no job for it is pending or dispatching: the job is blocked or gone) is
+    // deleted, and one whose e-mail is still waiting is never deleted.
+    const waiting =
+      "not exists ( select 1 from public.external_action_jobs j where j.action_type = 'customer_access_email_send' and j.payload ->> 'challenge_id' = c.id::text and j.status in ('pending', 'dispatching') )"
+    expect(cleanup).toContain(
+      `select distinct pg_catalog.lower(pg_catalog.btrim(c.email)) as email from public.customer_booking_access_challenges c where c.used_at is null and c.expires_at > pg_catalog.now() and ${waiting} ) d order by d.email limit 200 loop if pg_catalog.pg_try_advisory_xact_lock( pg_catalog.hashtext('customer-email-access'), pg_catalog.hashtext(v_email)) then v_dead := v_dead || v_email; end if; end loop;`,
+    )
+    expect(cleanup).toContain(
+      `with dead as ( select c.id from public.customer_booking_access_challenges c where pg_catalog.lower(pg_catalog.btrim(c.email)) = any (v_dead) and c.used_at is null and c.expires_at > pg_catalog.now() and ${waiting} for update of c skip locked ) delete from public.customer_booking_access_challenges c using dead where c.id = dead.id;`,
+    )
     expect(deciding('job', 'customer-booking-access-cleanup')).toContain(
       "cron.schedule('customer-booking-access-cleanup', '23 3 * * *', 'select public.cleanup_customer_booking_access()')",
     )
@@ -513,6 +530,92 @@ describe('public privacy disclosure of retention, backups, reviews and browser s
         'stored as well, and for link or connection requests a salted hash of the email ' +
         'address. These records are deleted once they are older than two days: for bookings ' +
         'once an hour, for the others when the next such request is accepted.',
+    )
+  })
+
+  it('states what Cloudflare counts for each client and how long it keeps the count', async () => {
+    // One limiter, of 60 requests in 60 seconds, and a refused client is told the same period.
+    expect(source('wrangler.jsonc').match(/"simple": \{[^}]*\}/g)).toEqual([
+      '"simple": { "limit": 60, "period": 60 }',
+    ])
+    expect(GATEWAY_RATE_LIMIT_PERIOD_SECONDS).toBe(60)
+    // Only /api/customer-bookings is counted; the booking submission on /api/bookings is not.
+    const routes = source('supabase/worker/index.ts')
+    expect(routes).toContain(
+      "if (url.pathname === '/api/customer-bookings') return customerGateway(request, env)",
+    )
+    expect(routes).toContain(
+      "if (url.pathname === '/api/bookings') return customerGateway(request, env, 'submit-booking')",
+    )
+    // The limiter is defined once and asked once, for that endpoint alone.
+    const gateway = source('supabase/worker/customerGateway.ts')
+    expect(gateway.split('withinRateLimit(')).toHaveLength(3)
+    expect(gateway).toContain("endpoint === 'public-booking-actions' && !(await withinRateLimit(")
+    // The requests on that path: those of My appointments, of device access and a review.
+    expect(BOOKING_ACTIONS).toEqual([
+      'request_access',
+      'exchange_access',
+      'list',
+      'cancel',
+      'review',
+      'forget_device',
+      'request_link',
+      'confirm_link',
+    ])
+    // Each is counted under its kind and the client address, an IPv6 address as its /64. This
+    // limiter refuses every request, so the Worker answers before it would call Supabase.
+    const counted: string[] = []
+    const limiter: GatewayRateLimit = {
+      async limit({ key }) {
+        counted.push(key)
+        return { success: false }
+      },
+    }
+    const env = {
+      SUPABASE_URL: 'https://fixture.invalid',
+      SUPABASE_ANON_KEY: 'fixture-anon-key',
+      CUSTOMER_GATEWAY_SECRET: 'secret'.repeat(8),
+      GATEWAY_RATE_LIMIT: limiter,
+    }
+    for (const [action, ip] of [
+      ['list', '2001:db8:85a3:8d3:1319:8a2e:370:7348'],
+      ['list', '2001:db8:85a3:8d3::1'],
+      ['cancel', '203.0.113.10'],
+    ] as const) {
+      const refused = await customerGateway(
+        new Request('https://salon.example.test/api/customer-bookings', {
+          method: 'POST',
+          headers: {
+            Origin: 'https://salon.example.test',
+            'Content-Type': 'application/json',
+            'CF-Connecting-IP': ip,
+          },
+          body: JSON.stringify({ action }),
+        }),
+        env,
+      )
+      expect(refused.status).toBe(429)
+      expect(refused.headers.get('Retry-After')).toBe('60')
+    }
+    expect(counted).toEqual([
+      'list:2001:db8:85a3:8d3::/64',
+      'list:2001:db8:85a3:8d3::/64',
+      'cancel:203.0.113.10',
+    ])
+    const privacy = await servedPrivacyPolicy()
+    expect(privacy).toContain(
+      'förfrågan som godkänns. Cloudflare räknar också de förfrågningar som webbläsaren skickar ' +
+        'för Mina bokningar, för enhetsåtkomsten och för att skicka ett omdöme, per IP-adress ' +
+        '(för en IPv6-adress det /64-nät den ingår i) och typ av förfrågan. Räkningen finns hos ' +
+        'Cloudflare i 60 sekunder och sparas inte av webbplatsen. Blir förfrågningarna för många ' +
+        'nekas de en kort stund. </p>',
+    )
+    expect(privacy).toContain(
+      'the next such request is accepted. Cloudflare also counts the requests your browser ' +
+        'sends for My appointments, for device access and to submit a review, by IP address ' +
+        '(for an IPv6 address, the /64 network it belongs to) and type of request. The count is ' +
+        'kept by Cloudflare for 60 seconds and is not stored by the website. If there are too ' +
+        'many requests, they are refused for a short while. </p>',
     )
   })
 

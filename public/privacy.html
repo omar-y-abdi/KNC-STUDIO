@@ -159,7 +159,11 @@
         mellan e-postadresser. För omdömen sparas dessutom en saltad hash av telefonnumret, och för
         begäran om länk eller koppling en saltad hash av e-postadressen. Posterna raderas när de är
         äldre än två dygn: för bokningar en gång i timmen, för övriga i samband med nästa sådana
-        förfrågan som godkänns.
+        förfrågan som godkänns. Cloudflare räknar också de förfrågningar som webbläsaren skickar för
+        Mina bokningar, för enhetsåtkomsten och för att skicka ett omdöme, per IP-adress (för en
+        IPv6-adress det /64-nät den ingår i) och typ av förfrågan. Räkningen finns hos Cloudflare i
+        60 sekunder och sparas inte av webbplatsen. Blir förfrågningarna för många nekas de en kort
+        stund.
       </p>
 
       <h2>Drift och besöksstatistik</h2>
@@ -382,7 +386,11 @@
           between email addresses. For reviews a salted hash of the phone number is stored as well,
           and for link or connection requests a salted hash of the email address. These records are
           deleted once they are older than two days: for bookings once an hour, for the others when
-          the next such request is accepted.
+          the next such request is accepted. Cloudflare also counts the requests your browser sends
+          for My appointments, for device access and to submit a review, by IP address (for an IPv6
+          address, the /64 network it belongs to) and type of request. The count is kept by
+          Cloudflare for 60 seconds and is not stored by the website. If there are too many
+          requests, they are refused for a short while.
         </p>
 
         <h2>Google data we access</h2>
