@@ -62,16 +62,17 @@ export function renderDesignedEmail(
   // Preserve the delivered dark palette's inset and secondary text hierarchy.
   // Explicit palette edits still control the corresponding text/border roles.
   const defaults = defaultEmailDesign().palettes[mode]
-  const secondary = colors.muted === defaults.muted && mode === 'dark' ? '#98989d' : colors.muted
-  const introColor = colors.text === defaults.text && mode === 'dark' ? '#d1d1d6' : colors.text
-  const contactColor = colors.muted === defaults.muted && mode === 'dark' ? '#a9a9ae' : colors.muted
+  const delivered = (role: 'text' | 'muted' | 'border', dark: string): string =>
+    colors[role] === defaults[role] && mode === 'dark' ? dark : colors[role]
+  const secondary = delivered('muted', '#98989d')
+  const introColor = delivered('text', '#d1d1d6')
+  const contactColor = delivered('muted', '#a9a9ae')
   const inset = mode === 'dark' ? '#303033' : '#f5f5f7'
-  const insetBorder =
-    colors.border === defaults.border && mode === 'dark' ? '#48484b' : colors.border
-  const divider = colors.border === defaults.border && mode === 'dark' ? '#424245' : colors.border
+  const insetBorder = delivered('border', '#48484b')
+  const divider = delivered('border', '#424245')
   const phoneLink =
     business.phoneHref !== null && business.phoneDisplay !== null
-      ? `<a href="${escape(business.phoneHref)}" style="color:${colors.text};text-decoration:underline;text-decoration-color:${colors.border === defaults.border && mode === 'dark' ? '#68686d' : colors.border};text-underline-offset:3px;white-space:nowrap">${escape(business.phoneDisplay)}</a>`
+      ? `<a href="${escape(business.phoneHref)}" style="color:${colors.text};text-decoration:underline;text-decoration-color:${delivered('border', '#68686d')};text-underline-offset:3px;white-space:nowrap">${escape(business.phoneDisplay)}</a>`
       : ''
   const addressLink =
     business.mapsHref === null
@@ -96,7 +97,7 @@ export function renderDesignedEmail(
       : `<p data-email-part="details" style="margin:0 0 12px;color:${colors.muted};font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase">${text(input.copy.sectionTitle ?? '')}</p><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="${inset}" style="width:100%;background:${inset};border:1px solid ${insetBorder};border-radius:${Math.min(18, design.radius)}px;border-collapse:separate;padding:20px 22px">${rowsHtml}</table>`,
     note: `<p data-email-part="note" style="margin:28px 0 22px;color:${colors.muted};font-size:${design.textSize - 2}px;line-height:1.65">${text(input.copy.note)}</p>`,
     cta: `<table data-email-part="cta" role="presentation" cellspacing="0" cellpadding="0"><tr><td bgcolor="${colors.button}" style="background:${colors.button};border-radius:${Math.min(12, design.radius)}px"><a href="${escape(input.ctaHref)}" style="display:inline-block;padding:15px 22px;color:${colors.buttonText};text-decoration:none;font-size:${design.textSize - 1}px;font-weight:750">${text(input.copy.ctaLabel)}</a></td></tr></table>`,
-    contact: `${input.copy.contactLead === null || !phoneLink ? '' : `<p data-email-part="contact" style="margin:28px 0 0;color:${contactColor};font-size:13px;line-height:1.6">${text(input.copy.contactLead)} ${phoneLink}</p>`}<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;margin-top:38px;border-top:1px solid ${colors.border}"><tr><td style="padding-top:22px;color:${colors.muted === defaults.muted && mode === 'dark' ? '#737378' : colors.muted};font-size:12px;line-height:1.65">${addressLink}${footerPhone}</td></tr></table>`,
+    contact: `${input.copy.contactLead === null || !phoneLink ? '' : `<p data-email-part="contact" style="margin:28px 0 0;color:${contactColor};font-size:13px;line-height:1.6">${text(input.copy.contactLead)} ${phoneLink}</p>`}<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;margin-top:38px;border-top:1px solid ${colors.border}"><tr><td style="padding-top:22px;color:${delivered('muted', '#737378')};font-size:12px;line-height:1.65">${addressLink}${footerPhone}</td></tr></table>`,
   }
   const logo =
     design.logo && input.copy.designLogoUrl
