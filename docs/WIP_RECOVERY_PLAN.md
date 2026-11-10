@@ -86,8 +86,13 @@ retaining owner font/width/alignment and the initial proportional assertion. The
 mobile preservation counter checks actual editable IDs and excludes preview copies.
 
 The preview regression covers the old-source failure in which duplicate global CSS changes
-owner width and derived copies lose layer geometry and local references. Render-only
-projection must preserve canonical ID model identity, direct declaration specificity,
-anonymous layer identity and the same CSS during resize probes. Keep the existing CSS
-validator: unsupported Raw syntax and reserved internal properties are not reasons to
-broaden the admitted language.
+owner width and derived copies lose geometry and local references. Render-only projection
+must preserve canonical ID model identity, direct declaration specificity and the same CSS
+during resize probes. Keep the existing CSS validator: unsupported Raw syntax and reserved
+internal properties are not reasons to broaden the admitted language.
+
+The canvas keeps neither a cascade layer (`@layer`) nor a selector function with more than
+one alternative (`:is()`, `:where()`, `:matches()` or `:not()` with a selector list). The
+publication validator still admits both, but a page that stores either does not open for
+editing: `parseCanvasCss` refuses the sheets the canvas imports, and the editor refuses a
+page with `@layer` in any sheet a geometry edit writes. The stored source is left as it is.

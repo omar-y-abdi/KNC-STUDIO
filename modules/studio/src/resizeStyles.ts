@@ -345,7 +345,6 @@ function readSamples(
     }
   }
   try {
-    // Branch probes must not declare a named layer before the owner's first declaration.
     doc.body.appendChild(temporary)
     for (const root of roots) {
       const tree = clone(root.tree)
