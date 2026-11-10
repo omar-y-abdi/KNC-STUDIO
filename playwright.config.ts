@@ -59,6 +59,7 @@ const projects: NonNullable<PlaywrightTestConfig['projects']> = [
             'network-guard.spec.mjs',
             'legal-mode.spec.mjs',
             'style-contract.spec.mjs',
+            'public-accessibility.spec.mjs',
           ]
         : [
             'admin-shared.spec.mjs',
