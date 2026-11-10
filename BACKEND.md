@@ -255,7 +255,11 @@ customer responses remain `no-store`.
 Besides the `ASSETS` binding of the built `dist/`, `wrangler.jsonc` gives the Worker two plain
 variables, `SUPABASE_URL` and `MAINTENANCE`, and the `GATEWAY_RATE_LIMIT` binding, which counts
 requests to `/api/customer-bookings` per client and action, an IPv6 client being its /64 (its
-`ratelimits` entry holds the limit and period). `MAINTENANCE` is `off`. Set it to `on` and deploy the Worker to close the
+`ratelimits` entry holds the limit and period). The limit is approximate: Cloudflare keeps the
+counts per location and they are eventually consistent, so a burst can pass more than the 60
+requests in 60 seconds before the first 429. Without the binding, or when it fails, the gateway
+lets the request through.
+`MAINTENANCE` is `off`. Set it to `on` and deploy the Worker to close the
 site: every page request the Worker receives answers 503 with `public/maintenance.html`, and its
 JSON endpoints answer 503 in JSON. Set it back to `off` and deploy to open the site again. A
 request whose handling throws in the Worker answers 500 with `public/500.html` in the same way,
