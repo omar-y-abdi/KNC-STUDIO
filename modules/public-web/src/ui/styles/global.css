@@ -74,3 +74,133 @@ body {
     font-size: 19px;
   }
 }
+
+/* A container focused from code (ui/pageFocus.ts) is not a control: no focus indicator. */
+[data-quiet-focus]:focus {
+  outline: none;
+}
+
+/* Skip link (app/App.tsx), above the viewport until it holds focus; its colours are set inline. */
+.knc-skip-link {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 90;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font:
+    600 14px/1.2 'Inter Variable',
+    -apple-system,
+    system-ui,
+    sans-serif;
+  text-decoration: none;
+  transform: translateY(calc(-100% - 8px));
+}
+.knc-skip-link:focus {
+  transform: translate(
+    max(8px, env(safe-area-inset-left, 0px)),
+    calc(env(safe-area-inset-top, 0px) + 8px)
+  );
+}
+
+/* A transparent ::after enlarges a small link's hit area without moving it: hero links by 14px/8px
+   (16px free above, 18px between them), About footer links by 4px (half the 8px row gap). */
+.knc-hit-hero,
+.knc-hit-footer {
+  position: relative;
+}
+.knc-hit-hero::after,
+.knc-hit-footer::after {
+  content: '';
+  position: absolute;
+}
+.knc-hit-hero::after {
+  inset: -14px -8px;
+}
+.knc-hit-footer::after {
+  inset: -4px 0;
+}
+
+/* Forced colours drop fills: system colours keep the shell's states and button edges, `!important`
+   over its inline styles. Scoped to the public shell: staff pages load this sheet too. */
+@media (forced-colors: active) {
+  /* No `:is(a, b)`: the Studio canvas refuses it. `:where()` plus `:not(#knc-weight.knc-weight)`,
+     true for every element, keep the (1,1,0) specificity that beats an owner's `#id` !important. */
+  :where([data-testid='mobile-site-scroll'] button):not(#knc-weight.knc-weight),
+  :where([data-testid='mobile-site-scroll'] [role='button']):not(#knc-weight.knc-weight),
+  :where(div:has(> [data-testid='desktop-top-panel']) button):not(#knc-weight.knc-weight),
+  :where(div:has(> [data-testid='desktop-top-panel']) [role='button']):not(#knc-weight.knc-weight),
+  :where(.knc-sheet-card button):not(#knc-weight.knc-weight),
+  :where(.knc-sheet-card [role='button']):not(#knc-weight.knc-weight),
+  :where(#privacy-preferences button):not(#knc-weight.knc-weight),
+  :where(#privacy-preferences [role='button']):not(#knc-weight.knc-weight) {
+    border: 1px solid ButtonText !important;
+  }
+  /* `:is()` around `div:has()` keeps a browser without `:has()` from dropping the whole list. */
+  [data-testid='mobile-site-scroll'] [aria-pressed='true'],
+  [data-testid='mobile-site-scroll'] [aria-current='page'],
+  [data-testid='mobile-site-scroll'] [aria-checked='true'],
+  [data-testid='mobile-site-scroll'] [data-current-lang],
+  :is(div:has(> [data-testid='desktop-top-panel'])) [aria-pressed='true'],
+  :is(div:has(> [data-testid='desktop-top-panel'])) [aria-current='page'],
+  :is(div:has(> [data-testid='desktop-top-panel'])) [aria-checked='true'],
+  :is(div:has(> [data-testid='desktop-top-panel'])) [data-current-lang],
+  .knc-sheet-card [aria-pressed='true'],
+  .knc-sheet-card [aria-current='page'],
+  .knc-sheet-card [aria-checked='true'],
+  .knc-sheet-card [data-current-lang] {
+    background: Highlight !important;
+    color: HighlightText !important;
+  }
+}
+
+/* Print: browsers drop backgrounds, so the inline dark palette would print white on white. */
+@media print {
+  html,
+  body {
+    background: #fff !important;
+  }
+  [data-testid='mobile-site-scroll'],
+  :is(div:has(> [data-testid='desktop-top-panel'])),
+  .knc-sheet-backdrop,
+  [data-testid='mobile-site-scroll'] *,
+  :is(div:has(> [data-testid='desktop-top-panel'])) *,
+  .knc-sheet-backdrop * {
+    color: #000 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+  /* The dark palette inverts the black icons to white. */
+  [data-testid='mobile-site-scroll'] img,
+  :is(div:has(> [data-testid='desktop-top-panel'])) img,
+  .knc-sheet-backdrop img {
+    filter: none !important;
+  }
+  .knc-skip-link,
+  #privacy-preferences,
+  [data-testid='desktop-top-panel'],
+  [data-testid='marquee-row'] {
+    display: none !important;
+  }
+  /* The mobile layout scrolls inside a box as tall as the screen: let all of it reach the paper. */
+  [data-testid='mobile-site-scroll'] {
+    height: auto !important;
+    overflow: visible !important;
+  }
+  [data-testid='mobile-site-scroll'] > [data-knc-fold='panel'] {
+    position: relative !important;
+  }
+  /* An open sheet dialog prints alone: a fixed box repeats on every page. One in an inert part (the
+     closed desktop booking fold) does not count. */
+  body:has(.knc-sheet-backdrop:not([inert]):not([inert] *)) [data-testid='mobile-site-scroll'],
+  body:has(.knc-sheet-backdrop:not([inert]):not([inert] *))
+    div:has(> [data-testid='desktop-top-panel']) {
+    height: 0 !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+  }
+}

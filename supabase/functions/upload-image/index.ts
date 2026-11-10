@@ -3,13 +3,15 @@ import { handleCmsUpload, CmsMediaUnavailable } from './cmsUpload.ts'
 import { createClient } from '@supabase/supabase-js'
 import { initializeImageMagick } from 'npm:@imagemagick/magick-wasm@0.0.42'
 import { ImageValidationError, processImage } from './processImage.ts'
+import { recordOrLogAdminAction } from '../_shared/adminAudit.ts'
 import {
   executeExternalAction,
   ExternalActionError,
   parseExternalAction,
   type ExternalActionService,
 } from '../_shared/externalActions.ts'
-import { corsHeaders, corsJson as json } from '../_shared/http.ts'
+import { json } from '../_shared/http.ts'
+import { staffCors } from '../_shared/staffCors.ts'
 import { deleteSchema, formFields, uploadSchema } from './request.ts'
 
 const MAX_INPUT_BYTES = 5 * 1024 * 1024
@@ -56,9 +58,9 @@ function isReplacement(value: unknown): value is {
   )
 }
 
-Deno.serve(async (req: Request): Promise<Response> => {
+async function handle(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+    return new Response('ok')
   }
 
   if (req.method !== 'POST') {
@@ -236,6 +238,14 @@ Deno.serve(async (req: Request): Promise<Response> => {
       return json({ ok: false, error: 'not_found' }, 404)
     }
 
+    // ADMIN LOG: the database cannot attribute a service-role write; a failed entry is only logged.
+    await recordOrLogAdminAction('upload-image', service, {
+      actorId: callerData.user.id,
+      action: 'delete',
+      table: 'barber_photos',
+      targetId: deletion.barberId,
+    })
+
     const removed = await removeObject(
       queued.data.bucket,
       queued.data.path,
@@ -377,6 +387,24 @@ Deno.serve(async (req: Request): Promise<Response> => {
     )
   }
 
+  // ADMIN LOG: the database cannot attribute a service-role write; a failed entry is only logged.
+  if (replaced.data.previous_path === null) {
+    await recordOrLogAdminAction('upload-image', service, {
+      actorId: callerData.user.id,
+      action: 'insert',
+      table: 'barber_photos',
+      targetId: upload.barberId,
+    })
+  } else {
+    await recordOrLogAdminAction('upload-image', service, {
+      actorId: callerData.user.id,
+      action: 'update',
+      table: 'barber_photos',
+      targetId: upload.barberId,
+      changedColumns: ['storage_path'],
+    })
+  }
+
   let cleanupPending = false
 
   if (replaced.data.previous_path !== null && replaced.data.deletion_id !== null) {
@@ -404,4 +432,6 @@ Deno.serve(async (req: Request): Promise<Response> => {
     },
     200,
   )
-})
+}
+
+Deno.serve(staffCors(Deno.env.get('CMS_ALLOWED_ORIGINS'), handle))

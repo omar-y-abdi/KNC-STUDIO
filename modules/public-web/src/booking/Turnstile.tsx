@@ -139,7 +139,7 @@ export function Turnstile(props: TurnstileProps): JSX.Element | null {
     <div style={{ marginTop: '4px' }}>
       {/* No placeholder height: the container stays empty until the widget renders and sizes it,
           so an invisible widget never leaves a blank gap. */}
-      <div ref={containerRef} />
+      <div ref={containerRef} data-knc-widget="" />
       {failed && props.onError === undefined ? (
         <div role="alert" style={{ fontSize: '12px', lineHeight: 1.5, margin: '8px 0' }}>
           <span>

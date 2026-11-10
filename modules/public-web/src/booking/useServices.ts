@@ -10,10 +10,11 @@ import { defaultServicesPort } from './adapters/servicesIndex'
 import { subscribeBookingCatalog } from './adapters/barbersIndex'
 
 export interface ServicesState {
-  /** Active rows returned by selected port; empty means no configured services. */
+  /** Active rows returned by selected port; empty with `ready` means no configured services. */
   readonly services: readonly ServiceItem[]
-  /** True while selected port fetch is in flight. */
-  readonly loading: boolean
+  /** `loading` also before a barber and date are chosen (nothing read yet). */
+  readonly status: 'loading' | 'ready' | 'error'
+  readonly retry: () => void
 }
 
 /**
@@ -26,29 +27,30 @@ export function useServices(
   port: ServicesPort = defaultServicesPort,
 ): ServicesState {
   const [services, setServices] = useState<readonly ServiceItem[]>([])
-  const [loading, setLoading] = useState<boolean>(false)
+  const [status, setStatus] = useState<ServicesState['status']>('loading')
+  const [attempt, setAttempt] = useState<number>(0)
 
   useEffect(() => {
     if (barberId === null || dateIso === null) {
       setServices([])
-      setLoading(false)
+      setStatus('loading')
       return
     }
     let cancelled = false
     const load = (): void => {
       setServices([])
-      setLoading(true)
+      setStatus('loading')
       void port
         .listForBarber(barberId, dateIso)
         .then((rows) => {
           if (cancelled) return
           setServices(rows)
-          setLoading(false)
+          setStatus('ready')
         })
         .catch(() => {
           if (cancelled) return
           setServices([])
-          setLoading(false)
+          setStatus('error')
         })
     }
     load()
@@ -58,7 +60,7 @@ export function useServices(
       cancelled = true
       unsubscribe()
     }
-  }, [barberId, dateIso, port])
+  }, [barberId, dateIso, port, attempt])
 
-  return { services, loading }
+  return { services, status, retry: () => setAttempt((n) => n + 1) }
 }

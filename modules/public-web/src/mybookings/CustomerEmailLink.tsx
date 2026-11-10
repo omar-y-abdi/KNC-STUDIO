@@ -4,6 +4,7 @@ import { buildBookingStyles, palette } from '../booking/bookingStyles'
 import { parseEmail } from '../booking/validation'
 import { customerEmailLinkStrings } from '../i18n/customerEmailLinkStrings'
 import type { Lang } from '../i18n/index'
+import { focusQuietly } from '../ui/pageFocus'
 import { FOCUS_CLS } from '../ui/pseudo'
 import type { CustomerEmailLinkResult, CustomerProfile } from './domain'
 import type { MyBookingsPort } from './port'
@@ -78,6 +79,12 @@ export function CustomerEmailLink(props: CustomerEmailLinkProps): JSX.Element | 
       owner.sequence++
     }
   }, [owner])
+  // A result removes the pressed button: focus moves to the message, not to <body> outside the
+  // dialog's Tab trap.
+  const statusNote = useRef<HTMLParagraphElement>(null)
+  useEffect(() => {
+    if (state.status !== null) focusQuietly(statusNote.current)
+  }, [state.status])
 
   const run = async (operation: () => Promise<CustomerEmailLinkResult>): Promise<void> => {
     if (!verified || !isCurrent() || owner.busy) return
@@ -148,7 +155,7 @@ export function CustomerEmailLink(props: CustomerEmailLinkProps): JSX.Element | 
   const result = (
     <>
       {state.status !== null ? (
-        <p role="status" style={noteStyle}>
+        <p ref={statusNote} role="status" style={noteStyle}>
           {messages[state.status]}
         </p>
       ) : null}
@@ -248,6 +255,7 @@ export function CustomerEmailLink(props: CustomerEmailLinkProps): JSX.Element | 
               class={FOCUS_CLS}
               value={state.email}
               disabled={state.busy}
+              aria-required="true"
               onInput={(event) => {
                 if (!owner.busy)
                   update({ email: event.currentTarget.value, error: null, status: null })

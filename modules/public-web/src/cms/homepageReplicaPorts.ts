@@ -24,10 +24,11 @@ export function readOnlyHomepagePreviewPorts(
   return {
     booking: {
       availability: (params) => read.booking.availability(params),
+      // Its own kind: "could not be sent, try again" is untrue of a preview that never sends.
       submit: () =>
         Promise.resolve({
           ok: false,
-          error: { kind: 'submit', message: 'Preview is read-only.' },
+          error: { kind: 'read_only', message: 'Preview is read-only.' },
         }),
     },
     barbers: read.barbers,

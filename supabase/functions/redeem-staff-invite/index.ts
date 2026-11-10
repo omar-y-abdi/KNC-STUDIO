@@ -2,16 +2,17 @@
 // credential. GET/mail prefetch never consumes it; the invite page POSTs after an explicit click.
 import { createClient } from '@supabase/supabase-js'
 import { z } from 'zod'
-import { corsHeaders, json } from '../_shared/http.ts'
+import { json } from '../_shared/http.ts'
+import { staffCors } from '../_shared/staffCors.ts'
 import { hashStaffInvitationToken } from '../_shared/staffInvitation.ts'
 
 const requestSchema = z.object({ token: z.string().regex(/^[a-f0-9]{64}$/) }).strict()
 const reply = (body: unknown, status = 200): Response =>
-  json(body, status, { ...corsHeaders, 'Cache-Control': 'no-store' })
+  json(body, status, { 'Cache-Control': 'no-store' })
 const invalid = (): Response => reply({ ok: false, error: 'invalid_invitation' }, 400)
 const unavailable = (): Response => reply({ ok: false, error: 'unavailable' }, 503)
 
-Deno.serve(async (req: Request): Promise<Response> => {
+async function handle(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return reply({ ok: true })
   if (req.method !== 'POST') return reply({ ok: false, error: 'method_not_allowed' }, 405)
   let raw: unknown
@@ -53,4 +54,6 @@ Deno.serve(async (req: Request): Promise<Response> => {
   } catch {
     return unavailable()
   }
-})
+}
+
+Deno.serve(staffCors(Deno.env.get('CMS_ALLOWED_ORIGINS'), handle))

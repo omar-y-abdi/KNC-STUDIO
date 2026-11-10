@@ -54,11 +54,22 @@ export const bookingEn: BookingStrings = {
   newBooking: 'Book another time',
   min: 'min',
   errName: 'Name is too long',
-  errPhone: 'Invalid phone number',
+  errPhone: 'Enter a Swedish mobile number: 07X XXX XX XX or +46 7X XXX XX XX',
   errEmail: 'Invalid email address',
   errSubmit: 'Something went wrong. Please try again.',
   errRateLimited: 'Too many booking attempts. Please wait a moment and try again.',
   errChallenge: 'We could not verify you are human. Reload the page and try again.',
+  errLoadBarbers: 'The barbers could not be loaded.',
+  errLoadServices: 'The services could not be loaded.',
+  errLoadTimes: 'The times could not be loaded.',
+  retry: 'Try again',
+  errSlotTaken: 'That time can no longer be booked. Please choose another time.',
+  errPossiblyBooked:
+    'This time may already be booked by you. Check your e-mail or My appointments before booking another time.',
+  errUnconfirmed:
+    'We got no answer to your booking and do not know whether it went through. Check your e-mail or My appointments before you book again.',
+  errSubmitPending: 'A booking is already being sent. Wait a moment and try again.',
+  errReadOnly: 'Preview is read-only.',
 }
 
 export const appEn: AppStrings = {
@@ -77,6 +88,8 @@ export const appEn: AppStrings = {
   lazyBookingError: 'Could not load booking.',
   lazyMyBookingsError: 'Could not load appointments.',
   lazyReload: 'Reload',
+  skipToContent: 'Skip to content',
+  contactLink: 'Contact',
 }
 
 export const privacyEn: PrivacyStrings = {
@@ -128,7 +141,7 @@ export const aboutEn: AboutStrings = {
   reviewTextPh: 'Tell us about your visit …',
   reviewSubmit: 'Leave a review',
   reviewThanks: 'Thanks for your review!',
-  reviewErrPhone: 'Invalid phone number',
+  reviewErrPhone: 'Enter a Swedish mobile number: 07X XXX XX XX or +46 7X XXX XX XX',
   reviewErrText: 'Please write something about your visit',
   reviewErrRating: 'Please choose a rating',
   reviewErrNoBooking:
@@ -183,6 +196,9 @@ export const myBookingsEn: MyBookingsStrings = {
   ariaClose: 'Close',
   ariaExpandRow: 'Show details',
   ariaExpandPast: 'Show past appointments',
+  cancelClosed:
+    'The deadline for cancelling online ({hours} h before the visit) has passed. Contact the salon:',
+  bookingGoneNote: 'This appointment is no longer among your upcoming appointments.',
 }
 
 export const labelsEn: CalendarLabels = {

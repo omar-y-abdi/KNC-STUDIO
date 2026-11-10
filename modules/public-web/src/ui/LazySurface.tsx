@@ -83,7 +83,12 @@ function ErrorMessage(props: {
   readonly minHeight: string
 }): JSX.Element {
   return (
-    <div role="alert" style={frameStyle(props.overlay, props.minHeight)}>
+    <div
+      role="alert"
+      // The dialog's focus guard (ui/dialogFocus.ts) leaves focus inside an overlay alone.
+      data-above-dialog={props.overlay ? '' : undefined}
+      style={frameStyle(props.overlay, props.minHeight)}
+    >
       <span>{props.label}</span>
       <button
         type="button"

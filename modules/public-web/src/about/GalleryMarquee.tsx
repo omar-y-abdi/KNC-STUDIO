@@ -364,7 +364,7 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
     overflow: 'hidden',
     padding: '12px 0',
     cursor: 'grab',
-    touchAction: 'pan-y',
+    touchAction: 'pan-y pinch-zoom',
     userSelect: 'none',
     WebkitUserSelect: 'none',
   }

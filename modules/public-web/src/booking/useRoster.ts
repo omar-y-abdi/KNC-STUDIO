@@ -1,15 +1,16 @@
-// Public roster state. It starts empty and renders a truthful loading/empty state; named barbers
-// arrive only from the selected port (the production catalog RPC).
+// Public roster state. It starts empty and renders a truthful loading/empty/failed state; named
+// barbers arrive only from the selected port (the production catalog RPC).
 
 import { useEffect, useState } from 'preact/hooks'
 import type { BarbersPort, RosterBarber } from './barbersPort'
 import { defaultBarbersPort, subscribeBookingCatalog } from './adapters/barbersIndex'
 
 export interface RosterState {
-  /** Active rows returned by selected port; empty means no configured/active barbers. */
+  /** Active rows returned by selected port; empty with `ready` means no configured/active barbers. */
   readonly roster: readonly RosterBarber[]
-  /** True while selected port fetch is in flight. */
-  readonly loading: boolean
+  /** `loading` also while the fetch is deferred (`enabled` false). */
+  readonly status: 'loading' | 'ready' | 'error'
+  readonly retry: () => void
 }
 
 /**
@@ -18,28 +19,29 @@ export interface RosterState {
  */
 export function useRoster(port: BarbersPort = defaultBarbersPort, enabled = true): RosterState {
   const [roster, setRoster] = useState<readonly RosterBarber[]>([])
-  const [loading, setLoading] = useState<boolean>(enabled)
+  const [status, setStatus] = useState<RosterState['status']>('loading')
+  const [attempt, setAttempt] = useState<number>(0)
 
   useEffect(() => {
     if (!enabled) {
       setRoster([])
-      setLoading(false)
+      setStatus('loading')
       return
     }
     let cancelled = false
     const load = (): void => {
-      setLoading(true)
+      setStatus('loading')
       void port
         .listActive()
         .then((rows) => {
           if (cancelled) return
           setRoster(rows)
-          setLoading(false)
+          setStatus('ready')
         })
         .catch(() => {
           if (cancelled) return
           setRoster([])
-          setLoading(false)
+          setStatus('error')
         })
     }
     load()
@@ -49,7 +51,7 @@ export function useRoster(port: BarbersPort = defaultBarbersPort, enabled = true
       cancelled = true
       unsubscribe()
     }
-  }, [enabled, port])
+  }, [enabled, port, attempt])
 
-  return { roster, loading }
+  return { roster, status, retry: () => setAttempt((n) => n + 1) }
 }

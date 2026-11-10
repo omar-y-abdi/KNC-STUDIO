@@ -19,7 +19,7 @@ export const bookingSv = {
   /** Shown in the time column while real availability is loading from the backend. */
   loadingTimes: 'Laddar tider …',
   /** Shown in the time column when a barber+date+service is chosen but no bookable times remain
-   * (barber off/on time-off, fully booked, or — for the backend — a read error; fail-closed). */
+   * (barber off/on time-off, fully booked). A failed read shows `errLoadTimes` instead. */
   noSlots: 'Inga lediga tider den här dagen. Välj en annan dag.',
   legendChosen: 'Vald',
   legendClosed: 'Stängt / upptaget',
@@ -51,13 +51,29 @@ export const bookingSv = {
   newBooking: 'Boka en ny tid',
   min: 'min',
   errName: 'Namnet är för långt',
-  errPhone: 'Ogiltigt telefonnummer',
+  errPhone: 'Ange ett svenskt mobilnummer: 07X XXX XX XX eller +46 7X XXX XX XX',
   errEmail: 'Ogiltig e-postadress',
   errSubmit: 'Något gick fel. Försök igen.',
   /** Gateway rejection: too many booking attempts (per-IP/phone backstop). */
   errRateLimited: 'För många bokningsförsök. Vänta en stund och försök igen.',
   /** Gateway rejection: the Turnstile human-verification challenge failed. */
   errChallenge: 'Vi kunde inte verifiera att du är en människa. Ladda om sidan och försök igen.',
+  /** A failed read, never an empty-state message; the `retry` button follows each. */
+  errLoadBarbers: 'Barberarna kunde inte hämtas.',
+  errLoadServices: 'Behandlingarna kunde inte hämtas.',
+  errLoadTimes: 'Tiderna kunde inte hämtas.',
+  retry: 'Försök igen',
+  /** The server refused the chosen start time. Shown in the time column after the popup closes. */
+  errSlotTaken: 'Tiden går inte längre att boka. Välj en annan tid.',
+  /** Refused after an unanswered submit for the same time: maybe the customer's own booking. */
+  errPossiblyBooked:
+    'Tiden kan redan vara bokad av dig. Kontrollera din e-post eller Mina bokningar innan du bokar en ny tid.',
+  errUnconfirmed:
+    'Vi fick inget svar på din bokning och vet inte om den gick igenom. Kontrollera din e-post eller Mina bokningar innan du bokar igen.',
+  /** Book pressed in one time's popup while another time's submit is on its way. */
+  errSubmitPending: 'En bokning skickas redan. Vänta en stund och försök igen.',
+  /** From the Studio preview's port, which does not book. */
+  errReadOnly: 'Förhandsvisningen är skrivskyddad.',
 }
 
 export const appSv = {
@@ -78,6 +94,9 @@ export const appSv = {
   lazyBookingError: 'Kunde inte ladda bokningen.',
   lazyMyBookingsError: 'Kunde inte ladda bokningarna.',
   lazyReload: 'Ladda om',
+  skipToContent: 'Hoppa till innehållet',
+  /** On the notice shown when the site could not be loaded. */
+  contactLink: 'Kontakt',
 }
 
 export const privacySv = {
@@ -140,7 +159,7 @@ export const aboutSv = {
   reviewTextPh: 'Berätta om ditt besök …',
   reviewSubmit: 'Lämna ett omdöme',
   reviewThanks: 'Tack för ditt omdöme!',
-  reviewErrPhone: 'Ogiltigt telefonnummer',
+  reviewErrPhone: 'Ange ett svenskt mobilnummer: 07X XXX XX XX eller +46 7X XXX XX XX',
   reviewErrText: 'Skriv något om ditt besök',
   reviewErrRating: 'Välj ett betyg',
   /** No device receipt or verified session, or no eligible finished, not-yet-reviewed booking in
@@ -206,6 +225,12 @@ export const myBookingsSv = {
   ariaClose: 'Stäng',
   ariaExpandRow: 'Visa detaljer',
   ariaExpandPast: 'Visa tidigare bokningar',
+  /** Replaces the cancel button once the online deadline has passed. `{hours}` is the salon's
+   * cancellation policy; the salon's phone and e-mail links follow the sentence. */
+  cancelClosed:
+    'Tidsgränsen för avbokning online ({hours} h före besöket) har passerat. Kontakta salongen:',
+  /** After a refused cancel, when the list no longer holds the booking. */
+  bookingGoneNote: 'Bokningen finns inte längre bland dina kommande bokningar.',
 }
 
 export const labelsSv: CalendarLabels = {

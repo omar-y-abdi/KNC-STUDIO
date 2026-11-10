@@ -17,29 +17,89 @@
 // PII, or auth tokens appear in any response. verify_jwt = true (config.toml) means Supabase also
 // validates the JWT at the gateway before this function runs.
 //
+// ADMIN LOG: written under the owner once the invite is delivered. A failed request records
+// nothing, except a re-sent invite whose mail failed: it has already replaced the earlier link.
+//
 // CORS: the admin panel is served from Cloudflare (different origin); CORS headers + OPTIONS preflight
-// handling (from _shared/http.ts) are required for browser-originated requests.
+// handling (from _shared/staffCors.ts) are required for browser-originated requests.
 //
 // Invocation: admin panel -> supabase.functions.invoke('admin-create-barber', { body, headers })
 // Run locally: npx supabase functions serve admin-create-barber --env-file supabase/functions/.env
 
 import { createClient } from '@supabase/supabase-js'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import { recordOrLogAdminAction, withinAdminLogBound } from '../_shared/adminAudit.ts'
 import {
   loadEmailBusiness,
   loadEmailTemplate,
   prepareEmail,
   sendViaResend,
 } from '../_shared/email.ts'
-import { corsHeaders, corsJson as json, parse } from '../_shared/http.ts'
+import { json, parse } from '../_shared/http.ts'
+import { staffCors } from '../_shared/staffCors.ts'
 import { requestSchema } from './request.ts'
 import { hashStaffInvitationToken, newStaffInvitationToken } from '../_shared/staffInvitation.ts'
 
+/** Read before a re-sent invite stores its digest. Never throws or waits past the admin log's
+ * bound: the invite does not depend on it. */
+async function hasStoredInvitation(
+  service: SupabaseClient,
+  userId: string,
+): Promise<boolean | null> {
+  try {
+    const answer = await withinAdminLogBound(() =>
+      service.from('staff_invitations').select('user_id').eq('user_id', userId).maybeSingle(),
+    )
+    if (answer.timedOut) {
+      console.error('admin-create-barber: invitation precheck failed:', 'timeout')
+      return null
+    }
+    const stored = answer.value
+    if (stored.error) {
+      console.error('admin-create-barber: invitation precheck failed:', stored.error.code)
+      return null
+    }
+    return stored.data !== null
+  } catch (error) {
+    console.error(
+      'admin-create-barber: invitation precheck failed:',
+      error instanceof Error ? error.name : 'unknown',
+    )
+    return null
+  }
+}
+
+/** An account with a profile existed before this request and is not its to remove. Never throws. */
+async function hasProfile(service: SupabaseClient, userId: string): Promise<boolean | null> {
+  try {
+    const answer = await withinAdminLogBound(() =>
+      service.from('profiles').select('id').eq('id', userId).maybeSingle(),
+    )
+    if (answer.timedOut) {
+      console.error('admin-create-barber: profile lookup failed:', 'timeout')
+      return null
+    }
+    const found = answer.value
+    if (found.error) {
+      console.error('admin-create-barber: profile lookup failed:', found.error.code)
+      return null
+    }
+    return found.data !== null
+  } catch (error) {
+    console.error(
+      'admin-create-barber: profile lookup failed:',
+      error instanceof Error ? error.name : 'unknown',
+    )
+    return null
+  }
+}
+
 // --- HTTP handler -----------------------------------------------------------------------------
 
-Deno.serve(async (req: Request): Promise<Response> => {
-  // CORS preflight — must be first, always returns 200 with CORS headers.
+async function handle(req: Request): Promise<Response> {
+  // CORS preflight — must be first, always returns 200; `staffCors` adds the CORS headers.
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+    return new Response('ok')
   }
   if (req.method !== 'POST') {
     return json({ ok: false, error: 'method_not_allowed' }, 405)
@@ -184,6 +244,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
     if (insertError) {
       console.error('admin-create-barber: profiles insert failed:', insertError.message)
+      // The address may be another barber's unconfirmed account, whose profile failed this insert:
+      // the cleanup below must never remove it, nor anything when that cannot be known.
+      const alreadyLinked = await hasProfile(service, newUserId)
+      if (alreadyLinked === null) return json({ ok: false, error: 'link_failed' }, 500)
+      if (alreadyLinked) return json({ ok: false, error: 'email_taken' }, 409)
       // Best-effort cleanup — do not propagate this error (the real error is the insert failure).
       const { error: deleteError } = await service.auth.admin.deleteUser(newUserId)
       if (deleteError) {
@@ -199,6 +264,30 @@ Deno.serve(async (req: Request): Promise<Response> => {
     }
   }
 
+  // A new account has no invitation yet: its profile was inserted just above.
+  const invitationStored = isNewAccount ? false : await hasStoredInvitation(service, newUserId)
+
+  // ADMIN LOG: nothing when the earlier invitation state could not be read.
+  const recordInvitation = async (): Promise<void> => {
+    if (invitationStored === false) {
+      await recordOrLogAdminAction('admin-create-barber', service, {
+        actorId: callerId,
+        action: 'insert',
+        table: 'staff_invitations',
+        targetId: newUserId,
+      })
+    } else if (invitationStored === true) {
+      await recordOrLogAdminAction('admin-create-barber', service, {
+        actorId: callerId,
+        action: 'update',
+        table: 'staff_invitations',
+        targetId: newUserId,
+        changedColumns: ['token_hash', 'created_at'],
+      })
+    }
+  }
+
+  let invitationWritten = false
   try {
     const invitationToken = newStaffInvitationToken()
     const tokenHash = await hashStaffInvitationToken(invitationToken)
@@ -211,6 +300,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       { onConflict: 'user_id' },
     )
     if (stored.error) throw new Error('Could not persist staff invitation')
+    invitationWritten = true
     const copy = await loadEmailTemplate(service, 'auth_invite', lang)
     const business = await loadEmailBusiness(service)
     const link = `https://bladeblendstudio.se/invite#staff_invite=${invitationToken}`
@@ -220,7 +310,6 @@ Deno.serve(async (req: Request): Promise<Response> => {
       null,
     )
     await sendViaResend(message, resendKey, `auth-invite/${tokenHash.slice(0, 48)}`, service)
-    return json({ ok: true }, 200)
   } catch (error) {
     console.error(
       'admin-create-barber: invite delivery failed:',
@@ -241,7 +330,25 @@ Deno.serve(async (req: Request): Promise<Response> => {
           console.error('admin-create-barber: durable auth cleanup queue failed')
         }
       }
+    } else if (invitationWritten) {
+      // The account stays, but its earlier invite link is dead though no mail arrived: recorded.
+      await recordInvitation()
     }
     return json({ ok: false, error: 'invite_send_failed' }, 502)
   }
-})
+
+  // ADMIN LOG: the database cannot attribute a service-role write; a failed entry is only logged.
+  // After the block above, so it can never reach the cleanup there.
+  if (isNewAccount) {
+    await recordOrLogAdminAction('admin-create-barber', service, {
+      actorId: callerId,
+      action: 'insert',
+      table: 'profiles',
+      targetId: newUserId,
+    })
+  }
+  await recordInvitation()
+  return json({ ok: true }, 200)
+}
+
+Deno.serve(staffCors(Deno.env.get('CMS_ALLOWED_ORIGINS'), handle))

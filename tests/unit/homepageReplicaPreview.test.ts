@@ -5,7 +5,10 @@ import { asBarberId } from '../../modules/public-web/src/booking/domain'
 
 describe('homepage replica preview ports', () => {
   it('keeps production reads but blocks booking and review writes', async () => {
-    const availability = vi.fn().mockResolvedValue(['10:00'])
+    const availability = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, times: ['10:00'] })
+      .mockResolvedValueOnce({ ok: false })
     const bookingSubmit = vi.fn()
     const reviewList = vi.fn().mockResolvedValue([])
     const reviewSubmit = vi.fn()
@@ -24,7 +27,11 @@ describe('homepage replica preview ports', () => {
       durationMin: 30,
     }
 
-    await expect(preview.booking.availability(params)).resolves.toEqual(['10:00'])
+    await expect(preview.booking.availability(params)).resolves.toEqual({
+      ok: true,
+      times: ['10:00'],
+    })
+    await expect(preview.booking.availability(params)).resolves.toEqual({ ok: false })
     await expect(preview.reviews.list()).resolves.toEqual([])
     expect(availability).toHaveBeenCalledWith(params)
     expect(reviewList).toHaveBeenCalledOnce()
@@ -33,7 +40,11 @@ describe('homepage replica preview ports', () => {
     expect(preview.aboutContent).toBe(source.aboutContent)
     expect(preview.gallery).toBe(source.gallery)
 
-    await expect(preview.booking.submit({} as never)).resolves.toMatchObject({ ok: false })
+    // The booking flow words its message by error kind; a refusal's kind would say "try again".
+    await expect(preview.booking.submit({} as never)).resolves.toEqual({
+      ok: false,
+      error: { kind: 'read_only', message: 'Preview is read-only.' },
+    })
     await expect(preview.reviews.submit({} as never, 'token')).resolves.toMatchObject({ ok: false })
     expect(bookingSubmit).not.toHaveBeenCalled()
     expect(reviewSubmit).not.toHaveBeenCalled()

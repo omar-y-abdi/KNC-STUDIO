@@ -11,6 +11,7 @@ import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { supabaseBookingAdapter } from '../../modules/public-web/src/booking/adapters/supabaseBooking'
 import type { Barber } from '../../modules/public-web/src/booking/domain'
 import { asBarberId } from '../../modules/public-web/src/booking/domain'
+import type { AvailabilityParams } from '../../modules/public-web/src/booking/port'
 import type { CreateBookingArgs } from './_helpers'
 import {
   backendReady,
@@ -41,6 +42,13 @@ const VALID_START_UTC = '2040-03-14T12:30:00.000Z'
 // 07:00 Stockholm (CET) — before the 09:00 opening, so the schedule gate rejects it.
 const EARLY_START_UTC = '2040-03-14T06:00:00.000Z'
 let haircutServiceId = ''
+
+/** A failed read fails the test: it is not "no times". */
+async function availableTimes(params: AvailabilityParams): Promise<readonly string[]> {
+  const result = await supabaseBookingAdapter.availability(params)
+  if (!result.ok) throw new Error('The availability read failed')
+  return result.times
+}
 
 /** Default valid 45-min haircut args for `phone` at the valid working-hours slot. */
 function validArgs(phone: string | null): CreateBookingArgs {
@@ -228,7 +236,7 @@ describe.skipIf(!backendReady())('create_booking RPC contract (integration)', ()
 
     // availability() returns the AVAILABLE times (not TAKEN): the free slot is offered BEFORE the
     // booking and gone AFTER it.
-    const before = await supabaseBookingAdapter.availability({
+    const before = await availableTimes({
       barberId: HASSAN.id,
       dateIso: VALID_DATE_ISO,
       durationMin: 45,
@@ -239,7 +247,7 @@ describe.skipIf(!backendReady())('create_booking RPC contract (integration)', ()
     const booked = await callCreateBooking(env.dbUrl, validArgs(uniquePhone()))
     expect(booked.ok).toBe(true)
 
-    const after = await supabaseBookingAdapter.availability({
+    const after = await availableTimes({
       barberId: HASSAN.id,
       dateIso: VALID_DATE_ISO,
       durationMin: 45,
@@ -255,7 +263,7 @@ describe.skipIf(!backendReady())('create_booking RPC contract (integration)', ()
     const booked = await callCreateBooking(env.dbUrl, validArgs(uniquePhone()))
     expect(booked.ok).toBe(true)
 
-    const victorSlots = await supabaseBookingAdapter.availability({
+    const victorSlots = await availableTimes({
       barberId: VICTOR.id,
       dateIso: VALID_DATE_ISO,
       durationMin: 45,
@@ -295,7 +303,7 @@ describe.skipIf(!backendReady())('create_booking RPC contract (integration)', ()
         )
       })
 
-      const before = await supabaseBookingAdapter.availability({
+      const before = await availableTimes({
         barberId: HASSAN.id,
         dateIso: VALID_DATE_ISO,
         durationMin: 45,
@@ -311,7 +319,7 @@ describe.skipIf(!backendReady())('create_booking RPC contract (integration)', ()
         )
       })
 
-      const blocked = await supabaseBookingAdapter.availability({
+      const blocked = await availableTimes({
         barberId: HASSAN.id,
         dateIso: VALID_DATE_ISO,
         durationMin: 45,
@@ -330,7 +338,7 @@ describe.skipIf(!backendReady())('create_booking RPC contract (integration)', ()
         )
       })
 
-      const unavailableDay = await supabaseBookingAdapter.availability({
+      const unavailableDay = await availableTimes({
         barberId: HASSAN.id,
         dateIso: VALID_DATE_ISO,
         durationMin: 45,

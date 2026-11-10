@@ -18,15 +18,22 @@ export interface AvailabilityParams {
   readonly serviceId?: string
 }
 
+/**
+ * Outcome of an availability read. A failed read is its own case, never an empty `times` list, so
+ * the UI cannot tell a customer "no times" when the answer is unknown.
+ */
+export type AvailabilityResult =
+  { readonly ok: true; readonly times: readonly string[] } | { readonly ok: false }
+
 export interface BookingPort {
   /** Submit a confirmed booking and build links with the current public business settings. */
   submit(booking: Booking, business?: BusinessSettings): Promise<BookingResult>
   /**
    * The AVAILABLE start times to render for `barberId` on `dateIso` given `durationMin` — ascending
    * `"HH:MM"` (e.g. `['09:00','09:30','10:30']`), duration-stepped and packed around existing
-   * bookings/blocks (all packing math lives inside the adapter). An empty array means "no bookable
-   * times" (barber off/on time-off, fully booked, or — for the backend adapter — a read error;
-   * fail-closed). The UI renders each returned time as a selectable chip.
+   * bookings/blocks (all packing math lives inside the adapter). An empty `times` array means "no
+   * bookable times" (barber off/on time-off, fully booked). The UI renders each returned time as a
+   * selectable chip.
    */
-  availability(params: AvailabilityParams): Promise<readonly string[]>
+  availability(params: AvailabilityParams): Promise<AvailabilityResult>
 }

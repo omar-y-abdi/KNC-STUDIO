@@ -66,6 +66,26 @@ describe('CI supply-chain pins', () => {
     )
   })
 
+  it('keeps the workflows and every composite action directory under Dependabot', () => {
+    const dependabot = readFileSync('.github/dependabot.yml', 'utf8').split('\n')
+    const entry = dependabot.indexOf('  - package-ecosystem: github-actions')
+    expect(entry).toBeGreaterThan(-1)
+    const start = dependabot.indexOf('    directories:', entry)
+    expect(start).toBeGreaterThan(entry)
+    expect(dependabot.slice(entry + 1, start).filter((line) => line.startsWith('  - '))).toEqual([])
+    const rest = dependabot.slice(start + 1)
+    const end = rest.findIndex((line) => !line.startsWith('      - '))
+    const directories = rest
+      .slice(0, end === -1 ? rest.length : end)
+      .map((line) => line.slice('      - '.length))
+    // `/` covers .github/workflows only, so a composite action that is not listed keeps stale pins.
+    const actions = readdirSync('.github/actions', { withFileTypes: true })
+      .filter((item) => item.isDirectory())
+      .map((item) => `/.github/actions/${item.name}`)
+    expect(actions.length).toBeGreaterThan(0)
+    expect(directories.sort()).toEqual(['/', ...actions].sort())
+  })
+
   it('locks every explicit npm import and deno-types reference in Edge and shared source', () => {
     const lock = JSON.parse(readFileSync('supabase/functions/deno.lock', 'utf8')) as {
       specifiers: Record<string, string>

@@ -241,7 +241,11 @@ describe('delivery log subject bound', () => {
 
   /** The address check send-email-change/index.ts applies after its request schema. */
   function emailChangeAccepts(value: string): boolean {
-    const parsed = emailChangeRequest.safeParse({ new_email: value, lang: 'sv' })
+    const parsed = emailChangeRequest.safeParse({
+      new_email: value,
+      current_password: 'current-password',
+      lang: 'sv',
+    })
     return (
       parsed.success &&
       parsed.data.new_email === value &&

@@ -62,7 +62,10 @@ visible copy through browser navigation and reload.
 For interactive development, configure `.env.local` with the local `VITE_SUPABASE_URL` and
 `VITE_SUPABASE_ANON_KEY` from `npx supabase status`. Put the local `SUPABASE_URL`, `SUPABASE_ANON_KEY`
 and matching `CUSTOMER_GATEWAY_SECRET` in ignored `.dev.vars`; add the exact Vite origin to the local
-Edge `PUBLIC_SITE_ORIGINS`. Start `npm run cloudflare:dev -- --local --ip 127.0.0.1 --port 8787` in one
+Edge `PUBLIC_SITE_ORIGINS`. An HTTPS origin also goes in the local Edge `CMS_ALLOWED_ORIGINS`: the
+functions the admin panel calls send their CORS header only to the production origins,
+`http://localhost:<port>`, `http://127.0.0.1:<port>` and that list (see `BACKEND.md`). Start
+`npm run cloudflare:dev -- --local --ip 127.0.0.1 --port 8787` in one
 terminal and `npm run dev` in another. Preview uses the same proxy after `npm run build`.
 
 Cookie acceptance must also be tested with HTTPS. Vite accepts certificate paths in `LOCAL_HTTPS_KEY`
@@ -93,8 +96,8 @@ Production routing and cookie policy are unchanged.
 
 ## Architecture
 
-CMS changes span Cloudflare and Supabase. Follow the [CMS release guide](docs/operations/CMS_RELEASE.md)
-before deploying; a Cloudflare build alone does not update the publication backend.
+CMS changes span Cloudflare and Supabase; a Cloudflare build alone does not update the publication
+backend.
 
 Effects live at the edges; the domain stays pure and referentially transparent.
 [CODEBASE-MAP.md](CODEBASE-MAP.md) maps areas to entry files, tests and common change routes.
@@ -124,8 +127,8 @@ protocol separate from its lazy runtime entry. Neither public startup nor staff 
 
 [Module boundaries and local commands](tools/modules/README.md) describes the enforced interfaces
 and the workspace commands. For example, `npm run check --workspace @bladeblend/studio` runs the
-boundary check, typechecks, Studio lint and the unit suite. [CI architecture](docs/CI.md) explains
-the jobs every pull request runs and the gates that require them;
+boundary check, typechecks, Studio lint and the unit suite. Every pull request, push to `main` and
+manual run executes every CI job (`.github/workflows/ci.yml`); nothing is selected by changed path;
 [qualification evidence](docs/qa/2026-11-05-module-boundaries.md) records the extraction, review
 and execution results.
 
@@ -135,14 +138,18 @@ The owner edits pages, site/About copy, business and appearance settings, galler
 and email templates in `/admin/cms`. Publication uses the validated, revision-checked `cms-studio`
 gateway. The new database authority migration removes authenticated REST writes to the content
 tables and reserves direct owner setting writes for `cancellation_policy_hours`. That operational
-setting remains under admin Inställningar and outside reversible CMS history. Apply the migrations
-in the [release order](docs/operations/CMS_RELEASE.md); source code does not establish their hosted state.
+setting remains under admin Inställningar and outside reversible CMS history. Source code does not
+establish the hosted state of the migrations.
 
 Created pages store their body and use the current homepage header/menu in the editor, preview
 and public response. Contact is a protected information route alongside Privacy and Terms;
 existing owner-authored Contact bodies remain supported. Mejl includes template editing and
-owner-only delivery status. See the [implementation ledger](docs/WIP_IMPLEMENTATION.md) for the
-recovered feature scope, test anchors, deployment dependencies and deferred owner actions.
+owner-only delivery status.
+
+Admin Inställningar asks for the current password before it sends a link to a new login email.
+For the owner it also holds review moderation (hide, publish again or delete a review) and the
+admin log of staff changes; both read nothing until they are opened. `BACKEND.md` describes the
+database side.
 
 ### The clock is injectable
 
@@ -179,6 +186,8 @@ for server-side security. Current controls:
   header or parameter injection).
 - **No secrets in the client.** `.env` holds only public `VITE_*` config. Resend, Turnstile secret,
   webhook secret, and Supabase service-role key stay server-side.
+- **Staff functions:** the Edge Functions the admin panel calls send their CORS header only to the
+  panel's origins, and an email change needs the current password (see `BACKEND.md`).
 - **Tooling gates:** `tsc` strict (no `any`, no `@ts-ignore`, exhaustive types), ESLint strict +
   `eslint-plugin-security` + `eslint-plugin-no-unsanitized` (DOM-sink XSS), Prettier.
 
@@ -199,7 +208,7 @@ node tools/visual/capture.mjs   # optional design evidence: BASE=<url> OUT=<dir>
 The policy retains the prior `0.1` pixel colour threshold, maximum `0.001` mismatch ratio and 2×
 image dimensions. Missing snapshots fail; CI never creates or updates approved baselines. Playwright
 also waits for consecutive stable screenshots. Design capture, collage and social-card tools remain
-explicit automation utilities. See [CI architecture and verification](docs/CI.md) for the complete gates.
+explicit automation utilities. See [the CI workflow](.github/workflows/ci.yml) for the complete gates.
 
 ---
 
@@ -246,6 +255,10 @@ Current deployment boundaries and local verification: [BACKEND.md](BACKEND.md#ap
 3. Publish: `npm run deploy`.
 4. `wrangler.jsonc` attaches `bladeblendstudio.se` and `www.bladeblendstudio.se` as Custom Domains;
    canonical metadata points to apex. `public/_headers` applies CSP/security/cache headers to static assets.
+5. To close the site for maintenance, set `MAINTENANCE` in `wrangler.jsonc` to `on` and deploy the
+   Worker; set it back to `off` and deploy again to open it (see `BACKEND.md`).
 
-> `VITE_SITE_URL` feeds the canonical link, Open Graph/Twitter tags, sitemap and JSON-LD. It is
-> fixed to `https://bladeblendstudio.se` for production.
+> `VITE_SITE_URL` fills the canonical link, `og:url`, `og:image` and `twitter:image` of the
+> `index.html` shell at build time. It is fixed to `https://bladeblendstudio.se` for production.
+> The Worker rewrites the canonical link and `og:url` for each route and writes the JSON-LD,
+> `/sitemap.xml` and `/.well-known/security.txt` from its own `https://bladeblendstudio.se`.

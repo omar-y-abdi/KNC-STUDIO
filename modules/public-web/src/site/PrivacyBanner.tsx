@@ -4,6 +4,7 @@ import type { Lang } from '../i18n/index'
 import { privacyStrings } from '../i18n/index'
 import type { PrivacyControls } from './usePrivacyPreferences'
 import { useNativeChild } from '../cms/NativeSurface'
+import { langHref } from '../ui/langHref'
 
 export interface PrivacyBannerProps {
   readonly lang: Lang
@@ -108,7 +109,7 @@ export function PrivacyBanner({ lang, dark, controls }: PrivacyBannerProps): JSX
       </h2>
       <p style={{ color: muted, fontSize: '13px', lineHeight: 1.5, margin: '0 0 12px' }}>
         {tx.lead}{' '}
-        <a href="/privacy" style={{ color: text, textUnderlineOffset: '3px' }}>
+        <a href={langHref('/privacy', lang)} style={{ color: text, textUnderlineOffset: '3px' }}>
           {tx.privacyLink}
         </a>
       </p>

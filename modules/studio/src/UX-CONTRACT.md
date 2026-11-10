@@ -40,8 +40,7 @@ The database authority migration enforces publication as the authenticated conte
 direct REST writes to site/About copy and email templates are revoked, and direct owner setting
 writes are limited to `cancellation_policy_hours`. Staff/profile/photo, schedule, service and booking
 operations retain their own boundaries. The app's email log is best effort and records provider
-acceptance, not inbox delivery; native Supabase Auth mail is outside it. Rollout and delivery details
-live in `docs/operations/CMS_RELEASE.md` and `docs/operations/EMAIL_DELIVERY.md`.
+acceptance, not inbox delivery; native Supabase Auth mail is outside it.
 
 ## Source boundaries
 

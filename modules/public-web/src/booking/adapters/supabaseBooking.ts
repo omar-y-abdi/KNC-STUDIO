@@ -15,28 +15,27 @@ import { invokePublicBookingAction } from '../../backend/publicBookingActions'
 import { readStoragePreferences } from '../../site/storageConsent'
 import { withCustomerDeviceLock } from '../../mybookings/customerDeviceLock'
 import type { Booking, BookingError, BookingResult } from '../domain'
-import type { AvailabilityParams, BookingPort } from '../port'
+import type { AvailabilityParams, AvailabilityResult, BookingPort } from '../port'
 import { localWallClockToStockholmIso } from '../stockholmTime'
 import { buildLinks } from './localCalendar'
 import type { BusinessSettings } from '../../site/siteChrome'
 
-/** A short, friendly submit error. The UI shows `t.errSubmit`; this keeps the domain error localized. */
+/** No readable answer: the server may have booked the time all the same. */
 function submitError(booking: Booking): BookingError {
-  return { kind: 'submit', message: bookingStrings(booking.lang).errSubmit }
+  return { kind: 'unconfirmed', message: bookingStrings(booking.lang).errUnconfirmed }
 }
 
+/** create_booking codes that refuse the chosen start time itself, so another time can succeed. */
+const UNAVAILABLE_CODES: readonly string[] = ['slot_taken', 'outside_hours', 'invalid_time']
+
 /** Map a gateway/RPC error code to a localized `BookingError`. `rate_limited` + `failed_challenge`
- * (added by the submit-booking gateway) get their own messages; every create_booking error code
- * (slot_taken, outside_hours, invalid_time, …) collapses to the generic submit error. */
+ * come from the submit-booking gateway; the other codes from create_booking. */
 function bookingErrorFor(booking: Booking, code: string): BookingError {
   const t = bookingStrings(booking.lang)
-  const message =
-    code === 'rate_limited'
-      ? t.errRateLimited
-      : code === 'failed_challenge'
-        ? t.errChallenge
-        : t.errSubmit
-  return { kind: 'submit', message }
+  if (UNAVAILABLE_CODES.includes(code)) return { kind: 'unavailable', message: t.errSlotTaken }
+  if (code === 'rate_limited') return { kind: 'rate_limited', message: t.errRateLimited }
+  if (code === 'failed_challenge') return { kind: 'failed_challenge', message: t.errChallenge }
+  return { kind: 'submit', message: t.errSubmit }
 }
 
 export const supabaseBookingAdapter: BookingPort = {
@@ -107,7 +106,7 @@ export const supabaseBookingAdapter: BookingPort = {
     }
   },
 
-  async availability(params: AvailabilityParams): Promise<readonly string[]> {
+  async availability(params: AvailabilityParams): Promise<AvailabilityResult> {
     try {
       // `p_date` is the calendar's local `YYYY-MM-DD` — the RPC derives the weekday in
       // Europe/Stockholm, so the day window matches the salon's timezone (correct on a UTC server).
@@ -124,14 +123,14 @@ export const supabaseBookingAdapter: BookingPort = {
               p_service_id: params.serviceId,
             })
       const { data, error } = await rpc
-      if (error !== null) return []
+      if (error !== null) return { ok: false }
       const parsed = parseWith(availableSlotsResponse, data)
-      if (!parsed.ok) return []
+      if (!parsed.ok) return { ok: false }
       // The RPC already returns the AVAILABLE start times, ascending — render them as-is. Any failure
-      // (transport, malformed) fell through to `[]` above: fail closed rather than show wrong times.
-      return parsed.value
+      // (transport, malformed) returned `{ ok: false }` above rather than show wrong times.
+      return { ok: true, times: parsed.value }
     } catch {
-      return []
+      return { ok: false }
     }
   },
 }

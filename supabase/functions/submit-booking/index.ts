@@ -155,7 +155,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
     }
     return reply(rpc.data, 200)
   } catch (err) {
-    console.error('submit-booking: unhandled error:', err)
+    // Code and error kind only: a database error's message or DETAIL can quote customer data.
+    const code = typeof err === 'object' && err !== null && 'code' in err ? err.code : null
+    console.error(
+      'submit-booking: unhandled error:',
+      typeof code === 'string' && /^[A-Z0-9]{5,8}$/.test(code) ? code : 'unknown',
+      err instanceof Error ? err.name : typeof err,
+    )
     return reply({ ok: false, error: 'server_error' }, 500)
   }
 })

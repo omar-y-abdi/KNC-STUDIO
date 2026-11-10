@@ -8,6 +8,8 @@ vi.mock('../../modules/public-web/src/backend/config', () => ({
 import { invokePublicBookingAction } from '../../modules/public-web/src/backend/publicBookingActions'
 import { supabaseBookingAdapter } from '../../modules/public-web/src/booking/adapters/supabaseBooking'
 import { asBarberId, type Booking } from '../../modules/public-web/src/booking/domain'
+import { localWallClockToStockholmIso } from '../../modules/public-web/src/booking/stockholmTime'
+import { bookingStrings } from '../../modules/public-web/src/i18n/index'
 import {
   customerAccessExchangeResponse,
   customerAccessRequestResponse,
@@ -280,5 +282,81 @@ describe('booking receipt registration', () => {
       customerAccess: 'email',
     })
     expect(fetch).toHaveBeenCalledOnce()
+  })
+
+  it('sends exactly the booking, the challenge token and the receipt choice', async () => {
+    browser('')
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => success())
+    vi.stubGlobal('fetch', fetch)
+    await supabaseBookingAdapter.submit(booking)
+    expect(fetch).toHaveBeenCalledOnce()
+    expect(fetch.mock.calls[0]?.[0]).toBe('/api/bookings')
+    expect(JSON.parse(fetch.mock.calls[0]?.[1]?.body as string)).toEqual({
+      booking: {
+        barberId: 'receipt-test',
+        serviceId: 'service',
+        startAt: localWallClockToStockholmIso(booking.start),
+        phone: '0701234567',
+        email: 'receipt@example.test',
+        lang: 'sv',
+        customerName: 'Receipt Test',
+      },
+      turnstileToken: 'challenge',
+      rememberBookings: false,
+    })
+  })
+
+  it.each(['slot_taken', 'outside_hours', 'invalid_time'] as const)(
+    'reports the refusal %s as an unavailable time with its own message',
+    async (error) => {
+      browser('')
+      vi.stubGlobal(
+        'fetch',
+        vi.fn<typeof globalThis.fetch>(async () => Response.json({ ok: false, error })),
+      )
+      expect(await supabaseBookingAdapter.submit(booking)).toEqual({
+        ok: false,
+        error: { kind: 'unavailable', message: bookingStrings('sv').errSlotTaken },
+      })
+      expect(bookingStrings('sv').errSlotTaken).not.toBe(bookingStrings('sv').errSubmit)
+    },
+  )
+
+  it.each([
+    ['invalid_contact', 'submit', 'errSubmit'],
+    ['invalid', 'submit', 'errSubmit'],
+    ['rate_limited', 'rate_limited', 'errRateLimited'],
+    ['failed_challenge', 'failed_challenge', 'errChallenge'],
+  ] as const)('reports the refusal %s as the kind %s', async (error, kind, message) => {
+    browser('')
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof globalThis.fetch>(async () => Response.json({ ok: false, error })),
+    )
+    expect(await supabaseBookingAdapter.submit(booking)).toEqual({
+      ok: false,
+      error: { kind, message: bookingStrings('sv')[message] },
+    })
+  })
+
+  // The request may have reached the server and booked the time.
+  it.each([
+    [
+      'the request fails on the way',
+      async (): Promise<Response> => {
+        throw new TypeError('Failed to fetch')
+      },
+    ],
+    ['the server answers with an error status', async () => new Response('', { status: 502 })],
+    ['the answer is not JSON', async () => new Response('<html>', { status: 200 })],
+    ['the answer has an unknown shape', async () => Response.json({ booked: 'maybe' })],
+  ] as const)('reports the outcome as unconfirmed when %s', async (_label, answer) => {
+    browser('')
+    vi.stubGlobal('fetch', vi.fn<typeof globalThis.fetch>(answer))
+    expect(await supabaseBookingAdapter.submit(booking)).toEqual({
+      ok: false,
+      error: { kind: 'unconfirmed', message: bookingStrings('sv').errUnconfirmed },
+    })
+    expect(bookingStrings('sv').errUnconfirmed).not.toBe(bookingStrings('sv').errSubmit)
   })
 })

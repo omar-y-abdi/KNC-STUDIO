@@ -1,5 +1,39 @@
+import type { Lang } from '../i18n/index'
+
+const NATIVE_PATHS = ['/', '/about', '/booking', '/my-bookings'] as const
+
+export type NativePublicPath = (typeof NATIVE_PATHS)[number]
+
+export type NativeSubpage = Exclude<NativePublicPath, '/'>
+
 /** Native site routes use the same saved presentation across pages. */
-export const NATIVE_PUBLIC_PATHS: readonly string[] = ['/', '/about', '/booking', '/my-bookings']
+export const NATIVE_PUBLIC_PATHS: readonly string[] = NATIVE_PATHS
+
+export function nativePublicPath(pathname: string): NativePublicPath | null {
+  return NATIVE_PATHS.find((path) => path === pathname) ?? null
+}
+
+/** /about and /booking as the site menu labels them (menuLinks in content-contracts site-page.ts);
+ * /my-bookings as Studio's page list names it (studio nativePages.ts). */
+const NATIVE_SUBPAGE_NAMES: Readonly<Record<NativeSubpage, Readonly<Record<Lang, string>>>> = {
+  '/about': { sv: 'Om oss', en: 'About' },
+  '/booking': { sv: 'Boka tid', en: 'Book' },
+  '/my-bookings': { sv: 'Mina bokningar', en: 'My bookings' },
+}
+
+export function nativeRouteTitle(path: NativeSubpage, lang: Lang, businessName: string): string {
+  return `${NATIVE_SUBPAGE_NAMES[path][lang]} – ${businessName}`
+}
+
+/** The booking page's description when the owner has written none: its own, not the homepage's. */
+export function bookingDescription(
+  lang: Lang,
+  business: { readonly name: string; readonly city: string },
+): string {
+  return lang === 'sv'
+    ? `Boka tid hos ${business.name} i ${business.city}: välj barberare, behandling och en ledig tid online.`
+    : `Book an appointment at ${business.name} in ${business.city}: choose a barber, a service and an available time online.`
+}
 
 /** Public paths that must wait for the authoritative CMS presentation before rendering App. */
 export function isNativePublicPath(pathname: string): boolean {

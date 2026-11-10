@@ -1,11 +1,32 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
+import { dirname, join, normalize } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { gunzipSync } from 'node:zlib'
+import {
+  createSourceFile,
+  isExportDeclaration,
+  isImportDeclaration,
+  isStringLiteral,
+  ScriptTarget,
+} from 'typescript'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { parse, type DefaultTreeAdapterMap } from 'parse5'
 import { generate, parse as parseCss, walk, type CssNode } from 'css-tree'
 import worker, { PublicContent } from '../../supabase/worker/index'
 import {
+  validatePresentation,
+  type CmsPage,
+  type CmsPresentation,
+} from '../../packages/content-contracts/src/cms'
+import { repairDesktopCss } from '../../packages/content-contracts/src/cms-device-css'
+import {
+  desktopRepaired,
+  DesktopRepairUnavailable,
+  hasLegacyDesktopCss,
+  loadDesktopRepair,
   PRESENTATION_RETRY_DELAYS_MS,
   readWithRetries,
+  type DesktopRepairLoad,
 } from '../../modules/public-web/src/cms/NativeSurface'
 
 // Homepage first load (R12): the shell paints only the background the app will paint, and the
@@ -190,5 +211,255 @@ describe('presentation read retry (PERF-5)', () => {
     )
     expect(readOnce).toHaveBeenCalledTimes(1)
     expect(pause).not.toHaveBeenCalled()
+  })
+})
+
+const ROOT = fileURLToPath(new URL('../../', import.meta.url))
+const SCRIPT = /\.(?:[cm]?[jt]sx?)$/
+
+/** The workspaces of the root manifest, keyed by package name. */
+function workspaces(): Map<string, { dir: string; exports: Record<string, string> }> {
+  const { workspaces: dirs } = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as {
+    workspaces: string[]
+  }
+  return new Map(
+    dirs.map((dir) => {
+      const { name, exports } = JSON.parse(
+        readFileSync(join(ROOT, dir, 'package.json'), 'utf8'),
+      ) as {
+        name: string
+        exports?: Record<string, string>
+      }
+      return [name, { dir, exports: exports ?? {} }]
+    }),
+  )
+}
+
+/** Files and bare packages `entry` reaches statically. Whole-clause `import type` / `export type`
+ *  (erased) and `import()` (a lazy chunk) are not followed; an inline `{ type X }` is. */
+function staticClosure(entry: string): { files: Set<string>; packages: Set<string> } {
+  const manifests = workspaces()
+  const files = new Set<string>()
+  const bare = new Set<string>()
+  const resolveFile = (from: string, specifier: string): string => {
+    const base = normalize(join(dirname(from), specifier))
+    const found = ['', '.ts', '.tsx', '.mjs', '.js', '/index.ts', '/index.tsx']
+      .map((suffix) => `${base}${suffix}`)
+      .find((path) => existsSync(join(ROOT, path)) && statSync(join(ROOT, path)).isFile())
+    if (found === undefined) throw new Error(`${from}: unresolved ${specifier}`)
+    return found
+  }
+  const pending = [entry]
+  for (let file = pending.pop(); file !== undefined; file = pending.pop()) {
+    if (files.has(file)) continue
+    files.add(file)
+    if (!SCRIPT.test(file)) continue
+    const source = createSourceFile(
+      file,
+      readFileSync(join(ROOT, file), 'utf8'),
+      ScriptTarget.Latest,
+    )
+    for (const statement of source.statements) {
+      if (!isImportDeclaration(statement) && !isExportDeclaration(statement)) continue
+      const erased = isImportDeclaration(statement)
+        ? statement.importClause?.isTypeOnly === true
+        : statement.isTypeOnly
+      const specifier = statement.moduleSpecifier
+      if (erased || specifier === undefined || !isStringLiteral(specifier)) continue
+      const name = specifier.text
+      if (name.startsWith('.')) {
+        pending.push(resolveFile(file, name))
+        continue
+      }
+      const segments = name.split('/')
+      const packageName = segments.slice(0, name.startsWith('@') ? 2 : 1).join('/')
+      const workspace = manifests.get(packageName)
+      if (workspace === undefined) {
+        bare.add(packageName)
+        continue
+      }
+      const target = workspace.exports[`.${name.slice(packageName.length)}`]
+      if (target === undefined) throw new Error(`${file}: ${name} is not exported`)
+      pending.push(normalize(join(workspace.dir, target)))
+    }
+  }
+  return { files, packages: bare }
+}
+
+describe('boot JavaScript (audit E 15a)', () => {
+  it('reaches no css-tree through static imports from the public entry', () => {
+    const { files, packages } = staticClosure('src/main.tsx')
+    // The walk does reach the public render path.
+    expect(files).toContain('modules/public-web/src/cms/NativeSurface.tsx')
+    expect(files).toContain('modules/public-web/src/app/App.tsx')
+    expect(packages).toContain('preact')
+    expect(files).not.toContain('packages/content-contracts/src/cms-device-css.ts')
+    expect(packages).not.toContain('css-tree')
+  })
+})
+
+/** The browser suites' presentation; its /about en sheets carry legacy `max-width:1440px` rules. */
+function storedPresentation(): CmsPresentation {
+  const response: unknown = JSON.parse(
+    gunzipSync(readFileSync(join(ROOT, 'tools/e2e/fixtures/presentation.json.gz'))).toString(
+      'utf8',
+    ),
+  )
+  if (!response || typeof response !== 'object' || !('presentation' in response))
+    throw new Error('Invalid stored presentation')
+  validatePresentation(response.presentation)
+  return response.presentation
+}
+
+const SURFACE_PATHS = ['/', '/about', '/booking', '/my-bookings']
+
+function surfaceSheets(presentation: CmsPresentation): string[] {
+  return presentation.pages
+    .filter((page) => SURFACE_PATHS.includes(page.path))
+    .flatMap((page) =>
+      (['sv', 'en'] as const).flatMap((lang) =>
+        (['light', 'dark'] as const).map((mode) => page.content[lang].css[mode]),
+      ),
+    )
+}
+
+function readyPresentation(presentation: CmsPresentation, load: DesktopRepairLoad) {
+  const result = desktopRepaired(presentation, load)
+  if (result.state !== 'ready' || result.presentation === null)
+    throw new Error(`expected a ready presentation, got ${result.state}`)
+  return result.presentation
+}
+
+/** Replaces the light sheet of one page and language. */
+function withSheet(
+  presentation: CmsPresentation,
+  path: string,
+  css: string,
+  lang: 'sv' | 'en' = 'en',
+): CmsPresentation {
+  const replace = (page: CmsPage): CmsPage => {
+    const content = { ...page.content }
+    content[lang] = { ...page.content[lang], css: { ...page.content[lang].css, light: css } }
+    return { ...page, content }
+  }
+  return {
+    ...presentation,
+    pages: presentation.pages.map((page) => (page.path === path ? replace(page) : page)),
+  }
+}
+
+describe('Desktop breakpoint repair on demand (audit E 15a)', () => {
+  const stored = storedPresentation()
+  const loaded: DesktopRepairLoad = { state: 'loaded', repair: repairDesktopCss }
+  const unavailable = new DesktopRepairUnavailable(new Error('chunk failed'))
+  const about = (presentation: CmsPresentation): CmsPage => {
+    const page = presentation.pages.find((candidate) => candidate.path === '/about')
+    if (page === undefined) throw new Error('no /about page')
+    return page
+  }
+
+  it('gives every surface sheet of the stored presentation the CSS the render-time repair gave', () => {
+    expect(hasLegacyDesktopCss(stored)).toBe(true)
+    const repaired = readyPresentation(stored, loaded)
+    expect(surfaceSheets(repaired)).toEqual(
+      surfaceSheets(stored).map((css) => repairDesktopCss(css)),
+    )
+    for (const mode of ['light', 'dark'] as const) {
+      expect(about(repaired).content.en.css[mode]).not.toBe(about(stored).content.en.css[mode])
+      expect(about(repaired).content.en.css[mode]).not.toMatch(/max-width\s*:\s*1440px/)
+    }
+    expect(about(repaired).content.sv).toBe(about(stored).content.sv)
+    for (const [index, page] of repaired.pages.entries())
+      if (page.path !== '/about') expect(page).toBe(stored.pages[index])
+  })
+
+  it('never offers the stored legacy sheets while the repair is missing or failed', () => {
+    expect(desktopRepaired(stored, { state: 'missing' })).toEqual({ state: 'waiting' })
+    expect(desktopRepaired(stored, { state: 'failed', error: unavailable })).toEqual({
+      state: 'failed',
+      error: unavailable,
+    })
+  })
+
+  it('passes a presentation without legacy sheets through as the same object, without the repair', () => {
+    const clean = readyPresentation(stored, loaded)
+    expect(hasLegacyDesktopCss(clean)).toBe(false)
+    const repair = vi.fn((css: string) => css)
+    for (const load of [
+      { state: 'missing' },
+      { state: 'failed', error: unavailable },
+      { state: 'loaded', repair },
+    ] satisfies DesktopRepairLoad[]) {
+      const result = desktopRepaired(clean, load)
+      expect(result.state).toBe('ready')
+      expect(result.state === 'ready' && result.presentation).toBe(clean)
+    }
+    expect(repair).not.toHaveBeenCalled()
+    expect(desktopRepaired(null, { state: 'missing' })).toEqual({
+      state: 'ready',
+      presentation: null,
+    })
+  })
+
+  it('ignores the breakpoint text on pages no native surface renders', () => {
+    const clean = readyPresentation(stored, loaded)
+    const created = clean.pages.find((page) => !SURFACE_PATHS.includes(page.path))
+    if (created === undefined) throw new Error('the fixture has no page outside the surfaces')
+    const presentation = withSheet(clean, created.path, '@media(max-width:1440px){#a{color:red}}')
+    expect(hasLegacyDesktopCss(presentation)).toBe(false)
+    const result = desktopRepaired(presentation, { state: 'missing' })
+    expect(result.state === 'ready' && result.presentation).toBe(presentation)
+  })
+
+  it('skips css-tree only for sheets the repair returns unchanged', () => {
+    const clean = readyPresentation(stored, loaded)
+    const legacy = [
+      '@media(max-width:1440px){#a{color:red}}',
+      '@media (max-width: 1440px) {\n  #a {\n    color: red;\n  }\n}\n',
+      '@media (max-width\n:\t1440px){#a{color:red}}',
+    ]
+    const sheets = [
+      ...legacy,
+      '@media (max-width:1440px){.a{color:red}}',
+      '@media (MAX-WIDTH:1440px){#a{color:red}}',
+      '@media (max-width:1440PX){#a{color:red}}',
+      '@media (max-width:/**/1440px){#a{color:red}}',
+      '@media (max-width:1441px){#a{color:red}}',
+      '#a{max-width:1440px}',
+      '',
+      ...surfaceSheets(stored),
+    ]
+    for (const css of legacy) {
+      expect(repairDesktopCss(css), css).not.toBe(css)
+      expect(hasLegacyDesktopCss(withSheet(clean, '/about', css)), css).toBe(true)
+      expect(hasLegacyDesktopCss(withSheet(clean, '/', css, 'sv')), css).toBe(true)
+    }
+    for (const css of sheets)
+      if (!hasLegacyDesktopCss(withSheet(clean, '/about', css)))
+        expect(repairDesktopCss(css), css).toBe(css)
+  })
+
+  it('loads the repair through the injected import and reports a failed load as typed data', async () => {
+    const load = vi.fn(async () => ({ repairDesktopCss }))
+    await expect(loadDesktopRepair(load)).resolves.toEqual({
+      state: 'loaded',
+      repair: repairDesktopCss,
+    })
+    expect(load).toHaveBeenCalledTimes(1)
+    const cause = new TypeError('Failed to fetch dynamically imported module')
+    const failed = await loadDesktopRepair(async () => {
+      throw cause
+    })
+    expect(failed.state).toBe('failed')
+    const error = failed.state === 'failed' ? failed.error : null
+    expect(error).toBeInstanceOf(DesktopRepairUnavailable)
+    expect(error?.cause).toBe(cause)
+  })
+
+  it('imports cms-device-css by default', async () => {
+    const result = await loadDesktopRepair()
+    if (result.state !== 'loaded') throw result.error
+    const sheet = about(stored).content.en.css.light
+    expect(result.repair(sheet)).toBe(repairDesktopCss(sheet))
   })
 })

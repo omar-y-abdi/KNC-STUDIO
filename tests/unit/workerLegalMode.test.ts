@@ -18,7 +18,12 @@ import {
   SCHEMA_DAYS,
   type BusinessOpeningHours,
 } from '../../modules/public-web/src/site/business'
-import worker, { renderContactMetadata, renderCmsPage } from '../../supabase/worker/index'
+import worker, {
+  renderContactMetadata,
+  renderCmsPage,
+  withFallbackSkipLink,
+  type SkipTarget,
+} from '../../supabase/worker/index'
 import { withPageReads } from './helpers/cmsPageReads'
 
 // TST-2: /terms rendered by the Worker itself, not the static fallback file. The built shell shape
@@ -299,8 +304,10 @@ describe('Worker CMS contact and static fallback', () => {
     const html = await (await requestContact()).text()
     const title = 'Kontakta Aktuell &amp; Salong – barbershop i Malmö'
     expect(html).toContain(`<title id="business-title">${title}</title>`)
-    expect(html).toContain(`id="business-og-title" property="og:title" content="${title}"`)
-    expect(html).toContain(`id="business-twitter-title" name="twitter:title" content="${title}"`)
+    // The shell writes these two tags over several lines.
+    const flat = html.replace(/\s+/g, ' ')
+    expect(flat).toContain(`id="business-og-title" property="og:title" content="${title}"`)
+    expect(flat).toContain(`id="business-twitter-title" name="twitter:title" content="${title}"`)
     expect(html).toMatch(
       /id="business-description"\s+name="description"\s+content="Officiell kontakt, adress och bokningsinformation för Aktuell &amp; Salong i Malmö\."/,
     )
@@ -953,15 +960,16 @@ describe('Worker CMS Contact Open Graph identity (A.R05)', () => {
   const canonical = (html: string): string | undefined =>
     /<link\b[^>]*rel="canonical"[^>]*href="([^"]*)"/i.exec(html)?.[1]
 
-  it.each(['/contact', '/contact?lang=en', '/contact?mode=dark'])(
-    'gives the CMS-rendered Contact its own og:url matching canonical (%s)',
-    async (path) => {
-      const html = await serveContact({ ...presentation, pages: [adoptedContact] }, path)
-      expect(html).toContain('data-cms-public="1"')
-      expect(canonical(html)).toBe('https://bladeblendstudio.se/contact')
-      expect(ogUrl(html)).toBe('https://bladeblendstudio.se/contact')
-    },
-  )
+  it.each([
+    ['/contact', 'https://bladeblendstudio.se/contact'],
+    ['/contact?lang=en', 'https://bladeblendstudio.se/contact?lang=en'],
+    ['/contact?mode=dark', 'https://bladeblendstudio.se/contact'],
+  ])('gives the CMS-rendered Contact its own og:url matching canonical (%s)', async (path, url) => {
+    const html = await serveContact({ ...presentation, pages: [adoptedContact] }, path)
+    expect(html).toContain('data-cms-public="1"')
+    expect(canonical(html)).toBe(url)
+    expect(ogUrl(html)).toBe(url)
+  })
 
   it('keeps the static Contact fallback og:url when the CMS lookup fails', async () => {
     const html = await serveContact(null, '/contact')
@@ -998,4 +1006,407 @@ describe('CMS shell metadata byte compatibility', () => {
       expect(renderCmsPage(source, terms, lang, 'light', canonical)).toContain('İ' + expected)
     },
   )
+})
+
+// The deployed file gets the skip target public/404.html carries; the CMS render targets the
+// shell's #root, so no owner markup is searched or edited.
+type TreeNode = DefaultTreeAdapterMap['node']
+type TreeElement = DefaultTreeAdapterMap['element']
+const treeElements = (node: TreeNode): TreeElement[] => [
+  ...('tagName' in node ? [node] : []),
+  ...('childNodes' in node ? node.childNodes.flatMap(treeElements) : []),
+]
+const attribute = (element: TreeElement | undefined, name: string): string | undefined =>
+  element?.attrs.find((item) => item.name === name)?.value
+const treeText = (node: TreeNode | undefined): string =>
+  node === undefined
+    ? ''
+    : 'value' in node && node.nodeName === '#text'
+      ? node.value
+      : 'childNodes' in node
+        ? node.childNodes.map((child) => treeText(child)).join('')
+        : ''
+
+function keyboardView(html: string) {
+  const all = treeElements(parse(html))
+  const body = all.find((element) => element.tagName === 'body')
+  if (!body) throw new Error('The served document has no body')
+  return {
+    inBody: treeElements(body).slice(1),
+    skipLinks: all.filter((element) =>
+      (attribute(element, 'class') ?? '').split(/\s+/).includes('bb-skip'),
+    ),
+    /** In document order: a fragment link leads to the first. */
+    withId: (id: string): TreeElement[] => all.filter((item) => attribute(item, 'id') === id),
+    bodyStyles: treeElements(body).filter((element) => element.tagName === 'style').length,
+  }
+}
+
+const SKIP_SV = 'Hoppa till innehållet'
+const SKIP_EN = 'Skip to content'
+const BILINGUAL_SKIP = `${SKIP_SV} / <span lang="en">${SKIP_EN}</span>`
+const FILE_TARGET = ' id="main" tabindex="-1"'
+const fileLink = (label: string): string => `<a class="bb-skip bb-btn" href="#main">${label}</a>`
+
+const DEPLOYED_PAGES = ['/contact.html', '/privacy.html', '/terms.html']
+const deployed = {
+  ...env,
+  ASSETS: {
+    fetch: async (input: Request | URL | string): Promise<Response> => {
+      const path = new URL(input instanceof Request ? input.url : input).pathname
+      return DEPLOYED_PAGES.includes(path)
+        ? new Response(publicFile(path), { headers: { 'Content-Type': 'text/html' } })
+        : env.ASSETS.fetch(input)
+    },
+  },
+}
+/** `path` with the publication unreadable; Företag & SEO answers `discovery` or fails too. */
+async function serveDeployed(path: string, discovery: unknown = null): Promise<string> {
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) =>
+    String(input).endsWith('/rpc/public_business_discovery') && discovery !== null
+      ? Response.json(discovery)
+      : new Response(null, { status: 503 }),
+  )
+  const response = await worker.fetch(
+    new Request(`https://bladeblendstudio.se${path}`),
+    deployed,
+    noPublicContent,
+  )
+  expect(response.status).toBe(200)
+  return response.text()
+}
+
+describe('the skip link of a deployed information page (W2-8)', () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  it.each(['/privacy', '/terms'] as const)(
+    'gives the deployed %s file the bilingual link and its target, and changes nothing else',
+    async (path) => {
+      const html = await serveDeployed(path)
+      const view = keyboardView(html)
+      const [link] = view.inBody
+      expect(link?.tagName).toBe('a')
+      expect(attribute(link, 'class')).toBe('bb-skip bb-btn')
+      expect(attribute(link, 'href')).toBe('#main')
+      expect(treeText(link)).toBe(`${SKIP_SV} / ${SKIP_EN}`)
+      expect(view.skipLinks).toHaveLength(1)
+      expect(view.skipLinks[0]).toBe(link)
+      const english = link === undefined ? [] : treeElements(link).slice(1)
+      expect(english.map((element) => [attribute(element, 'lang'), treeText(element)])).toEqual([
+        ['en', SKIP_EN],
+      ])
+      const targets = view.withId('main')
+      expect(targets).toHaveLength(1)
+      expect(targets[0]?.tagName).toBe('main')
+      expect(attribute(targets[0], 'tabindex')).toBe('-1')
+      expect(attribute(targets[0], 'class')).toBe('bb-doc')
+      expect(html.replace(fileLink(BILINGUAL_SKIP), '').replace(FILE_TARGET, '')).toBe(
+        publicFile(`${path}.html`),
+      )
+    },
+  )
+
+  it('gives the deployed /contact file the Swedish link and its target, and changes nothing else', async () => {
+    const html = await serveDeployed('/contact')
+    const view = keyboardView(html)
+    const [link] = view.inBody
+    expect(link?.tagName).toBe('a')
+    expect(attribute(link, 'class')).toBe('bb-skip bb-btn')
+    expect(attribute(link, 'href')).toBe('#main')
+    expect(treeText(link)).toBe(SKIP_SV)
+    expect(view.skipLinks).toHaveLength(1)
+    const targets = view.withId('main')
+    expect(targets).toHaveLength(1)
+    expect(targets[0]?.tagName).toBe('main')
+    expect(attribute(targets[0], 'tabindex')).toBe('-1')
+    expect(attribute(targets[0], 'data-business-contact-page')).toBe('1')
+    expect(html.replace(fileLink(SKIP_SV), '').replace(FILE_TARGET, '')).toBe(
+      renderContactMetadata(contactSource, DEFAULT_BUSINESS),
+    )
+  })
+
+  it.each(['/contact', '/privacy', '/terms'])(
+    'keeps one link and one target on %s when the business name spells both',
+    async (path) => {
+      const name = 'Salong <main id="main"> <body> <a class="bb-skip" href="#x">'
+      const html = await serveDeployed(path, {
+        ...contactDiscovery,
+        settings: { ...contactDiscovery.settings, business_name: name },
+      })
+      expect(treeText(parse(html))).toContain(name)
+      const view = keyboardView(html)
+      expect(view.skipLinks).toHaveLength(1)
+      expect(view.skipLinks[0]).toBe(view.inBody[0])
+      expect(attribute(view.inBody[0], 'href')).toBe('#main')
+      expect(view.withId('main').map((element) => element.tagName)).toEqual(['main'])
+    },
+  )
+
+  it.each([
+    ['a document without a body', '<main>Text</main>'],
+    ['a body without a main', '<body><div>Text</div></body>'],
+    ['a main that has an id', '<body><main id="content">Text</main></body>'],
+    ['a main whose id is written in capitals', '<body><main ID = "content">Text</main></body>'],
+    ['a main that has a tabindex', '<body><main tabindex="0">Text</main></body>'],
+  ])('serves %s as it is', (_label, html) => {
+    expect(withFallbackSkipLink(html, 'Skip')).toBe(html)
+  })
+
+  const LINK = fileLink('Skip')
+  it.each([
+    [
+      'the main of a body',
+      '<body><main>Text</main></body>',
+      `<body>${LINK}<main${FILE_TARGET}>Text</main></body>`,
+    ],
+    [
+      'tags written in capitals, keeping their attributes',
+      '<BODY CLASS="x"><MAIN CLASS="y">Text</MAIN></BODY>',
+      `<BODY CLASS="x">${LINK}<MAIN CLASS="y"${FILE_TARGET}>Text</MAIN></BODY>`,
+    ],
+    [
+      'the main, not an element whose name starts with main',
+      '<body><main-menu></main-menu><mainframe></mainframe><main>Text</main></body>',
+      `<body>${LINK}<main-menu></main-menu><mainframe></mainframe><main${FILE_TARGET}>Text</main></body>`,
+    ],
+    [
+      'tags whose quoted attribute values hold a greater-than sign',
+      `<body title="a > b"><main title="a > b" data-x='c > d'>Text</main></body>`,
+      `<body title="a > b">${LINK}<main title="a > b" data-x='c > d'${FILE_TARGET}>Text</main></body>`,
+    ],
+    [
+      'the first main only',
+      '<body><main>One</main><main>Two</main></body>',
+      `<body>${LINK}<main${FILE_TARGET}>One</main><main>Two</main></body>`,
+    ],
+    [
+      'a main inside the body, not one before it',
+      '<main>Before</main><body><main>Text</main></body>',
+      `<main>Before</main><body>${LINK}<main${FILE_TARGET}>Text</main></body>`,
+    ],
+  ])('marks %s', (_label, html, expected) => {
+    expect(withFallbackSkipLink(html, 'Skip')).toBe(expected)
+  })
+})
+
+describe('the skip link of a CMS information page (W2-8)', () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  const privacy: CmsPage = {
+    ...terms,
+    id: '10000000-0000-4000-8000-000000000005',
+    kind: 'privacy',
+    path: '/privacy',
+  }
+  /** `page` served from the publication; Företag & SEO cannot be read. */
+  const servePage = async (page: CmsPage, query = ''): Promise<string> => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      withPageReads(async (input) =>
+        String(input).endsWith('/rpc/public_cms_presentation')
+          ? Response.json({ revision: 7, presentation: { ...presentation, pages: [page] } })
+          : new Response(null, { status: 503 }),
+      ),
+    )
+    const response = await worker.fetch(
+      new Request(`https://bladeblendstudio.se${page.path}${query}`),
+      env,
+      noPublicContent,
+    )
+    expect(response.status).toBe(200)
+    return response.text()
+  }
+
+  it.each(
+    [terms, privacy, contact].flatMap((page) =>
+      (['sv', 'en'] as const).map((lang) => [page.path, lang, page] as const),
+    ),
+  )(
+    'puts the link in front of the #root of %s (%s), which takes the focus',
+    async (_path, lang, page) => {
+      const html = await servePage(page, `?lang=${lang}`)
+      const view = keyboardView(html)
+      const [link, root] = view.inBody
+      expect(link?.tagName).toBe('a')
+      expect(attribute(link, 'class')).toBe('bb-skip bb-btn')
+      expect(attribute(link, 'href')).toBe('#root')
+      expect(treeText(link)).toBe(lang === 'sv' ? SKIP_SV : SKIP_EN)
+      expect(view.skipLinks).toHaveLength(1)
+      expect(view.withId('root')).toHaveLength(1)
+      expect(view.withId('root')[0]).toBe(root)
+      expect(attribute(root, 'tabindex')).toBe('-1')
+      expect(attribute(root, 'data-cms-public')).toBe('1')
+      expect(root && treeElements(root).some((element) => element.tagName === 'main')).toBe(true)
+      expect(view.bodyStyles).toBe(0)
+    },
+  )
+
+  it('ships the rules that hide the link until it has focus, after the sheets of the page', async () => {
+    const html = await servePage(terms)
+    const skip = html.indexOf('<style id="cms-skip">')
+    expect(skip).toBeGreaterThan(html.lastIndexOf('<style id="cms-page-'))
+    expect(skip).toBeGreaterThan(html.lastIndexOf('<style id="cms-theme'))
+    expect(skip).toBeLessThan(html.indexOf('</head>'))
+    // Drops white space and leading zeros, so 0.75rem and .75rem compare equal.
+    const compact = (css: string): string =>
+      css.replace(/\s+/g, '').replace(/(^|[^0-9.])0\./g, '$1.')
+    const rule = (css: string, selector: string): string[] => {
+      const start = css.indexOf(`${selector}{`)
+      if (start < 0) throw new Error(`No ${selector} rule`)
+      const open = start + selector.length + 1
+      return css.slice(open, css.indexOf('}', open)).split(';').filter(Boolean)
+    }
+    const served = compact(sheet(html, 'cms-skip'))
+    const file = rule(compact(publicFile('/info.css')), '.bb-skip')
+    expect(file).toContain('transform:translateY(-200%)')
+    for (const declaration of file) expect(rule(served, '.bb-skip')).toContain(declaration)
+    expect(rule(served, '.bb-skip:focus')).toContain('transform:none')
+    expect(rule(served, '#root:focus')).toEqual(['outline:none'])
+  })
+
+  it.each([
+    [
+      'its own main with the id main and its own skip link',
+      '<main id="main"><a class="bb-skip bb-btn" href="#main">Ägarens länk</a><h1>Villkor</h1></main>',
+    ],
+    ['no main', '<div><h1>Villkor</h1><p>Text</p></div>'],
+    ['an element with the id root', '<main><div id="root">Ägarens rot</div></main>'],
+    ['an element with a tabindex', '<main><h1 tabindex="-1">Villkor</h1></main>'],
+  ])('leads to #root and edits nothing in an owner body with %s', async (_label, body) => {
+    const page: CmsPage = {
+      ...terms,
+      content: {
+        sv: { ...terms.content.sv, html: body },
+        en: { ...terms.content.en, html: body },
+      },
+    }
+    const html = await servePage(page)
+    const view = keyboardView(html)
+    const [link] = view.inBody
+    expect(attribute(link, 'class')).toBe('bb-skip bb-btn')
+    expect(attribute(link, 'href')).toBe('#root')
+    expect(treeText(link)).toBe(SKIP_SV)
+    const [root] = view.withId('root')
+    expect(root).toBe(view.inBody[1])
+    expect(attribute(root, 'data-cms-public')).toBe('1')
+    expect(attribute(root, 'tabindex')).toBe('-1')
+    expect(html).toContain(`tabindex="-1">${body}</div>`)
+  })
+
+  const TERMS_URL = 'https://bladeblendstudio.se/terms'
+  const renderWithTarget = (html: string, page: CmsPage, target: SkipTarget): string =>
+    renderCmsPage(
+      html,
+      page,
+      'sv',
+      'light',
+      TERMS_URL,
+      '',
+      undefined,
+      '',
+      DEFAULT_BUSINESS,
+      null,
+      null,
+      target,
+    )
+
+  it.each(['root', 'site-content'] as const)(
+    'adds no link to markup the app owns, when the target asked for is %s',
+    (target) => {
+      const native: CmsPage = {
+        ...terms,
+        content: {
+          ...terms.content,
+          sv: {
+            ...terms.content.sv,
+            html: '<div data-knc-native="1"><main><h1>Villkor</h1></main></div>',
+          },
+        },
+      }
+      const html = renderWithTarget(shell, native, target)
+      expect(html).toContain('data-cms-public="1" data-cms-mode="light"')
+      expect(html).not.toContain('bb-skip')
+      expect(html).not.toContain('cms-skip')
+      expect(html).not.toContain('tabindex')
+    },
+  )
+
+  it('adds no link to a page that does not hold the content wrapper it would lead to', () => {
+    const html = renderWithTarget(shell, terms, 'site-content')
+    expect(html).toContain('data-cms-public="1"')
+    expect(html).not.toContain('bb-skip')
+    expect(html).not.toContain('cms-skip')
+  })
+
+  it('never adds the link where the shell has no head to hold its sheet', () => {
+    const headless = '<div id="root"></div>'
+    const html = renderWithTarget(headless, terms, 'root')
+    expect(html).toContain('data-cms-public="1"')
+    expect(html).not.toContain('bb-skip')
+    expect(html).not.toContain('tabindex')
+    // Control: with a head, the same call adds both.
+    const whole = renderWithTarget(shell, terms, 'root')
+    expect(whole).toContain('<a class="bb-skip bb-btn" href="#root">Hoppa till innehållet</a>')
+    expect(whole).toContain('<style id="cms-skip">')
+    expect(whole).toContain('tabindex="-1">')
+  })
+
+  it('adds nothing to a page rendered without a skip target (control)', () => {
+    const html = renderCmsPage(shell, terms, 'sv', 'light', TERMS_URL)
+    expect(html).toContain('data-cms-public="1"')
+    expect(html).not.toContain('bb-skip')
+    expect(html).not.toContain('cms-skip')
+    expect(html).not.toContain('tabindex')
+  })
+})
+
+describe('the image description of the deployed Contact (W2-10)', () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  const withProperty = (html: string, property: string): TreeElement[] =>
+    treeElements(parse(html)).filter((element) => attribute(element, 'property') === property)
+
+  it.each(['Aktuell & Salong', 'Salong "Nord" <b>', 'x" id="contact-meta-title'])(
+    'names the business %j, escaped, in its one og:image:alt tag',
+    (name) => {
+      const html = renderContactMetadata(contactSource, { ...DEFAULT_BUSINESS, name })
+      const tags = withProperty(html, 'og:image:alt')
+      expect(tags.map((tag) => [attribute(tag, 'id'), attribute(tag, 'content')])).toEqual([
+        ['contact-image-alt', name],
+      ])
+      const titles = treeElements(parse(html)).filter(
+        (element) => attribute(element, 'id') === 'contact-meta-title',
+      )
+      expect(titles.map((element) => element.tagName)).toEqual(['title'])
+      expect(treeText(titles[0])).toContain(name)
+    },
+  )
+
+  it('fills it from Företag & SEO on the static Contact, and from the default business without it', async () => {
+    const alt = async (discovery: unknown): Promise<(string | undefined)[]> =>
+      withProperty(await serveDeployed('/contact', discovery), 'og:image:alt').map((tag) =>
+        attribute(tag, 'content'),
+      )
+    expect(await alt(contactDiscovery)).toEqual(['Aktuell & Salong'])
+    expect(await alt(null)).toEqual([DEFAULT_BUSINESS.name])
+  })
+
+  it('leaves the CMS Contact with the shell head, whose own tag names the business (control)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      withPageReads(async (input) =>
+        String(input).endsWith('/rpc/public_cms_presentation')
+          ? Response.json({ revision: 7, presentation: { ...presentation, pages: [contact] } })
+          : Response.json(contactDiscovery),
+      ),
+    )
+    const response = await worker.fetch(
+      new Request('https://bladeblendstudio.se/contact'),
+      env,
+      noPublicContent,
+    )
+    expect(response.status).toBe(200)
+    const tags = withProperty(await response.text(), 'og:image:alt')
+    expect(tags.map((tag) => [attribute(tag, 'id'), attribute(tag, 'content')])).toEqual([
+      ['business-og-image-alt', 'Aktuell & Salong'],
+    ])
+  })
 })

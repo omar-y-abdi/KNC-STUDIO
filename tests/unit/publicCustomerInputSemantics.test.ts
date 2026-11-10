@@ -3,6 +3,7 @@ import { DetailsDialog } from '../../modules/public-web/src/booking/DetailsDialo
 import { AboutSection } from '../../modules/public-web/src/about/AboutSection'
 import { MyBookingsDialog } from '../../modules/public-web/src/mybookings/MyBookingsDialog'
 import { buildBookingStyles, palette } from '../../modules/public-web/src/booking/bookingStyles'
+import { DEFAULT_BUSINESS } from '../../modules/public-web/src/config'
 import { bookingStrings } from '../../modules/public-web/src/i18n/index'
 import { nodes, reset } from './helpers/fakeHooks'
 
@@ -37,6 +38,7 @@ describe('public customer input semantics', () => {
     const fields = inputs(
       DetailsDialog({
         t: bookingStrings('sv'),
+        lang: 'sv',
         s: buildBookingStyles(palette(false), false, false),
         closeLabel: 'Close',
         sumBarber: '',
@@ -47,6 +49,7 @@ describe('public customer input semantics', () => {
         phoneValue: '',
         emailValue: '',
         bookDisabled: false,
+        bookBusy: false,
         fieldErrors: { name: false, phone: false, email: false },
         submitError: null,
         onName: noop,
@@ -65,6 +68,7 @@ describe('public customer input semantics', () => {
       { type: 'tel', autoComplete: 'tel', inputMode: 'tel' },
       { type: 'email', autoComplete: 'email', inputMode: 'email' },
     ])
+    expect(fields.map((field) => field['aria-required'])).toEqual(['true', 'true', 'true'])
   })
 
   it('renders telephone autofill in reviews and email autofill in My Bookings', () => {
@@ -76,12 +80,15 @@ describe('public customer input semantics', () => {
       mode: 'light',
       lang: 'sv',
       accessError: 'invalid',
+      business: DEFAULT_BUSINESS,
       onClose: vi.fn(),
     })
     if (typeof dialog.type !== 'function') throw new Error('Missing My Bookings session')
     const bookings = inputs((dialog.type as (props: unknown) => unknown)(dialog.props))
     expect(bookings).toEqual(
-      expect.arrayContaining([expect.objectContaining({ type: 'email', autoComplete: 'email' })]),
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'email', autoComplete: 'email', 'aria-required': 'true' }),
+      ]),
     )
   })
 })

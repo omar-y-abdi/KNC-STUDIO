@@ -114,6 +114,54 @@ describe('business structured data', () => {
     expect(data).not.toHaveProperty('telephone')
     expect(data).not.toHaveProperty('hasMap')
   })
+
+  const telephone = (phoneTel: string): unknown =>
+    buildBusinessStructuredData(
+      { ...DEFAULT_BUSINESS, phoneTel },
+      { barbers: [], services: [], schedules: [] },
+      'https://example.com',
+    )['telephone']
+
+  it.each([
+    ['0793043671', '+46793043671'],
+    ['079-304 36 71', '+46793043671'],
+    ['031 (12) 34.56', '+4631123456'],
+    ['08 123 456 78', '+46812345678'],
+  ])('writes the Swedish national number %s in international form', (stored, international) => {
+    expect(telephone(stored)).toBe(international)
+  })
+
+  it.each([
+    ['0046793043671', '+46793043671'],
+    ['00 46 79 304 36 71', '+46793043671'],
+    ['001 (212) 555-0100', '+12125550100'],
+  ])('writes %s, behind the international prefix 00, with a plus', (stored, international) => {
+    expect(telephone(stored)).toBe(international)
+  })
+
+  it.each([
+    '+46793043671',
+    '+46 79 304 36 71',
+    // Neither a national number with one trunk zero nor a number behind 00.
+    '112',
+    '793043671',
+    '+1 (212) 555-0100',
+    '00',
+    '000123',
+  ])('keeps the telephone %s as it is stored', (stored) => {
+    expect(telephone(stored)).toBe(stored)
+  })
+
+  it('gives the default business an international telephone and claims no coordinates or profiles', () => {
+    const data = buildBusinessStructuredData(
+      DEFAULT_BUSINESS,
+      { barbers: [], services: [], schedules: [] },
+      'https://example.com',
+    )
+    expect(data['telephone']).toBe('+46793043671')
+    expect(data).not.toHaveProperty('geo')
+    expect(data).not.toHaveProperty('sameAs')
+  })
 })
 
 describe('legal business identity', () => {

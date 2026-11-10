@@ -1,9 +1,11 @@
 import { readFileSync } from 'node:fs'
 import { gunzipSync } from 'node:zlib'
 import { describe, expect, it, vi } from 'vitest'
+import { emptyDocument, type CmsPage } from '../../packages/content-contracts/src/cms'
 import worker, {
   PublicContent,
   customerAccessTokenFromPath,
+  fixedRoutePath,
   isPrivatePath,
   isSpaPath,
   renderHomepageMetadata,
@@ -200,6 +202,10 @@ describe('Worker route policy', () => {
         )
         expect(response.status).toBe(200)
         expect(response.headers.get('Cache-Control')).toBe('no-store')
+        // The account page stays out of the index although its head was not rendered.
+        expect(response.headers.get('X-Robots-Tag')).toBe(
+          path === '/my-bookings' ? 'noindex' : null,
+        )
         expect(await response.text()).toBe('<main>homepage</main>')
       }
     },
@@ -337,10 +343,14 @@ describe('Worker route policy', () => {
   it.each(['/', '/about', '/booking', '/my-bookings'])(
     'serves bounded native metadata for %s',
     async (path) => {
-      const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
         const url = String(input)
         const body = url.includes('public_cms_page_metadata')
-          ? { revision: 2, title: 'CMS title', description: 'CMS description' }
+          ? {
+              revision: 2,
+              title: `CMS title ${(JSON.parse(String(init?.body)) as { p_path: string }).p_path}`,
+              description: 'CMS description',
+            }
           : { settings: {}, barbers: [], services: [], schedules: [] }
         return new Response(JSON.stringify(body), {
           status: 200,
@@ -364,11 +374,12 @@ describe('Worker route policy', () => {
           createWorkerContext(env),
         )
         expect(response.headers.get('Cache-Control')).toBe('no-store')
-        expect(await response.text()).toContain('CMS title')
+        expect(await response.text()).toContain(`CMS title ${path}`)
         expect(
           fetchMock.mock.calls.some(([input]) => String(input).includes('public_cms_presentation')),
         ).toBe(false)
-        expect(fetchMock).toHaveBeenCalledTimes(2)
+        // Discovery and the page's metadata; the other routes also read the homepage's title.
+        expect(fetchMock).toHaveBeenCalledTimes(path === '/' ? 2 : 3)
       } finally {
         fetchMock.mockRestore()
       }
@@ -851,5 +862,253 @@ describe('metadata byte compatibility', () => {
     expect(isSpaPath('//')).toBe(false)
     expect(isPrivatePath('/login///')).toBe(true)
     expect(customerAccessTokenFromPath(`/${'a'.repeat(64)}///`)).toBe('a'.repeat(64))
+  })
+})
+
+// A fixed route (native, static or staff page) folds letter case, trailing slashes and its file
+// name; a created page does when the publication holds it. Other paths keep their letters.
+describe('one redirect to the canonical URL (W2-5)', () => {
+  const APEX = 'https://bladeblendstudio.se'
+  const WWW = 'https://www.bladeblendstudio.se'
+
+  const FIXED: readonly (readonly [string, string | null])[] = [
+    ['/', '/'],
+    ['/about', '/about'],
+    ['/about/', '/about'],
+    ['/About', '/about'],
+    ['/ABOUT//', '/about'],
+    ['/Booking', '/booking'],
+    ['/my-bookings/', '/my-bookings'],
+    ['/My-Bookings', '/my-bookings'],
+    ['/contact', '/contact'],
+    ['/Contact/', '/contact'],
+    ['/contact.html', '/contact'],
+    ['/CONTACT.HTML', '/contact'],
+    ['/privacy.html/', '/privacy'],
+    ['/Terms', '/terms'],
+    ['/google-calendar.html', '/google-calendar'],
+    ['/Google-Calendar', '/google-calendar'],
+    ['/index.html', '/'],
+    ['/INDEX.HTML', '/'],
+    ['/index.html/', '/'],
+    ['/login', '/login'],
+    ['/Login/', '/login'],
+    ['/RESET', '/reset'],
+    ['/Invite', '/invite'],
+    ['/auth/confirm/', '/auth/confirm'],
+    ['/Auth/Confirm', '/auth/confirm'],
+    ['/admin', '/admin'],
+    ['/ADMIN', '/admin'],
+    ['/admin/', '/admin'],
+    ['/admin/cms/', '/admin/cms'],
+    // Below /admin/ the app reads the rest of the path: its letters stay.
+    ['/admin/Settings', '/admin/Settings'],
+    ['/admin/Settings//', '/admin/Settings'],
+    ['/Admin/settings', null],
+    ['/ADMIN/cms', null],
+    // Not a fixed route: a created page, a file, an /api/ path, a customer link, a near miss.
+    ['/offers', null],
+    ['/Offers', null],
+    ['/assets/App.js', null],
+    ['/sitemap.xml', null],
+    ['/sitemap.xml/', null],
+    ['/404.html', null],
+    ['/500.html', null],
+    ['/api/bookings', null],
+    ['/API/bookings', null],
+    [`/${'A'.repeat(64)}`, null],
+    ['//', null],
+    ['/about.html', null],
+    ['/login.html', null],
+    ['/administrator', null],
+    ['/about/team', null],
+  ]
+
+  it.each(FIXED)('names the fixed route of %s as %s', (pathname, route) => {
+    expect(fixedRoutePath(pathname)).toBe(route)
+  })
+
+  it('names a route that names itself, so no redirect leads to another', () => {
+    for (const [, route] of FIXED)
+      if (route !== null) expect(fixedRoutePath(route), route).toBe(route)
+  })
+
+  it('decides a path of 200 000 slashes or letters in linear time', () => {
+    const started = performance.now()
+    expect(fixedRoutePath('/login' + '/'.repeat(200_000) + 'x')).toBeNull()
+    expect(fixedRoutePath('/About' + '/'.repeat(200_000))).toBe('/about')
+    expect(fixedRoutePath('/admin/' + 'A'.repeat(200_000))).toBe('/admin/' + 'A'.repeat(200_000))
+    expect(performance.now() - started).toBeLessThan(1_000)
+  })
+
+  const offers: CmsPage = {
+    id: '10000000-0000-4000-8000-000000000008',
+    kind: 'page',
+    path: '/offers',
+    name: { sv: 'Erbjudanden', en: 'Offers' },
+    title: { sv: 'Erbjudanden', en: 'Offers' },
+    description: { sv: '', en: '' },
+    inMenu: false,
+    content: {
+      sv: {
+        html: '<main><h1>Erbjudanden</h1></main>',
+        css: { light: 'body{color:#111}', dark: 'body{color:#eee}' },
+      },
+      en: {
+        html: '<main><h1>Offers</h1></main>',
+        css: { light: 'body{color:#111}', dark: 'body{color:#eee}' },
+      },
+    },
+  }
+
+  /** One request in front of a publication holding /offers (unreadable if `readable` is false). */
+  const visit = async (method: string, url: string, readable = true) => {
+    const rpcs: string[] = []
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const rpc = String(input).split('/').at(-1) ?? ''
+      rpcs.push(rpc)
+      return rpc === 'public_cms_presentation' && readable
+        ? Response.json({
+            revision: 7,
+            presentation: { ...emptyDocument().presentation, pages: [offers] },
+          })
+        : new Response(null, { status: 503 })
+    })
+    const env = {
+      ...createEnv(),
+      SUPABASE_URL: 'https://fixture.invalid',
+      SUPABASE_ANON_KEY: 'fixture-anon-key',
+    }
+    try {
+      const response = await worker.fetch(
+        new Request(url, { method, headers: { Accept: 'text/html' } }),
+        env,
+        createWorkerContext(env),
+      )
+      return { response, body: await response.text(), rpcs, assets: env.requestedPaths }
+    } finally {
+      fetchMock.mockRestore()
+    }
+  }
+
+  const ONE_HOP: readonly (readonly [string, string])[] = [
+    [`${WWW}/About/?lang=en&mode=dark`, `${APEX}/about?lang=en&mode=dark`],
+    [`${WWW}/CONTACT.HTML?x=1`, `${APEX}/contact?x=1`],
+    [`${WWW}/index.html`, `${APEX}/`],
+    [`${WWW}/admin/Settings/`, `${APEX}/admin/Settings`],
+    [`${APEX}/Booking`, `${APEX}/booking`],
+    [`${APEX}/My-Bookings//`, `${APEX}/my-bookings`],
+    [`${APEX}/Privacy`, `${APEX}/privacy`],
+    [`${APEX}/TERMS.html`, `${APEX}/terms`],
+    [`${APEX}/Login/?next=%2Fadmin`, `${APEX}/login?next=%2Fadmin`],
+    [`${APEX}/Auth/Confirm?token_hash=AbC`, `${APEX}/auth/confirm?token_hash=AbC`],
+    [`${APEX}/ADMIN`, `${APEX}/admin`],
+    // Only the host: a file, an unknown path and an /api/ path keep their letters and slashes.
+    [`${WWW}/assets/App.js?v=1`, `${APEX}/assets/App.js?v=1`],
+    [`${WWW}/Not-A-Route/`, `${APEX}/Not-A-Route/`],
+    [`${WWW}/api/cms/presentation?rev=21`, `${APEX}/api/cms/presentation?rev=21`],
+  ]
+
+  it.each(
+    ['GET', 'HEAD'].flatMap((method) => ONE_HOP.map(([from, to]) => [method, from, to] as const)),
+  )(
+    'answers %s %s with one 308 to %s, which answers without another redirect',
+    async (method, from, to) => {
+      const first = await visit(method, from)
+      expect(first.response.status).toBe(308)
+      expect(first.response.headers.get('Location')).toBe(to)
+      expect(first.body).toBe('')
+      expect(first.assets).toEqual([])
+      const second = await visit(method, to)
+      expect([301, 302, 303, 307, 308]).not.toContain(second.response.status)
+      expect(second.response.headers.has('Location')).toBe(false)
+    },
+  )
+
+  it.each(
+    ['GET', 'HEAD'].flatMap((method) =>
+      (
+        [
+          [`${APEX}/Offers`, `${APEX}/offers`],
+          [`${APEX}/offers/`, `${APEX}/offers`],
+          [`${APEX}/OFFERS//?lang=en`, `${APEX}/offers?lang=en`],
+          [`${WWW}/Offers/`, `${APEX}/offers`],
+        ] as const
+      ).map(([from, to]) => [method, from, to] as const),
+    ),
+  )(
+    'answers %s %s with one 308 to the published page %s, after one read',
+    async (method, from, to) => {
+      const first = await visit(method, from)
+      expect(first.response.status).toBe(308)
+      expect(first.response.headers.get('Location')).toBe(to)
+      expect(first.body).toBe('')
+      expect(first.rpcs).toEqual(['public_cms_presentation'])
+      expect(first.assets).toEqual([])
+      // HEAD, since this file's assets hold no base stylesheet.
+      const second = await visit('HEAD', to)
+      expect(second.response.status).toBe(200)
+      expect(second.rpcs).toEqual(['public_cms_presentation'])
+    },
+  )
+
+  it.each([
+    ['GET', '/Missing', true],
+    ['GET', '/missing/', true],
+    ['HEAD', '/Missing/', true],
+    ['GET', '/Offers', false],
+    ['GET', '/offers/', false],
+    ['HEAD', '/offers/', false],
+  ] as const)(
+    'answers %s %s with 404, never a redirect or the page, when no published page is read there (publication readable: %s)',
+    async (method, path, readable) => {
+      const { response } = await visit(method, `${APEX}${path}`, readable)
+      expect(response.status).toBe(404)
+      expect(response.headers.has('Location')).toBe(false)
+    },
+  )
+
+  it.each([
+    ['POST', '/Offers'],
+    ['POST', '/offers/'],
+    ['GET', '/Logo.PNG'],
+    ['GET', '/offers.html'],
+    ['GET', '/sitemap.xml/'],
+    ['GET', '/.well-known/Security.txt'],
+    ['GET', '/Admin/settings'],
+    ['GET', '/API/bookings'],
+  ])('answers %s %s as written: no redirect and no read', async (method, path) => {
+    const { response, rpcs } = await visit(method, `${APEX}${path}`)
+    expect(response.status).toBe(404)
+    expect(response.headers.has('Location')).toBe(false)
+    expect(rpcs).toEqual([])
+  })
+
+  it.each(['GET', 'HEAD'])(
+    'moves a customer link on the www host into the apex fragment in one %s answer, as written',
+    async (method) => {
+      // 64 hexadecimal characters in both letter cases, with trailing slashes.
+      const token = 'aB3'.repeat(21) + 'c'
+      const { response, rpcs, assets } = await visit(method, `${WWW}/${token}//`)
+      expect(response.status).toBe(302)
+      expect(response.headers.get('Location')).toBe(`${APEX}/#booking_token=${token}`)
+      expect(response.headers.get('Cache-Control')).toBe('no-store')
+      expect(response.headers.get('Referrer-Policy')).toBe('no-referrer')
+      expect(response.headers.get('X-Robots-Tag')).toBe('noindex, nofollow')
+      expect(rpcs).toEqual([])
+      expect(assets).toEqual([])
+    },
+  )
+
+  it('corrects the host of an /api/ path and nothing else', async () => {
+    const www = await visit('POST', `${WWW}/api/customer-bookings?x=1`)
+    expect(www.response.status).toBe(308)
+    expect(www.response.headers.get('Location')).toBe(`${APEX}/api/customer-bookings?x=1`)
+    for (const path of ['/api/customer-bookings/', '/api/cms/presentation/', '/api/Bookings']) {
+      const { response, rpcs } = await visit('GET', `${APEX}${path}`)
+      expect(response.status, path).toBe(404)
+      expect(response.headers.has('Location'), path).toBe(false)
+      expect(rpcs, path).toEqual([])
+    }
   })
 })

@@ -1,7 +1,6 @@
 import { cmsFontFaceCss } from '@bladeblend/content-contracts/cms'
 import { SUPABASE_URL } from '../backend/config'
 import { siteThemeCss, themeStyleValue } from '@bladeblend/content-contracts/site-theme'
-import { repairDesktopCss } from '@bladeblend/content-contracts/cms-device-css'
 import { nativeNodeId } from '@bladeblend/content-contracts/cms-native-id'
 import type { createInstanceScope, InstanceScope } from './instanceScope'
 import { createContext, Fragment, h, isValidElement } from 'preact'
@@ -22,6 +21,8 @@ import {
   parseCmsRevision,
   presentationPath,
 } from '../site/routeMetadata'
+import { aboutStrings, appStrings, type Lang } from '../i18n/index'
+import { langHref } from '../ui/langHref'
 
 const NativeContext = createContext<{
   presentation: CmsPresentation | null
@@ -104,6 +105,106 @@ async function fetchPublishedPresentation(signal: AbortSignal): Promise<CmsPrese
   return value.presentation
 }
 
+/** The stored pages whose sheets the native surfaces render (`useNativeSurface`). */
+const SURFACE_PAGE_PATHS = ['/', '/about', '/booking', '/my-bookings'] as const
+type SurfacePagePath = (typeof SURFACE_PAGE_PATHS)[number]
+const CMS_LANGS = ['sv', 'en'] as const satisfies readonly CmsLang[]
+const CMS_MODES = ['light', 'dark'] as const satisfies readonly CmsMode[]
+
+/** The text prefilter of `repairDesktopCss` (content-contracts `cms-device-css`). Keep the two
+ * literals identical: a narrower one here would render a legacy sheet unrepaired. */
+const LEGACY_DESKTOP_TEXT = /max-width\s*:\s*1440px/
+
+export type DesktopRepair = (css: string) => string
+
+export class DesktopRepairUnavailable extends Error {
+  constructor(cause: unknown) {
+    super('The Desktop CSS repair could not be loaded', { cause })
+    this.name = 'DesktopRepairUnavailable'
+  }
+}
+
+export type DesktopRepairLoad =
+  | { readonly state: 'missing' }
+  | { readonly state: 'loaded'; readonly repair: DesktopRepair }
+  | { readonly state: 'failed'; readonly error: DesktopRepairUnavailable }
+
+const REPAIR_MISSING: DesktopRepairLoad = { state: 'missing' }
+
+/** Older Studio builds wrote `@media (max-width:1440px)` rules whose repair needs css-tree: loaded
+ * on demand, for a presentation with such a sheet, never on the boot path. */
+export async function loadDesktopRepair(
+  load: () => Promise<{ readonly repairDesktopCss: DesktopRepair }> = () =>
+    import('@bladeblend/content-contracts/cms-device-css'),
+): Promise<Exclude<DesktopRepairLoad, { state: 'missing' }>> {
+  try {
+    const { repairDesktopCss } = await load()
+    return { state: 'loaded', repair: repairDesktopCss }
+  } catch (error) {
+    return { state: 'failed', error: new DesktopRepairUnavailable(error) }
+  }
+}
+
+function isSurfacePage(page: CmsPage): boolean {
+  return SURFACE_PAGE_PATHS.some((path) => path === page.path)
+}
+
+export function hasLegacyDesktopCss(presentation: CmsPresentation): boolean {
+  return presentation.pages.some(
+    (page) =>
+      isSurfacePage(page) &&
+      CMS_LANGS.some((lang) =>
+        CMS_MODES.some((mode) => LEGACY_DESKTOP_TEXT.test(page.content[lang].css[mode])),
+      ),
+  )
+}
+
+/** Unchanged pages, and an unchanged presentation, keep their identity. */
+function repairSurfaceSheets(
+  presentation: CmsPresentation,
+  repair: DesktopRepair,
+): CmsPresentation {
+  const pages = presentation.pages.map((page) => {
+    if (!isSurfacePage(page)) return page
+    const content = { ...page.content }
+    for (const lang of CMS_LANGS) {
+      const variant = page.content[lang]
+      const light = repair(variant.css.light)
+      const dark = repair(variant.css.dark)
+      if (light !== variant.css.light || dark !== variant.css.dark)
+        content[lang] = { ...variant, css: { light, dark } }
+    }
+    return content.sv === page.content.sv && content.en === page.content.en
+      ? page
+      : { ...page, content }
+  })
+  return pages.every((page, index) => page === presentation.pages[index])
+    ? presentation
+    : { ...presentation, pages }
+}
+
+export type RepairedPresentation =
+  | { readonly state: 'ready'; readonly presentation: CmsPresentation | null }
+  | { readonly state: 'waiting' }
+  | { readonly state: 'failed'; readonly error: DesktopRepairUnavailable }
+
+/** One with a legacy sheet is ready only repaired, so its stored sheet is never painted. */
+export function desktopRepaired(
+  presentation: CmsPresentation | null,
+  load: DesktopRepairLoad,
+): RepairedPresentation {
+  if (presentation === null || !hasLegacyDesktopCss(presentation))
+    return { state: 'ready', presentation }
+  switch (load.state) {
+    case 'loaded':
+      return { state: 'ready', presentation: repairSurfaceSheets(presentation, load.repair) }
+    case 'missing':
+      return { state: 'waiting' }
+    case 'failed':
+      return { state: 'failed', error: load.error }
+  }
+}
+
 const VISUALLY_HIDDEN: JSX.CSSProperties = {
   position: 'absolute',
   width: '1px',
@@ -116,8 +217,24 @@ const VISUALLY_HIDDEN: JSX.CSSProperties = {
   border: 0,
 }
 
-/** While the presentation is read, the page is its pre-painted background (R12); only assistive
- * technology hears the status. A failure after the last retry stays visible with a manual retry. */
+export interface OutageLink {
+  readonly href: string
+  readonly label: string
+}
+
+/** Pages served without the presentation, readable while the site itself cannot load. */
+export function outageLinks(search: string): readonly OutageLink[] {
+  const lang: Lang = new URLSearchParams(search).get('lang') === 'en' ? 'en' : 'sv'
+  const about = aboutStrings(lang)
+  return [
+    { href: langHref('/contact', lang), label: appStrings(lang).contactLink },
+    { href: langHref('/terms', lang), label: about.termsLink },
+    { href: langHref('/privacy', lang), label: about.privacyLink },
+  ]
+}
+
+/** While the presentation is read or awaits its repair, the page is its pre-painted background
+ * (R12); only assistive technology hears the status. A failure stays visible with a manual retry. */
 function PublicPresentationGate({
   error,
   onRetry,
@@ -147,11 +264,23 @@ function PublicPresentationGate({
         textAlign: 'center',
       }}
     >
-      <div role="alert" aria-live="polite">
-        <p>Webbplatsen kunde inte laddas just nu.</p>
-        <button type="button" onClick={onRetry}>
-          Försök igen
-        </button>
+      <div>
+        <div role="alert" aria-live="polite">
+          <p>Webbplatsen kunde inte laddas just nu.</p>
+          <button type="button" onClick={onRetry}>
+            Försök igen
+          </button>
+        </div>
+        <p>
+          {outageLinks(window.location.search).map((link, index) => (
+            <Fragment key={link.href}>
+              {index > 0 ? ' · ' : null}
+              <a href={link.href} style={{ color: 'inherit' }}>
+                {link.label}
+              </a>
+            </Fragment>
+          ))}
+        </p>
       </div>
     </main>
   )
@@ -210,6 +339,7 @@ export function NativeSiteProvider({
   const [published, setPublished] = useState<CmsPresentation | null>(null)
   const [publishedState, setPublishedState] = useState<PublishedState>('idle')
   const [retryCount, setRetryCount] = useState(0)
+  const [repair, setRepair] = useState<DesktopRepairLoad>(REPAIR_MISSING)
   useEffect(() => {
     if (source || presentation !== undefined || !publicNativeRoute || published !== null) return
     const controller = new AbortController()
@@ -232,20 +362,37 @@ export function NativeSiteProvider({
     return () => controller.abort()
   }, [presentation, source, publicNativeRoute, published, retryCount])
   const current = presentation === undefined ? published : presentation
+  // Passed presentations too: a Studio History review passes stored revisions never repaired.
+  const shown = useMemo(() => desktopRepaired(current, repair), [current, repair])
+  const waiting = shown.state === 'waiting'
+  useEffect(() => {
+    if (!waiting) return
+    let mounted = true
+    void loadDesktopRepair().then((loaded) => {
+      if (mounted) setRepair(loaded)
+    })
+    return () => {
+      mounted = false
+    }
+  }, [waiting])
   const fonts = cmsFontFaceCss(current?.fonts, SUPABASE_URL ?? '')
-  if (publicNativeRoute && publishedState !== 'ready') {
+  if ((publicNativeRoute && publishedState !== 'ready') || shown.state !== 'ready') {
     return (
       <PublicPresentationGate
-        error={publishedState === 'error'}
+        error={publishedState === 'error' || shown.state === 'failed'}
         onRetry={() => {
-          setPublishedState('idle')
-          setRetryCount((count) => count + 1)
+          // Only the step that failed starts again: a read presentation stays read.
+          if (publishedState === 'error') {
+            setPublishedState('idle')
+            setRetryCount((count) => count + 1)
+          }
+          if (repair.state === 'failed') setRepair(REPAIR_MISSING)
         }}
       />
     )
   }
   return (
-    <NativeContext.Provider value={{ presentation: current, source, projectSource }}>
+    <NativeContext.Provider value={{ presentation: shown.presentation, source, projectSource }}>
       {fonts && <style>{fonts}</style>}
       {children}
     </NativeContext.Provider>
@@ -579,7 +726,7 @@ export function useNativeSurface(
   instanceOptions: NativeInstanceOptions = {},
 ): JSX.Element {
   const context = useContext(NativeContext)
-  const path = surface.startsWith('my-booking')
+  const path: SurfacePagePath = surface.startsWith('my-booking')
     ? '/my-bookings'
     : surface.endsWith('-booking') || surface.startsWith('booking-')
       ? '/booking'
@@ -609,7 +756,8 @@ export function useNativeSurface(
   const native = nativeTree(source, surface, mode)
   const projected = template ? projectNativeTree(native, template, mode) : native.tree
   const output = scope ? scope.tree(projected) : projected
-  const css = repairDesktopCss(page?.content[lang].css[mode] ?? '')
+  // NativeSiteProvider supplies the surface sheets already repaired (desktopRepaired).
+  const css = page?.content[lang].css[mode] ?? ''
   return (
     <>
       {context.presentation && <style>{siteThemeCss(context.presentation, mode)}</style>}

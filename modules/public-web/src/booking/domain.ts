@@ -102,10 +102,17 @@ export interface BookingLinks {
   readonly mapsHref: string
 }
 
-/** Domain error union for a booking submission. */
+/** Domain error union for a booking submission. `unavailable`: the chosen time was refused, another
+ * can succeed. `unconfirmed`: no readable answer, the booking may exist. `read_only`: the Studio
+ * preview's port. `message` is in the booking's language; the flow words its lines from `kind`. */
 export type BookingError =
   | { readonly kind: 'validation'; readonly message: string }
   | { readonly kind: 'submit'; readonly message: string }
+  | { readonly kind: 'read_only'; readonly message: string }
+  | { readonly kind: 'rate_limited'; readonly message: string }
+  | { readonly kind: 'failed_challenge'; readonly message: string }
+  | { readonly kind: 'unavailable'; readonly message: string }
+  | { readonly kind: 'unconfirmed'; readonly message: string }
 
 /** Result of submitting a booking through a `BookingPort`. */
 export type BookingResult =

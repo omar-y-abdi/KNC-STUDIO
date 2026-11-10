@@ -17,8 +17,12 @@ vi.mock('../../modules/public-web/src/booking/BookingFlow', () => ({
   },
 }))
 vi.mock('../../modules/public-web/src/about/AboutSection', () => ({ AboutSection: () => null }))
+const myBookings = vi.hoisted(() => ({ mounts: [] as Readonly<Record<string, unknown>>[] }))
 vi.mock('../../modules/public-web/src/mybookings/MyBookingsDialog', () => ({
-  MyBookingsDialog: () => null,
+  MyBookingsDialog: (props: Readonly<Record<string, unknown>>) => {
+    myBookings.mounts.push(props)
+    return null
+  },
 }))
 
 const { mountCmsRuntime } = await import('../../modules/public-web/src/cmsRuntime')
@@ -77,5 +81,24 @@ describe('CMS runtime islands', () => {
     expect(light.last()?.mode).toBe('light')
     expect(light.scheme.listeners).toHaveLength(0)
     expect(mountBookingIsland('dark', false).last()?.mode).toBe('dark')
+  })
+
+  // The islands load no site settings: a default 24 h deadline could wrongly hide a cancel button.
+  it('tells the "Mina bokningar" island that the cancellation deadline is unknown', () => {
+    myBookings.mounts.length = 0
+    vi.stubGlobal('document', { documentElement: { lang: 'sv' } })
+    const island = {}
+    const root = {
+      dataset: { cmsMode: 'light' },
+      querySelector: (selector: string) =>
+        selector === '#knc-my-bookings-runtime' ? island : null,
+    }
+    act(() => mountCmsRuntime(root as unknown as HTMLElement))
+
+    expect(myBookings.mounts.at(-1)).toMatchObject({
+      mode: 'light',
+      lang: 'sv',
+      business: 'unknown',
+    })
   })
 })

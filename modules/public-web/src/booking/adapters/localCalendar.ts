@@ -10,7 +10,7 @@ import { parseDateIso } from '../calendar'
 import type { Booking, BookingLinks, BookingResult } from '../domain'
 import { buildIcs, formatIcsLocal } from '../ics'
 import { localWallClockToStockholmIso } from '../stockholmTime'
-import type { AvailabilityParams, BookingPort } from '../port'
+import type { AvailabilityParams, AvailabilityResult, BookingPort } from '../port'
 import { packSlots } from '../slotPacking'
 import type { BlockedInterval } from '../slotPacking'
 import { formatBusinessAddress, type BusinessSettings } from '../../site/siteChrome'
@@ -119,7 +119,7 @@ export const localCalendarAdapter: BookingPort = {
     const result: BookingResult = { ok: true, booking, links }
     return Promise.resolve(result)
   },
-  availability(params: AvailabilityParams): Promise<readonly string[]> {
+  availability(params: AvailabilityParams): Promise<AvailabilityResult> {
     const times = packSlots({
       openMin: MOCK_OPEN_MIN,
       closeMin: MOCK_CLOSE_MIN,
@@ -129,6 +129,7 @@ export const localCalendarAdapter: BookingPort = {
       // filtering); the real backend does the now-filter server-side.
       nowMin: -1,
     })
-    return Promise.resolve(times)
+    const result: AvailabilityResult = { ok: true, times }
+    return Promise.resolve(result)
   },
 }

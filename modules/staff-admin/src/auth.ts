@@ -14,8 +14,8 @@ import {
   getAdminClient,
 } from './adminClient'
 import { parseWith, profileRow } from './adminSchemas'
-import type { AdminProfile, AdminResult } from './types'
-import { err, ok } from './types'
+import type { AdminError, AdminProfile, AdminResult } from './types'
+import { err, ok, outcomeError } from './types'
 import { captureAdminOperation } from './orderedOperations'
 
 /** Map any thrown/transport problem to a neutral network error (kept human + non-leaky). */
@@ -215,21 +215,45 @@ async function updatePasswordForCurrentSession(
   }
 }
 
+/** Not an `AdminResult`: the Settings form words a refused password and the one-a-minute limit
+ * itself, and no `AdminError` kind means "wait". */
+export type EmailChangeOutcome =
+  | { readonly kind: 'sent' }
+  | { readonly kind: 'wrong_password' }
+  | { readonly kind: 'rate_limited' }
+  | { readonly kind: 'error'; readonly error: AdminError }
+
+/** The status of a function's non-2xx answer: FunctionsHttpError holds the Response in `context`. */
+function functionStatus(error: unknown): number | null {
+  const context =
+    typeof error === 'object' && error !== null && 'context' in error ? error.context : null
+  const status =
+    typeof context === 'object' && context !== null && 'status' in context ? context.status : null
+  return typeof status === 'number' ? status : null
+}
+
 /** Request an email change that the user confirms from the new address. */
 export async function requestOwnEmailChange(
   newEmail: string,
+  currentPassword: string,
   lang: 'sv' | 'en',
-): Promise<AdminResult<void>> {
+): Promise<EmailChangeOutcome> {
   try {
     const { data, error } = await getAdminClient().functions.invoke('send-email-change', {
-      body: { new_email: newEmail, lang },
+      body: { new_email: newEmail, current_password: currentPassword, lang },
     })
-    if (error !== null || typeof data !== 'object' || data === null || data.ok !== true) {
-      return err('validation', EMAIL_UPDATE_FAILED)
+    if (error !== null) {
+      return functionStatus(error) === 429
+        ? { kind: 'rate_limited' }
+        : outcomeError('validation', EMAIL_UPDATE_FAILED)
     }
-    return ok(undefined)
+    if (typeof data === 'object' && data !== null) {
+      if (data.ok === true) return { kind: 'sent' }
+      if (data.ok === false && data.error === 'wrong_password') return { kind: 'wrong_password' }
+    }
+    return outcomeError('validation', EMAIL_UPDATE_FAILED)
   } catch {
-    return err('network', NETWORK_ERROR)
+    return outcomeError('network', NETWORK_ERROR)
   }
 }
 

@@ -1,4 +1,5 @@
-// smoke-live.mjs — live, non-browser smoke test for the Blade & Blend Studio backend.
+// smoke-live.mjs — live, non-browser smoke test for the Blade & Blend Studio backend and the
+// deployed site.
 //
 // Hits the LIVE Supabase project with the PUBLIC anon key only (never a service_role
 // key), and the site's own /api/bookings relay for booking submission. Verifies public entry
@@ -13,10 +14,18 @@
 //   6. lookup_booking RPC    — the direct lookup function does not exist (HTTP 404); booking
 //                              lookup goes through the gateway only.
 //
+// Then reads the deployed site, GET only, following no redirect:
+//
+//   7. /, /booking, /contact, /privacy, /terms — 200 text/html.
+//   8. an unknown path       — 404.
+//   9. /robots.txt, /sitemap.xml, /llms.txt — 200, not text/html.
+//  10. www host              — 301 or 308 to the apex host.
+//  11. homepage entry script — named under /assets/, and 200, not text/html.
+//
 // Each check logs PASS/FAIL with the key value it observed. Process exits 1 if ANY
 // check fails, 0 only when every check passes (so CI can gate on it).
 //
-// No dependencies — uses the global `fetch` (Node 18+). No browser.
+// No dependencies — uses the global `fetch` (Node 20+). No browser.
 //
 // Usage:
 //   SUPABASE_URL=https://<ref>.supabase.co \
@@ -24,17 +33,32 @@
 //   SITE_ORIGIN=https://bladeblendstudio.se \
 //   node tools/smoke-live.mjs
 
+import { realpathSync } from 'node:fs'
+import { pathToFileURL } from 'node:url'
+
 const SUPABASE_URL = process.env.SUPABASE_URL
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY
 const SITE_ORIGIN = process.env.SITE_ORIGIN
 
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SITE_ORIGIN) {
+// An import (tests/unit/smokeLive.test.ts) never exits or reaches the network. Node resolves
+// symlinks in the entry module's URL, so the started path is too; a mismatch skips every check.
+function startedModuleUrl() {
+  try {
+    return pathToFileURL(realpathSync(process.argv[1])).href
+  } catch {
+    return null
+  }
+}
+
+const runDirectly = import.meta.url === startedModuleUrl()
+
+if (runDirectly && (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SITE_ORIGIN)) {
   console.error('FATAL: SUPABASE_URL, SUPABASE_ANON_KEY, and SITE_ORIGIN are required.')
   process.exit(1)
 }
 
-const baseUrl = SUPABASE_URL.replace(/\/+$/, '') // tolerate a trailing slash
-const siteOrigin = new URL(SITE_ORIGIN).origin
+const baseUrl = runDirectly ? SUPABASE_URL.replace(/\/+$/, '') : undefined // tolerate a trailing slash
+const siteOrigin = runDirectly ? new URL(SITE_ORIGIN).origin : undefined
 
 // A future date computed at run time. The smoke probes several dates because production schedules
 // and service weekdays are owner-managed database state; no weekday or barber is assumed here.
@@ -53,6 +77,31 @@ const headers = {
   'Content-Type': 'application/json',
 }
 
+const REQUEST_TIMEOUT_MS = 10_000
+const RUN_BUDGET_MS = 6 * 60_000
+
+/**
+ * @param {number} elapsedMs
+ * @returns {number | null} null once the run's budget is used up
+ */
+export function requestTimeLimit(elapsedMs) {
+  const left = RUN_BUDGET_MS - elapsedMs
+  return left > 0 ? Math.min(REQUEST_TIMEOUT_MS, left) : null
+}
+
+const runStartedAt = Date.now()
+
+// The limit covers the response body too. Past the budget this throws instead of sending, so each
+// remaining check FAILs at once and the run still ends with a verdict.
+function requestSignal() {
+  const limit = requestTimeLimit(Date.now() - runStartedAt)
+  if (limit === null)
+    throw new Error(
+      `the run's time budget of ${RUN_BUDGET_MS / 1000} s is used up; request not sent`,
+    )
+  return globalThis.AbortSignal.timeout(limit)
+}
+
 // POST a JSON body and return { status, json, text }. `json` is undefined when the
 // response body is not valid JSON (so a check can distinguish "bad JSON" from null).
 async function postJson(path, body, { url = baseUrl, requestHeaders = headers } = {}) {
@@ -60,6 +109,7 @@ async function postJson(path, body, { url = baseUrl, requestHeaders = headers } 
     method: 'POST',
     headers: requestHeaders,
     body: JSON.stringify(body),
+    signal: requestSignal(),
   })
   const text = await res.text()
   let json
@@ -236,42 +286,340 @@ async function checkDirectLookupContract() {
   return { pass, detail: `status=${status} body=${JSON.stringify(json)}` }
 }
 
-const checks = [
-  ['database-owned catalog + available_slots', checkAvailableSlots],
-  ['/api/bookings invalid (empty body -> 400)', checkSubmitBookingInvalid],
-  ['/api/bookings invalid email (malformed -> 400)', checkSubmitBookingInvalidEmail],
-  [
-    '/api/bookings turnstile gate (empty token -> failed_challenge)',
-    checkSubmitBookingTurnstileGate,
-  ],
-  ['public action gateway (empty token -> failed_challenge)', checkPublicActionGateway],
-  ['direct lookup_booking RPC (anon -> 404)', checkDirectLookupContract],
-]
+// --- Deployed site: read-only page checks -----------------------------------------------------
+//
+// Pure except `getPage`, their only network edge; exported for tests/unit/smokeLive.test.ts.
 
-async function main() {
-  console.log(`Blade & Blend Studio live smoke test -> ${baseUrl} + ${siteOrigin}\n`)
+/**
+ * `html`: 200 with content-type text/html. `file`: 200 with any other content-type.
+ * @typedef {{ kind: 'html' }
+ *   | { kind: 'file' }
+ *   | { kind: 'status', status: number }
+ *   | { kind: 'redirect', origin: string }} PageExpectation
+ */
+/** @typedef {{ name: string, url: string, expect: PageExpectation }} PageCheck */
+/**
+ * @typedef {{ kind: 'read', text: string } | { kind: 'unread', reason: string }} PageBody
+ */
+/**
+ * A header that was not sent is null.
+ * @typedef {{
+ *   status: number,
+ *   contentType: string | null,
+ *   location: string | null,
+ *   cfMitigated: string | null,
+ *   body: PageBody,
+ * }} PageResponse
+ */
+/**
+ * What arrives with the response headers; `text` reads the body.
+ * @typedef {Omit<PageResponse, 'body'> & { text: () => Promise<string> }} PageHead
+ */
+/**
+ * `retriedAfter`: the first attempt's failure, when a second attempt was needed.
+ * @typedef {{ kind: 'response', response: PageResponse, retriedAfter: string | null }
+ *   | { kind: 'unreachable', reasons: [string, string] }} PageOutcome
+ */
+/** @typedef {(url: string) => Promise<PageOutcome>} GetPage */
+/** @typedef {{ pass: boolean, detail: string }} Verdict */
+
+const HTML_PAGES = ['/', '/booking', '/contact', '/privacy', '/terms']
+const PUBLIC_FILES = ['/robots.txt', '/sitemap.xml', '/llms.txt']
+// Not a page, a file, a private route or a customer link (those are 64 hex characters).
+const MISSING_PATH = '/live-smoke-no-such-page'
+const PERMANENT_REDIRECTS = [301, 308]
+const HOMEPAGE_SCRIPT_CHECK = 'homepage module script under /assets/ (200, not text/html)'
+
+/**
+ * The checks that are one GET each.
+ * @param {string} siteOrigin
+ * @returns {PageCheck[]}
+ */
+export function pageChecks(siteOrigin) {
+  const site = new URL(siteOrigin)
+  const at = (path) => new URL(path, site).href
+  return [
+    ...HTML_PAGES.map((path) => ({
+      name: `page ${path} (200 text/html)`,
+      url: at(path),
+      expect: { kind: 'html' },
+    })),
+    {
+      name: `unknown path ${MISSING_PATH} (404)`,
+      url: at(MISSING_PATH),
+      expect: { kind: 'status', status: 404 },
+    },
+    ...PUBLIC_FILES.map((path) => ({
+      name: `file ${path} (200, not text/html)`,
+      url: at(path),
+      expect: { kind: 'file' },
+    })),
+    {
+      name: 'www host (permanent redirect to the apex host)',
+      url: `${site.protocol}//www.${site.host}/`,
+      expect: { kind: 'redirect', origin: site.origin },
+    },
+  ]
+}
+
+const mediaType = (contentType) => (contentType ?? '').split(';')[0].trim().toLowerCase()
+
+function locationOrigin(location, requestUrl) {
+  return location !== null && URL.canParse(location, requestUrl)
+    ? new URL(location, requestUrl).origin
+    : null
+}
+
+function requirement(check, response) {
+  const { expect } = check
+  if (expect.kind === 'html')
+    return {
+      met: response.status === 200 && mediaType(response.contentType) === 'text/html',
+      wanted: 'status 200 with content-type text/html',
+    }
+  if (expect.kind === 'file')
+    return {
+      met: response.status === 200 && mediaType(response.contentType) !== 'text/html',
+      wanted: 'status 200 with a content-type other than text/html',
+    }
+  if (expect.kind === 'status')
+    return { met: response.status === expect.status, wanted: `status ${expect.status}` }
+  return {
+    met:
+      PERMANENT_REDIRECTS.includes(response.status) &&
+      locationOrigin(response.location, check.url) === expect.origin,
+    wanted: `status ${PERMANENT_REDIRECTS.join(' or ')} with a Location on ${expect.origin}`,
+  }
+}
+
+/**
+ * @param {Pick<PageCheck, 'url' | 'expect'>} check
+ * @param {PageOutcome} outcome
+ * @returns {Verdict}
+ */
+export function pageVerdict(check, outcome) {
+  if (outcome.kind === 'unreachable')
+    return {
+      pass: false,
+      detail: `GET ${check.url} -> status=none; no HTTP response in 2 attempts (${outcome.reasons.join('; then ')})`,
+    }
+  const { response, retriedAfter } = outcome
+  const { met, wanted } = requirement(check, response)
+  const observed = [
+    `status=${response.status}`,
+    `content-type=${response.contentType ?? 'none'}`,
+    ...(response.location === null ? [] : [`location=${response.location}`]),
+    // Cloudflare sends this header when it answers with a challenge or a block instead of the site.
+    ...(response.cfMitigated === null ? [] : [`cf-mitigated=${response.cfMitigated}`]),
+    ...(response.body.kind === 'read' ? [] : [`body=unread (${response.body.reason})`]),
+    ...(retriedAfter === null
+      ? []
+      : [`second attempt (the first got no response: ${retriedAfter})`]),
+  ].join(' ')
+  return {
+    pass: met,
+    detail: `GET ${check.url} -> ${observed}${met ? '' : `; expected ${wanted}`}`,
+  }
+}
+
+/**
+ * The first module script the HTML names that is served from the page's own origin under /assets/.
+ * @param {string} html
+ * @param {string} pageUrl
+ * @returns {string | null}
+ */
+export function moduleScriptUrl(html, pageUrl) {
+  const page = new URL(pageUrl)
+  for (const [tag] of html.matchAll(/<script\b[^>]*>/gi)) {
+    if (!/\stype\s*=\s*(?:"module"|'module'|module[\s>])/i.test(tag)) continue
+    const src = /\ssrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(tag)
+    const value = src?.[1] ?? src?.[2] ?? src?.[3]
+    if (value === undefined || !URL.canParse(value, page)) continue
+    const url = new URL(value, page)
+    if (url.origin === page.origin && url.pathname.startsWith('/assets/')) return url.href
+  }
+  return null
+}
+
+/**
+ * @param {string} siteOrigin
+ * @param {GetPage} get
+ * @returns {Promise<Verdict>}
+ */
+async function homepageModuleScript(siteOrigin, get) {
+  const home = { url: new URL('/', siteOrigin).href, expect: { kind: 'html' } }
+  const page = await get(home.url)
+  const verdict = pageVerdict(home, page)
+  if (page.kind !== 'response' || !verdict.pass) return verdict
+  const { body } = page.response
+  if (body.kind === 'unread')
+    return {
+      pass: false,
+      detail: `${verdict.detail}; the entry script cannot be looked up without the body`,
+    }
+  const scriptUrl = moduleScriptUrl(body.text, home.url)
+  if (scriptUrl === null)
+    return {
+      pass: false,
+      detail: `${verdict.detail}; the HTML names no <script type="module"> with a src under /assets/`,
+    }
+  const script = { url: scriptUrl, expect: { kind: 'file' } }
+  return pageVerdict(script, await get(scriptUrl))
+}
+
+/**
+ * @param {string} siteOrigin
+ * @param {GetPage} get
+ * @returns {[string, () => Promise<Verdict>][]}
+ */
+export function sitePageChecks(siteOrigin, get) {
+  return [
+    ...pageChecks(siteOrigin).map((check) => [
+      check.name,
+      async () => pageVerdict(check, await get(check.url)),
+    ]),
+    [HOMEPAGE_SCRIPT_CHECK, () => homepageModuleScript(siteOrigin, get)],
+  ]
+}
+
+function failureReason(err) {
+  if (!(err instanceof Error)) return String(err)
+  const cause = err.cause instanceof Error ? ` (${err.cause.code ?? err.cause.message})` : ''
+  return `${err.name}: ${err.message}${cause}`
+}
+
+/**
+ * A body that cannot be read is still part of the response.
+ * @param {PageHead} head
+ * @returns {Promise<PageResponse>}
+ */
+async function withBody({ text, ...head }) {
+  try {
+    return { ...head, body: { kind: 'read', text: await text() } }
+  } catch (err) {
+    return { ...head, body: { kind: 'unread', reason: failureReason(err) } }
+  }
+}
+
+/**
+ * Retries once, only when the first attempt got no response headers: a retry must never turn an
+ * error page into a pass.
+ * @param {(url: string) => Promise<PageHead>} request
+ * @returns {GetPage}
+ */
+export function retryingOnce(request) {
+  const attempt = async (url) => {
+    try {
+      return { kind: 'head', head: await request(url) }
+    } catch (err) {
+      return { kind: 'none', reason: failureReason(err) }
+    }
+  }
+  return async (url) => {
+    const first = await attempt(url)
+    const last = first.kind === 'head' ? first : await attempt(url)
+    if (last.kind === 'none') return { kind: 'unreachable', reasons: [first.reason, last.reason] }
+    return {
+      kind: 'response',
+      response: await withBody(last.head),
+      retriedAfter: first.kind === 'none' ? first.reason : null,
+    }
+  }
+}
+
+const PAGE_REQUEST_HEADERS = {
+  'User-Agent': 'bladeblend-live-smoke/1 (scheduled read-only check of the deployed site)',
+  Accept: 'text/html,*/*;q=0.8',
+}
+
+// A redirect is returned, not followed, so a page cannot pass by redirecting to a 200 page.
+async function requestPage(url) {
+  const response = await fetch(url, {
+    method: 'GET',
+    redirect: 'manual',
+    headers: PAGE_REQUEST_HEADERS,
+    signal: requestSignal(),
+  })
+  return {
+    status: response.status,
+    contentType: response.headers.get('content-type'),
+    location: response.headers.get('location'),
+    cfMitigated: response.headers.get('cf-mitigated'),
+    text: () => response.text(),
+  }
+}
+
+const getPage = retryingOnce(requestPage)
+
+/**
+ * The six backend checks reach the network through postJson, the site checks only through `get`.
+ * @param {string} siteOrigin
+ * @param {GetPage} get
+ * @returns {[string, () => Promise<Verdict>][]}
+ */
+export function smokeChecks(siteOrigin, get) {
+  return [
+    ['database-owned catalog + available_slots', checkAvailableSlots],
+    ['/api/bookings invalid (empty body -> 400)', checkSubmitBookingInvalid],
+    ['/api/bookings invalid email (malformed -> 400)', checkSubmitBookingInvalidEmail],
+    [
+      '/api/bookings turnstile gate (empty token -> failed_challenge)',
+      checkSubmitBookingTurnstileGate,
+    ],
+    ['public action gateway (empty token -> failed_challenge)', checkPublicActionGateway],
+    ['direct lookup_booking RPC (anon -> 404)', checkDirectLookupContract],
+    ...sitePageChecks(siteOrigin, get),
+  ]
+}
+
+/**
+ * A check that throws fails alone; the run goes on.
+ * @param {[string, () => Promise<Verdict>][]} checks
+ * @param {(line: string) => void} report
+ * @returns {Promise<{ total: number, failures: number }>}
+ */
+export async function runChecks(checks, report) {
   let failures = 0
-  for (const [name, fn] of checks) {
+  for (const [name, run] of checks) {
     let pass = false
     let detail = ''
     try {
-      ;({ pass, detail } = await fn())
+      ;({ pass, detail } = await run())
     } catch (err) {
       detail = `threw: ${err && err.message ? err.message : String(err)}`
     }
     if (!pass) failures += 1
-    console.log(`[${pass ? 'PASS' : 'FAIL'}] ${name} — ${detail}`)
+    report(`[${pass ? 'PASS' : 'FAIL'}] ${name} — ${detail}`)
   }
-  const total = checks.length
-  console.log(`\nResult: ${total - failures}/${total} passed.`)
-  if (failures > 0) {
-    console.log(`VERDICT: FAIL (${failures} check${failures === 1 ? '' : 's'} failed)`)
-    process.exit(1)
-  }
-  console.log('VERDICT: ALL_GREEN')
+  return { total: checks.length, failures }
 }
 
-main().catch((err) => {
-  console.error('FATAL:', err)
-  process.exit(1)
-})
+/**
+ * @param {{ total: number, failures: number }} result
+ * @returns {{ lines: [string, string], exitCode: 0 | 1 }}
+ */
+export function runVerdict({ total, failures }) {
+  const result = `\nResult: ${total - failures}/${total} passed.`
+  return failures > 0
+    ? {
+        lines: [result, `VERDICT: FAIL (${failures} check${failures === 1 ? '' : 's'} failed)`],
+        exitCode: 1,
+      }
+    : { lines: [result, 'VERDICT: ALL_GREEN'], exitCode: 0 }
+}
+
+async function main() {
+  console.log(`Blade & Blend Studio live smoke test -> ${baseUrl} + ${siteOrigin}\n`)
+  const { lines, exitCode } = runVerdict(
+    await runChecks(smokeChecks(siteOrigin, getPage), (line) => console.log(line)),
+  )
+  for (const line of lines) console.log(line)
+  if (exitCode !== 0) process.exit(exitCode)
+}
+
+if (runDirectly) {
+  main().catch((err) => {
+    console.error('FATAL:', err)
+    process.exit(1)
+  })
+}

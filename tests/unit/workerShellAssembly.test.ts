@@ -351,58 +351,73 @@ describe('the shell #root found among owner bytes (G02)', () => {
     expect(html).not.toContain('cms-native-state')
   })
 
-  it('serves the /about fallback in the real #root when the SEO title names id="root"', async () => {
-    // Företag & SEO accepts any 1-120 characters for the title.
-    const document = emptyDocument()
-    document.settings['seo_title_sv'] = 'Om salongen id="root" i Göteborg'
-    validateCompleteDocument(document, document)
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) =>
-      String(input).endsWith('/rpc/public_business_discovery')
-        ? Response.json({
-            settings: { seo_title_sv: document.settings['seo_title_sv'] },
-            barbers: [],
-            services: [],
-            schedules: [],
-          })
-        : new Response(null, { status: 503 }),
-    )
-    // /about is answered by the cached public-content entrypoint, as in production.
-    const publicContent = new PublicContent({} as never, env)
-    const response = await worker.fetch(new Request('https://bladeblendstudio.se/about'), env, {
-      exports: { PublicContent: { fetch: (request: Request) => publicContent.fetch(request) } },
-    })
-    expect(response.status).toBe(200)
-    const html = await response.text()
-    expect(html).toContain('<title id="business-title">Om salongen id="root" i Göteborg</title>')
-    const page = served(html)
-    expect(
-      page.root?.childNodes.some((child) => 'tagName' in child && child.tagName === 'main'),
-    ).toBe(true)
-  })
+  // /about has no CMS title here, so the business name carries the quotes into its title.
+  it.each([
+    ['/', { seo_title_sv: 'Om salongen id="root" i Göteborg' }, 'Om salongen id="root" i Göteborg'],
+    [
+      '/about',
+      { business_name: 'Salong id="root" Göteborg' },
+      'Om oss – Salong id="root" Göteborg',
+    ],
+  ] as const)(
+    'serves the %s fallback in the real #root when its title names id="root"',
+    async (path, settings, title) => {
+      const document = emptyDocument()
+      Object.assign(document.settings, settings)
+      validateCompleteDocument(document, document)
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) =>
+        String(input).endsWith('/rpc/public_business_discovery')
+          ? Response.json({ settings, barbers: [], services: [], schedules: [] })
+          : new Response(null, { status: 503 }),
+      )
+      // Native routes are answered by the cached public-content entrypoint, as in production.
+      const publicContent = new PublicContent({} as never, env)
+      const response = await worker.fetch(new Request(`https://bladeblendstudio.se${path}`), env, {
+        exports: { PublicContent: { fetch: (request: Request) => publicContent.fetch(request) } },
+      })
+      expect(response.status).toBe(200)
+      const html = await response.text()
+      expect(html).toContain(`<title id="business-title">${title}</title>`)
+      const page = served(html)
+      expect(
+        page.root?.childNodes.some((child) => 'tagName' in child && child.tagName === 'main'),
+      ).toBe(true)
+    },
+  )
 
-  it('fills the /about JSON-LD when the SEO title names id="business-json-ld"', async () => {
-    const title = 'Om salongen id="business-json-ld" i Göteborg'
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) =>
-      String(input).endsWith('/rpc/public_business_discovery')
-        ? Response.json({
-            settings: { business_name: 'Gate name', seo_title_sv: title },
-            barbers: [],
-            services: [],
-            schedules: [],
-          })
-        : new Response(null, { status: 503 }),
-    )
-    const publicContent = new PublicContent({} as never, env)
-    const response = await worker.fetch(new Request('https://bladeblendstudio.se/about'), env, {
-      exports: { PublicContent: { fetch: (request: Request) => publicContent.fetch(request) } },
-    })
-    const html = await response.text()
-    expect(html).toContain(`<title id="business-title">${title}</title>`)
-    const [script] = elements(parse(html)).filter(
-      (element) => attr(element, 'id') === 'business-json-ld',
-    )
-    expect(script && JSON.parse(text(script))).toMatchObject({ name: 'Gate name' })
-  })
+  it.each([
+    [
+      '/',
+      { business_name: 'Gate name', seo_title_sv: 'Om salongen id="business-json-ld" i Göteborg' },
+      'Om salongen id="business-json-ld" i Göteborg',
+      'Gate name',
+    ],
+    [
+      '/about',
+      { business_name: 'Gate id="business-json-ld" name' },
+      'Om oss – Gate id="business-json-ld" name',
+      'Gate id="business-json-ld" name',
+    ],
+  ] as const)(
+    'fills the %s JSON-LD when its title names id="business-json-ld"',
+    async (path, settings, title, name) => {
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) =>
+        String(input).endsWith('/rpc/public_business_discovery')
+          ? Response.json({ settings, barbers: [], services: [], schedules: [] })
+          : new Response(null, { status: 503 }),
+      )
+      const publicContent = new PublicContent({} as never, env)
+      const response = await worker.fetch(new Request(`https://bladeblendstudio.se${path}`), env, {
+        exports: { PublicContent: { fetch: (request: Request) => publicContent.fetch(request) } },
+      })
+      const html = await response.text()
+      expect(html).toContain(`<title id="business-title">${title}</title>`)
+      const [script] = elements(parse(html)).filter(
+        (element) => attr(element, 'id') === 'business-json-ld',
+      )
+      expect(script && JSON.parse(text(script))).toMatchObject({ name })
+    },
+  )
 
   it('keeps a native page title naming id="business-og-title" whole', async () => {
     const title = 'Boka id="business-og-title" content="x" här'
@@ -428,7 +443,8 @@ describe('the shell #root found among owner bytes (G02)', () => {
     })
     const html = await response.text()
     expect(html).toContain(`<title id="business-title">${title}</title>`)
-    expect(html).toContain(
+    // The shell writes this tag over several lines.
+    expect(html.replace(/\s+/g, ' ')).toContain(
       `id="business-og-title" property="og:title" content="${title.replaceAll('"', '&quot;')}"`,
     )
   })

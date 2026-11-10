@@ -14,6 +14,12 @@ export function formatRowLabel(lang: Lang, date: Date, sep: string): string {
   return `${dayLabel(lang, date)} ${sep}${pad2(date.getHours())}:${pad2(date.getMinutes())}`
 }
 
+/** A courtesy only: the server decides with the same operator (strictly later) but on its own
+ * clock and current setting, so the two can disagree. */
+export function onlineCancellationOpen(start: Date, now: Date, policyHours: number): boolean {
+  return start.getTime() > now.getTime() + policyHours * 3_600_000
+}
+
 /**
  * Split a flat booking list into upcoming/past around `now`: upcoming soonest-first, past
  * most-recent-first. A booking counts as past once its start is at/before `now`. Pure (injected

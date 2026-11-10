@@ -60,3 +60,49 @@ body {
   margin: 0 0 0.75rem;
   overflow-wrap: anywhere;
 }
+/* The skip link, styled by .bb-btn in /tokens.css: above the viewport until it has focus. */
+.bb-skip {
+  position: absolute;
+  top: 0.75rem;
+  left: 0.75rem;
+  max-width: calc(100% - 1.5rem);
+  transform: translateY(-200%);
+}
+.bb-skip:focus {
+  transform: none;
+  outline: 3px solid var(--bb-text);
+  outline-offset: 4px;
+}
+/* The skip target takes focus only so Tab goes on from there; it is no control and gets no ring. */
+.bb-doc:focus {
+  outline: none;
+}
+/* Only the document's own nav and footer are hidden: in a CMS page a nested one is content. A mail
+   or phone link already shows its address. */
+@media print {
+  :root {
+    --bb-bg: #fff;
+    --bb-text: #000;
+    --bb-muted: #000;
+    --bb-line: #000;
+    --bb-surface: #fff;
+  }
+  .bb-doc {
+    max-width: none;
+    padding: 0;
+  }
+  .bb-skip,
+  .bb-doc > nav,
+  .bb-doc > footer {
+    display: none;
+  }
+  .bb-doc a[href^='/']::after {
+    content: ' (bladeblendstudio.se' attr(href) ')';
+  }
+  .bb-doc a[href^='http']::after {
+    content: ' (' attr(href) ')';
+  }
+}
+@page {
+  margin: 2cm;
+}

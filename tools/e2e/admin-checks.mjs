@@ -883,7 +883,7 @@ async function verifyBookingTerms(page, lang) {
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await page
     .context()
-    .route('**/terms', (route) =>
+    .route(/\/terms(\?lang=en)?$/, (route) =>
       route.fulfill({ contentType: 'text/html', body: '<h1>Terms destination</h1>' }),
     )
   await page.goto(`${baseUrl}/tools/e2e/admin-harness.html`, { waitUntil: 'domcontentloaded' })
@@ -906,7 +906,7 @@ async function verifyBookingTerms(page, lang) {
   await name.fill('Preserved booking draft')
   const link = dialog.getByRole('link', { name: strings.termsLinkLabel, exact: true })
   assert(
-    (await link.getAttribute('href')) === '/terms' &&
+    (await link.getAttribute('href')) === (lang === 'en' ? '/terms?lang=en' : '/terms') &&
       (await link.getAttribute('target')) === '_blank',
     'Final booking terms do not preserve the draft in a separate tab',
   )
@@ -2785,10 +2785,11 @@ async function verifyPrivacy(
   const manage = page.getByRole('link', { name: strings.privacy.manageLabel, exact: true })
   await manage.scrollIntoViewIfNeeded()
   await assertFixedNotice('About')
-  for (const [href, label] of [
+  for (const [path, label] of [
     ['/terms', strings.about.termsLink],
     ['/privacy', strings.about.privacyLink],
   ]) {
+    const href = lang === 'en' ? `${path}?lang=en` : path
     const link = page.locator('#om-oss footer').getByRole('link', { name: label, exact: true })
     assert((await link.getAttribute('href')) === href, `Missing localized About link: ${href}`)
     await link.focus()

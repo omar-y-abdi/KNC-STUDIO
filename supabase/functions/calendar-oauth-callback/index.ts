@@ -9,10 +9,14 @@
 // render a small success page. The refresh token is written ONLY through the service_role definer RPC
 // and never leaves the server.
 //
+// Admin log: this request carries no JWT, so the entry names the one staff account of the signed
+// state's barber id (profiles_one_account_per_barber_idx).
+//
 // Run locally: npx supabase functions serve calendar-oauth-callback --env-file supabase/functions/.env
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
+import { recordOrLogAdminAction, type AdminActionRecord } from '../_shared/adminAudit.ts'
 import { decodeIdTokenEmail, exchangeCode, verifyState } from '../_shared/calendar.ts'
 import { queueBackfill, type CalendarBackfillService } from '../_shared/calendarBackfill.ts'
 
@@ -45,6 +49,50 @@ function done(
     })
   }
   return page(title, message, status)
+}
+
+function staffAccountId(row: unknown): string | null {
+  if (typeof row !== 'object' || row === null || !('id' in row)) return null
+  return typeof row.id === 'string' && row.id !== '' ? row.id : null
+}
+
+/** `cleanup_pending` or `repair_pending` means the store renewed a kept link: its Google account and
+ * disconnect mark stay. `connected_at` is set only on a new row. */
+function storedTokenRecord(
+  actorId: string,
+  barberId: string,
+  hadToken: boolean,
+  stored: object,
+): AdminActionRecord {
+  const renewed =
+    ('cleanup_pending' in stored && stored.cleanup_pending === true) ||
+    ('repair_pending' in stored && stored.repair_pending === true)
+  if (renewed) {
+    return {
+      actorId,
+      action: 'update',
+      table: 'barber_calendar_tokens',
+      targetId: barberId,
+      changedColumns: ['refresh_token', 'calendar_id', 'updated_at', 'last_sync_error'],
+    }
+  }
+  if (!hadToken) {
+    return { actorId, action: 'insert', table: 'barber_calendar_tokens', targetId: barberId }
+  }
+  return {
+    actorId,
+    action: 'update',
+    table: 'barber_calendar_tokens',
+    targetId: barberId,
+    changedColumns: [
+      'refresh_token',
+      'google_email',
+      'calendar_id',
+      'updated_at',
+      'last_sync_error',
+      'disconnect_requested_at',
+    ],
+  }
 }
 
 Deno.serve(async (req: Request): Promise<Response> => {
@@ -133,6 +181,19 @@ Deno.serve(async (req: Request): Promise<Response> => {
           ? 'Välj samma Google-konto som den tidigare kalenderkopplingen.'
           : 'Kunde inte spara kopplingen. Försök igen.',
         error === 'account_mismatch' ? 409 : 500,
+      )
+    }
+
+    // ADMIN LOG: the database cannot attribute a service-role write; a failed entry is only logged.
+    // The signed state comes only from this barber's own signed-in start.
+    const actorId = staffAccountId(profile.data)
+    if (actorId === null) {
+      console.error('calendar-oauth-callback: admin log actor lookup failed:', 'no account id')
+    } else {
+      await recordOrLogAdminAction(
+        'calendar-oauth-callback',
+        service,
+        storedTokenRecord(actorId, payload.barber_id, existingToken.data !== null, storeData),
       )
     }
 

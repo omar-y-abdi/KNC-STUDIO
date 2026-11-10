@@ -261,8 +261,11 @@ sender_name = "Blade & Blend Studio"
 subject = "Återställ lösenord"
 content_path = "./supabase/templates/recovery.html"
 
+# Auth mails this when a session calls PUT /auth/v1/user with a new email, which asks for no
+# password, so the template carries no link, token or code; staff use send-email-change instead.
+# It reaches production with `npx supabase config push`, not with a merge.
 [auth.email.template.email_change]
-subject = "Bekräfta ny e-postadress"
+subject = "E-postadressen har inte ändrats"
 content_path = "./supabase/templates/email-change.html"
 
 # Uncomment to customize notification email template

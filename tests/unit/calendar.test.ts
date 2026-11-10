@@ -20,11 +20,12 @@ vi.mock('../../modules/public-web/src/cms/NativeSurface', () => ({
 vi.mock('../../modules/public-web/src/booking/useRoster', () => ({
   useRoster: () => ({
     roster: [{ barber: { id: 'owner-barber', name: 'Owner Barber', ig: '' } }],
-    loading: false,
+    status: 'ready',
+    retry: () => undefined,
   }),
 }))
 vi.mock('../../modules/public-web/src/booking/useServices', () => ({
-  useServices: () => ({ services: [], loading: false }),
+  useServices: () => ({ services: [], status: 'ready', retry: () => undefined }),
 }))
 
 beforeEach(reset)

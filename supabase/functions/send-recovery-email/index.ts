@@ -7,15 +7,16 @@ import {
 } from '../_shared/email.ts'
 import { verifyTurnstile, turnstilePolicy } from '../_shared/turnstile.ts'
 import { sha256Hex } from '../_shared/encoding.ts'
-import { corsHeaders, corsJson as json, parse } from '../_shared/http.ts'
+import { json, parse } from '../_shared/http.ts'
+import { staffCors } from '../_shared/staffCors.ts'
 import { requestSchema } from './request.ts'
 
 function clientIp(req: Request): string {
   return req.headers.get('cf-connecting-ip')?.trim() || 'unknown'
 }
 
-Deno.serve(async (req: Request): Promise<Response> => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
+async function handle(req: Request): Promise<Response> {
+  if (req.method === 'OPTIONS') return new Response('ok')
   if (req.method !== 'POST') return json({ ok: false, error: 'method_not_allowed' }, 405)
   let raw: unknown
   try {
@@ -75,4 +76,6 @@ Deno.serve(async (req: Request): Promise<Response> => {
     console.error('send-recovery-email:', error instanceof Error ? error.message : 'unknown error')
   }
   return json({ ok: true })
-})
+}
+
+Deno.serve(staffCors(Deno.env.get('CMS_ALLOWED_ORIGINS'), handle))

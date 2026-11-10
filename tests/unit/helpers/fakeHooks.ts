@@ -25,10 +25,23 @@ export const useState = vi.fn((initial: unknown) => {
   ] as const
 })
 
+type Deps = readonly unknown[] | undefined
+
+interface CommittedEffect {
+  readonly deps: Deps
+  readonly cleanup: (() => void) | undefined
+}
+
+/** The dependency list each effect of the last render was given, in call order. */
+let effectDeps: Deps[] = []
+/** What `commit()` left running, in call order. */
+let committed: readonly CommittedEffect[] = []
+
 export const useRef = (current: unknown): { current: unknown } =>
   (hooks.refs[hooks.refCursor++] ??= { current })
-export const useEffect = vi.fn((effect: Effect) => {
+export const useEffect = vi.fn((effect: Effect, deps?: readonly unknown[]) => {
   hooks.effects.push(effect)
+  effectDeps.push(deps)
 })
 // These tests mount passive effects explicitly and leave layout effects inert.
 export const useLayoutEffect = vi.fn()
@@ -42,6 +55,8 @@ export function reset(): void {
   hooks.cursor = 0
   hooks.refCursor = 0
   hooks.effects = []
+  effectDeps = []
+  committed = []
   useState.mockClear()
   useEffect.mockClear()
   useLayoutEffect.mockClear()
@@ -51,6 +66,7 @@ export function render<T>(component: () => T): T {
   hooks.cursor = 0
   hooks.refCursor = 0
   hooks.effects = []
+  effectDeps = []
   return component()
 }
 
@@ -59,6 +75,30 @@ export function mount(): () => void {
   return () => {
     for (const cleanup of cleanups) if (typeof cleanup === 'function') cleanup()
   }
+}
+
+function sameDeps(before: Deps, now: Deps): boolean {
+  if (before === undefined || now === undefined || before.length !== now.length) return false
+  return before.every((value, index) => Object.is(value, now[index]))
+}
+
+/** Run the last render's effects as the renderer does: one with unchanged deps is kept, any other
+ * is cleaned up and rerun, one no longer rendered is cleaned up. Told apart by render order. */
+export function commit(): void {
+  const before = committed
+  const kept = hooks.effects.map((_, index) => {
+    const earlier = before[index]
+    return earlier !== undefined && sameDeps(earlier.deps, effectDeps[index]) ? earlier : null
+  })
+  before.forEach((earlier, index) => {
+    if (kept[index] !== earlier) earlier.cleanup?.()
+  })
+  committed = hooks.effects.map((effect, index) => {
+    const earlier = kept[index]
+    if (earlier !== null && earlier !== undefined) return earlier
+    const cleanup = effect()
+    return { deps: effectDeps[index], cleanup: typeof cleanup === 'function' ? cleanup : undefined }
+  })
 }
 
 export function ref(index: number, value: unknown): void {

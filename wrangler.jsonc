@@ -33,7 +33,19 @@
   },
   "vars": {
     "SUPABASE_URL": "https://soktgawvexeumqvtyhda.supabase.co",
+    // Maintenance switch: "on", then deploy, answers every request 503 with
+    // public/maintenance.html (JSON under /api/). Any other value leaves the site open.
+    "MAINTENANCE": "off",
   },
+  // /api/customer-bookings, per client address (an IPv6 /64) and action. The period must equal
+  // GATEWAY_RATE_LIMIT_PERIOD_SECONDS in supabase/worker/customerGateway.ts.
+  "ratelimits": [
+    {
+      "name": "GATEWAY_RATE_LIMIT",
+      "namespace_id": "1001",
+      "simple": { "limit": 60, "period": 60 },
+    },
+  ],
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
@@ -44,14 +56,15 @@
       "!/assets/*",
       "!/fonts/*",
       "!/icons/*",
-      "!/.well-known/*",
       "!/favicon.svg",
+      "!/favicon.ico",
+      "!/apple-touch-icon.png",
+      "!/site.webmanifest",
       "!/icons.svg",
       "!/info.css",
       "!/tokens.css",
       "!/og-image.png",
       "!/robots.txt",
-      "!/sitemap.xml",
       "!/googlefbf0c3168fbf0af5.html",
     ],
   },

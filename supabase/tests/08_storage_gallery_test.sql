@@ -4,13 +4,14 @@
 -- public-read / gateway-upload, so the structural guarantees live inside the green test gate.
 --
 -- Enforcement model proven here:
---   * public READ  : bucket.public = true  AND a SELECT policy on storage.objects scoped to
---                    bucket_id='gallery' granted to anon + authenticated.
+--   * public READ  : bucket.public = true; the public URL bypasses RLS and no SELECT policy lets a
+--                    client role list a bucket. tests/integration/storagePublicRead.test.ts checks
+--                    the URL against the real Storage API.
 --   * gateway WRITE: direct authenticated INSERT/UPDATE policies are absent; upload-image writes
 --                    validated WebP output and durable deletion through service_role.
 
 begin;
-select plan(8);
+select plan(14);
 
 -- ---- bucket exists + is public --------------------------------------------------------------
 select is(
@@ -28,13 +29,51 @@ select is(
   true, 'RLS is enabled on storage.objects'
 );
 
--- ---- public read remains; every direct client write path is gone -----------------------------
+select is(
+  (select public from storage.buckets where id = 'barber-photos'),
+  true, 'the barber-photos bucket is PUBLIC (public read)'
+);
+
+-- ---- public read is by URL only; every direct client read and write path is gone --------------
 -- pg_policy.polcmd: 'r'=SELECT, 'a'=INSERT, 'w'=UPDATE, 'd'=DELETE, '*'=ALL.
 select is(
-  (select polcmd::text from pg_policy
-     where polrelid='storage.objects'::regclass and polname='gallery_public_read'),
-  'r', 'gallery_public_read is a SELECT policy (public read)'
+  (select count(*)::int from pg_policy
+     where polrelid='storage.objects'::regclass
+       and polname in ('gallery_public_read', 'barber_photos_public_read')),
+  0, 'the two policies that let the anon key list the public buckets are gone'
 );
+select is(
+  (select count(*)::int from pg_policy
+     where polrelid='storage.objects'::regclass and polcmd in ('r', '*')),
+  0, 'no policy under any name lets a client role read storage.objects'
+);
+
+insert into storage.objects (bucket_id, name) values
+  ('gallery', 'listing-check/a.webp'),
+  ('barber-photos', 'listing-check/b.webp');
+select is(
+  (select count(*)::int from storage.objects where name like 'listing-check/%'),
+  2, 'one object exists in each public bucket'
+);
+set local role anon;
+select is(
+  (select count(*)::int from storage.objects),
+  0, 'anon sees no object row, so it cannot list a bucket'
+);
+reset role;
+set local role authenticated;
+select is(
+  (select count(*)::int from storage.objects),
+  0, 'a signed-in session sees no object row either'
+);
+reset role;
+set local role service_role;
+select is(
+  (select count(*)::int from storage.objects where name like 'listing-check/%'),
+  2, 'the service role, which the upload gateway and the cleanup workers use, still sees both'
+);
+reset role;
+
 select is(
   (select count(*)::int from pg_policy
      where polrelid='storage.objects'::regclass and polname='gallery_owner_insert'),

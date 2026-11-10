@@ -6,6 +6,23 @@ import {
   parseContact,
   normalizePhone,
 } from '../../modules/public-web/src/booking/validation'
+import { aboutStrings, bookingStrings } from '../../modules/public-web/src/i18n/index'
+
+describe('the phone error states formats the parser accepts', () => {
+  const SHOWN_FORMATS = ['07X XXX XX XX', '+46 7X XXX XX XX']
+
+  it.each([
+    ['booking details, sv', bookingStrings('sv').errPhone],
+    ['booking details, en', bookingStrings('en').errPhone],
+    ['review form, sv', aboutStrings('sv').reviewErrPhone],
+    ['review form, en', aboutStrings('en').reviewErrPhone],
+  ])('%s', (_where, message) => {
+    for (const format of SHOWN_FORMATS) {
+      expect(message).toContain(format)
+      expect(parsePhone(format.split('X').join('1')).ok, format).toBe(true)
+    }
+  })
+})
 
 describe('parsePhone (Swedish mobile)', () => {
   it('accepts valid mobile forms (incl. +46 / spacing / dashes)', () => {

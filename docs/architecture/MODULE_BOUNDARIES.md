@@ -28,7 +28,7 @@ Move NativeSource and its source-cache/draft/example helpers into public-owned p
 ## Verification model
 
 - `boundaries.mjs` generates and validates source import edges with the installed TypeScript parser, including dynamic imports, exports and `new URL(..., import.meta.url)` worker edges. It resolves npm exports and explicit Deno targets.
-- CI does not select by change: every event runs every job (`docs/CI.md`), and the boundary graph is not used to select tests.
+- CI does not select by change: every event runs every job (`.github/workflows/ci.yml`), and the boundary graph is not used to select tests.
 - The unit suite and each browser group run whole. Browser discovery and execution use identical arguments. Existing exact case accounting, no skips/retries and source/artifact checks remain in force.
 
 ## Delivery slices

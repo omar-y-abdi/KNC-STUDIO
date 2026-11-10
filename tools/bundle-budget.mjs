@@ -6,10 +6,9 @@ import { join } from 'node:path'
 import { gzipSync } from 'node:zlib'
 import { parse } from 'parse5'
 
-// Measured 122.3 kB gzip in GitHub run 42119610488 with the approved hero animation and
-// synchronous site layouts. The owner explicitly approved 123 kB when withdrawing the
-// unrequested homepage loading screen. Keep the initial homepage directly renderable.
-const BUDGET_KB = 123
+// Measured 68.4 kB gzip in GitHub run 42892984070, once the boot bundle no longer held the CSS
+// grammar. The owner's approved ceiling is 123 kB: raise this only with a new measurement.
+const BUDGET_KB = 70
 
 const [dist = 'dist', budgetArg] = process.argv.slice(2)
 const budgetKb = budgetArg === undefined ? BUDGET_KB : Number(budgetArg)

@@ -18,6 +18,7 @@ import { renderLegalFragment, renderLegalPage } from '@bladeblend/public-web/ser
 import { siteThemeCss } from '@bladeblend/content-contracts/site-theme'
 import { WorkerEntrypoint } from 'cloudflare:workers'
 import {
+  NEW_SITE_PAGE_TEXT,
   SITE_PAGE_CSS,
   isSitePage,
   renderSitePage,
@@ -38,14 +39,24 @@ import {
 } from '@bladeblend/content-contracts/cms'
 import { CMS_THEME_SCRIPT } from '@bladeblend/public-web/server/theme-script'
 import { publicBusinessDiscoveryResponse } from '@bladeblend/backend-contracts/rpcSchemas'
-import { customerGateway } from './customerGateway'
+import {
+  customerGateway,
+  gatewayError,
+  type GatewayErrorCode,
+  type GatewayRateLimit,
+} from './customerGateway'
+import { ownHeaders } from './responseHeaders'
 import {
   CMS_REVISION_ATTRIBUTE,
   NATIVE_PUBLIC_PATHS,
   PRESENTATION_PATH,
+  bookingDescription,
+  nativePublicPath,
+  nativeRouteTitle,
   parseCmsRevision,
   privatePageTitle,
   requestedPresentationRevision,
+  type NativePublicPath,
 } from '@bladeblend/public-web/route-metadata'
 import {
   DEFAULT_BUSINESS,
@@ -55,6 +66,7 @@ import {
   resolveBusinessSettings,
   type BusinessDiscoveryFacts,
   type BusinessSettings,
+  type SeoSettings,
 } from '@bladeblend/public-web/business'
 
 interface StaticAssets {
@@ -66,6 +78,8 @@ interface Env {
   SUPABASE_URL?: string
   SUPABASE_ANON_KEY?: string
   CUSTOMER_GATEWAY_SECRET?: string
+  MAINTENANCE?: string
+  GATEWAY_RATE_LIMIT?: GatewayRateLimit
 }
 
 interface WorkerContext {
@@ -85,6 +99,11 @@ const PUBLIC_FILE_ALIASES: Readonly<Record<string, string>> = {
   '/terms': '/terms.html',
   '/google-calendar': '/google-calendar.html',
 }
+const SITEMAP_PATH = '/sitemap.xml'
+const SECURITY_TXT_PATH = '/.well-known/security.txt'
+const FAILURE_DOCUMENT = '/500.html'
+const MAINTENANCE_DOCUMENT = '/maintenance.html'
+type OutageDocument = typeof FAILURE_DOCUMENT | typeof MAINTENANCE_DOCUMENT
 
 function withoutTrailingSlash(pathname: string): string {
   let end = pathname.length
@@ -114,6 +133,21 @@ export function isSpaPath(pathname: string): boolean {
   return path === '/' || isPrivatePath(path)
 }
 
+/** The one path of the fixed route `pathname` names in any letter case, with trailing slashes or
+ * by its file name; null for none. Below /admin/ the app reads the path, so its letters stay. */
+export function fixedRoutePath(pathname: string): string | null {
+  const clean = withoutTrailingSlash(pathname)
+  if (clean.startsWith('/admin/')) return clean
+  const folded = clean.toLowerCase()
+  if (folded === '/index.html') return '/'
+  const page = folded.endsWith('.html') ? folded.slice(0, -'.html'.length) : folded
+  if (Object.hasOwn(PUBLIC_FILE_ALIASES, page)) return page
+  return NATIVE_PUBLIC_PATHS.includes(folded) ||
+    (isPrivatePath(folded) && !folded.startsWith('/admin/'))
+    ? folded
+    : null
+}
+
 /** Paths the published presentation can hold a page for: created and core information pages.
  * Files, probes and unknown routes never read the presentation. */
 export function isCmsPagePath(pathname: string): boolean {
@@ -121,7 +155,12 @@ export function isCmsPagePath(pathname: string): boolean {
 }
 
 function isNoIndexPath(pathname: string): boolean {
-  return isPrivatePath(pathname) || withoutTrailingSlash(pathname) === '/google-calendar'
+  return (
+    isPrivatePath(pathname) ||
+    withoutTrailingSlash(pathname) === '/google-calendar' ||
+    pathname === FAILURE_DOCUMENT ||
+    pathname === MAINTENANCE_DOCUMENT
+  )
 }
 
 function withNoIndex(response: Response): Response {
@@ -139,14 +178,49 @@ function notFoundPage(request: Request, missing: Response): Response {
   return withNoIndex(
     new Response(request.method === 'HEAD' ? null : missing.body, {
       status: 404,
-      headers: missing.headers,
+      headers: ownHeaders(missing.headers),
     }),
   )
 }
 
+/** The asset layer's 405 has no Allow header; it serves GET and HEAD. */
+function withAllowedMethods(refused: Response): Response {
+  const headers = ownHeaders(refused.headers)
+  headers.set('Allow', 'GET, HEAD')
+  return new Response(refused.body, {
+    status: refused.status,
+    statusText: refused.statusText,
+    headers,
+  })
+}
+
+function onApex(url: URL): URL {
+  const apex = new URL(url)
+  if (apex.hostname === WWW_HOST) apex.hostname = CANONICAL_HOST
+  return apex
+}
+
+/** One hop: the target is answered without another redirect. */
 function redirectTo(url: URL, pathname: string): Response {
-  url.pathname = pathname
-  return new Response(null, { status: 308, headers: { Location: url.toString() } })
+  const target = onApex(url)
+  target.pathname = pathname
+  return new Response(null, {
+    status: 308,
+    headers: ownHeaders({ Location: target.toString() }),
+  })
+}
+
+/** Moves the customer access token from the path into the URL fragment. */
+function customerLinkRedirect(url: URL, token: string): Response {
+  return new Response(null, {
+    status: 302,
+    headers: ownHeaders({
+      Location: `${onApex(url).origin}/#booking_token=${token}`,
+      'Cache-Control': 'no-store',
+      'Referrer-Policy': 'no-referrer',
+      'X-Robots-Tag': 'noindex, nofollow',
+    }),
+  })
 }
 
 function assetRequest(request: Request, pathname: string, dynamic = false): Request {
@@ -354,6 +428,20 @@ async function publishedCmsPage(
   return method === 'HEAD' ? { read: 'exists' } : { read: 'page', cms, page }
 }
 
+/** The path a request is answered at. Only fixed routes and published created pages get one
+ * spelling: the letters of any other path, such as a file name, mean what they say. */
+async function canonicalPath(env: Env, pathname: string, getOrHead: boolean): Promise<string> {
+  const fixed = fixedRoutePath(pathname)
+  if (fixed !== null) return fixed
+  const folded = withoutTrailingSlash(pathname).toLowerCase()
+  const created =
+    getOrHead &&
+    folded !== pathname &&
+    isCreatedPagePath(folded) &&
+    (await publishedCmsPage(env, folded, 'sv', 'HEAD')) !== null
+  return created ? folded : pathname
+}
+
 function discoveryFromWire(value: unknown): BusinessDiscovery | null {
   const parsed = publicBusinessDiscoveryResponse.safeParse(value)
   if (!parsed.success) return null
@@ -471,13 +559,173 @@ const DESCRIPTION_META_IDS = [
   'business-twitter-description',
 ] as const
 
-/** A page without a description of its own keeps the shell's default one. */
+function removeTag(html: string, id: string): string {
+  const bounds = tagBounds(html, id)
+  return bounds === null ? html : html.slice(0, bounds.start) + html.slice(bounds.end + 1)
+}
+
+/** A blank description removes the tags: the shell's own sentence describes the booking. */
 function withDescription(html: string, description: string): string {
-  if (description.trim() === '') return html
+  const blank = description.trim() === ''
   return DESCRIPTION_META_IDS.reduce(
-    (rendered, id) => replaceMetaContent(rendered, id, description),
+    (rendered, id) =>
+      blank ? removeTag(rendered, id) : replaceMetaContent(rendered, id, description),
     html,
   )
+}
+
+type LanguageUrls = Readonly<Record<CmsLang, string>>
+
+function languageUrls(path: string): LanguageUrls {
+  return { sv: `${SITE_URL}${path}`, en: `${SITE_URL}${path}?lang=en` }
+}
+
+function hreflangLinks(urls: LanguageUrls): string {
+  return (
+    [
+      ['sv', urls.sv],
+      ['en', urls.en],
+      ['x-default', urls.sv],
+    ] as const
+  )
+    .map(
+      ([code, href]) =>
+        `<link rel="alternate" hreflang="${code}" href="${escapeAttribute(href)}" />`,
+    )
+    .join('')
+}
+
+type NativeIdentity =
+  | { readonly kind: 'indexable'; readonly urls: LanguageUrls }
+  | { readonly kind: 'alias'; readonly canonical: LanguageUrls }
+  | { readonly kind: 'account'; readonly urls: LanguageUrls }
+
+function nativeIdentity(path: NativePublicPath): NativeIdentity {
+  switch (path) {
+    case '/':
+    case '/booking':
+      return { kind: 'indexable', urls: languageUrls(path) }
+    case '/about':
+      return { kind: 'alias', canonical: languageUrls('/') }
+    case '/my-bookings':
+      return { kind: 'account', urls: languageUrls(path) }
+  }
+}
+
+type CmsPageIdentity =
+  | { readonly kind: 'translated'; readonly urls: LanguageUrls }
+  | { readonly kind: 'untranslated'; readonly canonical: string }
+
+/** Whether a `<p>` in `html` holds exactly `text`. Byte search: the request path has no CPU to
+ * parse a body. */
+function hasParagraphOf(html: string, text: string): boolean {
+  const ending = `>${text}</p>`
+  for (let at = html.indexOf(ending); at >= 0; at = html.indexOf(ending, at + 1)) {
+    const open = html.lastIndexOf('<', at)
+    // The `>` before the text ends the tag that `open` starts, and that tag is a `<p>`.
+    if (open >= 0 && html.indexOf('>', open) === at && /^<p[\s>]/.test(html.slice(open, open + 3)))
+      return true
+  }
+  return false
+}
+
+const ENGLISH_SECTION = '<section lang="en"'
+
+/** Untranslated includes a page still holding createSitePage's paragraph, and privacy/terms still
+ * holding Studio's bilingual seed (also after a Swedish-only save). */
+function cmsPageIdentity(page: CmsPage): CmsPageIdentity {
+  const urls = languageUrls(page.path)
+  const english = page.content.en.html
+  const legal = page.kind === 'privacy' || page.kind === 'terms'
+  return english === page.content.sv.html ||
+    english.trim() === '' ||
+    hasParagraphOf(english, NEW_SITE_PAGE_TEXT.en) ||
+    (legal && english.includes(ENGLISH_SECTION))
+    ? { kind: 'untranslated', canonical: urls.sv }
+    : { kind: 'translated', urls }
+}
+
+const CANONICAL_LINK = /<link\b[^>]*rel="canonical"[^>]*>/i
+
+/** Edits find the shell's own tags, so `html` is the shell before any owner text is in it. */
+function withNativeIdentity(html: string, identity: NativeIdentity, lang: CmsLang): string {
+  if (identity.kind === 'account') {
+    let rendered = replaceShellMetadata(html, 'link', 'rel="canonical"', 'href', null)
+    rendered = replaceShellMetadata(rendered, 'meta', 'name="robots"', 'content', 'noindex, follow')
+    return replaceShellMetadata(
+      rendered,
+      'meta',
+      'property="og:url"',
+      'content',
+      identity.urls[lang],
+    )
+  }
+  const canonical = identity.kind === 'indexable' ? identity.urls[lang] : identity.canonical[lang]
+  let rendered = replaceShellMetadata(html, 'link', 'rel="canonical"', 'href', canonical)
+  rendered = replaceShellMetadata(rendered, 'meta', 'property="og:url"', 'content', canonical)
+  return identity.kind === 'indexable'
+    ? rendered.replace(CANONICAL_LINK, (link) => link + hreflangLinks(identity.urls))
+    : rendered
+}
+
+/** `head` is the shell before any owner text is in it, as in renderCmsPage. */
+function nativeShellHead(
+  head: string,
+  path: NativePublicPath,
+  lang: CmsLang,
+  revision: number | null,
+): string {
+  // The booking view paints the panel surface on phones too; the shell pre-paints it (index.html).
+  const view = path === '/booking' ? ' data-knc-view="booking"' : ''
+  // The app fetches this revision's immutable presentation.
+  const published = revision === null ? '' : ` ${CMS_REVISION_ATTRIBUTE}="${revision}"`
+  let rendered = head.replace(
+    /<html\b[^>]*lang=(['"])[^'"]*\1/i,
+    `<html lang="${lang}"${view}${published}`,
+  )
+  rendered = rendered.replace(
+    /(<meta\b[^>]*property="og:locale"[^>]*content=")[^"]*(")/i,
+    `$1${lang === 'en' ? 'en_US' : 'sv_SE'}$2`,
+  )
+  rendered = rendered.replace(
+    /(<meta\b[^>]*property="og:locale:alternate"[^>]*content=")[^"]*(")/i,
+    `$1${lang === 'en' ? 'sv_SE' : 'en_US'}$2`,
+  )
+  return withNativeIdentity(rendered, nativeIdentity(path), lang)
+}
+
+function homepageTitle(business: BusinessSettings, lang: CmsLang, cmsTitle: string | null): string {
+  if (cmsTitle === null || cmsTitle.trim() === '') return business.seo[lang].title
+  return cmsTitle.toLowerCase().includes('barbershop')
+    ? cmsTitle
+    : `${business.name} – Barbershop ${lang === 'sv' ? 'i' : 'in'} ${business.city} | ${cmsTitle}`
+}
+
+/** Studio seeds every native page with the homepage's title: off the homepage, that title, or
+ * none, gives way to the route's name. */
+export function nativePageTitle(
+  path: NativePublicPath,
+  lang: CmsLang,
+  business: BusinessSettings,
+  own: string | null,
+  home: string | null,
+): string {
+  if (path === '/') return homepageTitle(business, lang, own)
+  const title = own?.trim() ?? ''
+  const homepage = [home ?? '', homepageTitle(business, lang, home), business.seo[lang].title]
+  return own === null || title === '' || homepage.some((value) => value.trim() === title)
+    ? nativeRouteTitle(path, lang, business.name)
+    : own
+}
+
+function nativePageDescription(
+  path: NativePublicPath,
+  lang: CmsLang,
+  business: BusinessSettings,
+  own: string | null,
+): string {
+  if (own !== null && own.trim() !== '') return own
+  return path === '/booking' ? bookingDescription(lang, business) : business.seo[lang].description
 }
 
 /** `?mode` pins a colour scheme; without a valid one the page follows the visitor's OS scheme. */
@@ -498,6 +746,85 @@ const COLOR_SCHEMES: readonly CmsMode[] = ['light', 'dark']
 const CMS_RESET = '<style id="cms-reset">html,body{background:none}</style>'
 const RUNTIME_ISLAND = /\bid="knc-(?:about|booking|my-bookings)-runtime"/
 const COLOR_SCHEME_META = /(<meta\b[^>]*\bname="color-scheme"[^>]*\bcontent=")[^"]*(")/i
+
+export type SkipTarget =
+  /** The shell's #root: on an information page, only the page's content. */
+  | 'root'
+  /** The content of a created page, below its site header. */
+  | 'site-content'
+
+const SKIP_LABEL: Readonly<Record<CmsLang, string>> = {
+  sv: 'Hoppa till innehållet',
+  en: 'Skip to content',
+}
+/** For the legal fallbacks: one document in both languages. */
+const BILINGUAL_SKIP_LABEL = `${SKIP_LABEL.sv} / <span lang="en">${SKIP_LABEL.en}</span>`
+/** The id renderSitePage gives the content of a created page. */
+const SITE_CONTENT_ID = 'cms-site-content'
+
+/** `label` is inserted unescaped: the Worker's own markup, never owner text. */
+function skipLink(target: string, label: string): string {
+  return `<a class="bb-skip bb-btn" href="#${target}">${label}</a>`
+}
+
+/** Mirrors public/info.css's skip link, with fallbacks for pages that load neither it nor
+ * /tokens.css; #root takes focus without a ring, as .bb-doc does there. */
+const SKIP_LINK_CSS =
+  '.bb-skip{position:absolute;top:.75rem;left:.75rem;z-index:2147483647;max-width:calc(100% - 1.5rem);padding:.75rem 1.4rem;border-radius:999px;background:var(--bb-accent,#1c1c1e);color:var(--bb-accent-text,#fff);font-weight:600;text-decoration:none;transform:translateY(-200%)}' +
+  '.bb-skip:focus{transform:none;outline:3px solid var(--bb-text,currentColor);outline-offset:4px}' +
+  '#root:focus{outline:none}' +
+  '@media print{.bb-skip{display:none}}'
+
+/** Studio seeds CMS pages from these files' bodies, so the link is added here, not in the file.
+ * `html` is the deployed file before any owner text is in it. */
+export function withFallbackSkipLink(html: string, label: string): string {
+  const body = firstStartTag(html, BODY_TAG_OPENING, 0)
+  if (body === null) return html
+  const main = firstStartTag(html, MAIN_TAG_OPENING, body.end)
+  if (main === null) return html
+  if (/\s(?:id|tabindex)\s*=/i.test(html.slice(main.start, main.end))) return html
+  const mainTagEnd = main.end - 1
+  return (
+    html.slice(0, body.end) +
+    skipLink('main', label) +
+    html.slice(body.end, mainTagEnd) +
+    ' id="main" tabindex="-1"' +
+    html.slice(mainTagEnd)
+  )
+}
+
+/** Exact names: `<main-menu` is neither. */
+const BODY_TAG_OPENING = /<body(?=[\s>])/i
+const MAIN_TAG_OPENING = /<main(?=[\s>])/i
+
+interface StartTag {
+  readonly start: number
+  /** The offset after its `>`. */
+  readonly end: number
+}
+
+function firstStartTag(html: string, opening: RegExp, from: number): StartTag | null {
+  const found = opening.exec(html.slice(from))
+  if (found === null) return null
+  const start = from + found.index
+  const end = startTagEnd(html, start + found[0].length)
+  return end === null ? null : { start, end }
+}
+
+function startTagEnd(html: string, from: number): number | null {
+  let quote: '"' | "'" | null = null
+  for (let at = from; at < html.length; at += 1) {
+    const char = html[at]
+    if (quote !== null) {
+      if (char === quote) quote = null
+    } else if (char === '"' || char === "'") {
+      quote = char
+    } else if (char === '>') {
+      return at + 1
+    }
+  }
+  return null
+}
 
 function planCmsRender(
   page: CmsPage,
@@ -701,6 +1028,9 @@ export function renderCmsPage(
   contact: SiteContact = DEFAULT_BUSINESS,
   /** Företag & SEO, when it could be read: its name and structured data fill the head. */
   discovery: BusinessDiscovery | null = null,
+  /** Only when the page is indexable under `canonicalUrl` itself. */
+  alternates: LanguageUrls | null = null,
+  skipTo: SkipTarget | null = null,
 ): string {
   const plan = planCmsRender(page, lang, requested, contact, presentation)
   const variant = plan.variant
@@ -711,6 +1041,16 @@ export function renderCmsPage(
     pageSheets(variant, plan.mode) +
     themeSheets(plan.mode, presentation)
   const layout = shellLayout(html)
+  // The link and its sheet go only at the shell's own offsets. Owner markup is never edited and
+  // is searched only for SITE_CONTENT_ID, so an owner `main` or second `root` changes nothing.
+  const skipTarget =
+    !authored || layout.root === null || layout.headEnd === null || skipTo === null
+      ? null
+      : skipTo === 'root'
+        ? 'root'
+        : variant.html.includes(`id="${SITE_CONTENT_ID}"`)
+          ? SITE_CONTENT_ID
+          : null
   // Select from the original shell before injecting page-dependent styles or markup, so the
   // parser work is bounded by the build shell and reused across authored pages/modes.
   const dropped =
@@ -780,8 +1120,10 @@ export function renderCmsPage(
       start: headEnd,
       end: headEnd,
       fill: () =>
+        (alternates === null ? '' : hreflangLinks(alternates)) +
         (authored ? CMS_RESET : '') +
         styles +
+        (skipTarget === null ? '' : `<style id="cms-skip">${SKIP_LINK_CSS}</style>`) +
         (authored && !shellScheme ? `<meta name="color-scheme" content="${scheme}">` : ''),
     })
   if (root !== null)
@@ -790,10 +1132,11 @@ export function renderCmsPage(
         start: root.tagStart,
         end: root.contentStart,
         fill: (tag) =>
+          (skipTarget === null ? '' : skipLink(skipTarget, SKIP_LABEL[lang])) +
           tag.replace(
             /\s*>$/,
             () =>
-              ` data-cms-public="1" data-cms-mode="${plan.mode}" data-cms-page-id="${escapeAttribute(page.id)}">`,
+              ` data-cms-public="1" data-cms-mode="${plan.mode}" data-cms-page-id="${escapeAttribute(page.id)}"${skipTarget === 'root' ? ' tabindex="-1"' : ''}>`,
           ),
       },
       { start: root.contentStart, end: root.contentEnd, fill: () => markup },
@@ -811,13 +1154,17 @@ export function renderCmsPage(
 export function renderHomepageMetadata(
   html: string,
   discovery: BusinessDiscovery,
-  informationPath: InformationPage | null = '/',
+  path: NativePublicPath = '/',
+  lang: CmsLang = 'sv',
+  seo: SeoSettings = discovery.business.seo[lang],
+  revision: number | null = null,
 ): string {
   const { business, facts } = discovery
-  const seo = business.seo.sv
   const structured = buildBusinessStructuredData(business, facts, SITE_URL)
   const metadata = (head: string): string => {
-    let rendered = replaceMetaContent(head, 'business-description', seo.description)
+    // First, while the head holds only the shell's own bytes: these edits look for its tags.
+    let rendered = nativeShellHead(head, path, lang, revision)
+    rendered = replaceMetaContent(rendered, 'business-description', seo.description)
     rendered = replaceMetaContent(rendered, 'business-og-site-name', business.name)
     rendered = replaceMetaContent(rendered, 'business-og-title', seo.title)
     rendered = replaceMetaContent(rendered, 'business-og-description', seo.description)
@@ -831,23 +1178,17 @@ export function renderHomepageMetadata(
   // The root is located in the trusted shell, before the owner's SEO title is in it.
   const { root } = shellLayout(html)
   if (root === null) return metadata(html)
-  const fallback =
-    informationPath !== null
-      ? renderPublicFallback(business, informationPath)
-      : // Keep a readable fallback for genuinely disabled scripting. With scripting enabled, the
-        // browser suppresses this subtree while the app bundle loads, so stale fallback content
-        // cannot flash before the published presentation is ready.
-        `<noscript><main><h1>${escapeElementText(business.name)}</h1><p>${escapeElementText(seo.description)}</p>` +
-        `<p>${escapeElementText(formatBusinessAddress(business))}</p>` +
-        `<p><a href="mailto:${escapeAttribute(business.email)}">${escapeElementText(business.email)}</a></p>` +
-        '<p>Aktivera JavaScript för att välja behandling och boka tid online.</p>' +
-        '<nav aria-label="Information"><a href="/privacy">Integritet och cookies</a> · <a href="/terms">Bokningsvillkor</a></nav></main></noscript>'
+  // index.html reveals this intro when the app has not booted after 8 s (a blocked bundle).
   return assembleShell(
     html,
     [],
     [
       { start: 0, end: root.tagStart, fill: metadata },
-      { start: root.contentStart, end: root.contentEnd, fill: () => fallback },
+      {
+        start: root.contentStart,
+        end: root.contentEnd,
+        fill: () => renderPublicFallback(business, facts, path, lang),
+      },
     ],
   )
 }
@@ -868,7 +1209,9 @@ export function renderContactMetadata(
   facts: BusinessDiscoveryFacts = EMPTY_BUSINESS_FACTS,
 ): string {
   const defaults = contactDefaults(business, 'sv')
-  let rendered = replaceElementText(html, 'contact-meta-title', defaults.title)
+  // First: an attribute value keeps no quotes, so it cannot name the ids looked up after it.
+  let rendered = replaceMetaContent(html, 'contact-image-alt', business.name)
+  rendered = replaceElementText(rendered, 'contact-meta-title', defaults.title)
   rendered = replaceMetaContent(rendered, 'contact-description', defaults.description)
   const filled = fillBody(rendered, (body) => renderContactFragment(body, business, 'sv', facts))
   if (filled === null) throw new Error('Contact fallback is missing its body')
@@ -900,6 +1243,27 @@ export function renderPrivateMetadata(html: string, pathname: string): string {
   return rendered
 }
 
+type LegalPath = '/terms' | '/privacy'
+
+export function legalDescription(
+  pathname: LegalPath,
+  business: BusinessSettings,
+  lang: CmsLang,
+): string {
+  if (lang === 'sv')
+    return pathname === '/terms'
+      ? `Bokning, priser, avbokning och kontakt hos ${business.name}.`
+      : `Så hanterar ${business.name} bokningsuppgifter, cookies, e-post och kalenderkoppling.`
+  return pathname === '/terms'
+    ? `Booking, prices, cancellation and contact at ${business.name}.`
+    : `How ${business.name} handles booking details, cookies, email and calendar connection.`
+}
+
+function withDefaultDescription(page: CmsPage, lang: CmsLang, fallback: string): CmsPage {
+  if (page.description[lang].trim() !== '') return page
+  return { ...page, description: { ...page.description, [lang]: fallback } }
+}
+
 /** Legal pages are rendered from the same owner CMS as the booking UI, without a cached identity. */
 export function renderLegalMetadata(
   html: string,
@@ -914,9 +1278,7 @@ export function renderLegalMetadata(
   rendered = replaceMetaContent(
     rendered,
     'legal-description',
-    pathname === '/terms'
-      ? `Bokning, priser, avbokning och kontakt hos ${business.name}.`
-      : `Så hanterar ${business.name} bokningsuppgifter, cookies, e-post och kalenderkoppling.`,
+    legalDescription(pathname, business, 'sv'),
   )
   // Only the body is parsed and filled as on a CMS legal page; the head is never reserialised.
   return (
@@ -983,6 +1345,108 @@ export function renderLlmsText(discovery: BusinessDiscovery): string {
   ].join('\n')
 }
 
+/** As public/sitemap.xml lists them. /about, the homepage under another URL, and the account page
+ * /my-bookings are left out. */
+const SITEMAP_CORE_PAGES = [
+  { path: '/', changefreq: 'monthly', priority: '1.0' },
+  { path: '/booking', changefreq: 'monthly', priority: '0.8' },
+  { path: '/contact', changefreq: 'yearly', priority: '0.5' },
+  { path: '/privacy', changefreq: 'yearly', priority: '0.4' },
+  { path: '/terms', changefreq: 'yearly', priority: '0.4' },
+] as const
+
+declare const createdPagePath: unique symbol
+/** isCreatedPagePath allows only `/`, `-`, a–z and 0–9: safe in XML unescaped. */
+type CreatedPagePath = string & { readonly [createdPagePath]: true }
+
+/** A `<loc>` is written unescaped: only these paths reach one. */
+type SitemapPath = (typeof SITEMAP_CORE_PAGES)[number]['path'] | CreatedPagePath
+
+interface SitemapPage {
+  readonly kind: CmsPage['kind']
+  readonly path: string
+  readonly content: { readonly sv: { readonly html: string } }
+}
+
+function isCreatedPage(
+  page: SitemapPage,
+): page is SitemapPage & { readonly path: CreatedPagePath } {
+  return isSitePage(page)
+}
+
+/** Entries are Swedish URLs, so only the Swedish body decides whether a page is still new. */
+export function renderSitemap(pages: readonly SitemapPage[]): string {
+  const entry = (path: SitemapPath, hints: string): string =>
+    `  <url>\n    <loc>${SITE_URL}${path}</loc>\n${hints}  </url>\n`
+  return (
+    '<?xml version="1.0" encoding="UTF-8"?>\n' +
+    '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
+    SITEMAP_CORE_PAGES.map(({ path, changefreq, priority }) =>
+      entry(
+        path,
+        `    <changefreq>${changefreq}</changefreq>\n    <priority>${priority}</priority>\n`,
+      ),
+    ).join('') +
+    pages
+      .filter(isCreatedPage)
+      .filter((page) => !hasParagraphOf(page.content.sv.html, NEW_SITE_PAGE_TEXT.sv))
+      .map((page) => entry(page.path, ''))
+      .join('') +
+    '</urlset>\n'
+  )
+}
+
+const SECURITY_TXT_VALID_DAYS = 180
+
+declare const contactAddress: unique symbol
+/** Written into security.txt as is: it can add no line and needs no `mailto:` encoding. */
+type ContactAddress = string & { readonly [contactAddress]: true }
+
+function isContactAddress(email: string): email is ContactAddress {
+  return /^[A-Za-z0-9._+-]+@[A-Za-z0-9.-]+$/.test(email) && email.includes('.', email.indexOf('@'))
+}
+
+export type SecurityContact =
+  /** The business e-mail from Företag & SEO. */
+  | { readonly kind: 'business'; readonly email: ContactAddress }
+  /** The stored address could not be read, or cannot be written as it is. */
+  | { readonly kind: 'default' }
+
+export function securityContact(stored: string | null): SecurityContact {
+  return stored !== null && isContactAddress(stored)
+    ? { kind: 'business', email: stored }
+    : { kind: 'default' }
+}
+
+/** security.txt per RFC 9116. */
+export function renderSecurityTxt(contact: SecurityContact, today: Date): string {
+  const expires = new Date(
+    Date.UTC(
+      today.getUTCFullYear(),
+      today.getUTCMonth(),
+      today.getUTCDate() + SECURITY_TXT_VALID_DAYS,
+    ),
+  )
+  return [
+    `Contact: mailto:${contact.kind === 'business' ? contact.email : DEFAULT_BUSINESS.email}`,
+    `Expires: ${expires.toISOString().replace('.000Z', 'Z')}`,
+    'Preferred-Languages: sv, en',
+    `Canonical: ${SITE_URL}${SECURITY_TXT_PATH}`,
+    '',
+  ].join('\n')
+}
+
+const SECURITY_TXT_HEADERS = {
+  'Content-Type': 'text/plain; charset=utf-8',
+  'Cache-Control': 'public, max-age=300',
+}
+/** For a failed business read: not cached, so the next request reads again. */
+const UNREAD_SECURITY_TXT_HEADERS = { ...SECURITY_TXT_HEADERS, 'Cache-Control': 'no-store' }
+
+function issueSecurityTxt(contact: SecurityContact): string {
+  return renderSecurityTxt(contact, new Date())
+}
+
 export function cmsFrameResponse(response: Response, source: boolean): Response {
   const headers = new Headers(response.headers)
   const current =
@@ -1009,7 +1473,7 @@ function markdownResponse(
   business: BusinessSettings,
   path: InformationPage,
 ): Response {
-  const headers = new Headers({
+  const headers = ownHeaders({
     'Content-Type': 'text/markdown; charset=utf-8',
     'Cache-Control': 'no-store',
     Link: '</llms.txt>; rel="describedby"',
@@ -1022,7 +1486,7 @@ function markdownResponse(
 }
 
 function markdownNotFound(request: Request): Response {
-  const headers = new Headers({
+  const headers = ownHeaders({
     'Content-Type': 'text/markdown; charset=utf-8',
     'Cache-Control': 'no-store',
     'X-Robots-Tag': 'noindex, nofollow',
@@ -1036,7 +1500,7 @@ function markdownNotFound(request: Request): Response {
 }
 
 function notAcceptable(request: Request): Response {
-  const headers = new Headers({
+  const headers = ownHeaders({
     'Content-Type': 'text/plain; charset=utf-8',
     'Cache-Control': 'no-store',
   })
@@ -1056,6 +1520,25 @@ const REVISION_OPENING = /^\s*\{\s*"revision"\s*:\s*(0|[1-9][0-9]*)\s*[,}]/
 const REVISION_OPENING_BYTES = 64
 /** One day at the edge, never served stale after expiry (a failed refresh must not revive old bytes). */
 const IMMUTABLE_EDGE_CACHE = 'max-age=86400, must-revalidate'
+const PRESENTATION_HEADERS = {
+  'Content-Type': 'application/json',
+  'Cache-Control': 'no-store',
+  'X-Robots-Tag': 'noindex',
+} as const
+/** A refused or timed-out read may succeed next time; the app retries within 2 s itself. */
+const PRESENTATION_RETRY = { 'Retry-After': '1' } as const
+
+/** Its client reads only the status; the body stays as it always was. */
+function presentationUnavailable(
+  method: string,
+  status: 500 | 503,
+  extra: Readonly<Record<string, string>>,
+): Response {
+  return new Response(method === 'HEAD' ? null : JSON.stringify({ error: 'unavailable' }), {
+    status,
+    headers: ownHeaders({ ...PRESENTATION_HEADERS, ...extra }),
+  })
+}
 
 /** The revision a `public_cms_presentation` body opens with. PostgreSQL orders jsonb keys by
  * length, so `revision` precedes `presentation`; any other shape reads as no revision. */
@@ -1068,12 +1551,12 @@ function openingRevision(body: Uint8Array): number | null {
  * completely and opens with that very revision; otherwise this is the current document, uncached.
  * The body is buffered once and never parsed, so a read cut off by the timeout is never stored. */
 async function versionedPresentation(upstream: Response, requested: number): Promise<Response> {
-  const headers = new Headers({ 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
+  const headers = ownHeaders(PRESENTATION_HEADERS)
   let body: ArrayBuffer
   try {
     body = await upstream.arrayBuffer()
   } catch {
-    return new Response(JSON.stringify({ error: 'unavailable' }), { status: 503, headers })
+    return presentationUnavailable('GET', 503, PRESENTATION_RETRY)
   }
   if (openingRevision(new Uint8Array(body)) === requested)
     headers.set('Cloudflare-CDN-Cache-Control', IMMUTABLE_EDGE_CACHE)
@@ -1083,7 +1566,6 @@ async function versionedPresentation(upstream: Response, requested: number): Pro
 async function fetchPublicContent(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url)
   const pathname = url.pathname
-  const cleanPathname = withoutTrailingSlash(pathname)
   const getOrHead = request.method === 'GET' || request.method === 'HEAD'
   const lang: CmsLang = url.searchParams.get('lang') === 'en' ? 'en' : 'sv'
 
@@ -1099,23 +1581,19 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
   }
 
   if (pathname === PRESENTATION_PATH) {
-    if (!getOrHead) return new Response(null, { status: 405 })
+    if (!getOrHead) {
+      return new Response(null, { status: 405, headers: ownHeaders({ Allow: 'GET, HEAD' }) })
+    }
     // Publication validates the database document; the browser validates its copy on receipt.
     // Stream this public RPC without cloning/parsing/stringifying megabytes at the edge.
     const response = await publicCmsResponse(env, 'public_cms_presentation')
     const requested = request.method === 'GET' ? requestedPresentationRevision(url) : null
     if (requested !== null && response?.ok) return versionedPresentation(response, requested)
-    return new Response(
-      request.method === 'HEAD'
-        ? null
-        : response?.ok
-          ? response.body
-          : JSON.stringify({ error: 'unavailable' }),
-      {
-        status: response?.ok ? 200 : 503,
-        headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
-      },
-    )
+    if (!response?.ok) return presentationUnavailable(request.method, 503, PRESENTATION_RETRY)
+    return new Response(request.method === 'HEAD' ? null : response.body, {
+      status: 200,
+      headers: ownHeaders(PRESENTATION_HEADERS),
+    })
   }
 
   if (pathname === '/cms-public/source' && getOrHead) {
@@ -1128,99 +1606,76 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
     return notFoundPage(request, await serveAsset(request, env, '/404.html'))
   }
 
-  const customerAccessToken = customerAccessTokenFromPath(pathname)
-  if (customerAccessToken !== null && getOrHead) {
-    return new Response(null, {
-      status: 302,
-      headers: {
-        Location: `${url.origin}/#booking_token=${customerAccessToken}`,
-        'Cache-Control': 'no-store',
-        'Referrer-Policy': 'no-referrer',
-        'X-Robots-Tag': 'noindex, nofollow',
-      },
-    })
-  }
-
   if (pathname === '/llms.txt' && request.method === 'GET') {
     const discovery = await loadDiscovery(env)
     if (discovery !== null) {
       return new Response(renderLlmsText(discovery), {
-        headers: {
+        headers: ownHeaders({
           'Content-Type': 'text/plain; charset=utf-8',
           'Cache-Control': 'public, max-age=300',
-        },
+        }),
       })
     }
   }
 
-  // A native route with trailing slashes is the slashless route, as the app normalises it.
-  if (
-    pathname !== cleanPathname &&
-    (isSpaPath(cleanPathname) ||
-      NATIVE_PUBLIC_PATHS.includes(cleanPathname) ||
-      Object.hasOwn(PUBLIC_FILE_ALIASES, cleanPathname))
-  ) {
-    return redirectTo(url, cleanPathname)
+  // A failed publication read falls through to the static file below.
+  if (pathname === SITEMAP_PATH && getOrHead) {
+    const headers = ownHeaders({
+      'Content-Type': 'application/xml; charset=utf-8',
+      'Cache-Control': 'public, max-age=300',
+    })
+    // HEAD reads nothing and answers as the generated sitemap would, even if GET falls back.
+    if (request.method === 'HEAD') return new Response(null, { headers })
+    const cms = await loadPublicCms(env)
+    if (cms !== null) return new Response(renderSitemap(cms.presentation.pages), { headers })
   }
 
-  const canonicalPath = pathname.endsWith('.html') ? pathname.slice(0, -'.html'.length) : undefined
-  if (canonicalPath !== undefined && Object.hasOwn(PUBLIC_FILE_ALIASES, canonicalPath)) {
-    return redirectTo(url, canonicalPath)
+  if (pathname === SECURITY_TXT_PATH && getOrHead) {
+    if (request.method === 'HEAD') {
+      return new Response(null, { headers: ownHeaders(SECURITY_TXT_HEADERS) })
+    }
+    const discovery = await loadDiscovery(env)
+    return new Response(issueSecurityTxt(securityContact(discovery?.business.email ?? null)), {
+      headers: ownHeaders(discovery === null ? UNREAD_SECURITY_TXT_HEADERS : SECURITY_TXT_HEADERS),
+    })
   }
 
-  if (pathname === '/index.html') return redirectTo(url, '/')
-
-  if (NATIVE_PUBLIC_PATHS.includes(pathname) && getOrHead) {
+  const nativePath = nativePublicPath(pathname)
+  if (nativePath !== null && getOrHead) {
     // Native pages already render their CMS document in App. Parsing and embedding the entire
     // editor tree here duplicated that work and exhausted the production 10ms CPU budget.
-    const [asset, metadata, discovery] = await Promise.all([
+    const [asset, metadata, homeMetadata, discovery] = await Promise.all([
       serveAsset(request, env, '/index.html', true),
-      nativeMetadata(env, pathname, lang),
+      nativeMetadata(env, nativePath, lang),
+      nativePath === '/' ? null : nativeMetadata(env, '/', lang),
       loadDiscovery(env),
     ])
-    let body = await asset.text()
-    if (discovery || pathname === '/' || pathname === '/about')
-      body = renderHomepageMetadata(
-        body,
-        discovery ?? { business: DEFAULT_BUSINESS, facts: EMPTY_BUSINESS_FACTS },
-        pathname === '/' || pathname === '/about' ? pathname : null,
-      )
-    if (metadata) {
-      const business = discovery?.business ?? DEFAULT_BUSINESS
-      const metadataTitle =
-        pathname === '/' && !metadata.title.toLowerCase().includes('barbershop')
-          ? business.name + ' – Barbershop i ' + business.city + ' | ' + metadata.title
-          : metadata.title
-      for (const id of ['business-og-title', 'business-twitter-title'])
-        body = replaceMetaContent(body, id, metadataTitle)
-      body = withDescription(body, metadata.description)
-      // Last: the title keeps quotes, so a page title can name the ids looked up above.
-      body = replaceElementText(body, 'business-title', metadataTitle)
-    }
-    // The booking view paints the panel surface on phones too; the shell pre-paints it (index.html).
-    const view = pathname === '/booking' ? ' data-knc-view="booking"' : ''
-    // The app reads this revision and asks the edge for that revision's immutable presentation.
-    const revision =
-      metadata === null || metadata.revision === null
-        ? ''
-        : ` ${CMS_REVISION_ATTRIBUTE}="${metadata.revision}"`
-    body = body.replace(
-      /<html\b[^>]*lang=(['"])[^'"]*\1/i,
-      `<html lang="${lang}"${view}${revision}`,
-    )
-    body = body.replace(
-      /(<meta\b[^>]*property="og:locale"[^>]*content=")[^"]*(")/i,
-      `$1${lang === 'en' ? 'en_US' : 'sv_SE'}$2`,
-    )
-    body = body.replace(
-      /(<meta\b[^>]*property="og:locale:alternate"[^>]*content=")[^"]*(")/i,
-      `$1${lang === 'en' ? 'sv_SE' : 'en_US'}$2`,
-    )
-    body = body.replace(
-      /(<link\b[^>]*rel="canonical"[^>]*href=")[^"]*(")/i,
-      `$1${SITE_URL}${pathname}$2`,
+    const resolved = discovery ?? { business: DEFAULT_BUSINESS, facts: EMPTY_BUSINESS_FACTS }
+    const identity = nativeIdentity(nativePath)
+    const body = renderHomepageMetadata(
+      await asset.text(),
+      resolved,
+      nativePath,
+      lang,
+      {
+        title: nativePageTitle(
+          nativePath,
+          lang,
+          resolved.business,
+          metadata?.title ?? null,
+          homeMetadata?.title ?? null,
+        ),
+        description: nativePageDescription(
+          nativePath,
+          lang,
+          resolved.business,
+          metadata?.description ?? null,
+        ),
+      },
+      metadata?.revision ?? null,
     )
     const headers = renderedHeaders(asset)
+    if (identity.kind === 'account') headers.set('X-Robots-Tag', 'noindex')
     if (informationPath !== null) {
       headers.set('Content-Type', 'text/html; charset=utf-8')
       varyAccept(headers)
@@ -1237,18 +1692,18 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
     (dynamicLegal || dynamicContact) && request.method === 'GET' ? loadDiscovery(env) : null
   if (
     getOrHead &&
-    isCmsPagePath(cleanPathname) &&
+    isCmsPagePath(pathname) &&
     !isPrivatePath(pathname) &&
     pathname !== '/google-calendar'
   ) {
     const published = await publishedCmsPage(
       env,
-      cleanPathname,
+      pathname,
       lang,
       request.method === 'HEAD' ? 'HEAD' : 'GET',
     )
     if (published !== null) {
-      const informationPage = INFORMATION_PAGE_PATHS.includes(cleanPathname)
+      const informationPage = INFORMATION_PAGE_PATHS.includes(pathname)
       const [index, discovery, baseCss] = await Promise.all([
         serveAsset(request, env, '/index.html', true),
         published.read === 'exists' ? null : (informationDiscovery ?? loadDiscovery(env)),
@@ -1269,30 +1724,38 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
       if (published.read === 'exists') return new Response(null, { status: index.status, headers })
       const { cms, page: cmsPage } = published
       const mode = requestedCmsMode(url.searchParams.get('mode'))
-      const canonicalUrl = `${SITE_URL}${cmsPage.path}`
+      const identity = cmsPageIdentity(cmsPage)
+      const legalPath =
+        cmsPage.path === '/privacy' || cmsPage.path === '/terms' ? cmsPage.path : null
+      const business = discovery?.business ?? DEFAULT_BUSINESS
       // Fill only the authored fragment. The SPA shell must never be parsed or reserialised here.
       const page =
         cmsPage.path === '/contact'
-          ? renderContactPage(
-              cmsPage,
+          ? withDefaultDescription(
+              renderContactPage(cmsPage, lang, business, discovery?.facts ?? EMPTY_BUSINESS_FACTS),
               lang,
-              discovery?.business ?? DEFAULT_BUSINESS,
-              discovery?.facts ?? EMPTY_BUSINESS_FACTS,
+              contactDefaults(business, lang).description,
             )
-          : (cmsPage.path === '/privacy' || cmsPage.path === '/terms') && discovery
-            ? renderLegalPage(cmsPage, lang, discovery.business)
+          : legalPath !== null
+            ? withDefaultDescription(
+                discovery ? renderLegalPage(cmsPage, lang, discovery.business) : cmsPage,
+                lang,
+                legalDescription(legalPath, business, lang),
+              )
             : cmsPage
       const body = renderCmsPage(
         await index.text(),
         page,
         lang,
         mode,
-        canonicalUrl,
+        identity.kind === 'translated' ? identity.urls[lang] : identity.canonical,
         cmsFontFaceCss(cms.presentation.fonts, env.SUPABASE_URL ?? ''),
         cms.presentation,
         baseCss,
-        discovery?.business ?? DEFAULT_BUSINESS,
+        business,
         discovery,
+        identity.kind === 'translated' ? identity.urls : null,
+        informationPage ? 'root' : 'site-content',
       )
       return new Response(body, { status: index.status, headers })
     }
@@ -1311,7 +1774,7 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
         request.method === 'HEAD'
           ? null
           : renderContactMetadata(
-              await asset.text(),
+              withFallbackSkipLink(await asset.text(), SKIP_LABEL.sv),
               discovery?.business ?? DEFAULT_BUSINESS,
               discovery?.facts ?? EMPTY_BUSINESS_FACTS,
             ),
@@ -1324,11 +1787,16 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
       return new Response(
         request.method === 'HEAD'
           ? null
-          : renderLegalMetadata(await asset.text(), pathname, discovery?.business ?? null),
+          : renderLegalMetadata(
+              withFallbackSkipLink(await asset.text(), BILINGUAL_SKIP_LABEL),
+              pathname,
+              discovery?.business ?? null,
+            ),
         { status: asset.status, headers },
       )
     }
-    return isNoIndexPath(pathname) ? withNoIndex(asset) : asset
+    const answer = asset.status === 405 ? withAllowedMethods(asset) : asset
+    return isNoIndexPath(pathname) ? withNoIndex(answer) : answer
   }
 
   if (getOrHead) {
@@ -1373,38 +1841,158 @@ function isPublicContentRequest(request: Request, url: URL): boolean {
     ((NATIVE_PUBLIC_PATHS.includes(url.pathname) &&
       preferredRepresentation(request.headers.get('Accept')) === 'html') ||
       url.pathname === '/llms.txt' ||
+      url.pathname === SITEMAP_PATH ||
+      url.pathname === SECURITY_TXT_PATH ||
       (url.pathname === PRESENTATION_PATH && requestedPresentationRevision(url) !== null))
   )
 }
 
+/** A failed renderer's stand-in; it reads nothing from the database. */
+type PublicContentFallback =
+  | { readonly kind: 'shell'; readonly path: NativePublicPath }
+  | { readonly kind: 'sitemap' }
+  | { readonly kind: 'security-txt' }
+
+function publicContentFallback(pathname: string): PublicContentFallback | null {
+  const path = nativePublicPath(pathname)
+  if (path !== null) return { kind: 'shell', path }
+  if (pathname === SITEMAP_PATH) return { kind: 'sitemap' }
+  return pathname === SECURITY_TXT_PATH ? { kind: 'security-txt' } : null
+}
+
+export type Maintenance = 'on' | 'off'
+
+export function maintenanceMode(value: string | undefined): Maintenance {
+  return value === 'on' ? 'on' : 'off'
+}
+
+interface Outage {
+  readonly status: 500 | 503
+  readonly document: OutageDocument
+  readonly code: GatewayErrorCode
+  readonly headers: Readonly<Record<string, string>>
+  readonly text: string
+}
+
+const OUTAGES = {
+  failure: {
+    status: 500,
+    document: FAILURE_DOCUMENT,
+    code: 'system',
+    headers: {},
+    text: 'Något gick fel. Försök igen om en stund.\nSomething went wrong. Please try again shortly.\n',
+  },
+  // The closure's length is unknown: ask clients and crawlers back in an hour.
+  maintenance: {
+    status: 503,
+    document: MAINTENANCE_DOCUMENT,
+    code: 'maintenance',
+    headers: { 'Retry-After': '3600' },
+    text: 'Webbplatsen är tillfälligt stängd för underhåll. Försök igen om en stund.\nThe site is temporarily down for maintenance. Please try again shortly.\n',
+  },
+} as const satisfies Readonly<Record<string, Outage>>
+
+async function deployedDocument(
+  request: Request,
+  env: Env,
+  path: OutageDocument,
+): Promise<Response | null> {
+  try {
+    const page = await env.ASSETS.fetch(new URL(path, request.url))
+    return page.ok ? page : null
+  } catch {
+    return null
+  }
+}
+
+async function outageResponse(
+  request: Request,
+  env: Env,
+  kind: keyof typeof OUTAGES,
+): Promise<Response> {
+  const outage: Outage = OUTAGES[kind]
+  const { pathname } = new URL(request.url)
+  if (pathname === PRESENTATION_PATH) {
+    return presentationUnavailable(request.method, outage.status, outage.headers)
+  }
+  if (pathname.startsWith('/api/')) return gatewayError(outage.code, outage.status, outage.headers)
+  const page = await deployedDocument(request, env, outage.document)
+  const headers = ownHeaders(page === null ? undefined : renderedHeaders(page))
+  headers.set('Content-Type', `${page === null ? 'text/plain' : 'text/html'}; charset=utf-8`)
+  headers.set('Cache-Control', 'no-store')
+  headers.set('X-Robots-Tag', 'noindex, nofollow')
+  for (const [name, value] of Object.entries(outage.headers)) headers.set(name, value)
+  const body = request.method === 'HEAD' ? null : page === null ? outage.text : page.body
+  return new Response(body, { status: outage.status, headers })
+}
+
+async function respond(request: Request, env: Env, context: WorkerContext): Promise<Response> {
+  if (maintenanceMode(env.MAINTENANCE) === 'on') return outageResponse(request, env, 'maintenance')
+  const url = new URL(request.url)
+  const getOrHead = request.method === 'GET' || request.method === 'HEAD'
+
+  const customerAccessToken = customerAccessTokenFromPath(url.pathname)
+  if (customerAccessToken !== null && getOrHead) {
+    return customerLinkRedirect(url, customerAccessToken)
+  }
+
+  // /api/ paths have one spelling each: only their host is corrected.
+  const pathname = url.pathname.startsWith('/api/')
+    ? url.pathname
+    : await canonicalPath(env, url.pathname, getOrHead)
+  if (pathname !== url.pathname || url.hostname === WWW_HOST) return redirectTo(url, pathname)
+
+  if (url.pathname === '/api/customer-bookings') return customerGateway(request, env)
+  if (url.pathname === '/api/bookings') return customerGateway(request, env, 'submit-booking')
+
+  if (url.hostname === CANONICAL_HOST && isPublicContentRequest(request, url)) {
+    const fallback = publicContentFallback(url.pathname)
+    try {
+      const response = await context.exports.PublicContent.fetch(request)
+      if (response.status < 500 || fallback === null) return response
+    } catch (error) {
+      if (fallback === null) throw error
+    }
+    // Metadata must never take the interactive site down. A failed/CPU-limited renderer runs
+    // in a separate entrypoint; this tiny fallback still loads the same app and published CMS.
+    switch (fallback.kind) {
+      case 'shell': {
+        const asset = await serveAsset(request, env, '/index.html', true)
+        // The deployed shell holds no owner text: nativeShellHead may edit all of it.
+        const headers = renderedHeaders(asset)
+        if (nativeIdentity(fallback.path).kind === 'account') headers.set('X-Robots-Tag', 'noindex')
+        const lang: CmsLang = url.searchParams.get('lang') === 'en' ? 'en' : 'sv'
+        return new Response(nativeShellHead(await asset.text(), fallback.path, lang, null), {
+          status: asset.status,
+          headers,
+        })
+      }
+      case 'sitemap': {
+        const asset = await serveAsset(request, env, SITEMAP_PATH, true)
+        const headers = new Headers(asset.headers)
+        headers.set('Cache-Control', 'no-store')
+        return new Response(asset.body, { status: asset.status, headers })
+      }
+      case 'security-txt':
+        return new Response(issueSecurityTxt({ kind: 'default' }), {
+          headers: ownHeaders(UNREAD_SECURITY_TXT_HEADERS),
+        })
+    }
+  }
+
+  const response = await fetchPublicContent(request, env)
+  return /^\/admin\/cms(?:\/|$)/.test(url.pathname) ? cmsFrameResponse(response, false) : response
+}
+
 export default {
   async fetch(request: Request, env: Env, context: WorkerContext): Promise<Response> {
-    const url = new URL(request.url)
-
-    if (url.hostname === WWW_HOST) {
-      url.hostname = CANONICAL_HOST
-      return new Response(null, { status: 308, headers: { Location: url.toString() } })
+    try {
+      return await respond(request, env, context)
+    } catch (error) {
+      // A caught error reaches no log unless it is written here.
+      // eslint-disable-next-line no-console
+      console.error(error)
+      return outageResponse(request, env, 'failure')
     }
-
-    if (url.pathname === '/api/customer-bookings') return customerGateway(request, env)
-    if (url.pathname === '/api/bookings') return customerGateway(request, env, 'submit-booking')
-
-    if (url.hostname === CANONICAL_HOST && isPublicContentRequest(request, url)) {
-      try {
-        const response = await context.exports.PublicContent.fetch(request)
-        if (response.status < 500 || !NATIVE_PUBLIC_PATHS.includes(url.pathname)) return response
-      } catch (error) {
-        if (!NATIVE_PUBLIC_PATHS.includes(url.pathname)) throw error
-      }
-      // Metadata must never take the interactive site down. A failed/CPU-limited renderer runs
-      // in a separate entrypoint; this tiny fallback still loads the same app and published CMS.
-      const asset = await serveAsset(request, env, '/index.html', true)
-      const headers = new Headers(asset.headers)
-      headers.set('Cache-Control', 'no-store')
-      return new Response(asset.body, { status: asset.status, headers })
-    }
-
-    const response = await fetchPublicContent(request, env)
-    return /^\/admin\/cms(?:\/|$)/.test(url.pathname) ? cmsFrameResponse(response, false) : response
   },
 } satisfies { fetch(request: Request, env: Env, context: WorkerContext): Promise<Response> }

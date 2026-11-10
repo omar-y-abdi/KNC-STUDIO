@@ -165,6 +165,7 @@ test('cms-scenes', async ({ page, context, browserName }) => {
       const { MyBookingsDialog } =
         await import('/modules/public-web/src/mybookings/MyBookingsDialog.tsx')
       const { previewCustomerPort } = await import('/modules/public-web/src/cms/PreviewPorts.ts')
+      const { DEFAULT_BUSINESS } = await import('/modules/public-web/src/config.ts')
       const port = {
         ...previewCustomerPort,
         list: async () => ({
@@ -193,7 +194,13 @@ test('cms-scenes', async ({ page, context, browserName }) => {
         h(
           NativeSiteProvider,
           { presentation },
-          h(MyBookingsDialog, { mode: 'light', lang: 'sv', port, onClose: () => undefined }),
+          h(MyBookingsDialog, {
+            mode: 'light',
+            lang: 'sv',
+            port,
+            business: DEFAULT_BUSINESS,
+            onClose: () => undefined,
+          }),
         ),
         globalThis.document.getElementById('root'),
       )
@@ -216,7 +223,7 @@ test('cms-scenes', async ({ page, context, browserName }) => {
       const barber = { id: 'runtime-barber', name: 'Runtime barber', ig: 'runtime' }
       const service = { id: 'runtime-service', name: 'Runtime haircut', price: 420, dur: 45 }
       const port = {
-        availability: async () => ['10:30'],
+        availability: async () => ({ ok: true, times: ['10:30'] }),
         submit: async (booking) => ({
           ok: true,
           booking,

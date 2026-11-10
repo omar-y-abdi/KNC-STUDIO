@@ -15,9 +15,16 @@ export function mountCmsRuntime(root: HTMLElement): void {
   const renderIslands = (mode: Mode): void => {
     if (about) render(<AboutSection mode={mode} lang={lang} />, about)
     if (booking) render(<BookingFlow mode={mode} defaultLang={lang} />, booking)
+    // No loaded site settings here, and the shipped defaults are not the owner's: with `unknown`
+    // the dialog always offers cancel and lets the server decide.
     if (myBookings)
       render(
-        <MyBookingsDialog mode={mode} lang={lang} onClose={() => window.location.assign('/')} />,
+        <MyBookingsDialog
+          mode={mode}
+          lang={lang}
+          business="unknown"
+          onClose={() => window.location.assign('/')}
+        />,
         myBookings,
       )
   }

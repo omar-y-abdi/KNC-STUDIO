@@ -4,19 +4,26 @@
 //
 // Behaviour added:
 //  - role="dialog", aria-modal, aria-labelledby (the title element id)
-//  - focus the dialog on open; restore focus to the previously-focused trigger on close
-//  - focus trap: Tab / Shift+Tab cycle within the dialog
+//  - focus the dialog on open; restore focus to the previously-focused trigger on close (in the
+//    public shell, when it is gone: the dialog below, else the main landmark)
+//  - focus trap: Tab / Shift+Tab cycle within the dialog; the browser's own Tab enters an embedded
+//    widget at either end (the verification challenge)
+//  - focus outside the topmost open dialog returns to it. Not `inert`: the staff pages' elements
+//    carry an `inert` their renderer owns. (These three: ui/dialogFocus.ts.)
 //  - Escape closes (in addition to the existing backdrop click-to-close)
 //  - prefers-reduced-motion: gate the entry animation only (settled appearance unchanged)
 
 import type { ComponentChildren, JSX } from 'preact'
 import { useLayoutEffect, useRef } from 'preact/hooks'
-import { useNativeSurface } from '../cms/NativeSurface'
+import { useNativeSource, useNativeSurface } from '../cms/NativeSurface'
 import type { CmsLang, CmsMode } from '@bladeblend/content-contracts/cms'
+import {
+  focusIntoCard,
+  holdKeyboardFocus,
+  settleFocusAfterClose,
+  tabLeavesCard,
+} from './dialogFocus'
 import { prefersReducedMotion } from './reducedMotion'
-
-const FOCUSABLE =
-  'a[href],button:not([disabled]),textarea,input,select,[tabindex]:not([tabindex="-1"])'
 
 export interface DialogProps {
   readonly cms?: { surface: string; lang: CmsLang; mode: CmsMode }
@@ -44,6 +51,8 @@ export interface DialogProps {
 export function Dialog(props: DialogProps): JSX.Element {
   const cardRef = useRef<HTMLDivElement>(null)
   const previouslyFocused = useRef<HTMLElement | null>(null)
+  // A Studio source or capture frame shows the dialog as a scene: nothing there holds the keyboard.
+  const nativeSource = useNativeSource()
 
   // Focus in the opening commit: a deferred effect runs a frame after the dialog is interactive and
   // would pull focus out of a field the customer already entered, dropping what they type next.
@@ -52,9 +61,15 @@ export function Dialog(props: DialogProps): JSX.Element {
       document.activeElement instanceof HTMLElement ? document.activeElement : null
     const card = cardRef.current
     if (card) card.focus()
+    const release = card && !nativeSource ? holdKeyboardFocus(card) : null
     return () => {
+      // Released first: the restore below moves focus out of this dialog.
+      release?.()
       const prev = previouslyFocused.current
       if (prev && typeof prev.focus === 'function') prev.focus()
+      // Once the closing tree has left the document, when it is known whether the restore held (a
+      // dialog closed with the one it opened from loses it). Outside the public shell: nothing.
+      queueMicrotask(() => settleFocusAfterClose(prev))
     }
   }, [])
 
@@ -66,26 +81,9 @@ export function Dialog(props: DialogProps): JSX.Element {
     }
     if (e.key !== 'Tab') return
     const card = cardRef.current
-    if (!card) return
-    const nodes = card.querySelectorAll<HTMLElement>(FOCUSABLE)
-    if (nodes.length === 0) {
-      e.preventDefault()
-      card.focus()
-      return
-    }
-    const first = nodes[0]
-    const last = nodes[nodes.length - 1]
-    if (!first || !last) return
-    const active = document.activeElement
-    if (e.shiftKey) {
-      if (active === first || active === card) {
-        e.preventDefault()
-        last.focus()
-      }
-    } else if (active === last) {
-      e.preventDefault()
-      first.focus()
-    }
+    if (!card || !tabLeavesCard(card, e.shiftKey)) return
+    e.preventDefault()
+    focusIntoCard(card, e.shiftKey)
   }
 
   // Reduced motion: drop only the entry animation; the settled card looks identical.
