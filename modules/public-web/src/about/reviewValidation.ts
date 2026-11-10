@@ -50,15 +50,7 @@ export function parseReview(input: {
   const rating = input.rating
   const text = parseReviewText(input.text)
 
-  const fields: ReviewFieldErrors = {
-    phone: !phone.ok,
-    rating: rating === null,
-    text: !text.ok,
-  }
-  if (fields.phone || fields.rating || fields.text) {
-    return { ok: false, fields }
-  }
-  // All three guaranteed valid here; re-narrow for the type system (no `!`, no casts of unions).
-  if (!phone.ok || rating === null || !text.ok) return { ok: false, fields }
+  if (!phone.ok || rating === null || !text.ok)
+    return { ok: false, fields: { phone: !phone.ok, rating: rating === null, text: !text.ok } }
   return { ok: true, value: { phone: phone.value, rating, text: text.value } }
 }
