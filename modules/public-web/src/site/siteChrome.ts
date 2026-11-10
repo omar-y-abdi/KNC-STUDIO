@@ -10,6 +10,7 @@ import {
   BUSINESS_SETTING_KEYS,
   DEFAULT_BUSINESS,
   EMPTY_BUSINESS_FACTS,
+  textOrDefault,
   type BusinessDiscoveryFacts,
   type BusinessSettings,
 } from './business'
@@ -19,6 +20,7 @@ export {
   formatBusinessAddress,
   parseCancellationPolicyHours,
   resolveBusinessSettings,
+  textOrDefault,
   type BusinessSettings,
 } from './business'
 
@@ -94,11 +96,6 @@ export type SiteTextKey = (typeof SITE_TEXT_KEYS)[number]
 /** The DB-editable homepage strings (partial: an unset key keeps its i18n default). Mirrors
  * `AboutOverlay` — present-or-absent, so it composes under `exactOptionalPropertyTypes`. */
 export type SiteText = Readonly<Partial<Record<SiteTextKey, string>>>
-
-/** Use the i18n default until an owner has entered non-blank replacement copy. */
-export function textOrDefault(value: string | undefined, fallback: string): string {
-  return value?.trim() === '' || value === undefined ? fallback : value
-}
 
 export type ResolvedSiteText = Readonly<Record<SiteTextKey, string>>
 

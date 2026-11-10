@@ -8,19 +8,7 @@
 // Run locally: npx supabase functions serve calendar-disconnect --env-file supabase/functions/.env
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
-
-const corsHeaders: Record<string, string> = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
-
-function json(body: unknown, status: number): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, 'content-type': 'application/json' },
-  })
-}
+import { callerBarberId, corsHeaders, json } from '../_shared/calendarCaller.ts'
 
 Deno.serve(async (req: Request): Promise<Response> => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
@@ -34,26 +22,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
   const service = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } })
 
-  const authHeader = req.headers.get('authorization') ?? ''
-  const jwt = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : ''
-  if (!jwt) return json({ ok: false, error: 'unauthorized' }, 401)
-
-  const { data: callerData, error: callerError } = await service.auth.getUser(jwt)
-  if (callerError || callerData.user === null)
-    return json({ ok: false, error: 'unauthorized' }, 401)
-
-  const { data: profile, error: profileError } = await service
-    .from('profiles')
-    .select('role, barber_id, account_enabled')
-    .eq('id', callerData.user.id)
-    .single()
-  if (profileError || profile === null) return json({ ok: false, error: 'unauthorized' }, 401)
-
-  const barberId =
-    profile.role === 'barber' && profile.account_enabled === true ? profile.barber_id : null
-  if (typeof barberId !== 'string' || barberId === '') {
-    return json({ ok: false, error: 'forbidden' }, 403)
-  }
+  const barberId = await callerBarberId(req, service)
+  if (barberId instanceof Response) return barberId
 
   const { data: result, error: prepareError } = await service.rpc('prepare_calendar_disconnect', {
     p_barber_id: barberId,

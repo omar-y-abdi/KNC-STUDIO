@@ -37,15 +37,17 @@ export function readCanvasCss(editor: Editor): string {
   )
 }
 
-function canvasRules(editor: Editor): CssRule[] {
+export function canvasRules(editor: Editor): CssRule[] {
   // Keep every unused source rule, but selection can create empty component rules.
-  // Empty layers live inside a nonempty envelope and remain in the export.
   return editor.Css.getAll().models.filter(
     (rule) => !rule.isNested() && Object.keys(rule.get('style') ?? {}).length > 0,
   )
 }
 
 const canvasStyleOptions = { withNested: true, allowEmpty: true }
+/** Keyframe blocks hold frames, not element selectors. */
+export const isKeyframes = (node: Atrule): boolean =>
+  ['keyframes', '-webkit-keyframes'].includes(ident.decode(node.name).toLowerCase())
 const canvasStyleProjectors = new WeakMap<Editor, (css: string) => string>()
 
 /** Apply an editor-only style projection to DOM paint, never to model or export CSS. */
@@ -63,9 +65,7 @@ function canvasStyleCss(
       if (typeof value === 'object' && !Array.isArray(value)) {
         if (key.startsWith('@')) {
           const group = parse(`${key}{}`, { context: 'atrule' })
-          const frames =
-            group.type === 'Atrule' &&
-            ['keyframes', '-webkit-keyframes'].includes(ident.decode(group.name).toLowerCase())
+          const frames = group.type === 'Atrule' && isKeyframes(group)
           return `${key}{${canvasStyleCss(value, frames ? false : withinRule, important)}}`
         }
         if (!withinRule && !key.startsWith('& '))
@@ -105,7 +105,7 @@ export function readCanvasRuleCss(rule: CssRule, dimensions?: StyleProps): strin
     const atRule = rule.getAtRule()
     return atRule ? `${atRule}{${css}}` : css
   }
-  // These root envelopes preserve anonymous layer identity and complete keyframes.
+  // These root envelopes preserve nested conditions and complete keyframes.
   // Their frame keys need not fit GrapesJS's punctuation-only nested-key heuristic.
   if (rule.get('singleAtRule') && !rule.getAtRule() && !rule.selectorsToString())
     return canvasStyleCss(rule.toJSON().style ?? {})
@@ -115,8 +115,8 @@ export function readCanvasRuleCss(rule: CssRule, dimensions?: StyleProps): strin
   })
 }
 
-/** GrapesJS defaults both nested and empty blocks off. Layer ordering requires the
- * empty blocks too; keep canvas mounting and every export on the same options. */
+/** GrapesJS defaults both nested and empty blocks off. Keep canvas mounting and every export
+ * on the same options. */
 export function connectCanvasStyles(editor: Editor, project?: (css: string) => string): () => void {
   if (project) canvasStyleProjectors.set(editor, project)
   editor.getConfig().optsCss = { ...editor.getConfig().optsCss, ...canvasStyleOptions }
@@ -177,7 +177,8 @@ export function connectCanvasStyles(editor: Editor, project?: (css: string) => s
   }
 }
 
-const attributes = [
+/** The attributes a source baseline records, and an owner edit can therefore override. */
+export const baselineAttributes = [
   'class',
   'title',
   'href',
@@ -198,6 +199,19 @@ function readBaseline(element: Element, mode: CmsMode): Record<string, string> {
   if (!value || typeof value !== 'object' || Array.isArray(value))
     throw new Error('Ogiltig källmetadata. Läs in den befintliga sidan igen.')
   return value as Record<string, string>
+}
+
+/** An attribute that still holds its `from` baseline takes the `to` baseline's value. */
+function swapBaselineAttributes(
+  element: Element,
+  from: Record<string, string>,
+  to: Record<string, string>,
+): void {
+  for (const name of baselineAttributes) {
+    if (element.getAttribute(name) !== (from[name] ?? null)) continue
+    if (to[name] === undefined) element.removeAttribute(name)
+    else element.setAttribute(name, to[name])
+  }
 }
 
 interface NativeStyle {
@@ -318,11 +332,7 @@ export function nativeCanvasTree(variant: PageVariant, mode: CmsMode): CanvasTre
   for (const element of doc.querySelectorAll('[data-knc-baseline]')) {
     const light = readBaseline(element, 'light')
     const current = mode === 'dark' ? readBaseline(element, 'dark') : light
-    for (const name of attributes) {
-      if (element.getAttribute(name) !== (light[name] ?? null)) continue
-      if (current[name] === undefined) element.removeAttribute(name)
-      else element.setAttribute(name, current[name])
-    }
+    swapBaselineAttributes(element, light, current)
     const style =
       element.getAttribute(`data-knc-${mode}`) ?? element.getAttribute('data-knc-light') ?? ''
     const native = nativeStyle(element, mode, styles)
@@ -377,11 +387,7 @@ export function exportNativeCanvas(
     if (element.id) originalStyles.set(element.id, native.style)
     const light = readBaseline(element, 'light')
     const current = mode === 'dark' ? readBaseline(element, 'dark') : light
-    for (const name of attributes) {
-      if (element.getAttribute(name) !== (current[name] ?? null)) continue
-      if (light[name] === undefined) element.removeAttribute(name)
-      else element.setAttribute(name, light[name])
-    }
+    swapBaselineAttributes(element, current, light)
     element.removeAttribute('style')
   }
   return {
@@ -395,7 +401,7 @@ interface CanvasStyle {
 }
 
 /** JS style objects need distinct keys where CSS permits repeated blocks. Whitespace before
- * the opening brace/colon keeps the CSS identical, including separate anonymous layers. */
+ * the opening brace/colon keeps the CSS identical. */
 function appendCanvasStyle(style: CanvasStyle, property: string, value: CanvasStyle[string]): void {
   let key = property
   const nested = typeof value === 'object' && !Array.isArray(value)
@@ -416,33 +422,6 @@ function appendCanvasStyle(style: CanvasStyle, property: string, value: CanvasSt
   Object.defineProperty(style, key, { value, enumerable: true, configurable: true, writable: true })
 }
 
-function appendLayerOrder(style: CanvasStyle, node: Atrule): void {
-  const list = node.prelude?.type === 'AtrulePrelude' ? node.prelude.children.first : null
-  // css-tree's installed runtime supports LayerList/Layer; its type package is older.
-  if (!list || String(list.type) !== 'LayerList' || !('children' in list) || !list.children)
-    throw new Error('Ordningen på sidans CSS-lager kunde inte bevaras.')
-  list.children.forEach((layer) => {
-    appendCanvasStyle(style, `@layer ${generate(layer)}`, Object.create(null))
-  })
-}
-
-/** Parse a stored sheet with each layer statement in the form the canvas writes it: the import
- * orders a statement's layers with an empty block each, in its place, and the export writes those
- * blocks. Ownership compares stored items with exported ones in this form. */
-export function parseLayerBlocks(css: string): StyleSheet {
-  const sheet = parseCanvasSheet(css)
-  walk(sheet, {
-    visit: 'Atrule',
-    enter(node, item, list) {
-      if (node.block || ident.decode(node.name).toLowerCase() !== 'layer' || !item || !list) return
-      const order: CanvasStyle = Object.create(null)
-      appendLayerOrder(order, node)
-      list.replace(item, parseCanvasSheet(canvasStyleCss(order)).children)
-    },
-  })
-  return sheet
-}
-
 function canvasNestedStyle(
   block: Block,
   withinRule = true,
@@ -457,13 +436,6 @@ function canvasNestedStyle(
         node.property,
         generate(node.value) + (node.important ? ' !important' : ''),
       )
-    } else if (
-      node.type === 'Atrule' &&
-      ident.decode(node.name).toLowerCase() === 'layer' &&
-      !node.block
-    ) {
-      // Ordered empty named blocks establish exactly the same layer ordering.
-      appendLayerOrder(style, node)
     } else if (node.type === 'Rule' || (node.type === 'Atrule' && node.block)) {
       if (!node.block) throw new Error('Ett nästlat CSS-block saknas.')
       let key =
@@ -472,30 +444,17 @@ function canvasNestedStyle(
           : `@${node.name}${node.prelude ? ` ${generate(node.prelude)}` : ''}`
       // GrapesJS recognizes nested style keys by punctuation. An explicit nesting
       // selector preserves the descendant meaning of a bare type selector as well.
-      if (node.type === 'Rule' && !envelope && !keyframes && !/^[&.#:[>+~*]/.test(key)) {
-        if (withinRule) key = `& ${key}`
-        else if (node.prelude.type === 'SelectorList')
-          key = node.prelude.children
-            .toArray()
-            .map((branch) => `:is(${generate(branch)})`)
-            .join(',')
-        else throw new Error('En CSS-selektor i ett lager kunde inte bevaras.')
-      }
+      if (node.type === 'Rule' && !envelope && !keyframes && !/^[&.#:[>+~*]/.test(key))
+        key = `& ${key}`
       // GJS renders once before css:mount:before. Prefix every absolute selector/frame
       // key so it recognizes a nested model instead of coercing an object declaration.
       // The envelope serializer removes exactly this prefix in the same context.
       if (node.type === 'Rule' && envelope && (!withinRule || keyframes)) key = `& ${key}`
       if (
         node.type === 'Atrule' &&
-        ![
-          'media',
-          'supports',
-          'container',
-          'layer',
-          'font-face',
-          'keyframes',
-          '-webkit-keyframes',
-        ].includes(ident.decode(node.name).toLowerCase())
+        !['media', 'supports', 'container', 'font-face', 'keyframes', '-webkit-keyframes'].includes(
+          ident.decode(node.name).toLowerCase(),
+        )
       )
         throw new Error(`Kan inte bevara nästlad @${node.name} i sidans CSS.`)
       appendCanvasStyle(
@@ -504,14 +463,44 @@ function canvasNestedStyle(
         canvasNestedStyle(
           node.block,
           node.type === 'Rule' || withinRule,
-          node.type === 'Atrule' &&
-            ['keyframes', '-webkit-keyframes'].includes(ident.decode(node.name).toLowerCase()),
+          node.type === 'Atrule' && isKeyframes(node),
           envelope,
         ),
       )
     } else throw new Error('Sidans CSS innehåller ett block som inte kan bevaras.')
   })
   return style
+}
+
+/** The canvas keeps neither a cascade layer nor a selector function with more than one
+ * alternative, so a page that stores either is not edited. */
+export const unkeptSyntax =
+  'Sidans CSS innehåller syntax som inte kan bevaras. Källan har bevarats.'
+
+function isLayer(node: CssNode): boolean {
+  return node.type === 'Atrule' && ident.decode(node.name).toLowerCase() === 'layer'
+}
+
+/** A selector function that holds more than one alternative, as in `:is(a,b)`. */
+function isAlternativeList(node: CssNode): boolean {
+  if (node.type !== 'PseudoClassSelector') return false
+  const list = node.children?.first
+  return (
+    list?.type === 'SelectorList' &&
+    list.children.size > 1 &&
+    ['is', 'where', 'matches', 'not'].includes(ident.decode(node.name).toLowerCase())
+  )
+}
+
+/** Whether a stored sheet holds a cascade layer. Only the text `@layer`, or an escape that can
+ * spell it, parses to one. */
+export function storesLayer(css: string): boolean {
+  if (!/@layer|\\/i.test(css)) return false
+  let found = false
+  walk(parseCanvasSheet(css), (node) => {
+    if (isLayer(node)) found = true
+  })
+  return found
 }
 
 /** Preserve declarations that CSSOM expands to empty longhands (notably var/env shorthands).
@@ -527,25 +516,16 @@ export function parseCanvasCss(
   // Masking declaration names is destructive; retain the prepared tree for deferred previews.
   const tree = typeof css === 'string' ? parseCanvasSheet(css) : clone(css)
   walk(tree, (node) => {
-    if (node.type === 'Raw')
-      throw new Error('Sidans CSS innehåller syntax som inte kan bevaras. Källan har bevarats.')
+    if (node.type === 'Raw' || isLayer(node) || isAlternativeList(node))
+      throw new Error(unkeptSyntax)
   })
   if (tree.type === 'StyleSheet')
     tree.children.forEach((node, item) => {
-      let hasLayer = false
-      walk(node, (child) => {
-        if (child.type === 'Rule') return walk.skip
-        if (child.type === 'Atrule' && ident.decode(child.name).toLowerCase() === 'layer')
-          hasLayer = true
-        return undefined
-      })
       if (
         node.type !== 'Atrule' ||
-        (!hasLayer &&
-          // Groups inside a qualified rule are already masked below. Keeping that
-          // rule native preserves the component's editable Desktop ID style.
-          !node.block?.children.some((child) => child.type === 'Atrule') &&
-          !['keyframes', '-webkit-keyframes'].includes(ident.decode(node.name).toLowerCase()))
+        // Groups inside a qualified rule are already masked below. Keeping that
+        // rule native preserves the component's editable Desktop ID style.
+        (!node.block?.children.some((child) => child.type === 'Atrule') && !isKeyframes(node))
       )
         return
       const key = `--cms-internal-layer-${layerRoots.size}`
@@ -603,8 +583,7 @@ export function parseCanvasCss(
           declaration.important = false
         } else if (
           declaration.type === 'Rule' ||
-          (declaration.type === 'Atrule' &&
-            (declaration.block || ident.decode(declaration.name).toLowerCase() === 'layer'))
+          (declaration.type === 'Atrule' && declaration.block)
         ) {
           const nested = canvasNestedStyle({
             ...block,

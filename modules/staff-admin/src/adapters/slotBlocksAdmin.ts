@@ -6,9 +6,9 @@
 // Boundary discipline: rows Zod-parsed; failure -> AdminError; never throws to the UI.
 
 import { getAdminClient } from '../adminClient'
-import { addSlotBlockResponse, parseWith, slotBlockRows } from '../adminSchemas'
+import { addSlotBlockResponse, parseWith, slotBlockRows, type SlotBlockRow } from '../adminSchemas'
 import type { AdminBarberId, AdminResult, AvailabilityMutationOutcome, SlotBlock } from '../types'
-import { err, ok } from '../types'
+import { err, ok, outcomeError } from '../types'
 
 const READ_ERROR = 'Kunde inte läsa blockerade tider.'
 const WRITE_ERROR = 'Kunde inte spara. Försök igen.'
@@ -16,13 +16,7 @@ const WRITE_ERROR = 'Kunde inte spara. Försök igen.'
 const COLUMNS = 'id,barber_id,block_date,start_min,end_min'
 
 /** Map a parsed raw block row to the domain type. */
-function toSlotBlock(r: {
-  id: string
-  barber_id: string
-  block_date: string
-  start_min: number
-  end_min: number
-}): SlotBlock {
+function toSlotBlock(r: SlotBlockRow): SlotBlock {
   return {
     id: r.id,
     barberId: r.barber_id,
@@ -73,32 +67,22 @@ export async function addSlotBlock(
       p_end_min: endMin,
       p_allow_existing_bookings: allowExistingBookings,
     })
-    if (error !== null) {
-      return { kind: 'error', error: { kind: 'network', message: WRITE_ERROR } }
-    }
+    if (error !== null) return outcomeError('network', WRITE_ERROR)
     const parsed = parseWith(addSlotBlockResponse, data)
-    if (!parsed.ok) {
-      return { kind: 'error', error: { kind: 'malformed', message: WRITE_ERROR } }
-    }
+    if (!parsed.ok) return outcomeError('malformed', WRITE_ERROR)
     if (parsed.value.ok) return { kind: 'ok', value: toSlotBlock(parsed.value.row) }
     if (parsed.value.error === 'booking_conflict') {
       return { kind: 'booking_conflict', bookingIds: parsed.value.booking_ids }
     }
     if (parsed.value.error === 'forbidden') {
-      return {
-        kind: 'error',
-        error: { kind: 'forbidden', message: 'Du kan bara blockera egna tider.' },
-      }
+      return outcomeError('forbidden', 'Du kan bara blockera egna tider.')
     }
     if (parsed.value.error === 'duplicate') {
-      return {
-        kind: 'error',
-        error: { kind: 'validation', message: 'Tiden är redan blockerad.' },
-      }
+      return outcomeError('validation', 'Tiden är redan blockerad.')
     }
-    return { kind: 'error', error: { kind: 'validation', message: WRITE_ERROR } }
+    return outcomeError('validation', WRITE_ERROR)
   } catch {
-    return { kind: 'error', error: { kind: 'network', message: WRITE_ERROR } }
+    return outcomeError('network', WRITE_ERROR)
   }
 }
 

@@ -34,11 +34,6 @@ jobs:
       startup: ${{ steps.impact.outputs.startup }}
       edge-functions: ${{ steps.impact.outputs.edge-functions }}
       database-current: ${{ steps.impact.outputs.database-current }}
-      database-rollout: ${{ steps.impact.outputs.database-rollout }}
-      cms_shards: ${{ steps.impact.outputs.cms_shards }}
-      public_shards: ${{ steps.impact.outputs.public_shards }}
-      cms_matrix: ${{ steps.impact.outputs.cms_matrix }}
-      public_matrix: ${{ steps.impact.outputs.public_matrix }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -144,7 +139,7 @@ jobs:
   public-browsers:
     if: needs.format.outputs.public-browsers == 'true'
     needs: [format, build]
-    name: Public, admin and visual browsers (${{ matrix.shard }}/${{ needs.format.outputs.public_shards }})
+    name: Public, admin and visual browsers (${{ matrix.shard }}/2)
     runs-on: ubuntu-24.04
     container:
       image: mcr.microsoft.com/playwright:v1.64.1-noble
@@ -152,7 +147,8 @@ jobs:
     timeout-minutes: 15
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.format.outputs.public_matrix) }}
+      matrix:
+        shard: [1, 2]
     env:
       E2E_GROUP: public
       E2E_PUBLIC_DIST: .ci-build/public
@@ -171,9 +167,9 @@ jobs:
       - name: Verify build and discover every assigned browser case
         run: |
           node tools/ci/build-artifact.mjs verify .ci-build
-          node tools/ci/impact-plan.mjs browser public --shard=${{ matrix.shard }}/${{ needs.format.outputs.public_shards }} --list --reporter=json > .ci-expected.json
+          node tools/ci/impact-plan.mjs browser public --shard=${{ matrix.shard }}/2 --list --reporter=json > .ci-expected.json
       - name: Exercise every public, admin and visual contract
-        run: node tools/ci/impact-plan.mjs browser public --shard=${{ matrix.shard }}/${{ needs.format.outputs.public_shards }}
+        run: node tools/ci/impact-plan.mjs browser public --shard=${{ matrix.shard }}/2
       - name: Reject missing, skipped or retried outcomes and source drift
         run: |
           node tools/ci/verify-playwright-report.mjs .ci-expected.json test-results/results.json
@@ -192,7 +188,7 @@ jobs:
   cms:
     if: needs.format.outputs.cms == 'true'
     needs: format
-    name: CMS contracts (${{ matrix.engine }}, ${{ matrix.shard }}/${{ needs.format.outputs.cms_shards }})
+    name: CMS contracts (${{ matrix.engine }}, ${{ matrix.shard }}/9)
     runs-on: ubuntu-24.04
     container:
       image: mcr.microsoft.com/playwright:v1.64.1-noble
@@ -200,7 +196,9 @@ jobs:
     timeout-minutes: 25
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.format.outputs.cms_matrix) }}
+      matrix:
+        engine: [chromium, webkit]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9]
     env:
       E2E_GROUP: cms
       AXE_PATH: node_modules/axe-core/axe.min.js
@@ -213,9 +211,9 @@ jobs:
         with:
           cache: ${{ env.CI_CACHE }}
       - name: Discover every assigned CMS case
-        run: node tools/ci/impact-plan.mjs browser cms --project=cms-${{ matrix.engine }} --shard=${{ matrix.shard }}/${{ needs.format.outputs.cms_shards }} --list --reporter=json > .ci-expected.json
+        run: node tools/ci/impact-plan.mjs browser cms --project=cms-${{ matrix.engine }} --shard=${{ matrix.shard }}/9 --list --reporter=json > .ci-expected.json
       - name: Exercise the unchanged CMS domain contracts
-        run: node tools/ci/impact-plan.mjs browser cms --project=cms-${{ matrix.engine }} --shard=${{ matrix.shard }}/${{ needs.format.outputs.cms_shards }}
+        run: node tools/ci/impact-plan.mjs browser cms --project=cms-${{ matrix.engine }} --shard=${{ matrix.shard }}/9
       - name: Reject missing, skipped or retried outcomes and source drift
         run: |
           node tools/ci/verify-playwright-report.mjs .ci-expected.json test-results/results.json
@@ -381,31 +379,6 @@ jobs:
       - name: Stop local Supabase
         if: always()
         run: npx supabase stop --no-backup
-  database-rollout:
-    if: needs.format.outputs.database-rollout == 'true'
-    needs: format
-    name: Historical expand and contract compatibility
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-      - uses: ./.github/actions/ci-node
-        with:
-          cache: ${{ env.CI_CACHE }}
-      - name: Start isolated DB for destructive historical checks
-        run: npx supabase start --exclude gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
-      - name: Verify both original migration rollout stages
-        run: bash tools/release/test-public-booking-stages.sh
-      - name: Reject source or impact-plan drift
-        run: |
-          node tools/ci/build-artifact.mjs verify-source .ci-source
-          node tools/ci/impact-plan.mjs verify
-      - name: Stop isolated database
-        if: always()
-        run: npx supabase stop --no-backup
   frontend:
     name: Frontend and browser
     if: always()
@@ -428,7 +401,7 @@ jobs:
   database:
     name: Database and integration
     if: always()
-    needs: [format, database-current, database-rollout]
+    needs: [format, database-current]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -439,8 +412,8 @@ jobs:
       - uses: ./.github/actions/ci-node
         with:
           cache: ${{ env.CI_CACHE }}
-      - name: Enforce current and historical database gates
+      - name: Enforce the current database gate
         shell: bash
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
-        run: node tools/ci/check-gate.mjs --plan format database-current database-rollout
+        run: node tools/ci/check-gate.mjs --plan format database-current

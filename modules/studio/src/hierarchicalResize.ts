@@ -2,21 +2,25 @@ import type { Component, Editor } from 'grapesjs'
 import type { CmsMode } from '@bladeblend/content-contracts/cms'
 import { planDesktopCardResize } from './resizeStyles'
 
+const isStrip = (component: Component): boolean => {
+  const attrs = component.getAttributes()
+  return attrs['data-knc-fold'] === 'barber-marquee' && Boolean(attrs['data-knc-source'])
+}
+
+const stripCards = (strip: Component): Component[] =>
+  strip.components().filter((child: Component) => Boolean(child.getAttributes()['data-knc-source']))
+
 /** Only the repeated barber presentation participates; never names, data or callbacks. */
 export function barberScalePeers(component: Component): Component[] {
   let card = component
   let group: Component | undefined = component
-  while (group) {
-    const attrs = group.getAttributes()
-    if (attrs['data-knc-fold'] === 'barber-marquee' && attrs['data-knc-source']) break
+  while (group && !isStrip(group)) {
     card = group
     group = group.parent()
   }
   if (!group) return []
   if (component === group) return [group]
-  const cards = group
-    .components()
-    .filter((child: Component) => child.getAttributes()['data-knc-source'])
+  const cards = stripCards(group)
   if (component === card) return cards
   const photo = (item: Component): Component | undefined => {
     const first = item.components().at(0)
@@ -26,19 +30,12 @@ export function barberScalePeers(component: Component): Component[] {
   return cards.map(photo).filter((item): item is Component => Boolean(item))
 }
 
-const isStrip = (component: Component): boolean => {
-  const attrs = component.getAttributes()
-  return attrs['data-knc-fold'] === 'barber-marquee' && Boolean(attrs['data-knc-source'])
-}
-
 /** The cards when the selection is the strip or one of its cards; never for their photos. */
 function barberStripCards(component: Component): Component[] {
   const strip = isStrip(component) ? component : component.parent()
   if (!strip || !isStrip(strip)) return []
   if (strip !== component && !component.getAttributes()['data-knc-source']) return []
-  return strip
-    .components()
-    .filter((child: Component) => Boolean(child.getAttributes()['data-knc-source']))
+  return stripCards(strip)
 }
 
 /** The runtime mobile card width (AboutSection), scaled. */

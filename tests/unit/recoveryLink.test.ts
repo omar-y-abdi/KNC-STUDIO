@@ -12,30 +12,12 @@ describe('parseRecoveryLink', () => {
     expect(parseRecoveryLink('', `?staff_invite=${token}`, 'invite')).toEqual({ kind: 'none' })
     expect(parseRecoveryLink('#staff_invite=invalid', '', 'invite')).toEqual({ kind: 'none' })
   })
-  it('parses implicit-flow recovery tokens from the hash', () => {
-    const hash =
-      '#access_token=AT123&refresh_token=RT456&expires_in=3600&token_type=bearer&type=recovery'
-    expect(parseRecoveryLink(hash, '')).toEqual({
-      kind: 'tokens',
-      accessToken: 'AT123',
-      refreshToken: 'RT456',
-    })
-  })
 
-  it('does NOT treat non-recovery token hashes as a recovery link', () => {
-    const hash = '#access_token=AT123&refresh_token=RT456&type=signup'
-    expect(parseRecoveryLink(hash, '')).toEqual({ kind: 'none' })
-  })
-
-  it('requires both tokens to be present', () => {
-    expect(parseRecoveryLink('#access_token=AT123&type=recovery', '')).toEqual({ kind: 'none' })
-  })
-
-  it('parses a PKCE code from the query string', () => {
-    expect(parseRecoveryLink('', '?code=PKCE_CODE_789')).toEqual({
-      kind: 'code',
-      code: 'PKCE_CODE_789',
-    })
+  it('does not accept session tokens or a PKCE code carried in the URL', () => {
+    const tokens = '#access_token=AT123&refresh_token=RT456&expires_in=3600&token_type=bearer'
+    expect(parseRecoveryLink(`${tokens}&type=recovery`, '')).toEqual({ kind: 'none' })
+    expect(parseRecoveryLink(`${tokens}&type=invite`, '', 'invite')).toEqual({ kind: 'none' })
+    expect(parseRecoveryLink('', '?code=PKCE_CODE_789')).toEqual({ kind: 'none' })
   })
 
   it('parses a branded recovery token hash from the query string', () => {
@@ -80,10 +62,14 @@ describe('parseRecoveryLink', () => {
   })
 
   it('tolerates hash/search with no leading # or ?', () => {
-    expect(parseRecoveryLink('access_token=A&refresh_token=B&type=recovery', '')).toEqual({
-      kind: 'tokens',
-      accessToken: 'A',
-      refreshToken: 'B',
+    const token = 'a'.repeat(64)
+    expect(parseRecoveryLink(`staff_invite=${token}`, '', 'invite')).toEqual({
+      kind: 'staff_invite',
+      token,
+    })
+    expect(parseRecoveryLink('', 'token_hash=HASHED_TOKEN&type=recovery')).toEqual({
+      kind: 'token_hash',
+      tokenHash: 'HASHED_TOKEN',
     })
   })
 })

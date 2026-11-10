@@ -7,6 +7,7 @@ import {
   deleteRecurringBreakResponse,
   parseWith,
   recurringBreakRows,
+  type RecurringBreakRow,
 } from '../adminSchemas'
 import type {
   AdminBarberId,
@@ -15,19 +16,13 @@ import type {
   RecurringBreak,
   Weekday,
 } from '../types'
-import { err, ok } from '../types'
+import { err, ok, outcomeError } from '../types'
 
 const READ_ERROR = 'Kunde inte läsa återkommande pauser.'
 const WRITE_ERROR = 'Kunde inte spara. Försök igen.'
 const COLUMNS = 'id,barber_id,weekday,start_min,end_min'
 
-function toRecurringBreak(r: {
-  id: string
-  barber_id: string
-  weekday: Weekday
-  start_min: number
-  end_min: number
-}): RecurringBreak {
+function toRecurringBreak(r: RecurringBreakRow): RecurringBreak {
   return {
     id: r.id,
     barberId: r.barber_id,
@@ -71,20 +66,20 @@ export async function addRecurringBreak(
       p_end_min: endMin,
       p_allow_existing_bookings: allowExistingBookings,
     })
-    if (error !== null) return { kind: 'error', error: { kind: 'network', message: WRITE_ERROR } }
+    if (error !== null) return outcomeError('network', WRITE_ERROR)
 
     const parsed = parseWith(addRecurringBreakResponse, data)
-    if (!parsed.ok) return { kind: 'error', error: { kind: 'malformed', message: WRITE_ERROR } }
+    if (!parsed.ok) return outcomeError('malformed', WRITE_ERROR)
     if (parsed.value.ok) return { kind: 'ok', value: toRecurringBreak(parsed.value.row) }
     if (parsed.value.error === 'booking_conflict') {
       return { kind: 'booking_conflict', bookingIds: parsed.value.booking_ids }
     }
     if (parsed.value.error === 'forbidden') {
-      return { kind: 'error', error: { kind: 'forbidden', message: 'Du saknar behörighet.' } }
+      return outcomeError('forbidden', 'Du saknar behörighet.')
     }
-    return { kind: 'error', error: { kind: 'validation', message: WRITE_ERROR } }
+    return outcomeError('validation', WRITE_ERROR)
   } catch {
-    return { kind: 'error', error: { kind: 'network', message: WRITE_ERROR } }
+    return outcomeError('network', WRITE_ERROR)
   }
 }
 

@@ -463,7 +463,6 @@ const owner = {
   email: 'owner@example.test',
   role: 'owner' as const,
   barberId: null,
-  mustChangePassword: false,
 }
 
 const barber = {
@@ -471,7 +470,6 @@ const barber = {
   email: 'barber@example.test',
   role: 'barber' as const,
   barberId: 'preview-barber',
-  mustChangePassword: false,
 }
 
 export function mountAdminNavigationHarness(role: 'owner' | 'barber'): void {

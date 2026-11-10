@@ -9,6 +9,7 @@ import {
   type EmailSendKind,
   type EmailSendOutcome,
 } from '../../../packages/backend-contracts/src/email-send-log.ts'
+import { sha256Hex } from './encoding.ts'
 
 /**
  * Whether a kind's call-to-action link is a bearer credential: an Auth token_hash, the permanent
@@ -70,11 +71,6 @@ export function prepareEmail(
       ? buildEmailMessage({ ...input, ctaHref: HIDDEN_LINK })
       : message
   return { kind, bookingId, message, stored: storedCopy(stored) }
-}
-
-async function sha256Hex(value: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
 /** The delivery log's subject CHECK, in code points as PostgreSQL's char_length counts them. */

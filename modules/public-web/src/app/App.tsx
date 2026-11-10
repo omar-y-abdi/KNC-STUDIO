@@ -37,7 +37,7 @@ const sourceChromePort: SiteChromePort = { load: (lang) => defaultSiteChromePort
 import { DesktopSite } from './DesktopSite'
 import { MobileSite } from './MobileSite'
 import type { Mode, View } from './shared'
-import { MOBILE_MQ, chromeIcon, mobBtnBg, mobMuted, shellPalette } from './shared'
+import { EASE, MOBILE_MQ, chromeIcon, mobBtnBg, mobMuted, shellPalette } from './shared'
 
 function setMeta(selector: string, content: string): void {
   document.querySelector<HTMLMetaElement>(selector)?.setAttribute('content', content)
@@ -65,9 +65,7 @@ function updateDocumentMetadata(chrome: SiteChrome, lang: Lang): void {
     document.head.appendChild(canonicalElement)
   }
 
-  const canonical = document
-    .querySelector<HTMLLinkElement>('link[rel="canonical"]')
-    ?.getAttribute('href')
+  const canonical = canonicalElement.getAttribute('href')
   const siteUrl = canonical?.startsWith('http')
     ? canonical.replace(/\/$/, '')
     : window.location.origin
@@ -464,7 +462,6 @@ export function App({
     setEmailLinkCode(undefined)
     setState({ myBookingsOpen: false })
   }
-  const openPrivacy = (): void => privacy.openPreferences()
 
   // --- shared chrome (nav controls) ---
   const chromeIconStyle = chromeIcon(dark)
@@ -503,7 +500,7 @@ export function App({
     alignItems: 'center',
     justifyContent: 'center',
     boxShadow: '0 1px 2px rgba(0,0,0,.3)',
-    transition: 'left .32s ' + 'cubic-bezier(.32,.72,0,1)',
+    transition: 'left .32s ' + EASE,
   }
   const themeKnobIconStyle: JSX.CSSProperties = { width: '14px', height: '14px', opacity: 0.92 }
   // Split into two full literals (rather than a computed `[dark?'left':'right']` key) so the
@@ -594,77 +591,45 @@ export function App({
     </LazySurface>
   ) : null
 
-  if (isMobile) {
-    return (
-      <>
-        <MobileSite
-          privacy={privacy}
-          onManagePrivacy={openPrivacy}
-          mode={state.mode}
-          lang={lang}
-          tx={tx}
-          {...(customerProfile === undefined ? {} : { initialContact: customerProfile })}
-          {...(deviceBookingContact === undefined
-            ? {}
-            : { initialBookingContact: deviceBookingContact })}
-          onBookingComplete={() => setBookingRefresh((value) => value + 1)}
-          dark={dark}
-          c={c}
-          view={view}
-          mobMutedColor={mobMutedColor}
-          mobBtnBgColor={mobBtnBgColor}
-          business={business}
-          chromeIconStyle={chromeIconStyle}
-          themeToggle={themeToggle}
-          langToggle={langToggle}
-          openMobBooking={openMobBooking}
-          scrollToAbout={scrollToAbout}
-          scrollMobToHero={scrollMobToHero}
-          openCancel={openMyBookings}
-          openMyBookings={openMyBookings}
-          homepageScale={chrome.homepageScale}
-          homepageLogo={chrome.homepageLogo}
-          aboutScale={chrome.aboutScale}
-          bookingPopupText={bookingPopupText}
-        />
-        {myBookingsDialog}
-        {(!preview || preview.interactive) && (
-          <PrivacyBanner lang={lang} dark={dark} controls={privacy} />
-        )}
-      </>
-    )
+  // The props both layouts receive.
+  const shell = {
+    privacy,
+    onManagePrivacy: privacy.openPreferences,
+    mode: state.mode,
+    lang,
+    tx,
+    ...(customerProfile === undefined ? {} : { initialContact: customerProfile }),
+    ...(deviceBookingContact === undefined ? {} : { initialBookingContact: deviceBookingContact }),
+    onBookingComplete: () => setBookingRefresh((value) => value + 1),
+    dark,
+    c,
+    view,
+    business,
+    chromeIconStyle,
+    themeToggle,
+    langToggle,
+    scrollToAbout,
+    openCancel: openMyBookings,
+    openMyBookings,
+    homepageScale: chrome.homepageScale,
+    homepageLogo: chrome.homepageLogo,
+    aboutScale: chrome.aboutScale,
+    bookingPopupText,
   }
 
   return (
     <>
-      <DesktopSite
-        privacy={privacy}
-        onManagePrivacy={openPrivacy}
-        mode={state.mode}
-        lang={lang}
-        dark={dark}
-        c={c}
-        business={business}
-        themeToggle={themeToggle}
-        langToggle={langToggle}
-        chromeIconStyle={chromeIconStyle}
-        tx={tx}
-        {...(customerProfile === undefined ? {} : { initialContact: customerProfile })}
-        {...(deviceBookingContact === undefined
-          ? {}
-          : { initialBookingContact: deviceBookingContact })}
-        onBookingComplete={() => setBookingRefresh((value) => value + 1)}
-        view={view}
-        toggleDeskBooking={toggleDeskBooking}
-        scrollToAbout={scrollToAbout}
-        findUsStyle={findUsStyle}
-        openCancel={openMyBookings}
-        openMyBookings={openMyBookings}
-        homepageScale={chrome.homepageScale}
-        homepageLogo={chrome.homepageLogo}
-        aboutScale={chrome.aboutScale}
-        bookingPopupText={bookingPopupText}
-      />
+      {isMobile ? (
+        <MobileSite
+          {...shell}
+          mobMutedColor={mobMutedColor}
+          mobBtnBgColor={mobBtnBgColor}
+          openMobBooking={openMobBooking}
+          scrollMobToHero={scrollMobToHero}
+        />
+      ) : (
+        <DesktopSite {...shell} toggleDeskBooking={toggleDeskBooking} findUsStyle={findUsStyle} />
+      )}
       {myBookingsDialog}
       {(!preview || preview.interactive) && (
         <PrivacyBanner lang={lang} dark={dark} controls={privacy} />

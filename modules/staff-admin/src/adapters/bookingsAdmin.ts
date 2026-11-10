@@ -17,6 +17,7 @@ import {
   adminDeleteBookingsResponse,
   adminPurgeHistoryResponse,
   parseWith,
+  type AdminBookingRow,
 } from '../adminSchemas'
 import type { AdminBarberId, AdminBooking, AdminResult } from '../types'
 import { err, ok } from '../types'
@@ -80,21 +81,7 @@ export async function createManualBooking(
 }
 
 /** Map a parsed raw booking row into the admin domain type (timestamps -> Date). */
-function toBooking(r: {
-  id: string
-  barber_id: string
-  service_name: string
-  price: number
-  duration_min: number
-  start_at: string
-  end_at: string
-  customer_name: string
-  method: 'phone' | 'email' | 'walkin'
-  phone: string | null
-  email: string | null
-  lang: 'sv' | 'en'
-  status: 'confirmed' | 'cancelled'
-}): AdminBooking {
+function toBooking(r: AdminBookingRow): AdminBooking {
   return {
     id: r.id,
     barberId: r.barber_id,

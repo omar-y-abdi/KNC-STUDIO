@@ -77,23 +77,18 @@ export function monthLabel(lang: Lang, monthIndex: number): string {
   return labels.months[monthIndex] ?? ''
 }
 
+/** "Weekday D Month" — capitalised localized weekday, day-of-month, localized month. */
+export function dayLabel(lang: Lang, date: Date): string {
+  return `${cap(weekdayLabel(lang, date.getDay()))} ${date.getDate()} ${monthLabel(lang, date.getMonth())}`
+}
+
 /**
  * "Weekday D Month, HH:MM" for an appointment instant — capitalised localized weekday, day-of-month,
  * localized month, then the zero-padded LOCAL time. The single source of this label across the admin
  * bookings table, the cancellation lookup, and the demo booking (output is byte-identical to each).
  */
 export function formatWhenLabel(lang: Lang, date: Date): string {
-  return (
-    cap(weekdayLabel(lang, date.getDay())) +
-    ' ' +
-    date.getDate() +
-    ' ' +
-    monthLabel(lang, date.getMonth()) +
-    ', ' +
-    pad2(date.getHours()) +
-    ':' +
-    pad2(date.getMinutes())
-  )
+  return `${dayLabel(lang, date)}, ${pad2(date.getHours())}:${pad2(date.getMinutes())}`
 }
 
 /** The seven Monday-first weekday headers, in the given language. */

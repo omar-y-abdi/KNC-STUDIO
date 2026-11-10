@@ -21,8 +21,8 @@ interface Props {
   ) => void | Promise<void>
   onError: (message: string) => void
 }
-const storageOrigin = SUPABASE_URL ?? 'https://unconfigured.invalid'
-const policy = {
+export const storageOrigin = SUPABASE_URL ?? 'https://unconfigured.invalid'
+export const policy = {
   siteOrigin: window.location.origin,
   storageOrigin: new URL(storageOrigin).origin,
   builtAssets: CMS_BUILT_ASSETS,

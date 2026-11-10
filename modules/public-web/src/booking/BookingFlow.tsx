@@ -312,16 +312,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   const monthLabelText = cap(monthLabel(lang, cm)) + ' ' + cy
   const calendarWeeks = buildWeeks(cy, cm).map((w) =>
     w.map((cell) => {
-      if (!cell) {
-        return {
-          day: '' as string | number,
-          cellStyle: { background: 'transparent', border: 'none' } satisfies JSX.CSSProperties,
-          onClick: undefined as undefined | (() => void),
-          ariaLabel: undefined as string | undefined,
-          disabled: true,
-          selected: false,
-        }
-      }
+      if (!cell) return null
       const cellIso = iso(cell)
       const selectable = isSelectableBookingDate(cell, today)
       const selected = S.dateIso === cellIso
@@ -337,7 +328,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
         op = 0.32
       }
       return {
-        day: cell.getDate() as string | number,
+        day: cell.getDate(),
         cellStyle: {
           aspectRatio: '1 / 1',
           minHeight: '34px',
@@ -511,21 +502,13 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   const onConfirmBackdrop = (e: JSX.TargetedMouseEvent<HTMLDivElement>): void => {
     if (e.target === e.currentTarget) reset()
   }
-  const onName = (e: JSX.TargetedInputEvent<HTMLInputElement>): void => {
-    typedContact.current.name = true
-    clearFieldError('name')
-    setState((st) => ({ form: { ...st.form, name: e.currentTarget.value } }))
-  }
-  const onPhone = (e: JSX.TargetedInputEvent<HTMLInputElement>): void => {
-    typedContact.current.phone = true
-    clearFieldError('phone')
-    setState((st) => ({ form: { ...st.form, phone: e.currentTarget.value } }))
-  }
-  const onEmail = (e: JSX.TargetedInputEvent<HTMLInputElement>): void => {
-    typedContact.current.email = true
-    clearFieldError('email')
-    setState((st) => ({ form: { ...st.form, email: e.currentTarget.value } }))
-  }
+  const onContact =
+    (field: keyof FieldErrors) =>
+    (e: JSX.TargetedInputEvent<HTMLInputElement>): void => {
+      typedContact.current[field] = true
+      clearFieldError(field)
+      setState((st) => ({ form: { ...st.form, [field]: e.currentTarget.value } }))
+    }
 
   // Submit seam: validate, build a real Booking, send it through the BookingPort, store the
   // result, then advance. Two distinct failure modes:
@@ -592,6 +575,24 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
     void onBook()
   }
 
+  const stepHeader = (step: string, label: string): JSX.Element => (
+    <div style="display:flex;align-items:center;gap:9px;margin-bottom:13px;">
+      <span style={s.badgeStyle}>{step}</span>
+      <span style="font-family:'Inter Variable';font-weight:600;font-size:18px;">{label}</span>
+    </div>
+  )
+  const monthNav = (on: boolean, delta: 1 | -1, label: string, icon: string): JSX.Element => (
+    <button
+      type="button"
+      onClick={on ? () => setState((st) => ({ monthOffset: st.monthOffset + delta })) : undefined}
+      disabled={!on}
+      aria-label={label}
+      style={navBtn(on)}
+    >
+      <img src={icon} alt="" style={s.navIconStyle} />
+    </button>
+  )
+
   const showCalendar = Boolean(S.barberId)
   const servicesReady = Boolean(S.barberId && S.dateIso)
   const notServicesReady = !S.dateIso
@@ -602,12 +603,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
     <div style={s.rootStyle} data-knc-fold="booking-flow">
       <div style="padding: 18px 22px 26px 22px">
         <div data-testid="booking-step-barber" data-booking-step="barber">
-          <div style="display:flex;align-items:center;gap:9px;margin-bottom:13px;">
-            <span style={s.badgeStyle}>1</span>
-            <span style="font-family:'Inter Variable';font-weight:600;font-size:18px;">
-              {t.chooseBarber}
-            </span>
-          </div>
+          {stepHeader('1', t.chooseBarber)}
           <div
             data-testid="booking-barber-list"
             style="display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:11px;"
@@ -661,43 +657,14 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
               }}
             >
               <div style="flex:1 1 300px;max-width:344px;min-width:0;">
-                <div style="display:flex;align-items:center;gap:9px;margin-bottom:13px;">
-                  <span style={s.badgeStyle}>2</span>
-                  <span style="font-family:'Inter Variable';font-weight:600;font-size:18px;">
-                    {t.chooseDate}
-                  </span>
-                </div>
+                {stepHeader('2', t.chooseDate)}
                 <div style={s.panelStyle}>
                   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
-                    <button
-                      type="button"
-                      onClick={
-                        canPrev
-                          ? () => setState((st) => ({ monthOffset: st.monthOffset - 1 }))
-                          : undefined
-                      }
-                      disabled={!canPrev}
-                      aria-label={t.previousMonth}
-                      style={navBtn(canPrev)}
-                    >
-                      <img src="/icons/chevron.left.svg" alt="" style={s.navIconStyle} />
-                    </button>
+                    {monthNav(canPrev, -1, t.previousMonth, '/icons/chevron.left.svg')}
                     <span style="font-family:'Inter Variable';font-weight:600;font-size:15px;">
                       {monthLabelText}
                     </span>
-                    <button
-                      type="button"
-                      onClick={
-                        canNext
-                          ? () => setState((st) => ({ monthOffset: st.monthOffset + 1 }))
-                          : undefined
-                      }
-                      disabled={!canNext}
-                      aria-label={t.nextMonth}
-                      style={navBtn(canNext)}
-                    >
-                      <img src="/icons/chevron.right.svg" alt="" style={s.navIconStyle} />
-                    </button>
+                    {monthNav(canNext, 1, t.nextMonth, '/icons/chevron.right.svg')}
                   </div>
                   <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:4px;">
                     {headerLabels(lang).map((hh, i) => (
@@ -712,8 +679,12 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
                   {calendarWeeks.map((week, wi) => (
                     <div key={wi} style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;">
                       {week.map((cell, ci) =>
-                        cell.day === '' ? (
-                          <span key={ci} aria-hidden="true" style={cell.cellStyle}></span>
+                        cell === null ? (
+                          <span
+                            key={ci}
+                            aria-hidden="true"
+                            style={{ background: 'transparent', border: 'none' }}
+                          ></span>
                         ) : (
                           <button
                             key={ci}
@@ -744,12 +715,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
               </div>
 
               <div style="flex:1 1 250px;min-width:0;">
-                <div style="display:flex;align-items:center;gap:9px;margin-bottom:13px;">
-                  <span style={s.badgeStyle}>3</span>
-                  <span style="font-family:'Inter Variable';font-weight:600;font-size:18px;">
-                    {t.chooseService}
-                  </span>
-                </div>
+                {stepHeader('3', t.chooseService)}
                 {servicesReady ? (
                   <div style="display:flex;flex-direction:column;gap:16px;">
                     {serviceGroups.map((g, gi) => (
@@ -811,12 +777,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
               </div>
 
               <div style="flex:1 1 220px;min-width:0;">
-                <div style="display:flex;align-items:center;gap:9px;margin-bottom:13px;">
-                  <span style={s.badgeStyle}>4</span>
-                  <span style="font-family:'Inter Variable';font-weight:600;font-size:18px;">
-                    {t.chooseTime}
-                  </span>
-                </div>
+                {stepHeader('4', t.chooseTime)}
                 {timesReady && slotsLoading ? (
                   <div style={s.timePlaceholderStyle}>{t.loadingTimes}</div>
                 ) : null}
@@ -860,9 +821,9 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
           bookDisabled={bookDisabled}
           fieldErrors={fieldErrors}
           submitError={submitError}
-          onName={onName}
-          onPhone={onPhone}
-          onEmail={onEmail}
+          onName={onContact('name')}
+          onPhone={onContact('phone')}
+          onEmail={onContact('email')}
           onBook={onBookClick}
           onClose={closePopup}
           onBackdropClick={onPopupBackdrop}

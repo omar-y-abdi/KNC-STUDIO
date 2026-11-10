@@ -23,10 +23,9 @@ export function PrivacyBanner({ lang, dark, controls }: PrivacyBannerProps): JSX
     expanded: showPreferences,
     functional,
     setFunctional,
-    choose,
+    choose: save,
     openPreferences,
   } = controls
-  const save = choose
   const panel = useRef<HTMLDivElement>(null)
   const heading = useRef<HTMLHeadingElement>(null)
   const visible = saved === null || showPreferences
@@ -76,9 +75,7 @@ export function PrivacyBanner({ lang, dark, controls }: PrivacyBannerProps): JSX
     padding: '10px 13px',
   }
 
-  if (saved !== null && !showPreferences) {
-    return null
-  }
+  if (!visible) return null
 
   return (
     <div

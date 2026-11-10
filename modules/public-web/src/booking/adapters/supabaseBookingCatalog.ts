@@ -25,11 +25,6 @@ export interface BookingCatalog {
 
 export const BOOKING_CATALOG_TTL_MS = 30_000
 
-const EMPTY_CATALOG: BookingCatalog = {
-  barbers: [],
-  servicesByBarber: new Map(),
-  weekdaysByServiceId: new Map(),
-}
 let catalogValue: BookingCatalog | null = null
 let catalogPromise: Promise<BookingCatalog> | null = null
 let catalogRefreshPromise: Promise<BookingCatalog> | null = null
@@ -148,7 +143,7 @@ export function refreshBookingCatalog(): Promise<BookingCatalog> {
 
 /** Start truthful catalog hydration before a visitor opens booking. */
 export function preloadBookingCatalog(): void {
-  void cachedBookingCatalog().catch(() => EMPTY_CATALOG)
+  void cachedBookingCatalog().catch(() => undefined)
 }
 
 function revalidateCatalogListeners(): void {

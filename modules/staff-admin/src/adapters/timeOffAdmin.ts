@@ -5,21 +5,15 @@
 // Boundary discipline: rows Zod-parsed; failure -> AdminError; never throws to the UI.
 
 import { getAdminClient } from '../adminClient'
-import { addTimeOffResponse, parseWith, timeOffRows } from '../adminSchemas'
+import { addTimeOffResponse, parseWith, timeOffRows, type TimeOffRow } from '../adminSchemas'
 import type { AdminBarberId, AdminResult, AvailabilityMutationOutcome, TimeOff } from '../types'
-import { err, ok } from '../types'
+import { err, ok, outcomeError } from '../types'
 
 const READ_ERROR = 'Kunde inte läsa ledighet.'
 const WRITE_ERROR = 'Kunde inte spara. Försök igen.'
 
 /** Map a parsed raw time-off row to the domain type. */
-function toTimeOff(r: {
-  id: string
-  barber_id: string
-  start_date: string
-  end_date: string
-  reason: string
-}): TimeOff {
+function toTimeOff(r: TimeOffRow): TimeOff {
   return {
     id: r.id,
     barberId: r.barber_id,
@@ -65,25 +59,19 @@ export async function addTimeOff(
       p_reason: reason,
       p_allow_existing_bookings: allowExistingBookings,
     })
-    if (error !== null) return { kind: 'error', error: { kind: 'network', message: WRITE_ERROR } }
+    if (error !== null) return outcomeError('network', WRITE_ERROR)
     const parsed = parseWith(addTimeOffResponse, data)
-    if (!parsed.ok) return { kind: 'error', error: { kind: 'malformed', message: WRITE_ERROR } }
+    if (!parsed.ok) return outcomeError('malformed', WRITE_ERROR)
     if (parsed.value.ok) return { kind: 'ok', value: toTimeOff(parsed.value.row) }
     if (parsed.value.error === 'booking_conflict') {
       return { kind: 'booking_conflict', bookingIds: parsed.value.booking_ids }
     }
     if (parsed.value.error === 'forbidden') {
-      return {
-        kind: 'error',
-        error: { kind: 'forbidden', message: 'Du kan bara lägga till egen ledighet.' },
-      }
+      return outcomeError('forbidden', 'Du kan bara lägga till egen ledighet.')
     }
-    return {
-      kind: 'error',
-      error: { kind: 'validation', message: 'Slutdatum måste vara efter startdatum.' },
-    }
+    return outcomeError('validation', 'Slutdatum måste vara efter startdatum.')
   } catch {
-    return { kind: 'error', error: { kind: 'network', message: WRITE_ERROR } }
+    return outcomeError('network', WRITE_ERROR)
   }
 }
 

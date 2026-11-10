@@ -1,6 +1,6 @@
 # Email delivery
 
-The owner sees failed booking deliveries and the app's recorded email attempts in the CMS Studio under **Mejl → Leveransstatus**. Only the owner can open the Studio, and the database functions behind the view check the same owner again: role `owner`, account enabled and no forced password change pending, the predicate of `internal_cms_assert_owner`. Barbers, customers, a disabled owner and an owner who has not yet replaced a temporary password have no access.
+The owner sees failed booking deliveries and the app's recorded email attempts in the CMS Studio under **Mejl → Leveransstatus**. Only the owner can open the Studio, and the database functions behind the view check the same owner again: role `owner`, account enabled and `profiles.must_change_password` not set, the predicate of `internal_cms_assert_owner`. Barbers, customers, a disabled owner and an owner whose profile has that flag set have no access.
 
 ## Delivery log
 
@@ -52,7 +52,7 @@ where j.status = 'failed'
 order by j.failed_at desc, j.created_at desc;
 ```
 
-The owner RPCs `admin_retry_failed_booking_email_delivery` and `admin_discard_failed_booking_email_delivery` require the session of the owner the Studio accepts (enabled, no forced password change pending), so they cannot be called from the SQL editor. Use Leveransstatus, or run the same updates directly:
+The owner RPCs `admin_retry_failed_booking_email_delivery` and `admin_discard_failed_booking_email_delivery` require the session of the owner the Studio accepts (enabled, `must_change_password` not set), so they cannot be called from the SQL editor. Use Leveransstatus, or run the same updates directly:
 
 ```sql
 -- retry one delivery

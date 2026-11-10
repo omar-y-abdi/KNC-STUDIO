@@ -1,4 +1,4 @@
-import { PREVIEW_MESSAGE, type SourceContext } from './protocol'
+import { PREVIEW_MESSAGE, SOURCE_SCENES, type SourceContext } from './protocol'
 import { draftReadSnapshot } from './draftReadSnapshot'
 import type { JSX } from 'preact'
 import { useEffect, useMemo, useState } from 'preact/hooks'
@@ -17,6 +17,12 @@ import {
 import { SUPABASE_URL } from '../backend/config'
 import { CmsSceneContext } from '../cms/Scene'
 import { exampleBookingPorts, exampleCustomerPort, exampleBookingId } from './exampleScenes'
+
+/** The code-owned routes the read-only runtime renders itself. */
+const RUNTIME_PATHS = ['/', '/about', '/booking', '/my-bookings']
+
+const postToStudio = (message: object): void =>
+  window.parent.postMessage(message, window.location.origin)
 
 /** Renders public components with read-only ports, never private editor or customer state. */
 export function NativeSource({ interactive = false }: { interactive?: boolean }): JSX.Element {
@@ -76,15 +82,7 @@ export function NativeSource({ interactive = false }: { interactive?: boolean })
         !['sv', 'en'].includes(String(value['lang'])) ||
         !['light', 'dark'].includes(String(value['mode'])) ||
         !['Desktop', 'Mobile'].includes(String(value['device'])) ||
-        ![
-          'home',
-          'booking',
-          'my-bookings',
-          'booking-options',
-          'booking-details',
-          'booking-confirmation',
-          'my-bookings-list',
-        ].includes(String(value['scene']))
+        !SOURCE_SCENES.some((scene) => scene === String(value['scene']))
       )
         return
       if (interactive) {
@@ -94,7 +92,7 @@ export function NativeSource({ interactive = false }: { interactive?: boolean })
         } catch {
           return
         }
-        if (!['/', '/about', '/booking', '/my-bookings'].includes(String(value['path']))) return
+        if (!RUNTIME_PATHS.includes(String(value['path']))) return
       }
       delete document.documentElement.dataset['kncSourceReady']
       delete document.documentElement.dataset['kncBookingReady']
@@ -117,8 +115,7 @@ export function NativeSource({ interactive = false }: { interactive?: boolean })
     }
     window.addEventListener('message', receive)
     document.documentElement.dataset['kncSourceListening'] = '1'
-    if (interactive)
-      window.parent.postMessage({ type: PREVIEW_MESSAGE.listening }, window.location.origin)
+    if (interactive) postToStudio({ type: PREVIEW_MESSAGE.listening })
     return () => window.removeEventListener('message', receive)
   }, [interactive])
   useEffect(() => {
@@ -139,11 +136,7 @@ export function NativeSource({ interactive = false }: { interactive?: boolean })
           booking: document.documentElement.dataset['kncBookingReady'],
         })
         document.documentElement.dataset['kncSourceError'] = context.id
-        if (interactive)
-          window.parent.postMessage(
-            { type: PREVIEW_MESSAGE.error, id: context.id },
-            window.location.origin,
-          )
+        if (interactive) postToStudio({ type: PREVIEW_MESSAGE.error, id: context.id })
         return
       }
       const surface =
@@ -163,11 +156,7 @@ export function NativeSource({ interactive = false }: { interactive?: boolean })
       stable = ready ? stable + 1 : 0
       if (stable >= 3) {
         document.documentElement.dataset['kncSourceReady'] = context.id
-        if (interactive)
-          window.parent.postMessage(
-            { type: PREVIEW_MESSAGE.ready, id: context.id },
-            window.location.origin,
-          )
+        if (interactive) postToStudio({ type: PREVIEW_MESSAGE.ready, id: context.id })
         if (interactive && context.path === '/about')
           document.getElementById('om-oss-heading')?.scrollIntoView({ block: 'start' })
         return
@@ -220,23 +209,17 @@ export function NativeSource({ interactive = false }: { interactive?: boolean })
                 }
                 return
               }
-              if (
-                url.origin !== window.location.origin ||
-                !['/', '/about', '/booking', '/my-bookings'].includes(url.pathname)
-              ) {
+              if (url.origin !== window.location.origin || !RUNTIME_PATHS.includes(url.pathname)) {
                 if (
                   url.origin === window.location.origin &&
                   context.presentation?.pages.some((page) => page.path === url.pathname)
                 )
-                  window.parent.postMessage(
-                    {
-                      type: PREVIEW_MESSAGE.page,
-                      path: url.pathname,
-                      lang: context.lang,
-                      mode: context.mode,
-                    },
-                    window.location.origin,
-                  )
+                  postToStudio({
+                    type: PREVIEW_MESSAGE.page,
+                    path: url.pathname,
+                    lang: context.lang,
+                    mode: context.mode,
+                  })
                 return
               }
               setContext((current) => ({

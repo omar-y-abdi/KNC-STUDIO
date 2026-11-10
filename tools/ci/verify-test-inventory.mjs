@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
-import { realpathSync } from 'node:fs'
+import { execFileSync, spawnSync } from 'node:child_process'
+import { existsSync, realpathSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 
 function list(root, args, env = {}) {
@@ -40,11 +40,47 @@ export function discoverUnitFiles(root) {
     .sort()
 }
 
-export function verifyOwnedFiles(inventory, kind, discovered) {
-  const expected = Object.entries(inventory)
-    .filter(([, entry]) => entry.kind === kind)
-    .map(([path]) => path)
+// The native runner that must execute a test file, decided by its path alone.
+export const runnerOf = (path) =>
+  path.startsWith('tests/unit/')
+    ? 'unit'
+    : path.endsWith('/cms-startup.spec.mjs')
+      ? 'startup'
+      : path.endsWith('/customer.spec.mjs')
+        ? 'customer'
+        : path.includes('/cms-')
+          ? 'cms'
+          : 'public'
+
+// Every unit and browser test file present in the checkout, tracked or not.
+export function testFiles(root) {
+  const paths = execFileSync(
+    'git',
+    [
+      'ls-files',
+      '--cached',
+      '--others',
+      '--exclude-standard',
+      '-z',
+      '--',
+      'tests/unit',
+      'tools/e2e',
+    ],
+    { cwd: root, encoding: 'utf8', maxBuffer: 20 * 1024 * 1024 },
+  ).split('\0')
+  return [...new Set(paths)]
+    .filter(
+      (path) => /\.(?:test|spec)\.[cm]?[jt]sx?$/.test(path) && existsSync(resolve(root, path)),
+    )
     .sort()
-  assert.ok(expected.length > 0, `${kind} ownership must not be empty`)
-  assert.deepEqual(discovered, expected, `${kind} native discovery differs from declared ownership`)
+}
+
+export function verifyRunnerFiles(files, runner, discovered) {
+  const expected = files.filter((path) => runnerOf(path) === runner)
+  assert.ok(expected.length > 0, `${runner} test files must exist`)
+  assert.deepEqual(
+    discovered,
+    expected,
+    `${runner} native discovery differs from the files on disk`,
+  )
 }

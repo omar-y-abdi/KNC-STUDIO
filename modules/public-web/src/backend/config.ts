@@ -1,8 +1,7 @@
 // Backend config — the ENV check ONLY. This module is deliberately free of any `@supabase/supabase-js`
 // import so it stays featherweight: the adapter selectors import `isBackendConfigured()` from here to
-// decide real-vs-mock, while the actual client (which pulls in supabase-js) lives in `supabaseClient.ts`
-// and is reached only through a DYNAMIC import. That split keeps supabase-js OUT of the main bundle —
-// with no `VITE_SUPABASE_*` env it is never even fetched.
+// decide real-vs-mock, while the full client (which pulls in supabase-js) lives in the admin's
+// `adminClient.ts`, inside the lazy admin chunk. That split keeps supabase-js OUT of the main bundle.
 
 /** Non-empty trimmed env value, or `undefined`. The single place the "configured?" test is decided. */
 function readEnv(value: string | undefined): string | undefined {

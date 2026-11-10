@@ -12,19 +12,22 @@ export const PREVIEW_MESSAGE = {
   page: 'knc-preview-page',
 } as const
 
+export const SOURCE_SCENES = [
+  'home',
+  'booking',
+  'my-bookings',
+  'booking-options',
+  'booking-details',
+  'booking-confirmation',
+  'my-bookings-list',
+] as const
+
 export interface SourceContext {
   id: string
   lang: 'sv' | 'en'
   mode: 'light' | 'dark'
   device: 'Desktop' | 'Mobile'
-  scene:
-    | 'home'
-    | 'booking'
-    | 'my-bookings'
-    | 'booking-options'
-    | 'booking-details'
-    | 'booking-confirmation'
-    | 'my-bookings-list'
+  scene: (typeof SOURCE_SCENES)[number]
   path?: string
   presentation?: CmsPresentation
   draft?: CmsDocument

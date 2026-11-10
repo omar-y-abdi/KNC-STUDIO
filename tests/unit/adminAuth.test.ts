@@ -44,7 +44,7 @@ import {
   requestPasswordReset,
   requestOwnEmailChange,
   redeemStaffInvitation,
-  setOwnPasswordKeepSession,
+  setNewPassword,
   signIn,
 } from '../../modules/staff-admin/src/auth'
 import { invalidateAdminOperations } from '../../modules/staff-admin/src/orderedOperations'
@@ -175,7 +175,7 @@ describe('admin account settings auth', () => {
       })
       return Promise.resolve({ data: {}, error: null })
     })
-    expect(await setOwnPasswordKeepSession('new-password')).toMatchObject({
+    expect(await setNewPassword('new-password')).toMatchObject({
       ok: false,
       error: { kind: 'auth' },
     })
@@ -188,7 +188,7 @@ describe('admin account settings auth', () => {
       authMocks.getSession.mockResolvedValue({ data: { session: null }, error: { status: 503 } })
       return Promise.resolve({ data: {}, error: null })
     })
-    expect(await setOwnPasswordKeepSession('new-password')).toMatchObject({
+    expect(await setNewPassword('new-password')).toMatchObject({
       ok: false,
       error: { kind: 'network' },
     })
@@ -294,6 +294,25 @@ describe('admin account settings auth', () => {
     expect(authMocks.select).toHaveBeenCalledWith(
       'role, barber_id, must_change_password, account_enabled',
     )
+  })
+
+  it('denies a profile still flagged for a password change and clears its new session', async () => {
+    authMocks.signInWithPassword.mockResolvedValue({
+      data: { user: { id: 'user-1', email: 'staff@example.com' } },
+      error: null,
+    })
+    authMocks.maybeSingle.mockResolvedValue({
+      data: { role: 'owner', barber_id: null, must_change_password: true, account_enabled: true },
+      error: null,
+    })
+
+    expect(await signIn('staff@example.com', 'password')).toEqual({
+      ok: false,
+      error: { kind: 'forbidden', message: 'Kontot är avstängt. Kontakta ägaren.' },
+    })
+    expect(authMocks.admin.signOut).toHaveBeenCalledWith('original-token', 'global')
+    expect(authMocks.clearStored).toHaveBeenCalledWith('user-1')
+    expect(await getActiveProfile()).toMatchObject({ ok: false, error: { kind: 'forbidden' } })
   })
 
   it('reports revoked access without waiting for network sign-out', async () => {

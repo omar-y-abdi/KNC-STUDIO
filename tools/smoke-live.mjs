@@ -10,8 +10,8 @@
 //   4. /api/bookings gate    — an empty Turnstile token is rejected (failed_challenge),
 //                              proving the bot gate is active in production.
 //   5. public action gateway — rejects an empty Turnstile token (failed_challenge).
-//   6. lookup_booking RPC    — denied in both stages because the gateway contract is already live;
-//                              the retirement stage removes the function itself after coexistence.
+//   6. lookup_booking RPC    — the direct lookup function does not exist (HTTP 404); booking
+//                              lookup goes through the gateway only.
 //
 // Each check logs PASS/FAIL with the key value it observed. Process exits 1 if ANY
 // check fails, 0 only when every check passes (so CI can gate on it).
@@ -22,23 +22,14 @@
 //   SUPABASE_URL=https://<ref>.supabase.co \
 //   SUPABASE_ANON_KEY=<anon-jwt> \
 //   SITE_ORIGIN=https://bladeblendstudio.se \
-//   PUBLIC_BOOKING_STAGE=expand|contract \
 //   node tools/smoke-live.mjs
 
 const SUPABASE_URL = process.env.SUPABASE_URL
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY
 const SITE_ORIGIN = process.env.SITE_ORIGIN
-const PUBLIC_BOOKING_STAGE = process.env.PUBLIC_BOOKING_STAGE
 
-if (
-  !SUPABASE_URL ||
-  !SUPABASE_ANON_KEY ||
-  !SITE_ORIGIN ||
-  (PUBLIC_BOOKING_STAGE !== 'expand' && PUBLIC_BOOKING_STAGE !== 'contract')
-) {
-  console.error(
-    'FATAL: SUPABASE_URL, SUPABASE_ANON_KEY, SITE_ORIGIN, and PUBLIC_BOOKING_STAGE=expand|contract are required.',
-  )
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SITE_ORIGIN) {
+  console.error('FATAL: SUPABASE_URL, SUPABASE_ANON_KEY, and SITE_ORIGIN are required.')
   process.exit(1)
 }
 
@@ -236,18 +227,12 @@ async function checkPublicActionGateway() {
   return { pass, detail: `status=${status} body=${JSON.stringify(json)}` }
 }
 
-// 6. The gateway contract is already live. Expand means "before the three retirement migrations";
-//    contract means "after them". Direct anonymous lookup stays denied in both stages.
+// 6. Booking lookup goes through the gateway only: the direct function must not exist.
 async function checkDirectLookupContract() {
   const { status, json } = await postJson('/rest/v1/rpc/lookup_booking', {
     p_contact: '0700000000',
   })
-  const pass =
-    PUBLIC_BOOKING_STAGE === 'expand'
-      ? status === 401 || status === 403
-      : PUBLIC_BOOKING_STAGE === 'contract'
-        ? status === 404
-        : false
+  const pass = status === 404
   return { pass, detail: `status=${status} body=${JSON.stringify(json)}` }
 }
 
@@ -260,7 +245,7 @@ const checks = [
     checkSubmitBookingTurnstileGate,
   ],
   ['public action gateway (empty token -> failed_challenge)', checkPublicActionGateway],
-  [`direct lookup_booking RPC (anon -> ${PUBLIC_BOOKING_STAGE})`, checkDirectLookupContract],
+  ['direct lookup_booking RPC (anon -> 404)', checkDirectLookupContract],
 ]
 
 async function main() {

@@ -30,7 +30,6 @@ export interface AdminStyles {
   primaryBtn: JSX.CSSProperties
   ghostBtn: JSX.CSSProperties
   dangerBtn: JSX.CSSProperties
-  iconBtn: JSX.CSSProperties
   pill: JSX.CSSProperties
   emptyState: JSX.CSSProperties
   fieldRow: JSX.CSSProperties
@@ -230,19 +229,6 @@ export function buildAdminStyles(c: Palette, dark: boolean): AdminStyles {
       background: 'transparent',
       color: red,
     },
-    iconBtn: {
-      border: 'none',
-      background: c.closeBg,
-      width: '30px',
-      height: '30px',
-      borderRadius: '8px',
-      cursor: 'pointer',
-      color: c.text,
-      display: 'inline-flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      fontSize: '14px',
-    },
     pill: {
       display: 'inline-flex',
       alignItems: 'center',
@@ -266,4 +252,36 @@ export function buildAdminStyles(c: Palette, dark: boolean): AdminStyles {
     errorText: { color: staffErrorRed(dark), fontSize: '12.5px', fontWeight: 600 },
     mutedText: { opacity: 0.55, fontSize: '12.5px' },
   }
+}
+
+// --- Dialog chrome: the admin popups share one backdrop, one card and one title -----------------
+
+/** Backdrop of every admin popup: a dimmed full-viewport layer that centres the card. */
+export const DIALOG_BACKDROP_STYLE =
+  'position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;' +
+  'padding:20px;background:rgba(0,0,0,.42);'
+
+/** The popup card. `scrollable` caps its height, for the popups that list bookings. */
+export function dialogCardStyle(
+  c: Palette,
+  maxWidth: string,
+  scrollable = false,
+): JSX.CSSProperties {
+  return {
+    width: '100%',
+    maxWidth,
+    ...(scrollable ? { maxHeight: '86vh', overflowY: 'auto' } : {}),
+    background: c.bg,
+    color: c.text,
+    border: '0.5px solid ' + c.line,
+    borderRadius: '16px',
+    padding: '20px 22px',
+    boxShadow: '0 24px 60px rgba(0,0,0,.4)',
+    fontFamily: FONT_TEXT,
+  }
+}
+
+/** The popup title; `gap` is the space between it and the body below. */
+export function dialogTitleStyle(gap: string): JSX.CSSProperties {
+  return { fontFamily: FONT_DISPLAY, fontSize: '17px', fontWeight: 700, margin: '0 0 ' + gap }
 }

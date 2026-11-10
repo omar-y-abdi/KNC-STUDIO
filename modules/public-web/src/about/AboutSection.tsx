@@ -239,6 +239,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
   const [turnstileToken, setTurnstileToken] = useState('')
   const [turnstileNonce, setTurnstileNonce] = useState(0)
   const challengeRequired = props.challengeEnabled !== false && turnstileConfigured
+  const submitBlocked = submitting || (challengeRequired && turnstileToken === '')
 
   const submitErrorText = (error: ReviewError): string => {
     switch (error.kind) {
@@ -257,30 +258,23 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
     }
   }
 
+  // Editing a field clears the thank-you, the submit error and that field's own error.
+  const setField = <K extends keyof ReviewDraft>(key: K, value: ReviewDraft[K]): void => {
+    setThanks(false)
+    setSubmitError(null)
+    setErrors((p) => (p[key] ? { ...p, [key]: false } : p))
+    setDraft((d) => ({ ...d, [key]: value }))
+  }
   const setPhone = (e: JSX.TargetedInputEvent<HTMLInputElement>): void => {
     typedPhone.current = true
-    setThanks(false)
-    setSubmitError(null)
-    setErrors((p) => (p.phone ? { ...p, phone: false } : p))
-    const v = e.currentTarget.value
-    setDraft((d) => ({ ...d, phone: v }))
+    setField('phone', e.currentTarget.value)
   }
-  const setText = (e: JSX.TargetedInputEvent<HTMLTextAreaElement>): void => {
-    setThanks(false)
-    setSubmitError(null)
-    setErrors((p) => (p.text ? { ...p, text: false } : p))
-    const v = e.currentTarget.value
-    setDraft((d) => ({ ...d, text: v }))
-  }
-  const setRating = (r: Rating): void => {
-    setThanks(false)
-    setSubmitError(null)
-    setErrors((p) => (p.rating ? { ...p, rating: false } : p))
-    setDraft((d) => ({ ...d, rating: r }))
-  }
+  const setText = (e: JSX.TargetedInputEvent<HTMLTextAreaElement>): void =>
+    setField('text', e.currentTarget.value)
+  const setRating = (r: Rating): void => setField('rating', r)
 
   const submit = async (): Promise<void> => {
-    const parsed = parseReview({ phone: draft.phone, rating: draft.rating, text: draft.text })
+    const parsed = parseReview(draft)
     if (!parsed.ok) {
       setErrors(parsed.fields)
       return
@@ -315,8 +309,6 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
   const currentReviewPage = clampPage(reviewPage, reviewPages)
   const visibleReviews = pageItems(reviews, currentReviewPage)
   const reviewRow = pageRow(pageRowStart, reviewPages)
-  const previousRowStart = reviewRow.previousStart
-  const nextRowStart = reviewRow.nextStart
   // With more pages than buttons both arrows keep their slot even when hidden, so no button
   // shifts sideways as the row moves.
   const arrowSlots = reviewPages > PAGE_BUTTONS
@@ -403,25 +395,24 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
     gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
     gap: '14px',
   }
-  const stylistCardStyle: JSX.CSSProperties = {
+  const cardStyle = (padding: string, gap: string): JSX.CSSProperties => ({
     background: c.card,
     border: '0.5px solid ' + c.line,
     borderRadius: '14px',
-    padding: '14px',
+    padding,
     boxShadow: '0 1px 2px rgba(0,0,0,.05)',
     display: 'flex',
     flexDirection: 'column',
-    gap: '12px',
-  }
-  const reviewCardStyle: JSX.CSSProperties = {
-    background: c.card,
-    border: '0.5px solid ' + c.line,
-    borderRadius: '14px',
-    padding: '15px 16px',
-    boxShadow: '0 1px 2px rgba(0,0,0,.05)',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '8px',
+    gap,
+  })
+  const stylistCardStyle = cardStyle('14px', '12px')
+  const reviewCardStyle = cardStyle('15px 16px', '8px')
+  // Loading, empty and unavailable notes of the galleries and the review list.
+  const noteStyle: JSX.CSSProperties = {
+    fontSize: '13.5px',
+    lineHeight: 1.5,
+    opacity: 0.62,
+    margin: 0,
   }
   const reviewsWrapStyle: JSX.CSSProperties = {
     display: 'grid',
@@ -491,6 +482,49 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
     border: '.5px solid ' + red,
     boxShadow: '0 0 0 3px ' + (dark ? 'rgba(255,69,58,.28)' : 'rgba(255,59,48,.28)'),
   }
+  const footerLinkStyle: JSX.CSSProperties = {
+    color: c.text,
+    opacity: 0.65,
+    fontSize: '12px',
+    textUnderlineOffset: '3px',
+  }
+
+  // The interactive photo marquee of one gallery, or the note that stands in for it.
+  const gallery = (state: ReturnType<typeof useGallery>, alt: string): JSX.Element =>
+    state.status === 'ready' && state.photos.length > 0 ? (
+      <div style={fullBleedStyle}>
+        <GalleryMarquee photos={state.photos} alt={alt} c={c} />
+      </div>
+    ) : (
+      <p role="status" style={noteStyle}>
+        {state.status === 'loading'
+          ? tx.galleryLoading
+          : state.status === 'error'
+            ? tx.galleryUnavailable
+            : tx.galleryEmpty}
+      </p>
+    )
+  // One arrow of the page row: the button that moves it, or the slot it leaves when hidden.
+  const rowArrow = (
+    start: number | null,
+    edge: 'first' | 'last',
+    label: string,
+    icon: string,
+  ): JSX.Element | null =>
+    start === null ? (
+      arrowSlots ? (
+        <span aria-hidden="true" style={pageSlotStyle} />
+      ) : null
+    ) : (
+      <button
+        type="button"
+        aria-label={label}
+        onClick={(event) => moveReviewRow(start, edge, event)}
+        style={pageButtonStyle(false)}
+      >
+        <img src={icon} alt="" style={s.navIconStyle} />
+      </button>
+    )
 
   const surface = useNativeSurface(
     <section
@@ -509,22 +543,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
         {/* Salon gallery — two counter-scrolling, draggable marquee rows (tap a tile to focus it).
             Full-bleed so the tiles enter/exit at the screen edge, not the content column. */}
         <h3 style={blockTitleStyle}>{tx.galleryTitle}</h3>
-        {salonPhotos.status === 'ready' && salonPhotos.photos.length > 0 ? (
-          <div style={fullBleedStyle}>
-            <GalleryMarquee photos={salonPhotos.photos} alt={tx.galleryAlt} c={c} />
-          </div>
-        ) : (
-          <p
-            role="status"
-            style={{ fontSize: '13.5px', lineHeight: 1.5, opacity: 0.62, margin: 0 }}
-          >
-            {salonPhotos.status === 'loading'
-              ? tx.galleryLoading
-              : salonPhotos.status === 'error'
-                ? tx.galleryUnavailable
-                : tx.galleryEmpty}
-          </p>
-        )}
+        {gallery(salonPhotos, tx.galleryAlt)}
 
         {/* Stylists — driven by the database roster (N barbers, not a frontend constant). */}
         <h3 style={blockTitleStyle}>{tx.stylistsTitle}</h3>
@@ -540,8 +559,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
                   display: 'flex',
                   alignItems: 'flex-start',
                   gap: 0,
-                  width: '100vw',
-                  marginLeft: 'calc(50% - 50vw)',
+                  ...fullBleedStyle,
                   padding: '4px 0 10px',
                   boxSizing: 'border-box',
                   overflowX: animate ? 'visible' : 'auto',
@@ -704,46 +722,23 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
 
         {/* Customer-cuts gallery — the same interactive photo marquee. Full-bleed too. */}
         <h3 style={blockTitleStyle}>{tx.cutsTitle}</h3>
-        {cutPhotos.status === 'ready' && cutPhotos.photos.length > 0 ? (
-          <div style={fullBleedStyle}>
-            <GalleryMarquee photos={cutPhotos.photos} alt={tx.cutsAlt} c={c} />
-          </div>
-        ) : (
-          <p
-            role="status"
-            style={{ fontSize: '13.5px', lineHeight: 1.5, opacity: 0.62, margin: 0 }}
-          >
-            {cutPhotos.status === 'loading'
-              ? tx.galleryLoading
-              : cutPhotos.status === 'error'
-                ? tx.galleryUnavailable
-                : tx.galleryEmpty}
-          </p>
-        )}
+        {gallery(cutPhotos, tx.cutsAlt)}
 
         {/* Reviews */}
         <h3 style={blockTitleStyle}>{tx.reviewsTitle}</h3>
         <div style={reviewsWrapStyle}>
           {reviewsState === 'loading' ? (
-            <p
-              aria-live="polite"
-              style={{ fontSize: '13.5px', lineHeight: 1.5, opacity: 0.62, margin: 0 }}
-            >
+            <p aria-live="polite" style={noteStyle}>
               {tx.reviewsLoading}
             </p>
           ) : null}
           {reviewsState === 'error' ? (
-            <p
-              role="status"
-              style={{ fontSize: '13.5px', lineHeight: 1.5, opacity: 0.62, margin: 0 }}
-            >
+            <p role="status" style={noteStyle}>
               {tx.reviewsUnavailable}
             </p>
           ) : null}
           {reviewsState === 'ready' && reviews.length === 0 ? (
-            <p style={{ fontSize: '13.5px', lineHeight: 1.5, opacity: 0.62, margin: 0 }}>
-              {tx.reviewsEmpty}
-            </p>
+            <p style={noteStyle}>{tx.reviewsEmpty}</p>
           ) : null}
           {reviewsState === 'ready'
             ? visibleReviews.map((r) => (
@@ -793,19 +788,11 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
               aria-label={tx.reviewPagesLabel}
               style={reviewPagesStyle}
             >
-              {previousRowStart === null ? (
-                arrowSlots ? (
-                  <span aria-hidden="true" style={pageSlotStyle} />
-                ) : null
-              ) : (
-                <button
-                  type="button"
-                  aria-label={tx.reviewPagesPrevious}
-                  onClick={(event) => moveReviewRow(previousRowStart, 'first', event)}
-                  style={pageButtonStyle(false)}
-                >
-                  <img src="/icons/chevron.left.svg" alt="" style={s.navIconStyle} />
-                </button>
+              {rowArrow(
+                reviewRow.previousStart,
+                'first',
+                tx.reviewPagesPrevious,
+                '/icons/chevron.left.svg',
               )}
               {reviewRow.pages.map((page) => (
                 <button
@@ -819,19 +806,11 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
                   {page}
                 </button>
               ))}
-              {nextRowStart === null ? (
-                arrowSlots ? (
-                  <span aria-hidden="true" style={pageSlotStyle} />
-                ) : null
-              ) : (
-                <button
-                  type="button"
-                  aria-label={tx.reviewPagesNext}
-                  onClick={(event) => moveReviewRow(nextRowStart, 'last', event)}
-                  style={pageButtonStyle(false)}
-                >
-                  <img src="/icons/chevron.right.svg" alt="" style={s.navIconStyle} />
-                </button>
+              {rowArrow(
+                reviewRow.nextStart,
+                'last',
+                tx.reviewPagesNext,
+                '/icons/chevron.right.svg',
               )}
             </nav>
           ) : null}
@@ -925,15 +904,12 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
 
           <button
             type="button"
-            onClick={
-              submitting || (challengeRequired && turnstileToken === '') ? undefined : onSubmitClick
-            }
-            disabled={submitting || (challengeRequired && turnstileToken === '')}
+            onClick={submitBlocked ? undefined : onSubmitClick}
+            disabled={submitBlocked}
             style={{
               ...s.bookBtnStyle,
-              opacity: submitting || (challengeRequired && turnstileToken === '') ? 0.5 : 1,
-              cursor:
-                submitting || (challengeRequired && turnstileToken === '') ? 'default' : 'pointer',
+              opacity: submitBlocked ? 0.5 : 1,
+              cursor: submitBlocked ? 'default' : 'pointer',
             }}
           >
             {tx.reviewSubmit}
@@ -950,18 +926,10 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
           textAlign: 'center',
         }}
       >
-        <a
-          href="/terms"
-          class={FOCUS_CLS}
-          style={{ color: c.text, opacity: 0.65, fontSize: '12px', textUnderlineOffset: '3px' }}
-        >
+        <a href="/terms" class={FOCUS_CLS} style={footerLinkStyle}>
           {tx.termsLink}
         </a>
-        <a
-          href="/privacy"
-          class={FOCUS_CLS}
-          style={{ color: c.text, opacity: 0.65, fontSize: '12px', textUnderlineOffset: '3px' }}
-        >
+        <a href="/privacy" class={FOCUS_CLS} style={footerLinkStyle}>
           {tx.privacyLink}
         </a>
         {props.onManagePrivacy ? (
@@ -973,7 +941,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
               event.preventDefault()
               props.onManagePrivacy?.()
             }}
-            style={{ color: c.text, opacity: 0.65, fontSize: '12px', textUnderlineOffset: '3px' }}
+            style={footerLinkStyle}
           >
             {privacyStrings(props.lang).manage}
           </a>

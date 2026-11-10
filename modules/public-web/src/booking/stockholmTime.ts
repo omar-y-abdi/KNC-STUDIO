@@ -12,13 +12,17 @@
 
 const SALON_TZ = 'Europe/Stockholm'
 
+/** Built on first use and kept: constructing a formatter costs far more than using it, and the
+ * booking lists resolve an offset for every row. */
+let salonClock: Intl.DateTimeFormat | undefined
+
 /**
  * The Europe/Stockholm UTC offset, in milliseconds, in effect at a given UTC instant —
  * i.e. how far the Stockholm wall-clock is AHEAD of UTC at that moment (+1h CET / +2h CEST).
  * Derived from `Intl` so it follows the real DST calendar for any year.
  */
 function stockholmOffsetMs(atUtcMs: number): number {
-  const dtf = new Intl.DateTimeFormat('en-US', {
+  salonClock ??= new Intl.DateTimeFormat('en-US', {
     timeZone: SALON_TZ,
     hourCycle: 'h23',
     year: 'numeric',
@@ -29,7 +33,7 @@ function stockholmOffsetMs(atUtcMs: number): number {
     second: '2-digit',
   })
   const parts: Record<string, number> = {}
-  for (const part of dtf.formatToParts(new Date(atUtcMs))) {
+  for (const part of salonClock.formatToParts(new Date(atUtcMs))) {
     if (part.type !== 'literal') parts[part.type] = Number(part.value)
   }
   // Reading the instant AS Stockholm wall-clock, then treating those components as if they were UTC,

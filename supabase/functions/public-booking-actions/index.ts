@@ -13,6 +13,7 @@ import {
   customerCookieHeader,
   customerCookieProof,
 } from '../_shared/customerCookies.ts'
+import { sha256Hex as sha256 } from '../_shared/encoding.ts'
 import { json } from '../_shared/http.ts'
 import { emailAddress, requestSchema } from './request.ts'
 
@@ -67,20 +68,6 @@ function reply(
 function clientIp(req: Request): string {
   const cloudflare = req.headers.get('cf-connecting-ip')?.trim()
   return cloudflare || 'unknown'
-}
-
-function createOpaqueToken(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(32))
-  return Array.from(bytes)
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('')
-}
-
-async function sha256(value: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('')
 }
 
 function serviceClient(url: string, key: string) {
@@ -227,7 +214,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     })
   }
   if (parsed.action === 'exchange_access') {
-    const accessToken = createOpaqueToken()
+    const accessToken = createCustomerAccessToken()
     const { data, error } = await service.rpc('exchange_customer_booking_access', {
       p_challenge_hash: await sha256(parsed.accessToken ?? ''),
       p_session_hash: await sha256(accessToken),
@@ -255,7 +242,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     let setCookie: string | undefined
     // An explicit email link selects the customer even when another or expired session exists.
     if (parsed.accessToken !== undefined) {
-      sessionToken = createOpaqueToken()
+      sessionToken = createCustomerAccessToken()
       const established = await service.rpc('establish_customer_booking_session', {
         p_access_token: await sha256(parsed.accessToken.toLowerCase()),
         p_session_hash: await sha256(sessionToken),

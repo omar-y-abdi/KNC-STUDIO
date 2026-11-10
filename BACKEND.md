@@ -196,7 +196,9 @@ npx supabase config push --yes
 
 Public signup remains disabled. Owner creates barber accounts from admin. Each barber receives a
 single-use invitation and sets a personal password before first login. Password reset email uses
-Supabase Auth through Resend.
+Supabase Auth through Resend. Nothing sets `profiles.must_change_password` any more and no screen
+clears it. The admin refuses a profile that has it set, as it refuses a disabled account; clear it
+in the database (`update public.profiles set must_change_password = false where id = …`).
 
 ## Verification
 

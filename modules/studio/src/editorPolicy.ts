@@ -328,17 +328,17 @@ export function configureComponent(component: Component, options: { silent?: boo
   if (isBusinessSlot(component)) plainSlotContent(component)
   const tag = String(component.get('tagName') ?? '').toLowerCase()
   const attrs = component.getAttributes()
+  const parent = component.parent()
+  const parentAttrs = parent?.getAttributes()
   const compositionBoundary =
-    Boolean(attrs['data-editor-about-slot']) ||
-    Boolean(component.parent()?.getAttributes()['data-editor-about-slot'])
+    Boolean(attrs['data-editor-about-slot']) || Boolean(parentAttrs?.['data-editor-about-slot'])
   const protectedComponent = isProtected(component) || compositionBoundary
   const readOnly = isReadOnlyPreview(component)
   // Every server-owned component is protected, so the others skip this second ancestor walk.
   const serverOwned = protectedComponent && isServerOwned(component)
   // The Worker regenerates everything inside a slot, so nothing there takes styling of its own.
-  const parent = component.parent()
   const slotContent = serverOwned && parent !== undefined && isServerOwned(parent)
-  const role = runtimeOwnedRole(attrs, component.parent()?.getAttributes())
+  const role = runtimeOwnedRole(attrs, parentAttrs)
   // The model search also works for text nodes and components not yet mounted in the canvas.
   const retainedChildren = component.findFirstType((child) => {
     const attributes = child.getAttributes()

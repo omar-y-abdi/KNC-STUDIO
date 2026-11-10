@@ -61,6 +61,10 @@ const resourceRemoved = (before: CmsDocument, after: CmsDocument): boolean =>
   Object.keys(after.photos).length < Object.keys(before.photos).length ||
   (Boolean(before.settings['homepage_logo_path']) && !after.settings['homepage_logo_path'])
 
+/** Completes the core pages only where a document lacks them, then normalizes it. */
+const completeCorePages = (document: CmsDocument): CmsDocument =>
+  normalizeDocument(needsCorePageSource(document) ? ensureCorePages(document) : document)
+
 function downloadDraft(document: CmsDocument): void {
   const url = URL.createObjectURL(
     new Blob([JSON.stringify(document, null, 2)], {
@@ -247,10 +251,8 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         // Recaptured strip markers make legacy zoom convertible only now. The upgrade is a
         // migration of every retained snapshot, never an undoable step back to the old markup.
         // Preparing only the baseline must not reserialize already-complete authored snapshots.
-        draft.migrate(
-          (document) =>
-            normalizeDocument(needsCorePageSource(document) ? ensureCorePages(document) : document),
-          (previous, next) => layouts.current.follow(previous, next, draft.base),
+        draft.migrate(completeCorePages, (previous, next) =>
+          layouts.current.follow(previous, next, draft.base),
         )
         setVersion((value) => value + 1)
       })
@@ -468,7 +470,6 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       `page:${selectedPage}:${lang}:${mode}`,
     )
   }
-  const replacePage = (page: CmsPage): void => replacePages([page])
   const publish = async (): Promise<void> => {
     if (!draft || conflict || busy) return
     editor.current?.flush()
@@ -560,10 +561,8 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         conflict.remote.fingerprint,
         conflict.remote.document,
       )
-      next.migrate(
-        (document) =>
-          normalizeDocument(needsCorePageSource(document) ? ensureCorePages(document) : document),
-        (previous, migrated) => layouts.current.follow(previous, migrated, next.base),
+      next.migrate(completeCorePages, (previous, migrated) =>
+        layouts.current.follow(previous, migrated, next.base),
       )
       setDraft(next)
       setConflict(null)
@@ -700,6 +699,9 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     document.presentation.pages[0]
   if (!page) throw new Error('CMS project has no pages')
   const fontCss = cmsFontFaceCss(document.presentation.fonts, SUPABASE_URL ?? '')
+  // About is composed into the homepage, so its path opens the homepage.
+  const pageAt = (path: string): CmsPage | undefined =>
+    document.presentation.pages.find((item) => item.path === (path === '/about' ? '/' : path))
 
   const importDraft = async (file: File): Promise<void> => {
     try {
@@ -759,7 +761,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     if (!current) return
     const next = structuredClone(current)
     update(next)
-    replacePage(next)
+    replacePages([next])
   }
   const editMeta = (key: 'name' | 'title' | 'description', value: string): void =>
     editPageMetadata((next) => {
@@ -1316,16 +1318,10 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                 }}
                 onOpenPage={(path) => {
                   editor.current?.flush()
-                  setSelectedPage(
-                    document.presentation.pages.find(
-                      (item) => item.path === (path === '/about' ? '/' : path),
-                    )?.id ?? CORE_PAGE_IDS[0],
-                  )
+                  setSelectedPage(pageAt(path)?.id ?? CORE_PAGE_IDS[0])
                 }}
                 onNavigate={(path, nextLang, nextMode) => {
-                  const next = document.presentation.pages.find(
-                    (item) => item.path === (path === '/about' ? '/' : path),
-                  )
+                  const next = pageAt(path)
                   if (!next) return
                   editor.current?.flush()
                   setSelectedPage(next.id)
@@ -1378,13 +1374,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                     if (!active) return
                     const restored = restoreRevision(old, active.document)
                     const before = active.document
-                    commitDraft(
-                      normalizeDocument(
-                        needsCorePageSource(restored.document)
-                          ? ensureCorePages(restored.document)
-                          : restored.document,
-                      ),
-                    )
+                    commitDraft(completeCorePages(restored.document))
                     // The restored layouts are the old revision's, made for its resource data.
                     if (active.document !== before) layouts.current.captured(active.document, old)
                     if (restored.reconciled)

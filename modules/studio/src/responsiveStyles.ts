@@ -164,8 +164,8 @@ function contextHeader(node: Rule | Atrule): string {
   return `@${name}${prelude ? ` ${prelude}` : ''}`
 }
 
-/** At-rules around a plain rule compare by header, and a layer also by its order among the
- * same-header layers. */
+/** The conditions around a plain rule compare by header, and a rule among them also by its order
+ * among the same-header rules. */
 const conditionKeys = (conditions: readonly LayoutContext[]): string[] =>
   conditions.map(({ header, occurrence }) => JSON.stringify([header, occurrence ?? null]))
 
@@ -221,15 +221,6 @@ function guardKey({ path, conditions, selector }: LayoutLocation, property: stri
   return `${scope}${selector}{${property}`
 }
 
-function isLayerOrder(node: Rule | Atrule): boolean {
-  return (
-    node.type === 'Atrule' &&
-    ident.decode(node.name).toLowerCase() === 'layer' &&
-    Boolean(node.prelude) &&
-    (!node.block || node.block.children.isEmpty)
-  )
-}
-
 function nests(node: Rule | Atrule): boolean {
   return (
     node.type === 'Rule' &&
@@ -258,7 +249,13 @@ function declaredBy(location: LayoutLocation, property: string): LayoutLocation 
   }
 }
 
-function declarations(css: string): Declarations {
+function parseSheet(css: string): StyleSheet {
+  const tree = parse(css)
+  if (tree.type !== 'StyleSheet') throw new Error('Sidans layout saknar sitt CSS-träd.')
+  return tree
+}
+
+function declarations(tree: StyleSheet): Declarations {
   const result: Declarations = new Map()
   let order = 0
   const visit = (block: LayoutBlock, path: LayoutContext[]): void => {
@@ -276,18 +273,17 @@ function declarations(css: string): Declarations {
       if (node.type !== 'Rule' && node.type !== 'Atrule') return
       const header = contextHeader(node)
       const occurrence = occurrences.get(header) ?? 0
-      if (!isLayerOrder(node)) occurrences.set(header, occurrence + 1)
+      occurrences.set(header, occurrence + 1)
       const nesting = nests(node) ? (nestings.get(header) ?? 0) : undefined
       if (nesting !== undefined) nestings.set(header, nesting + 1)
       siblings.push({ node, header, occurrence, ...(nesting === undefined ? {} : { nesting }) })
     })
     // Same-header neighbors can be harmless media splitting. Only a distinct owner
-    // condition bounds a guard; layer-order placeholders are not such conditions.
+    // condition bounds a guard.
     for (const direction of ['preceding', 'following'] as const) {
       let previous: (typeof siblings)[number] | undefined
       let boundary: LayoutSibling | undefined
       for (const sibling of direction === 'preceding' ? siblings : [...siblings].reverse()) {
-        if (isLayerOrder(sibling.node)) continue
         if (previous?.header !== sibling.header)
           boundary = previous
             ? {
@@ -301,9 +297,7 @@ function declarations(css: string): Declarations {
       }
     }
     siblings.forEach(({ node, header, occurrence, nesting, preceding, following }, position) => {
-      const ordered =
-        !isLayerOrder(node) &&
-        (node.type === 'Rule' || ident.decode(node.name).toLowerCase() === 'layer')
+      const ordered = node.type === 'Rule'
       const declaring =
         nesting === undefined || node.type !== 'Rule'
           ? undefined
@@ -357,8 +351,6 @@ function declarations(css: string): Declarations {
       } else if (node.block) visit(node.block, nextPath)
     })
   }
-  const tree = parse(css)
-  if (tree.type !== 'StyleSheet') throw new Error('Sidans layout saknar sitt CSS-träd.')
   visit(tree, [])
   return result
 }
@@ -464,9 +456,7 @@ function mapContext(
 
 function siblingIndex(siblings: (Rule | Atrule)[], sibling?: LayoutSibling): number {
   if (!sibling) return -1
-  const same = siblings.filter(
-    (node) => !isLayerOrder(node) && contextHeader(node) === sibling.header,
-  )
+  const same = siblings.filter((node) => contextHeader(node) === sibling.header)
   // Only the other sheets drop the rules a sync emptied, which renumbers the siblings after them.
   // Where a sheet holds fewer under the header than the path's sheet, an occurrence may name
   // another sibling, so it bounds nothing. A sync appends after every earlier sibling.
@@ -487,7 +477,6 @@ function matchingContexts(
   const matches = siblings.filter(
     (node, index) =>
       Boolean(node.block) &&
-      !isLayerOrder(node) &&
       contextHeader(node) === context.header &&
       (preceding < 0 || index > preceding) &&
       (following < 0 || index < following),
@@ -516,11 +505,7 @@ function contextBlocks(block: LayoutBlock, path: LayoutContext[], bounded = true
   const target =
     !bounded && !remaining.length ? { header: context.header, position: context.position } : context
   return matchingContexts(block, target, bounded).flatMap((node) =>
-    node.block
-      ? remaining.length
-        ? contextBlocks(node.block, remaining, bounded)
-        : [node.block]
-      : [],
+    node.block ? contextBlocks(node.block, remaining, bounded) : [],
   )
 }
 
@@ -551,11 +536,9 @@ function insertContext(block: LayoutBlock, context: LayoutContext): Block {
   if (preceding >= 0) position = Math.max(position, preceding + 1)
   if (following >= 0) position = Math.min(position, following)
   if (context.occurrence !== undefined) {
-    // Missing anonymous layers reserve real ordinal slots. Their populated successor
-    // must follow those placeholders even when their source insertion position is earlier.
-    const previous = siblings.findLast(
-      (child) => !isLayerOrder(child) && contextHeader(child) === context.header,
-    )
+    // Missing same-header rules reserve real ordinal slots. Their populated successor
+    // must follow those placeholders even when its source insertion position is earlier.
+    const previous = siblings.findLast((child) => contextHeader(child) === context.header)
     if (previous) position = Math.max(position, siblings.indexOf(previous) + 1)
   }
   const before = siblings[position]
@@ -573,7 +556,7 @@ function ensureContext(block: LayoutBlock, path: LayoutContext[]): Block {
   }
   const candidates = matchingContexts(block, context)
   // Prefer the existing complete path, even when equivalent media groups were split or
-  // combined differently between themes. Anonymous layers retain their own occurrence.
+  // combined differently between themes. Same-header rules retain their own occurrence.
   const candidate = candidates.reduce<Rule | Atrule | undefined>((best, current) => {
     if (!current.block) return best
     return !best?.block ||
@@ -589,7 +572,6 @@ function ensureContext(block: LayoutBlock, path: LayoutContext[]): Block {
         .filter(
           (node) =>
             (node.type === 'Rule' || node.type === 'Atrule') &&
-            !isLayerOrder(node) &&
             contextHeader(node) === context.header,
         ).length
       for (let index = existing; index < context.occurrence; index++)
@@ -632,9 +614,7 @@ function eachComponentRule(
 
 /** The keys whose last word in a sheet is a guard: a nested guard takes the key, and a declaration
  * of the component rule takes it back. */
-function guardLastKeys(css: string): Set<string> {
-  const tree = parse(css)
-  if (tree.type !== 'StyleSheet') throw new Error('Sidans layout saknar sitt CSS-träd.')
+function guardLastKeys(tree: StyleSheet): Set<string> {
   const keys = new Set<string>()
   eachComponentRule(tree, ({ block }, selector, key) => {
     block.children.forEach((child) => {
@@ -685,12 +665,11 @@ function keepGuardsLast(
 }
 
 /** Rules a sync emptied leave the sheet with their emptied conditions. Authored empty blocks
- * and every layer stay: a layer holds its ordinal even with nothing inside it. */
+ * stay. */
 function dropEmptied(tree: StyleSheet, shrunk: Set<List<CssNode>>): void {
   walk(tree, {
     leave(node: CssNode, item: ListItem<CssNode>, list: List<CssNode>) {
       if (node.type !== 'Rule' && node.type !== 'Atrule') return
-      if (node.type === 'Atrule' && ident.decode(node.name).toLowerCase() === 'layer') return
       const children = node.block?.children
       if (children?.isEmpty && shrunk.has(children) && item && list) {
         list.remove(item)
@@ -708,8 +687,8 @@ interface PlainRule {
   readonly items: readonly { readonly block: LayoutBlock; readonly item: ListItem<CssNode> }[]
 }
 
-/** Every plain component rule in source order, also one a layer inside another rule holds, with
- * its conditions numbered as `declarations()` numbers them. */
+/** Every plain component rule in source order, with its conditions numbered as `declarations()`
+ * numbers them. */
 function plainRules(
   block: LayoutBlock,
   conditions: LayoutContext[] = [],
@@ -722,7 +701,7 @@ function plainRules(
     if (node.type !== 'Rule' && node.type !== 'Atrule') return
     const header = contextHeader(node)
     const occurrence = occurrences.get(header) ?? 0
-    if (!isLayerOrder(node)) occurrences.set(header, occurrence + 1)
+    occurrences.set(header, occurrence + 1)
     const index = position++
     const here = [...items, { block, item }]
     if (node.type === 'Rule') {
@@ -730,10 +709,11 @@ function plainRules(
       if (selector) rules.push({ rule: node, selector, conditions, items: here })
     }
     if (!node.block) return
-    const ordered =
-      !isLayerOrder(node) &&
-      (node.type === 'Rule' || ident.decode(node.name).toLowerCase() === 'layer')
-    const context = { header, position: index, ...(ordered ? { occurrence } : {}) }
+    const context = {
+      header,
+      position: index,
+      ...(node.type === 'Rule' ? { occurrence } : {}),
+    }
     rules.push(...plainRules(node.block, [...conditions, context], here))
   })
   return rules
@@ -741,8 +721,7 @@ function plainRules(
 
 /** A changed plain rule goes back ahead of the first rule for the same element that the edited
  * sheet holds after it, in the deepest block whose conditions both share. Otherwise it goes last
- * in its layer, or in the sheet. It never leaves its layer block, because a new anonymous layer
- * block would be another layer. */
+ * in the sheet. */
 function insertPlain(tree: StyleSheet, change: LayoutChange): void {
   const { location, values, later } = change
   const body = [...values.values()]
@@ -755,33 +734,24 @@ function insertPlain(tree: StyleSheet, change: LayoutChange): void {
     const index = conditionKeys(conditions).findIndex((key, depth) => key !== keys[depth])
     return index < 0 ? conditions.length : index
   }
-  const layer =
-    location.conditions.findLastIndex(({ header }) => /^@layer(?:\s|$)/.test(header)) + 1
   const anchor = plainRules(tree).find(
     ({ rule, selector, conditions }) =>
       selector === location.selector &&
-      shared(conditions) >= layer &&
       rule.block.children.some(
         (child) =>
           child.type === 'Declaration' &&
           Boolean(later.get(child.property)?.has(JSON.stringify(conditionKeys(conditions)))),
       ),
   )
-  const depth = anchor ? shared(anchor.conditions) : layer
-  const added = parse(
+  const depth = anchor ? shared(anchor.conditions) : 0
+  const added = parseSheet(
     location.conditions
       .slice(depth)
       .reduceRight((rule, { header }) => `${header}{${rule}}`, `${location.selector}{${body}}`),
   )
-  if (added.type !== 'StyleSheet') throw new Error('Sidans layout saknar sitt CSS-träd.')
   const at = anchor?.items[depth]
   if (at) at.block.children.insertList(added.children, at.item)
-  else if (!layer) tree.children.appendList(added.children)
-  else {
-    const scope = location.conditions.slice(0, layer)
-    const block = contextBlocks(tree, scope).at(-1) ?? ensureContext(tree, scope)
-    block.children.appendList(added.children)
-  }
+  else tree.children.appendList(added.children)
 }
 
 /** Apply one delta to a theme or language. `source` only corrects clipping in the edited sheet. */
@@ -815,32 +785,26 @@ function applyLayout(
       mapped.set(placementKey(next), { location: next, values: changed, guardLast, later })
   }
   if (!mapped.size) return other
-  const tree = parse(other)
-  if (tree.type !== 'StyleSheet') throw new Error('Sidans layout saknar sitt CSS-träd.')
+  const tree = parseSheet(other)
   const shrunk = new Set<List<CssNode>>()
+  const removeChanged = (children: List<CssNode>, values: ReadonlyMap<string, unknown>): void =>
+    children.forEach((declaration, item) => {
+      if (declaration.type === 'Declaration' && values.has(declaration.property)) {
+        children.remove(item)
+        shrunk.add(children)
+      }
+    })
   // A plain change replaces the property only under the conditions of the edited rule.
   for (const { rule, selector, conditions } of plainRules(tree)) {
     const changed = mapped.get(placementKey({ selector, conditions }))
-    if (!changed || changed.location.path) continue
-    rule.block.children.forEach((declaration, item) => {
-      if (declaration.type === 'Declaration' && changed.values.has(declaration.property)) {
-        rule.block.children.remove(item)
-        shrunk.add(rule.block.children)
-      }
-    })
+    if (changed && !changed.location.path) removeChanged(rule.block.children, changed.values)
   }
   for (const { location, values } of mapped.values()) {
     if (!location.path) continue
     // A counterpart may combine guards. Remove the changed properties throughout the
     // semantic context before choosing their source-ordered insertion destinations.
-    const blocks = contextBlocks(tree, location.path, false)
-    for (const block of blocks)
-      block.children.forEach((declaration, item) => {
-        if (declaration.type === 'Declaration' && values.has(declaration.property)) {
-          block.children.remove(item)
-          shrunk.add(block.children)
-        }
-      })
+    for (const block of contextBlocks(tree, location.path, false))
+      removeChanged(block.children, values)
     const additions = [...values.values()].filter((value): value is CssNode => value !== null)
     if (additions.length) {
       const block = contextBlocks(tree, location.path).at(-1) ?? ensureContext(tree, location.path)
@@ -859,10 +823,9 @@ function applyLayout(
 
 /** Copy only changed geometry, preserving independent colors and untouched layout drift. */
 export function syncLayout(before: string, after: string, other: string): string {
-  return applyLayout(
-    layoutChanges(declarations(before), declarations(after), guardLastKeys(after)),
-    other,
-  )
+  const previous = declarations(parseSheet(before))
+  const edited = parseSheet(after)
+  return applyLayout(layoutChanges(previous, declarations(edited), guardLastKeys(edited)), other)
 }
 
 type Node = DefaultTreeAdapterMap['node']
@@ -907,21 +870,19 @@ export function connectTextAutoHeight(editor: Editor, disabled: () => boolean): 
 
 function layoutElements(html: string): Map<string, LayoutTarget> {
   const result = new Map<string, LayoutTarget>()
+  const isText = (node: Node): boolean =>
+    node.nodeName === '#text' && 'value' in node && Boolean(node.value.trim())
   const hasText = (node: Node): boolean =>
-    (node.nodeName === '#text' && 'value' in node && Boolean(node.value.trim())) ||
-    ('childNodes' in node && node.childNodes.some(hasText))
+    isText(node) || ('childNodes' in node && node.childNodes.some(hasText))
   const visit = (node: Node): void => {
     if ('tagName' in node) {
       const id = node.attrs.find((attr) => attr.name === 'id')?.value
       if (id) {
-        const directText = node.childNodes.some(
-          (child) => child.nodeName === '#text' && 'value' in child && child.value.trim(),
-        )
         result.set(id, {
           selector: `#${ident.encode(id)}`,
           text:
             node.namespaceURI === 'http://www.w3.org/1999/xhtml' &&
-            (directText || (textTags.has(node.tagName) && hasText(node))),
+            (node.childNodes.some(isText) || (textTags.has(node.tagName) && hasText(node))),
         })
       }
     }
@@ -959,11 +920,12 @@ export function syncPageLayout(
   const baseline = isSitePage(before)
     ? normalizeSitePageContent(before.content[lang], `${before.id}-${lang}`)
     : before.content[lang]
-  const previous = declarations(baseline.css[mode])
-  const next = declarations(edited.content[lang].css[mode])
+  const previous = declarations(parseSheet(baseline.css[mode]))
+  const sheet = parseSheet(edited.content[lang].css[mode])
+  const next = declarations(sheet)
   // The canvas's legacy breakpoint repair is not an owner edit. With no geometry delta,
   // leave every other stored sheet untouched.
-  const changes = layoutChanges(previous, next, guardLastKeys(edited.content[lang].css[mode]))
+  const changes = layoutChanges(previous, next, guardLastKeys(sheet))
   if (!changes.size) return edited
   const otherLang = lang === 'sv' ? 'en' : 'sv'
   const otherMode = mode === 'light' ? 'dark' : 'light'

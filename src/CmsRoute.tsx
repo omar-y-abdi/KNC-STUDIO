@@ -41,13 +41,9 @@ export function CmsRoute(): JSX.Element {
   }, [owner, studio])
   if (studio instanceof Error) throw studio
 
-  if (!owner)
-    return error === null ? (
-      <LazyLoadingMessage label="Laddar Studio…" overlay={false} minHeight="100vh" />
-    ) : (
-      <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center' }}>{error}</div>
-    )
-  if (studio === null)
+  if (!owner && error !== null)
+    return <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center' }}>{error}</div>
+  if (!owner || studio === null)
     return <LazyLoadingMessage label="Laddar Studio…" overlay={false} minHeight="100vh" />
 
   return <studio.CmsStudio onExit={() => navigate('/admin', { replace: false })} />

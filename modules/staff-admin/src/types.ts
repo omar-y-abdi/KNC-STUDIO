@@ -23,9 +23,6 @@ export interface AdminProfile {
   readonly role: AdminRole
   /** The barber this account acts as (null for an owner). */
   readonly barberId: AdminBarberId | null
-  /** Legacy compatibility gate for accounts provisioned before single-use invitations.
-   * Cleared by `set_own_password_changed()` after the change. */
-  readonly mustChangePassword: boolean
 }
 
 export type BarberAccountState = 'enabled' | 'disabled'
@@ -44,28 +41,10 @@ export interface AdminBarber {
 }
 
 /** Fields the owner may set when creating a barber. */
-export interface NewBarber {
-  readonly id: AdminBarberId
-  readonly name: string
-  readonly ig: string
-  readonly roleSv: string
-  readonly roleEn: string
-  readonly bioSv: string
-  readonly bioEn: string
-  readonly sortOrder: number
-}
+export type NewBarber = Omit<AdminBarber, 'active'>
 
 /** Fields the owner may edit on an existing barber (id is the immutable key). */
-export interface BarberEdit {
-  readonly name: string
-  readonly ig: string
-  readonly roleSv: string
-  readonly roleEn: string
-  readonly bioSv: string
-  readonly bioEn: string
-  readonly active: boolean
-  readonly sortOrder: number
-}
+export type BarberEdit = Omit<AdminBarber, 'id'>
 
 /** A per-barber service-menu row as the admin manages it (the full row, incl. inactive). */
 export interface AdminService {
@@ -200,6 +179,14 @@ export function err<T>(kind: AdminError['kind'], message: string): AdminResult<T
   return { ok: false, error: { kind, message } }
 }
 
+/** Build the `error` branch of a structured outcome (availability mutation / barber delete). */
+export function outcomeError(
+  kind: AdminError['kind'],
+  message: string,
+): { readonly kind: 'error'; readonly error: AdminError } {
+  return { kind: 'error', error: { kind, message } }
+}
+
 // --- Delete outcomes -----------------------------------------------------------------------------
 
 /**
@@ -214,13 +201,7 @@ export type DeleteBarberOutcome =
       readonly authCleanupPending: boolean
     }
   | {
-      readonly kind: 'has_bookings'
-      readonly count: number
-      readonly past: number
-      readonly upcoming: number
-    }
-  | {
-      readonly kind: 'has_upcoming'
+      readonly kind: 'has_bookings' | 'has_upcoming'
       readonly count: number
       readonly past: number
       readonly upcoming: number

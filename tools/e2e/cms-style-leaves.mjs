@@ -2,17 +2,15 @@ import { generate, ident, parse, walk } from 'css-tree'
 
 // What a stylesheet declares, in the order GrapesJS getCss keeps. getCss first writes the plain
 // rules in model order: qualified rules, and the one envelope rule parseCanvasCss makes of each
-// top-level at-rule that holds a layer, a direct at-rule or keyframes. It then writes the other
+// top-level at-rule that holds a direct at-rule or keyframes. It then writes the other
 // at-rules grouped by head, with the heads sorted by query width and each head's rules in model
 // order. So the plain rules form one sequence and each head's rules another. A leaf is a run of a
 // block's declarations in order, with the at-rules and selectors around it. A nested rule ends a
 // run: the declarations after it follow it in the cascade, so they form the next run, a leaf after
-// the nested rule's own. A layer statement, and a named layer block that declares nothing, is a
-// leaf in its place too, since it fixes the order of the layers it names. An empty anonymous layer
-// fixes nothing, so it is no leaf. The leading `& ` that getCss keeps and readCanvasCss removes is
+// the nested rule's own. The leading `& ` that getCss keeps and readCanvasCss removes is
 // dropped, and an empty rule outside any other rule, which canvasRules leaves out, is no leaf.
 // Equal results prove the same declarations in the same contexts, in the same order within the
-// plain sequence, layer order and the order around nested rules included, and within each head.
+// plain sequence, the order around nested rules included, and within each head.
 // They cannot prove equal bytes, the interleaving of plain rules with grouped ones, or the order
 // between rules under different heads: getCss reorders both, so a cascade change there needs a
 // cascade probe of its own.
@@ -39,19 +37,12 @@ function groupHead(node) {
   if (node.type !== 'Atrule' || ['keyframes', '-webkit-keyframes'].includes(nameOf(node)))
     return undefined
   if (node.block?.children.some((child) => child.type === 'Atrule')) return undefined
-  let layered = false
-  walk(node, (child) => {
-    if (child.type === 'Rule') return walk.skip
-    if (child.type === 'Atrule' && nameOf(child) === 'layer') layered = true
-    return undefined
-  })
-  return layered ? undefined : headOf(node)
+  return headOf(node)
 }
 
 function leavesOf(root) {
   const leaves = []
   const enclosing = []
-  const starts = []
   const nests = (node) => node.type === 'Rule' || node.type === 'Atrule'
   // The declarations from a block item up to the next nested rule.
   const runFrom = (item) => {
@@ -62,15 +53,11 @@ function leavesOf(root) {
   }
   walk(root, {
     enter(node) {
-      if (node.type === 'Atrule') {
+      if (node.type === 'Atrule' && node.block) {
         const head = headOf(node)
-        if (node.block) {
-          starts.push(leaves.length)
-          const declarations = runFrom(node.block.children.head)
-          if (declarations.length > 0)
-            leaves.push(JSON.stringify([...enclosing, head, declarations]))
-          enclosing.push(head)
-        } else leaves.push(JSON.stringify([...enclosing, head]))
+        const declarations = runFrom(node.block.children.head)
+        if (declarations.length > 0) leaves.push(JSON.stringify([...enclosing, head, declarations]))
+        enclosing.push(head)
       }
       if (node.type === 'Rule') {
         const selector = generate(node.prelude).replace(/^& /, '')
@@ -81,13 +68,7 @@ function leavesOf(root) {
       }
     },
     leave(node, item) {
-      if (node.type === 'Rule') enclosing.pop()
-      if (node.type === 'Atrule' && node.block) {
-        const head = enclosing.pop()
-        const declaredNothing = starts.pop() === leaves.length
-        if (declaredNothing && nameOf(node) === 'layer' && node.prelude)
-          leaves.push(JSON.stringify([...enclosing, head]))
-      }
+      if (node.type === 'Rule' || (node.type === 'Atrule' && node.block)) enclosing.pop()
       // The declarations after a nested rule follow it in the cascade: a leaf of the enclosing
       // block after the nested rule's own.
       if (!nests(node)) return

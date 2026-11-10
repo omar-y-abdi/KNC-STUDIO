@@ -214,13 +214,13 @@ function parseCalendarBookingSource(value: unknown): CalendarBookingSource | nul
     barber_id: value.barber_id,
     service_name: value.service_name,
     customer_name: value.customer_name,
-    phone: value.phone === null ? null : (value.phone as string),
+    phone: value.phone,
     email: value.email,
     start_at: value.start_at,
     end_at: value.end_at,
-    refresh_token: value.refresh_token === null ? null : (value.refresh_token as string),
-    calendar_id: value.calendar_id === null ? null : (value.calendar_id as string),
-    google_event_id: value.google_event_id === null ? null : (value.google_event_id as string),
+    refresh_token: value.refresh_token,
+    calendar_id: value.calendar_id,
+    google_event_id: value.google_event_id,
     mapped_barber_id: typeof value.mapped_barber_id === 'string' ? value.mapped_barber_id : null,
     mapped_refresh_token:
       typeof value.mapped_refresh_token === 'string' ? value.mapped_refresh_token : null,
@@ -276,12 +276,12 @@ export function parseExternalAction(value: unknown): ExternalAction | null {
       barber_id: value.barber_id,
       service_name: value.service_name,
       customer_name: value.customer_name,
-      phone: value.phone === null ? null : (value.phone as string),
+      phone: value.phone,
       start_at: value.start_at,
       end_at: value.end_at,
-      refresh_token: value.refresh_token === null ? null : (value.refresh_token as string),
-      calendar_id: value.calendar_id === null ? null : (value.calendar_id as string),
-      google_event_id: value.google_event_id === null ? null : (value.google_event_id as string),
+      refresh_token: value.refresh_token,
+      calendar_id: value.calendar_id,
+      google_event_id: value.google_event_id,
       mapped_barber_id: typeof value.mapped_barber_id === 'string' ? value.mapped_barber_id : null,
       mapped_refresh_token:
         typeof value.mapped_refresh_token === 'string' ? value.mapped_refresh_token : null,
@@ -397,56 +397,27 @@ interface CalendarEventIdentity {
   readonly googleEventId: string
 }
 
-function mappedCalendarEvent(
-  source: CalendarBookingSource,
+/** An event is identified only when its barber, calendar and Google event id are all known. */
+function calendarEventIdentity(
   bookingId: string,
+  barberId: string | null,
+  calendarId: string | null,
+  eventId: string | null,
 ): CalendarEventIdentity | null {
-  if (
-    !nonEmpty(source.mapped_barber_id) ||
-    !nonEmpty(source.mapped_calendar_id) ||
-    !nonEmpty(source.mapped_google_event_id)
-  ) {
-    return null
-  }
-  return {
-    bookingId,
-    barberId: source.mapped_barber_id,
-    calendarId: source.mapped_calendar_id,
-    googleEventId: source.mapped_google_event_id,
-  }
-}
-
-function targetCalendarEvent(
-  source: CalendarBookingSource,
-  bookingId: string,
-): CalendarEventIdentity | null {
-  if (
-    !nonEmpty(source.barber_id) ||
-    !nonEmpty(source.calendar_id) ||
-    !nonEmpty(source.google_event_id)
-  ) {
-    return null
-  }
-  return {
-    bookingId,
-    barberId: source.barber_id,
-    calendarId: source.calendar_id,
-    googleEventId: source.google_event_id,
-  }
+  return nonEmpty(barberId) && nonEmpty(calendarId) && nonEmpty(eventId)
+    ? { bookingId, barberId, calendarId, googleEventId: eventId }
+    : null
 }
 
 async function recordCalendarEventIfCurrent(
-  bookingId: string,
-  barberId: string,
-  calendarId: string,
+  identity: CalendarEventIdentity,
   service: ExternalActionService,
-  googleEventIdValue: string,
 ): Promise<boolean> {
   const recorded = await service.rpc('calendar_record_event_if_current', {
-    p_booking_id: bookingId,
-    p_barber_id: barberId,
-    p_calendar_id: calendarId,
-    p_google_event_id: googleEventIdValue,
+    p_booking_id: identity.bookingId,
+    p_barber_id: identity.barberId,
+    p_calendar_id: identity.calendarId,
+    p_google_event_id: identity.googleEventId,
   })
   if (recorded.error !== null) {
     throw new ExternalActionError(
@@ -522,12 +493,11 @@ async function loadCalendarBookingSource(
 }
 
 async function forgetMappedCalendarEvent(
-  bookingId: string,
   mapped: CalendarEventIdentity,
   source: CalendarBookingSource,
   service: ExternalActionService,
   runtime: ExternalActionRuntime,
-): Promise<boolean> {
+): Promise<void> {
   if (!source.mapped_refresh_token) {
     throw new ExternalActionError(
       'calendar_authorization_required',
@@ -546,7 +516,7 @@ async function forgetMappedCalendarEvent(
   )
   await deleteEvent(accessToken, mapped.calendarId, mapped.googleEventId)
   const forgotten = await service.rpc('calendar_forget_event_if_matches', {
-    p_booking_id: bookingId,
+    p_booking_id: mapped.bookingId,
     p_barber_id: mapped.barberId,
     p_calendar_id: mapped.calendarId,
     p_google_event_id: mapped.googleEventId,
@@ -557,7 +527,6 @@ async function forgetMappedCalendarEvent(
       forgotten.error.message ?? 'Calendar mapping cleanup failed',
     )
   }
-  return forgotten.data === true
 }
 
 export async function executeExternalAction(
@@ -584,9 +553,19 @@ export async function executeExternalAction(
         // A bounded loop handles the two races that matter here: another worker can win the old-map
         // delete CAS, or it can win the destination-map CAS after Google has accepted our write.
         for (let attempt = 0; attempt < 3; attempt++) {
-          const mapped = mappedCalendarEvent(source, action.booking_id)
+          const mapped = calendarEventIdentity(
+            action.booking_id,
+            source.mapped_barber_id,
+            source.mapped_calendar_id,
+            source.mapped_google_event_id,
+          )
           const targetAvailable = nonEmpty(source.refresh_token) && nonEmpty(source.calendar_id)
-          const targetEvent = targetCalendarEvent(source, action.booking_id)
+          const targetEvent = calendarEventIdentity(
+            action.booking_id,
+            source.barber_id,
+            source.calendar_id,
+            source.google_event_id,
+          )
           const mappingIsTarget =
             mapped !== null &&
             mapped.barberId === source.barber_id &&
@@ -594,18 +573,11 @@ export async function executeExternalAction(
             mapped.googleEventId === source.google_event_id
 
           if (mapped !== null && (!targetAvailable || !mappingIsTarget)) {
-            const forgotten = await forgetMappedCalendarEvent(
-              action.booking_id,
-              mapped,
-              source,
-              service,
-              runtime,
-            )
+            await forgetMappedCalendarEvent(mapped, source, service, runtime)
             // A false exact delete means another writer changed the mapping.  Re-read before doing
             // anything at the destination; never overwrite the winner with this worker's event.
             source = await loadCalendarBookingSource(action.booking_id, service)
             if (source === null) return
-            if (!forgotten) continue
             continue
           }
 
@@ -642,43 +614,25 @@ export async function executeExternalAction(
             )
           }
 
+          const written: CalendarEventIdentity = {
+            bookingId: action.booking_id,
+            barberId: source.barber_id,
+            calendarId,
+            googleEventId: eventId,
+          }
           let recorded: boolean
           try {
-            recorded = await recordCalendarEventIfCurrent(
-              action.booking_id,
-              source.barber_id,
-              calendarId,
-              service,
-              eventId,
-            )
+            recorded = await recordCalendarEventIfCurrent(written, service)
           } catch (error) {
             if (error instanceof ExternalActionError && error.code === 'calendar_record_failed') {
-              await compensateUnrecordedCalendarEvent(
-                accessToken,
-                {
-                  bookingId: action.booking_id,
-                  barberId: source.barber_id,
-                  calendarId,
-                  googleEventId: eventId,
-                },
-                service,
-              )
+              await compensateUnrecordedCalendarEvent(accessToken, written, service)
             }
             throw error
           }
 
           if (recorded) return
 
-          await compensateUnrecordedCalendarEvent(
-            accessToken,
-            {
-              bookingId: action.booking_id,
-              barberId: source.barber_id,
-              calendarId,
-              googleEventId: eventId,
-            },
-            service,
-          )
+          await compensateUnrecordedCalendarEvent(accessToken, written, service)
           source = await loadCalendarBookingSource(action.booking_id, service)
           if (source === null) return
         }

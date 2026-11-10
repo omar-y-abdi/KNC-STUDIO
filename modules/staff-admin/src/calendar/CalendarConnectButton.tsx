@@ -52,6 +52,18 @@ export function CalendarConnectButton(props: CalendarConnectButtonProps): JSX.El
   const repairRequired = status?.repairRequired === true
   const disabled = cal.busy || cal.loading
 
+  /** Starts the Google consent flow; a first connect and an access repair differ only in label. */
+  const connectButton = (label: string): JSX.Element => (
+    <button
+      type="button"
+      style={{ ...s.primaryBtn, opacity: disabled ? 0.6 : 1 }}
+      disabled={disabled}
+      onClick={() => void cal.connect()}
+    >
+      {cal.busy ? t.calendarConnecting : label}
+    </button>
+  )
+
   return (
     <div style={box}>
       {status === null
@@ -70,14 +82,7 @@ export function CalendarConnectButton(props: CalendarConnectButtonProps): JSX.El
 
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '5px' }}>
         {status === null ? null : repairRequired ? (
-          <button
-            type="button"
-            style={{ ...s.primaryBtn, opacity: disabled ? 0.6 : 1 }}
-            disabled={disabled}
-            onClick={() => void cal.connect()}
-          >
-            {cal.busy ? t.calendarConnecting : t.calendarRepairAccess}
-          </button>
+          connectButton(t.calendarRepairAccess)
         ) : disconnectPending ? null : connected ? (
           <>
             <a
@@ -103,14 +108,7 @@ export function CalendarConnectButton(props: CalendarConnectButtonProps): JSX.El
             </button>
           </>
         ) : (
-          <button
-            type="button"
-            style={{ ...s.primaryBtn, opacity: disabled ? 0.6 : 1 }}
-            disabled={disabled}
-            onClick={() => void cal.connect()}
-          >
-            {cal.busy ? t.calendarConnecting : t.calendarConnect}
-          </button>
+          connectButton(t.calendarConnect)
         )}
         {disconnectPending || cal.error !== null ? (
           <button

@@ -63,7 +63,6 @@ test('workflow formats first and all verification jobs consume the same source a
     'startup',
     'edge-functions',
     'database-current',
-    'database-rollout',
   ]) {
     const body = section(job)
     assert.match(body, /^ {4}needs: (format|\[format, build\])$/m)

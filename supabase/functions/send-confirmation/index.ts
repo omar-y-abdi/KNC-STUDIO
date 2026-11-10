@@ -44,6 +44,19 @@ interface DeliveryJob {
   readonly event: Exclude<BookingEmailEvent, 'booking_reminder'>
   readonly sentKinds: readonly DeliveryKind[]
 }
+type DeliveryMessage = { kind: DeliveryKind; message: PreparedEmail }
+
+/** Each event's template per recipient; the reminder goes to the customer only. */
+const TEMPLATES: Readonly<
+  Record<
+    BookingEmailEvent,
+    { readonly customer: EmailTemplateName; readonly barber: EmailTemplateName | null }
+  >
+> = {
+  booking_confirmed: { customer: 'customer_confirmation', barber: 'barber_confirmation' },
+  booking_cancelled: { customer: 'customer_cancellation', barber: 'barber_cancellation' },
+  booking_reminder: { customer: 'customer_reminder', barber: null },
+}
 
 function nonEmpty(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0
@@ -289,76 +302,36 @@ async function buildMessages(
   event: BookingEmailEvent,
   booking: BookingRow,
   business: EmailBusiness,
-): Promise<readonly { kind: DeliveryKind; message: PreparedEmail }[]> {
+): Promise<readonly DeliveryMessage[]> {
   const customerCtaHref =
     booking.email !== null && (event === 'booking_confirmed' || event === 'booking_reminder')
       ? await customerAccessHref(booking)
       : 'https://bladeblendstudio.se'
-  const candidates: Array<Promise<{ kind: DeliveryKind; message: PreparedEmail }> | null> =
-    event === 'booking_confirmed'
-      ? [
-          booking.email === null
-            ? null
-            : message(
-                booking,
-                booking.email,
-                'customer_confirmation',
-                customerRows(booking),
-                business,
-                customerCtaHref,
-              ).then((message) => ({ kind: 'customer', message })),
-          booking.barberEmail === null
-            ? null
-            : message(
-                booking,
-                booking.barberEmail,
-                'barber_confirmation',
-                barberRows(booking),
-                business,
-                'https://bladeblendstudio.se/admin',
-              ).then((message) => ({ kind: 'barber', message })),
-        ]
-      : event === 'booking_cancelled'
-        ? [
-            booking.email === null
-              ? null
-              : message(
-                  booking,
-                  booking.email,
-                  'customer_cancellation',
-                  customerRows(booking),
-                  business,
-                  customerCtaHref,
-                ).then((message) => ({ kind: 'customer', message })),
-            booking.barberEmail === null
-              ? null
-              : message(
-                  booking,
-                  booking.barberEmail,
-                  'barber_cancellation',
-                  barberRows(booking),
-                  business,
-                  'https://bladeblendstudio.se/admin',
-                ).then((message) => ({ kind: 'barber', message })),
-          ]
-        : [
-            booking.email === null
-              ? null
-              : message(
-                  booking,
-                  booking.email,
-                  'customer_reminder',
-                  customerRows(booking),
-                  business,
-                  customerCtaHref,
-                ).then((message) => ({ kind: 'customer', message })),
-          ]
-  return Promise.all(
-    candidates.filter(
-      (candidate): candidate is Promise<{ kind: DeliveryKind; message: PreparedEmail }> =>
-        candidate !== null,
-    ),
-  )
+  const templates = TEMPLATES[event]
+  const candidates: Promise<DeliveryMessage>[] = []
+  if (booking.email !== null)
+    candidates.push(
+      message(
+        booking,
+        booking.email,
+        templates.customer,
+        customerRows(booking),
+        business,
+        customerCtaHref,
+      ).then((message) => ({ kind: 'customer', message })),
+    )
+  if (templates.barber !== null && booking.barberEmail !== null)
+    candidates.push(
+      message(
+        booking,
+        booking.barberEmail,
+        templates.barber,
+        barberRows(booking),
+        business,
+        'https://bladeblendstudio.se/admin',
+      ).then((message) => ({ kind: 'barber', message })),
+    )
+  return Promise.all(candidates)
 }
 
 async function handleRequest(req: Request): Promise<Response> {
@@ -402,7 +375,7 @@ async function handleRequest(req: Request): Promise<Response> {
     return json({ ok: true, skipped: 'state_changed' }, 200)
   }
 
-  let messages: readonly { kind: DeliveryKind; message: PreparedEmail }[]
+  let messages: readonly DeliveryMessage[]
   try {
     const client = serviceClient()
     if (client === null) throw new Error('service client unavailable')

@@ -6,15 +6,9 @@ import {
   sendViaResend,
 } from '../_shared/email.ts'
 import { verifyTurnstile, turnstilePolicy } from '../_shared/turnstile.ts'
+import { sha256Hex } from '../_shared/encoding.ts'
 import { corsHeaders, corsJson as json, parse } from '../_shared/http.ts'
 import { requestSchema } from './request.ts'
-
-async function sha256(value: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('')
-}
 
 function clientIp(req: Request): string {
   return req.headers.get('cf-connecting-ip')?.trim() || 'unknown'
@@ -50,7 +44,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const resendKey = Deno.env.get('RESEND_API_KEY')
   if (!url || !key || !resendKey) return json({ ok: false, error: 'not_configured' }, 503)
   const service = createClient(url, key, { auth: { persistSession: false } })
-  const scope = await sha256(`recovery:${email}`)
+  const scope = await sha256Hex(`recovery:${email}`)
   const limited = await service.rpc('consume_auth_email_send', {
     p_kind: 'recovery',
     p_scope_hash: scope,

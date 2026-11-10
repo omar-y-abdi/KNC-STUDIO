@@ -153,8 +153,7 @@ test('only browser-only jobs use the matching Playwright image and skip browser 
     assert.ok(!job.steps.some((step) => step.uses === './.github/actions/ci-browsers'), id)
     assert.ok(!job.steps.some((step) => /playwright install/.test(step.run ?? '')), id)
   }
-  for (const id of ['database-current', 'database-rollout'])
-    assert.equal(workflow.jobs[id].container, undefined, id)
+  assert.equal(workflow.jobs['database-current'].container, undefined)
   const browsers = workflow.jobs['database-current'].steps.find(
     (step) => step.uses === './.github/actions/ci-browsers',
   )
@@ -165,9 +164,11 @@ test('only browser-only jobs use the matching Playwright image and skip browser 
   const install = action('ci-browsers').runs.steps
   assert.ok(install.some((step) => step.uses?.startsWith('actions/cache@')))
   assert.ok(install.some((step) => step.run?.includes('playwright install --with-deps')))
-  assert.equal(
-    workflow.jobs['public-browsers'].strategy.matrix,
-    '${{ fromJSON(needs.format.outputs.public_matrix) }}',
+  assert.deepEqual(workflow.jobs['public-browsers'].strategy.matrix, { shard: [1, 2] })
+  assert.ok(
+    workflow.jobs['public-browsers'].steps.some((step) =>
+      step.run?.endsWith('browser public --shard=${{ matrix.shard }}/2'),
+    ),
   )
   assert.deepEqual(workflow.jobs.startup.strategy.matrix.engine, ['chromium', 'webkit'])
 })
@@ -406,7 +407,7 @@ test('affected workflow binds every consumer and omission to the formatted produ
         id,
       )
   }
-  for (const id of ['quality', 'build', 'edge-functions', 'database-rollout'])
+  for (const id of ['quality', 'build', 'edge-functions'])
     assert.ok(
       workflow.jobs[id].steps.some(
         (step) =>
@@ -429,7 +430,7 @@ test('affected workflow binds every consumer and omission to the formatted produ
     'startup',
     'edge-functions',
   ])
-  assert.deepEqual(workflow.jobs.database.needs, ['format', 'database-current', 'database-rollout'])
+  assert.deepEqual(workflow.jobs.database.needs, ['format', 'database-current'])
   for (const [id, group] of [
     ['cms', 'cms'],
     ['public-browsers', 'public'],
@@ -469,7 +470,6 @@ test('affected selection does not weaken any test job timeout', () => {
     startup: 10,
     'edge-functions': 15,
     'database-current': 20,
-    'database-rollout': 15,
   }
   for (const [id, expected] of Object.entries(minutes))
     assert.equal(workflow.jobs[id]['timeout-minutes'], expected, id)

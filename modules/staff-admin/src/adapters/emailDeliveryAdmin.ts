@@ -117,16 +117,16 @@ export async function listFailedBookingEmailDeliveries(): Promise<
   }
 }
 
-export async function retryFailedBookingEmailDelivery(id: string): Promise<AdminResult<boolean>> {
+/** Retry and discard answer `{ ok }` alike: false means the delivery already left the failed list. */
+async function settleFailedDelivery(
+  rpc: string,
+  response: typeof retryFailedBookingEmailDeliveryResponse,
+  id: string,
+): Promise<AdminResult<boolean>> {
   try {
-    const { data, error } = await getAdminClient().rpc(
-      'admin_retry_failed_booking_email_delivery',
-      {
-        p_id: id,
-      },
-    )
+    const { data, error } = await getAdminClient().rpc(rpc, { p_id: id })
     if (error !== null || data === null) return err('network', WRITE_ERROR)
-    const parsed = parseWith(retryFailedBookingEmailDeliveryResponse, data)
+    const parsed = parseWith(response, data)
     if (!parsed.ok) return err('malformed', WRITE_ERROR)
     return parsed.value.ok
       ? ok(true)
@@ -136,21 +136,20 @@ export async function retryFailedBookingEmailDelivery(id: string): Promise<Admin
   }
 }
 
-export async function discardFailedBookingEmailDelivery(id: string): Promise<AdminResult<boolean>> {
-  try {
-    const { data, error } = await getAdminClient().rpc(
-      'admin_discard_failed_booking_email_delivery',
-      { p_id: id },
-    )
-    if (error !== null || data === null) return err('network', WRITE_ERROR)
-    const parsed = parseWith(discardFailedBookingEmailDeliveryResponse, data)
-    if (!parsed.ok) return err('malformed', WRITE_ERROR)
-    return parsed.value.ok
-      ? ok(true)
-      : err('not_found', 'Mejlet finns inte längre bland misslyckade leveranser.')
-  } catch {
-    return err('network', WRITE_ERROR)
-  }
+export function retryFailedBookingEmailDelivery(id: string): Promise<AdminResult<boolean>> {
+  return settleFailedDelivery(
+    'admin_retry_failed_booking_email_delivery',
+    retryFailedBookingEmailDeliveryResponse,
+    id,
+  )
+}
+
+export function discardFailedBookingEmailDelivery(id: string): Promise<AdminResult<boolean>> {
+  return settleFailedDelivery(
+    'admin_discard_failed_booking_email_delivery',
+    discardFailedBookingEmailDeliveryResponse,
+    id,
+  )
 }
 
 export async function listEmailSendLog(

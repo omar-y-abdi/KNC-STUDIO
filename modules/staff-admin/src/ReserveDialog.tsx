@@ -11,7 +11,12 @@ import { useState } from 'preact/hooks'
 import { Dialog } from '@bladeblend/public-web/dialog'
 import { palette, systemRed } from '@bladeblend/public-web/booking-styles'
 import { parsePhone } from '@bladeblend/public-web/booking-validation'
-import { buildAdminStyles } from './adminStyles'
+import {
+  buildAdminStyles,
+  DIALOG_BACKDROP_STYLE,
+  dialogCardStyle,
+  dialogTitleStyle,
+} from './adminStyles'
 import type { Lang } from '@bladeblend/public-web/localization'
 import { adminText } from './adminStrings'
 import { validateManualReservationPrice } from './serviceValidation'
@@ -82,21 +87,6 @@ export function ReserveDialog(props: ReserveDialogProps): JSX.Element {
     if (svc !== undefined) setPrice(String(svc.price))
   }
 
-  const backdropStyle =
-    'position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;' +
-    'padding:20px;background:rgba(0,0,0,.42);'
-  const cardStyle: JSX.CSSProperties = {
-    width: '100%',
-    maxWidth: '380px',
-    background: c.bg,
-    color: c.text,
-    border: '0.5px solid ' + c.line,
-    borderRadius: '16px',
-    padding: '20px 22px',
-    boxShadow: '0 24px 60px rgba(0,0,0,.4)',
-    fontFamily: "'Inter Variable',-apple-system,system-ui,sans-serif",
-  }
-
   const onBackdropClick = (e: JSX.TargetedMouseEvent<HTMLDivElement>): void => {
     if (e.target === e.currentTarget && !props.busy) props.onClose()
   }
@@ -156,20 +146,12 @@ export function ReserveDialog(props: ReserveDialogProps): JSX.Element {
       titleId={TITLE_ID}
       onClose={props.onClose}
       onBackdropClick={onBackdropClick}
-      backdropStyle={backdropStyle}
+      backdropStyle={DIALOG_BACKDROP_STYLE}
       backdropClass="knc-admin-reserve-backdrop"
-      cardStyle={cardStyle}
+      cardStyle={dialogCardStyle(c, '380px')}
       cardClass="knc-admin-reserve-card"
     >
-      <h2
-        id={TITLE_ID}
-        style={{
-          fontFamily: "'Inter Variable',-apple-system,system-ui,sans-serif",
-          fontSize: '17px',
-          fontWeight: 700,
-          margin: '0 0 4px',
-        }}
-      >
+      <h2 id={TITLE_ID} style={dialogTitleStyle('4px')}>
         {t.reserveTitle}
       </h2>
       <p style={{ margin: 0, fontSize: '13px', opacity: 0.6 }}>

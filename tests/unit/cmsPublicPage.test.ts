@@ -34,28 +34,6 @@ describe('canonical CMS public page rendering', () => {
     expect(result).toContain('(min-width:769px){#reviews')
     expect(result).not.toContain('max-width:1440px')
   })
-  it('restores dark source attributes without replacing owner edits in the initial response', () => {
-    const native = structuredClone(page)
-    const metadata = `data-knc-baseline='{"src":"/icons/sun.max.svg","alt":"Light"}' data-knc-dark-attrs='{"src":"/icons/moon.svg","alt":"Dark"}'`
-    native.content.sv.html = `<div data-knc-native="1"><img src="/icons/sun.max.svg" alt="Light" ${metadata}><img src="/icons/knc-logo-pole.svg" alt="Owner logo" ${metadata}></div>`
-    const result = renderCmsPage(shell, native, 'sv', 'dark', 'https://bladeblendstudio.se/')
-    expect(result).toContain('src="/icons/moon.svg" alt="Dark"')
-    expect(result).toContain('src="/icons/knc-logo-pole.svg" alt="Owner logo"')
-  })
-  it.each(['light', 'dark'] as const)(
-    'restores compact native source styles in the initial %s response',
-    (mode) => {
-      const compact = structuredClone(page)
-      compact.content.sv.html =
-        '<div data-knc-native="1"><main data-knc-baseline="{}" data-knc-light="color: black; padding: 20px" data-knc-dark="color: white; padding: 20px"><p style="margin:8px">Authored</p></main></div>'
-      const result = renderCmsPage(shell, compact, 'sv', mode, 'https://bladeblendstudio.se/')
-      expect(result).toContain(
-        `style="color: ${mode === 'dark' ? 'white' : 'black'}; padding: 20px"`,
-      )
-      expect(result).toContain('<p style="margin:8px">Authored</p>')
-      expect(compact.content.sv.html).not.toContain('style="color:')
-    },
-  )
   it('renders authored HTML/CSS as the public root without a second presentation tree', () => {
     const html = renderCmsPage(shell, page, 'en', 'dark', 'https://bladeblendstudio.se/')
     expect(html).toContain('<html lang="en">')

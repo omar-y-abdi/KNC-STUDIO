@@ -18,17 +18,12 @@ import { queueBackfill, type CalendarBackfillService } from '../_shared/calendar
 
 const STATE_MAX_AGE_SEC = 600 // the consent round-trip must complete within 10 minutes
 
-function html(body: string, status: number): Response {
-  return new Response(body, { status, headers: { 'content-type': 'text/html; charset=utf-8' } })
-}
-
 /** A minimal, self-contained result page (no external assets — CSP-safe). */
-function page(title: string, message: string, returnTo: string | undefined): string {
-  const link =
-    returnTo !== undefined
-      ? `<p><a href="${returnTo}/admin" style="color:#0a7">Tillbaka till appen</a></p>`
-      : '<p>Du kan stänga det här fönstret.</p>'
-  return `<!doctype html><html lang="sv"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title></head><body style="font-family:-apple-system,system-ui,sans-serif;max-width:32rem;margin:12vh auto;padding:0 1.5rem;text-align:center;color:#111"><h1 style="font-size:1.4rem">${title}</h1><p style="color:#555">${message}</p>${link}</body></html>`
+function page(title: string, message: string, status: number): Response {
+  return new Response(
+    `<!doctype html><html lang="sv"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title></head><body style="font-family:-apple-system,system-ui,sans-serif;max-width:32rem;margin:12vh auto;padding:0 1.5rem;text-align:center;color:#111"><h1 style="font-size:1.4rem">${title}</h1><p style="color:#555">${message}</p><p>Du kan stänga det här fönstret.</p></body></html>`,
+    { status, headers: { 'content-type': 'text/html; charset=utf-8' } },
+  )
 }
 
 /** Finish the consent round-trip. Prefer redirecting the barber straight back INTO the app — they land
@@ -49,11 +44,11 @@ function done(
       headers: { location: `${returnTo}/admin?calendar=${outcome}` },
     })
   }
-  return html(page(title, message, returnTo), status)
+  return page(title, message, status)
 }
 
 Deno.serve(async (req: Request): Promise<Response> => {
-  if (req.method !== 'GET') return html(page('Fel', 'Ogiltig förfrågan.', undefined), 405)
+  if (req.method !== 'GET') return page('Fel', 'Ogiltig förfrågan.', 405)
 
   const url = new URL(req.url)
   const err = url.searchParams.get('error')
@@ -67,19 +62,18 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const clientSecret = Deno.env.get('GOOGLE_OAUTH_CLIENT_SECRET')
   if (!stateSecret || !supabaseUrl || !serviceKey || !clientId || !clientSecret) {
     console.error('calendar-oauth-callback: missing env')
-    return html(page('Fel', 'Tjänsten är inte konfigurerad.', undefined), 500)
+    return page('Fel', 'Tjänsten är inte konfigurerad.', 500)
   }
 
   // User declined consent at Google.
-  if (err !== null) return html(page('Avbröts', 'Kalenderkopplingen avbröts.', undefined), 200)
-  if (code === null || state === null) {
-    return html(page('Fel', 'Saknar kod eller state.', undefined), 400)
-  }
+  if (err !== null) return page('Avbröts', 'Kalenderkopplingen avbröts.', 200)
+  if (code === null || state === null) return page('Fel', 'Saknar kod eller state.', 400)
 
   // Verify the signed state — proves the flow started from our authenticated start and yields barber_id.
   const payload = await verifyState(state, stateSecret, STATE_MAX_AGE_SEC, Date.now())
-  if (payload === null)
-    return html(page('Fel', 'Ogiltig eller utgången länk. Försök igen.', undefined), 400)
+  if (payload === null) return page('Fel', 'Ogiltig eller utgången länk. Försök igen.', 400)
+  const fail = (message: string, status: number): Response =>
+    done(payload.return_to, 'error', 'Fel', message, status)
 
   const service = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } })
   const profile = await service
@@ -90,13 +84,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     .eq('account_enabled', true)
     .maybeSingle()
   if (profile.error !== null || profile.data === null) {
-    return done(
-      payload.return_to,
-      'error',
-      'Fel',
-      'Kontot saknar åtkomst. Logga in igen eller kontakta administratören.',
-      403,
-    )
+    return fail('Kontot saknar åtkomst. Logga in igen eller kontakta administratören.', 403)
   }
 
   const existingToken = await service
@@ -105,13 +93,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     .eq('barber_id', payload.barber_id)
     .maybeSingle()
   if (existingToken.error !== null) {
-    return done(
-      payload.return_to,
-      'error',
-      'Fel',
-      'Kunde inte kontrollera kalenderkopplingen. Försök igen.',
-      500,
-    )
+    return fail('Kunde inte kontrollera kalenderkopplingen. Försök igen.', 500)
   }
 
   const redirectUri = `${supabaseUrl}/functions/v1/calendar-oauth-callback`
@@ -119,23 +101,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const tokens = await exchangeCode(code, clientId, clientSecret, redirectUri)
     if (typeof tokens.refresh_token !== 'string' || tokens.refresh_token === '') {
       // Should not happen with prompt=consent; without a refresh token we cannot sync unattended.
-      return done(
-        payload.return_to,
-        'error',
-        'Fel',
-        'Google gav ingen refresh-token. Försök koppla igen.',
-        400,
-      )
+      return fail('Google gav ingen refresh-token. Försök koppla igen.', 400)
     }
     const email = tokens.id_token !== undefined ? decodeIdTokenEmail(tokens.id_token) : null
     if (email === null || email.trim() === '') {
-      return done(
-        payload.return_to,
-        'error',
-        'Fel',
-        'Google-kontots e-post kunde inte verifieras. Försök koppla igen.',
-        400,
-      )
+      return fail('Google-kontots e-post kunde inte verifieras. Försök koppla igen.', 400)
     }
 
     const { data: storeData, error: storeError } = await service.rpc('calendar_store_token', {
@@ -146,13 +116,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     })
     if (storeError) {
       console.error('calendar-oauth-callback: store_token failed:', storeError.message)
-      return done(
-        payload.return_to,
-        'error',
-        'Fel',
-        'Kunde inte spara kopplingen. Försök igen.',
-        500,
-      )
+      return fail('Kunde inte spara kopplingen. Försök igen.', 500)
     }
 
     if (
@@ -164,10 +128,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
         typeof storeData === 'object' && storeData !== null
           ? (storeData as Record<string, unknown>)['error']
           : null
-      return done(
-        payload.return_to,
-        'error',
-        'Fel',
+      return fail(
         error === 'account_mismatch'
           ? 'Välj samma Google-konto som den tidigare kalenderkopplingen.'
           : 'Kunde inte spara kopplingen. Försök igen.',
@@ -202,12 +163,6 @@ Deno.serve(async (req: Request): Promise<Response> => {
     )
   } catch (exchangeErr) {
     console.error('calendar-oauth-callback: exchange error:', exchangeErr)
-    return done(
-      payload.return_to,
-      'error',
-      'Fel',
-      'Kunde inte slutföra kopplingen. Försök igen.',
-      502,
-    )
+    return fail('Kunde inte slutföra kopplingen. Försök igen.', 502)
   }
 })

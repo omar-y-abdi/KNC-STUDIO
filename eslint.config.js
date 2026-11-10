@@ -24,12 +24,6 @@ const restrictBootImports = (owned = []) => ({
         paths: Object.entries(BOOT_RESTRICTED)
           .filter(([name]) => !owned.includes(name))
           .map(([name, message]) => ({ name, message, allowTypeImports: true })),
-        patterns: [
-          {
-            group: ['**/backend/supabaseClient'],
-            message: 'supabaseClient.ts is the admin client; public code uses publicRest.ts.',
-          },
-        ],
       },
     ],
   },
@@ -86,10 +80,6 @@ export default tseslint.config(
     ...restrictBootImports(),
   },
   { files: ['packages/backend-contracts/src/rpcSchemas.ts'], ...restrictBootImports(['zod']) },
-  {
-    files: ['modules/staff-admin/src/supabaseClient.ts'],
-    ...restrictBootImports(['@supabase/supabase-js']),
-  },
   // Tooling + tests run on Node and may use console + Node globals.
   {
     files: ['tools/**', 'tests/**', '**/*.config.{js,ts}'],

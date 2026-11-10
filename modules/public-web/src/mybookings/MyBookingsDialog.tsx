@@ -13,7 +13,7 @@
 // Effects go through the injectable MyBookingsPort. History and cancellation require possession of
 // the current high-entropy email-scoped token; requesting another link replaces the previous token.
 
-import type { JSX, Ref } from 'preact'
+import type { JSX } from 'preact'
 import { useContext, useEffect, useRef, useState } from 'preact/hooks'
 import { PreviewPorts } from '../cms/PreviewPorts'
 import { CmsSceneContext } from '../cms/Scene'
@@ -21,7 +21,12 @@ import { NativeRegion, type NativeInstanceOptions } from '../cms/NativeSurface'
 import { createInstanceScope } from '../cms/instanceScope'
 import { Dialog } from '../ui/Dialog'
 import { FOCUS_CLS } from '../ui/pseudo'
-import { buildBookingStyles, palette, systemRed } from '../booking/bookingStyles'
+import {
+  buildBookingStyles,
+  palette,
+  sheetBackdropStyle,
+  systemRed,
+} from '../booking/bookingStyles'
 import { parseEmail } from '../booking/validation'
 import { Turnstile, turnstileConfigured } from '../booking/Turnstile'
 import type { Lang } from '../i18n/index'
@@ -35,8 +40,7 @@ import { CustomerEmailLink } from './CustomerEmailLink'
 type Mode = 'light' | 'dark'
 type Step = 'loading' | 'lookup' | 'sent' | 'list'
 
-const BACKDROP_STYLE =
-  'position:fixed;inset:0;box-sizing:border-box;background:rgba(10,10,12,.42);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:20px 16px;z-index:60;animation:kncOverlay .2s ease both;overflow:hidden;'
+const BACKDROP_STYLE = sheetBackdropStyle(60)
 
 export interface MyBookingsDialogProps {
   readonly mode: Mode
@@ -124,15 +128,6 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
   // Cloudflare runs the challenge on render and stalls the compositor ~1.5 s, so the widget mounts
   // on the first email keystroke instead of on open; the latch never resets within this session.
   const [challengeStarted, setChallengeStarted] = useState(false)
-  const actionError = (
-    error: 'failed_challenge' | 'rate_limited' | 'system',
-    fallback: string,
-  ): string => {
-    if (error === 'failed_challenge') return t.errChallenge
-    if (error === 'rate_limited') return t.errRateLimited
-    if (error === 'system') return t.errSystem
-    return fallback
-  }
 
   const emailInputRef = useRef<HTMLInputElement>(null)
   useEffect(() => {
@@ -212,7 +207,7 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
     if (!owner.active || owner.request) return
     const parsedEmail = parseEmail(email)
     if (!parsedEmail.ok) {
-      setEmailError(!parsedEmail.ok)
+      setEmailError(true)
       return
     }
     owner.request = true
@@ -230,7 +225,12 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
       if (result.ok) {
         setStep('sent')
       } else {
-        setSystemError(actionError(result.error, t.errSystem))
+        const errors = {
+          failed_challenge: t.errChallenge,
+          rate_limited: t.errRateLimited,
+          system: t.errSystem,
+        }
+        setSystemError(errors[result.error])
       }
     } catch {
       if (owner.active) setSystemError(t.errSystem)
@@ -318,8 +318,6 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
   }
 
   // --- shared bits ---------------------------------------------------------------------------------
-
-  const emailNote = emailError ? t.errEmail : null
 
   const chevron = (open: boolean): JSX.Element => (
     <img
@@ -493,38 +491,6 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
     )
   }
 
-  const contactField = (
-    label: string,
-    value: string,
-    onInput: (ev: JSX.TargetedInputEvent<HTMLInputElement>) => void,
-    placeholder: string,
-    note: string | null,
-    invalid: boolean,
-    inputRef: Ref<HTMLInputElement>,
-    type: 'email' | 'tel',
-  ): JSX.Element => (
-    <label style="display:flex;flex-direction:column;gap:5px;margin-top:12px;">
-      <span style="font-size:12px;font-weight:600;opacity:.55;">{label}</span>
-      <input
-        ref={inputRef}
-        value={value}
-        onInput={onInput}
-        placeholder={placeholder}
-        type={type}
-        autoComplete={type}
-        inputMode={type === 'tel' ? 'tel' : 'email'}
-        aria-invalid={invalid ? 'true' : undefined}
-        style={invalid ? s.inputErrorStyle : s.inputStyle}
-        class={FOCUS_CLS}
-      />
-      {note !== null ? (
-        <span role="alert" style={s.fieldErrorNoteStyle}>
-          {note}
-        </span>
-      ) : null}
-    </label>
-  )
-
   const changeEmailLink = (
     <button
       type="button"
@@ -594,16 +560,26 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
         {step === 'lookup' ? (
           <div>
             <p style="font-size:13.5px;opacity:.6;line-height:1.45;margin:0;">{t.lookupLead}</p>
-            {contactField(
-              t.email,
-              email,
-              onEmail,
-              t.emailPh,
-              emailNote,
-              emailError,
-              emailInputRef,
-              'email',
-            )}
+            <label style="display:flex;flex-direction:column;gap:5px;margin-top:12px;">
+              <span style="font-size:12px;font-weight:600;opacity:.55;">{t.email}</span>
+              <input
+                ref={emailInputRef}
+                value={email}
+                onInput={onEmail}
+                placeholder={t.emailPh}
+                type="email"
+                autoComplete="email"
+                inputMode="email"
+                aria-invalid={emailError ? 'true' : undefined}
+                style={emailError ? s.inputErrorStyle : s.inputStyle}
+                class={FOCUS_CLS}
+              />
+              {emailError ? (
+                <span role="alert" style={s.fieldErrorNoteStyle}>
+                  {t.errEmail}
+                </span>
+              ) : null}
+            </label>
             {systemError !== null ? (
               <p role="alert" style={{ ...s.submitErrorStyle, marginTop: '14px' }}>
                 {systemError}

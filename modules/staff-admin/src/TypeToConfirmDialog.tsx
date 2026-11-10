@@ -9,7 +9,12 @@ import type { JSX } from 'preact'
 import { useState } from 'preact/hooks'
 import { Dialog } from '@bladeblend/public-web/dialog'
 import { palette } from '@bladeblend/public-web/booking-styles'
-import { buildAdminStyles } from './adminStyles'
+import {
+  buildAdminStyles,
+  DIALOG_BACKDROP_STYLE,
+  dialogCardStyle,
+  dialogTitleStyle,
+} from './adminStyles'
 
 export interface TypeToConfirmDialogProps {
   readonly dark: boolean
@@ -36,21 +41,6 @@ export function TypeToConfirmDialog(props: TypeToConfirmDialogProps): JSX.Elemen
   const matched = input.trim() === props.token
   const canConfirm = matched && !props.busy
 
-  const backdropStyle =
-    'position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;' +
-    'padding:20px;background:rgba(0,0,0,.42);'
-  const cardStyle: JSX.CSSProperties = {
-    width: '100%',
-    maxWidth: '360px',
-    background: c.bg,
-    color: c.text,
-    border: '0.5px solid ' + c.line,
-    borderRadius: '16px',
-    padding: '20px 22px',
-    boxShadow: '0 24px 60px rgba(0,0,0,.4)',
-    fontFamily: "'Inter Variable',-apple-system,system-ui,sans-serif",
-  }
-
   const onBackdropClick = (e: JSX.TargetedMouseEvent<HTMLDivElement>): void => {
     if (e.target === e.currentTarget && !props.busy) props.onClose()
   }
@@ -67,20 +57,12 @@ export function TypeToConfirmDialog(props: TypeToConfirmDialogProps): JSX.Elemen
       titleId={TITLE_ID}
       onClose={props.onClose}
       onBackdropClick={onBackdropClick}
-      backdropStyle={backdropStyle}
+      backdropStyle={DIALOG_BACKDROP_STYLE}
       backdropClass="knc-admin-type-confirm-backdrop"
-      cardStyle={cardStyle}
+      cardStyle={dialogCardStyle(c, '360px')}
       cardClass="knc-admin-type-confirm-card"
     >
-      <h2
-        id={TITLE_ID}
-        style={{
-          fontFamily: "'Inter Variable',-apple-system,system-ui,sans-serif",
-          fontSize: '17px',
-          fontWeight: 700,
-          margin: '0 0 8px',
-        }}
-      >
+      <h2 id={TITLE_ID} style={dialogTitleStyle('8px')}>
         {props.title}
       </h2>
       <p style={{ margin: '0 0 14px', fontSize: '14px', lineHeight: 1.5, opacity: 0.8 }}>

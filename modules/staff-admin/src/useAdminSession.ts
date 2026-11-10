@@ -8,15 +8,10 @@ import { err, type AdminProfile, type AdminResult } from './types'
 
 export type AdminGate =
   | { readonly kind: 'checking' | 'redirecting' | 'unavailable' }
-  | { readonly kind: 'authed' | 'forced_change'; readonly profile: AdminProfile }
+  | { readonly kind: 'authed'; readonly profile: AdminProfile }
 
 function sameAccess(a: AdminProfile, b: AdminProfile): boolean {
-  return (
-    a.userId === b.userId &&
-    a.role === b.role &&
-    a.barberId === b.barberId &&
-    a.mustChangePassword === b.mustChangePassword
-  )
+  return a.userId === b.userId && a.role === b.role && a.barberId === b.barberId
 }
 
 /** One lifecycle owns the protected subtree, revalidation, and its outstanding operation epoch. */
@@ -113,7 +108,7 @@ export function useAdminSession(navigate: (path: string, options: { replace: boo
           schedule()
         })
         setError(null)
-        setGate({ kind: profile.mustChangePassword ? 'forced_change' : 'authed', profile })
+        setGate({ kind: 'authed', profile })
       } else if (result.error.kind === 'network') {
         setError(result.error.message)
         if (profile === null) setGate({ kind: 'unavailable' })

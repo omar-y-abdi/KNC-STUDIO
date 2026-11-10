@@ -53,25 +53,25 @@ function mapAccessError(code: string | undefined): AdminResult<BarberAccessResul
   }
 }
 
+/**
+ * Invoke `admin-manage-barber` and return its typed body. A non-2xx reply arrives as `data: null`
+ * with the body in `error.context`; when that body cannot be read this throws, so the caller maps
+ * it in the same `catch` as a transport failure.
+ */
+export async function invokeManageBarber(body: Record<string, unknown>): Promise<unknown> {
+  const { data, error } = await getAdminClient().functions.invoke('admin-manage-barber', { body })
+  if (data !== null || error === null) return data
+  const response = (error as unknown as { context?: Response }).context
+  if (response === undefined) throw new Error('admin-manage-barber replied without a body')
+  return response.json()
+}
+
 export async function setBarberAccountAccess(
   barberId: string,
   enabled: boolean,
 ): Promise<AdminResult<BarberAccessResult>> {
   try {
-    const { data, error } = await getAdminClient().functions.invoke('admin-manage-barber', {
-      body: { action: 'set_access', barber_id: barberId, enabled },
-    })
-
-    let payload: unknown = data
-    if (payload === null && error !== null) {
-      try {
-        const response = (error as unknown as { context?: Response }).context
-        if (response === undefined) return err('network', ACCESS_ERROR)
-        payload = await response.json()
-      } catch {
-        return err('network', ACCESS_ERROR)
-      }
-    }
+    const payload = await invokeManageBarber({ action: 'set_access', barber_id: barberId, enabled })
     if (typeof payload !== 'object' || payload === null) return err('network', ACCESS_ERROR)
     const row = payload as Record<string, unknown>
     if (row['ok'] === false) return mapAccessError(row['error'] as string | undefined)

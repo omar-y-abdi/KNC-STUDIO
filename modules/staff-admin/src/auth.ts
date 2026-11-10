@@ -102,14 +102,15 @@ async function resolveProfile(
 
     const parsed = parseWith(profileRow, data)
     if (!parsed.ok) return err('malformed', NO_PROFILE)
-    if (!parsed.value.account_enabled) return err('forbidden', ACCOUNT_DISABLED)
+    // No screen clears `must_change_password`, so a flagged account is denied like a disabled one.
+    if (!parsed.value.account_enabled || parsed.value.must_change_password)
+      return err('forbidden', ACCOUNT_DISABLED)
 
     return ok<AdminProfile>({
       userId,
       email,
       role: parsed.value.role,
       barberId: parsed.value.barber_id,
-      mustChangePassword: parsed.value.must_change_password,
     })
   } catch {
     return err('network', NETWORK_ERROR)
@@ -232,18 +233,24 @@ export async function requestOwnEmailChange(
   }
 }
 
-/** Confirm a pending email change from the one-time token in the branded callback URL. */
-export async function confirmOwnEmailChange(tokenHash: string): Promise<AdminResult<void>> {
+/** Redeem a one-time token hash of the given type; `rejected` is the message for a refused token. */
+async function verifyTokenHash(
+  tokenHash: string,
+  type: 'email_change' | 'recovery' | 'invite',
+  rejected: string,
+): Promise<AdminResult<void>> {
   try {
-    const { error } = await getAdminClient().auth.verifyOtp({
-      token_hash: tokenHash,
-      type: 'email_change',
-    })
-    if (error !== null) return err('auth', EMAIL_CONFIRM_FAILED)
+    const { error } = await getAdminClient().auth.verifyOtp({ token_hash: tokenHash, type })
+    if (error !== null) return err('auth', rejected)
     return ok(undefined)
   } catch {
     return err('network', NETWORK_ERROR)
   }
+}
+
+/** Confirm a pending email change from the one-time token in the branded callback URL. */
+export function confirmOwnEmailChange(tokenHash: string): Promise<AdminResult<void>> {
+  return verifyTokenHash(tokenHash, 'email_change', EMAIL_CONFIRM_FAILED)
 }
 
 /**
@@ -282,17 +289,8 @@ export async function requestPasswordReset(
 }
 
 /** Verify the branded recovery token and establish the short-lived password-reset session. */
-export async function verifyRecoveryTokenHash(tokenHash: string): Promise<AdminResult<void>> {
-  try {
-    const { error } = await getAdminClient().auth.verifyOtp({
-      token_hash: tokenHash,
-      type: 'recovery',
-    })
-    if (error !== null) return err('auth', RECOVERY_LINK_INVALID)
-    return ok(undefined)
-  } catch {
-    return err('network', NETWORK_ERROR)
-  }
+export function verifyRecoveryTokenHash(tokenHash: string): Promise<AdminResult<void>> {
+  return verifyTokenHash(tokenHash, 'recovery', RECOVERY_LINK_INVALID)
 }
 
 /** Verify a branded staff invite token and establish its short-lived password-setup session. */
@@ -318,61 +316,15 @@ export async function redeemStaffInvitation(token: string): Promise<AdminResult<
 }
 
 /** Compatibility for invitations sent before durable enrollment was introduced. */
-export async function verifyInviteTokenHash(tokenHash: string): Promise<AdminResult<void>> {
-  try {
-    const { error } = await getAdminClient().auth.verifyOtp({
-      token_hash: tokenHash,
-      type: 'invite',
-    })
-    if (error !== null) return err('auth', RECOVERY_LINK_INVALID)
-    return ok(undefined)
-  } catch {
-    return err('network', NETWORK_ERROR)
-  }
-}
-
-/**
- * Establish a recovery session from the implicit-flow tokens carried in the `/reset` URL hash. The
- * admin client has `detectSessionInUrl: false`, so the page parses the URL (`recoveryLink.ts`) and
- * hands the tokens here; `setSession` validates them (an expired link => error). On success the client
- * holds a short-lived session that authorizes exactly one thing: `setNewPassword`.
- */
-export async function establishRecoverySession(
-  accessToken: string,
-  refreshToken: string,
-): Promise<AdminResult<void>> {
-  const supabase = getAdminClient()
-  try {
-    const { error } = await supabase.auth.setSession({
-      access_token: accessToken,
-      refresh_token: refreshToken,
-    })
-    if (error !== null) return err('auth', RECOVERY_LINK_INVALID)
-    return ok(undefined)
-  } catch {
-    return err('network', NETWORK_ERROR)
-  }
-}
-
-/**
- * Exchange a PKCE `code` (the alternate recovery-link shape) for a session. Only used if the flow is
- * ever switched to PKCE; the default implicit flow uses `establishRecoverySession` instead.
- */
-export async function exchangeRecoveryCode(code: string): Promise<AdminResult<void>> {
-  const supabase = getAdminClient()
-  try {
-    const { error } = await supabase.auth.exchangeCodeForSession(code)
-    if (error !== null) return err('auth', RECOVERY_LINK_INVALID)
-    return ok(undefined)
-  } catch {
-    return err('network', NETWORK_ERROR)
-  }
+export function verifyInviteTokenHash(tokenHash: string): Promise<AdminResult<void>> {
+  return verifyTokenHash(tokenHash, 'invite', RECOVERY_LINK_INVALID)
 }
 
 /**
  * Set a new password using the active recovery session, then sign out so the user logs in fresh with
- * it. Call ONLY after `establishRecoverySession` / `exchangeRecoveryCode` succeeded. `validateNewPassword`
- * should gate the input first; a server rejection maps to a generic validation error.
+ * it. Call ONLY after the link's token was verified (`verifyRecoveryTokenHash`,
+ * `redeemStaffInvitation` or `verifyInviteTokenHash`). `validateNewPassword` should gate the input
+ * first; a server rejection maps to a generic validation error.
  */
 export async function setNewPassword(newPassword: string): Promise<AdminResult<void>> {
   const result = await updatePasswordForCurrentSession(newPassword)
@@ -383,32 +335,4 @@ export async function setNewPassword(newPassword: string): Promise<AdminResult<v
     // Password changed and local account cleared; a failed remote revocation cannot undo it.
   }
   return ok(undefined)
-}
-
-// --- Forced first-login password change (provisioned barber accounts) ---------------------------
-
-/**
- * Update the signed-in barber's password WITHOUT signing out. Used ONLY in the forced-change gate
- * (`ForcedPasswordChange`) so the barber proceeds into the panel immediately after picking a new
- * password. The voluntary change flow (`changePassword`) is different — it signs out by design.
- * `validateNewPassword` should gate the input before calling this.
- */
-export async function setOwnPasswordKeepSession(newPassword: string): Promise<AdminResult<void>> {
-  const result = await updatePasswordForCurrentSession(newPassword)
-  return result.ok ? ok(undefined) : result
-}
-
-/**
- * Clear the `must_change_password` flag on the caller's own profiles row via the
- * `set_own_password_changed()` SECURITY DEFINER RPC. Called after `setOwnPasswordKeepSession`
- * succeeds — the RPC restricts the UPDATE to `auth.uid()` so no other row can be touched.
- */
-export async function clearMustChangePassword(): Promise<AdminResult<void>> {
-  try {
-    const { error } = await getAdminClient().rpc('set_own_password_changed')
-    if (error !== null) return err('network', NETWORK_ERROR)
-    return ok(undefined)
-  } catch {
-    return err('network', NETWORK_ERROR)
-  }
 }

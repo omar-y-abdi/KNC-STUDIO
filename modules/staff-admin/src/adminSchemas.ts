@@ -75,6 +75,7 @@ export const barberRow = z.object({
   active: z.boolean(),
   sort_order: z.number(),
 })
+export type BarberRow = z.infer<typeof barberRow>
 export const barberRows = z.array(barberRow)
 
 // --- barber_schedules ----------------------------------------------------------------------------
@@ -114,6 +115,7 @@ const timeOffRow = z.object({
   end_date: isoDate,
   reason: z.string(),
 })
+export type TimeOffRow = z.infer<typeof timeOffRow>
 export const timeOffRows = z.array(timeOffRow)
 export const addTimeOffResponse = z.union([
   z.object({ ok: z.literal(true), row: timeOffRow }),
@@ -130,6 +132,7 @@ const slotBlockRow = z.object({
   start_min: z.number().int().min(0).max(1440),
   end_min: z.number().int().min(0).max(1440),
 })
+export type SlotBlockRow = z.infer<typeof slotBlockRow>
 export const slotBlockRows = z.array(slotBlockRow)
 export const addSlotBlockResponse = z.union([
   z.object({ ok: z.literal(true), row: slotBlockRow }),
@@ -146,6 +149,7 @@ const recurringBreakRow = z.object({
   start_min: z.number().int().min(540).max(1065),
   end_min: z.number().int().min(555).max(1080),
 })
+export type RecurringBreakRow = z.infer<typeof recurringBreakRow>
 export const recurringBreakRows = z.array(recurringBreakRow)
 export const addRecurringBreakResponse = z.union([
   z.object({ ok: z.literal(true), row: recurringBreakRow }),
@@ -298,6 +302,7 @@ const adminBookingRow = z.object({
   lang,
   status: z.enum(['confirmed', 'cancelled']),
 })
+export type AdminBookingRow = z.infer<typeof adminBookingRow>
 export const adminBookingRows = z.array(adminBookingRow)
 
 // --- admin_create_booking RPC (Task 2 §4) --------------------------------------------------------

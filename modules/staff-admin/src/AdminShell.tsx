@@ -217,6 +217,13 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
   /** The signed-in barber's first name (identity in the top bar — nothing more is needed). */
   const firstName = effectiveBarberName.trim().split(/\s+/)[0] ?? effectiveBarberName
 
+  /** What the per-barber tabs show while no barber is resolved. */
+  const noBarber = (
+    <section style={s.card}>
+      <p style={s.emptyState}>{t.scheduleNoBarber}</p>
+    </section>
+  )
+
   const renderView = (): JSX.Element => {
     switch (tab) {
       case 'bookings':
@@ -239,9 +246,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
         )
       case 'schedule':
         return effectiveBarberId === null ? (
-          <section style={s.card}>
-            <p style={s.emptyState}>{t.scheduleNoBarber}</p>
-          </section>
+          noBarber
         ) : (
           <ScheduleView
             key={effectiveBarberId}
@@ -255,9 +260,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
         )
       case 'services':
         return effectiveBarberId === null ? (
-          <section style={s.card}>
-            <p style={s.emptyState}>{t.scheduleNoBarber}</p>
-          </section>
+          noBarber
         ) : (
           <ServicesView
             dark={props.dark}
@@ -291,9 +294,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
         )
       case 'profile':
         return effectiveBarberId === null ? (
-          <section style={s.card}>
-            <p style={s.emptyState}>{t.scheduleNoBarber}</p>
-          </section>
+          noBarber
         ) : (
           <ProfileView
             dark={props.dark}

@@ -19,18 +19,19 @@ import {
   barberRows,
   parseWith,
   profileRow,
+  type BarberRow,
 } from '../adminSchemas'
 import type {
   AdminBarber,
   AdminBarberId,
-  AdminError,
   AdminResult,
   BarberAccountState,
   BarberEdit,
   DeleteBarberOutcome,
   NewBarber,
 } from '../types'
-import { err, ok } from '../types'
+import { err, ok, outcomeError } from '../types'
+import { invokeManageBarber } from './barberAccountAdmin'
 
 export const BARBER_COLUMNS = 'id,name,ig,role_sv,role_en,bio_sv,bio_en,active,sort_order'
 
@@ -38,17 +39,7 @@ const READ_ERROR = 'Kunde inte läsa barberare.'
 const WRITE_ERROR = 'Kunde inte spara. Försök igen.'
 
 /** Map a parsed raw barber row into the admin domain type. */
-function toBarber(r: {
-  id: string
-  name: string
-  ig: string
-  role_sv: string
-  role_en: string
-  bio_sv: string
-  bio_en: string
-  active: boolean
-  sort_order: number
-}): AdminBarber {
+function toBarber(r: BarberRow): AdminBarber {
   return {
     id: r.id,
     name: r.name,
@@ -160,11 +151,6 @@ export async function setBarberActive(
   }
 }
 
-/** Build the `error` branch of a `DeleteBarberOutcome` from a typed kind + Swedish message. */
-function deleteBarberError(kind: AdminError['kind'], message: string): DeleteBarberOutcome {
-  return { kind: 'error', error: { kind, message } }
-}
-
 /**
  * Delete a barber via the `admin_delete_barber` RPC (owner-only; RLS + the SECURITY DEFINER RPC are
  * the whole boundary). With `purgeBookings=false` the RPC REFUSES while the barber still has bookings
@@ -179,26 +165,14 @@ export async function deleteBarber(
   purgeBookings: boolean,
 ): Promise<DeleteBarberOutcome> {
   try {
-    const { data, error } = await getAdminClient().functions.invoke('admin-manage-barber', {
-      body: {
-        action: 'delete',
-        barber_id: id,
-        purge_bookings: purgeBookings,
-      },
+    const payload = await invokeManageBarber({
+      action: 'delete',
+      barber_id: id,
+      purge_bookings: purgeBookings,
     })
-    let payload: unknown = data
-    if (payload === null && error !== null) {
-      try {
-        const response = (error as unknown as { context?: Response }).context
-        if (response === undefined) return deleteBarberError('network', WRITE_ERROR)
-        payload = await response.json()
-      } catch {
-        return deleteBarberError('network', WRITE_ERROR)
-      }
-    }
 
     const parsed = parseWith(adminDeleteBarberResponse, payload)
-    if (!parsed.ok) return deleteBarberError('malformed', WRITE_ERROR)
+    if (!parsed.ok) return outcomeError('malformed', WRITE_ERROR)
 
     const r = parsed.value
     if (r.ok) {
@@ -208,22 +182,19 @@ export async function deleteBarber(
         authCleanupPending: r.auth_cleanup_pending,
       }
     }
-    if (r.error === 'has_bookings') {
-      return { kind: 'has_bookings', count: r.count, past: r.past, upcoming: r.upcoming }
-    }
-    if (r.error === 'has_upcoming') {
-      return { kind: 'has_upcoming', count: r.count, past: r.past, upcoming: r.upcoming }
+    if (r.error === 'has_bookings' || r.error === 'has_upcoming') {
+      return { kind: r.error, count: r.count, past: r.past, upcoming: r.upcoming }
     }
     if (r.error === 'external_cleanup_pending') {
       return { kind: 'external_cleanup_pending', calendarEvents: r.calendar_events }
     }
     if (r.error === 'delivery_pending') return { kind: 'delivery_pending' }
     if (r.error === 'forbidden') {
-      return deleteBarberError('forbidden', 'Bara ägaren kan radera barberare.')
+      return outcomeError('forbidden', 'Bara ägaren kan radera barberare.')
     }
-    return deleteBarberError('not_found', 'Barberaren finns inte.')
+    return outcomeError('not_found', 'Barberaren finns inte.')
   } catch {
-    return deleteBarberError('network', WRITE_ERROR)
+    return outcomeError('network', WRITE_ERROR)
   }
 }
 

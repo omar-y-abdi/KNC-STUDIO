@@ -4,7 +4,7 @@ Base: `fix/mobile-booking-polish`, including CI repair `a719093`. Work happens o
 
 ## Intended outcome
 
-The repository has real npm workspaces with restricted source interfaces and owned tests. An isolated Studio implementation change receives Studio verification; a document/schema, rendering, database, CSS or build change selects every dependent integration surface. The selection is inspectable, tied to the formatted source tree, and fails closed.
+The repository has real npm workspaces with restricted source interfaces. An in-place Studio or staff-admin source change skips the backend jobs; a document/schema, rendering, database, CSS or build change runs every job. The decision is inspectable, tied to the formatted source tree, and fails closed.
 
 ## Boundaries
 
@@ -27,33 +27,32 @@ Move NativeSource and its source-cache/draft/example helpers into public-owned p
 
 ## Impact model
 
-- Generate/validate source import edges with the installed TypeScript parser, including dynamic imports, exports and `new URL(..., import.meta.url)` worker edges. Resolve npm exports and explicit Deno targets.
-- Declare additional edges for SQL/RPC contracts, stored CMS/native rendering, public CSS/fonts/assets, iframe routes/protocol, release inputs and build configuration. Each edge names its reason/owner.
-- Declare test responsibilities and input sets; require every tracked test/spec to belong to the model. Unclassified new files/tests, missing base, unsupported/unresolvable input, config/toolchain/selection changes, deletion/rename uncertainty select full verification.
+- `boundaries.mjs` generates and validates source import edges with the installed TypeScript parser, including dynamic imports, exports and `new URL(..., import.meta.url)` worker edges. It resolves npm exports and explicit Deno targets.
+- The CI plan is a path classifier (`tools/ci/impact-plan.mjs`, described in `tools/modules/README.md`). Only in-place edits of Studio or staff-admin TypeScript/JavaScript source omit jobs, and only the Edge Function and current-schema database jobs. The boundary graph is not used to select tests.
+- Every other change selects full verification: other workspaces, SQL, CSS/HTML and assets, tests, tools, configuration, lockfiles and package exports, unknown paths, additions, deletions and renames, a missing or unusable base, untracked files, boundary errors and unreadable harness imports.
 - Main pushes and manual runs retain full integration. PR plans bind exact base/head and formatted tracked source identity, including format-induced changes.
-- Initially retain broad verification where coupling remains. A narrow editor-workspace leaf can select its contract tests and the known workspace/focus/navigation integration flows; unknown Studio implementation changes use the complete Studio cohort.
-- The plan records required and omitted jobs with explanations. Stable aggregate gates accept a skipped job only when a verified plan explicitly authorizes omission. Failures, missing expected jobs, tampered/stale plans and empty selections fail.
-- Browser discovery and execution use identical selection arguments. Existing exact case accounting, no skips/retries and source/artifact checks remain in force.
+- The plan records required and omitted jobs with the reasons for full verification. Stable aggregate gates accept a skipped job only when a verified plan explicitly authorizes omission. Failures, missing expected jobs and tampered/stale plans fail.
+- The unit suite and each browser group run whole. Browser discovery and execution use identical arguments. Existing exact case accounting, no skips/retries and source/artifact checks remain in force.
 
 ## Delivery slices
 
 1. Record the source/CI inventory and implement workspace layout, explicit exports, preview ownership and executable import boundaries. Preserve source behavior and package/deploy resolution.
-2. Implement impact planning and module-local commands, including complete test ownership and explicit non-import edges. Prove local, transitive and fail-closed cases before workflow mutation.
-3. Wire CI jobs/matrices and aggregate authorization to the verified plan. Keep full-suite mode and historical DB isolation. Demonstrate actual selection and selected browser execution for a local editor change; broader contract/schema/CSS fixtures must select all required consumers.
+2. Implement the CI plan and module-local commands. Prove the omission and every fail-closed case before workflow mutation.
+3. Wire CI job conditions and aggregate authorization to the verified plan. Keep full-suite mode. Contract/schema/CSS fixtures must select every job.
 4. Independent adversarial review, integration of parent CI repairs, full baseline verification, documentation and PR with exact evidence.
 
 ## Acceptance examples
 
-| Change                                   | Must include                                                                            | Must avoid when proven unrelated                                   |
-| ---------------------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| Isolated workspace editor view           | Boundary/type checks, owned unit checks, workspace/focus/navigation browser integration | Customer DB stack, historical migrations, public booking execution |
-| CMS document validator/format            | Studio, public rendering/preview, backend/SQL parity, release stamp                     | Nothing selected away solely because source is TypeScript          |
-| Booking schema/rules/migration           | Backend current + historical where applicable, customer booking and staff behavior      | No assumption that import reachability captures SQL                |
-| Public CSS/token/font asset              | Public rendering + Studio capture/preview and relevant build/startup                    | No CSS exclusion from graph                                        |
-| CI/lockfile/package exports/unknown path | Full verification                                                                       | No silent omission                                                 |
+| Change                                     | Must include                                                                      | Must avoid when proven unrelated                          |
+| ------------------------------------------ | --------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| In-place Studio or staff-admin source edit | Boundary/type checks, the unit suite, every CMS, public and startup browser group | Edge Function checks, customer DB stack                   |
+| CMS document validator/format              | Studio, public rendering/preview, backend/SQL parity, release stamp               | Nothing selected away solely because source is TypeScript |
+| Booking schema/rules/migration             | Backend current schema, customer booking and staff behavior                       | No assumption that import reachability captures SQL       |
+| Public CSS/token/font asset                | Public rendering + Studio capture/preview and relevant build/startup              | No CSS exclusion from full verification                   |
+| CI/lockfile/package exports/unknown path   | Full verification                                                                 | No silent omission                                        |
 
 ## Risks and verification
 
 Relocations affect literal test imports/file reads, Deno bundling, Wrangler entrypoints, release digest paths and source-based contracts. Update consumers atomically; preserve security checks, actual case counts and deployed URLs. Compare public render/native-ID evidence and budget before/after; do not interpret lint alone as parity. The manual CMS release dependency set must remain complete when exports or paths change. No unrelated visual/product behavior changes.
 
-The mapping found no static value-import SCCs, but there are folder-level bootstrap/auth/preview cycles. Root composition and public-owned preview eliminate those package cycles rather than grandfathering them. The existing shared browser harness statically imports all surfaces; explicit behavioral cohorts or split entrypoints must account for it honestly.
+The mapping found no static value-import SCCs, but there are folder-level bootstrap/auth/preview cycles. Root composition and public-owned preview eliminate those package cycles rather than grandfathering them. The existing shared browser harness statically imports all surfaces, so each browser group runs whole.

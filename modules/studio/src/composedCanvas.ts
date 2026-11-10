@@ -8,7 +8,6 @@ import {
   parse,
   walk,
   type AttributeSelector,
-  type Block,
   type CssNode,
   type ListItem,
   type Rule,
@@ -18,12 +17,7 @@ import {
 } from 'css-tree'
 import type { CmsLang, CmsMode, CmsPage, CmsPresentation } from '@bladeblend/content-contracts/cms'
 import type { CmsScene } from '@bladeblend/public-web/preview'
-import {
-  nativeCanvasTree,
-  parseCanvasSheet,
-  parseLayerBlocks,
-  type CanvasTree,
-} from './nativeCanvas'
+import { nativeCanvasTree, parseCanvasSheet, type CanvasTree } from './nativeCanvas'
 import { bindCmsRootStyles } from './cmsRootStyles'
 
 type CanvasDevice = 'Desktop' | 'Mobile'
@@ -41,18 +35,18 @@ function bookingSceneRoot(doc: Document, scene: (typeof bookingStages)[number]):
 
 /** Show the stored stage in its actual page shell without copying its native identity. */
 function composeBookingScene(
-  content: { html: string; css: string },
+  html: string,
   scene: (typeof bookingStages)[number],
   device: CanvasDevice,
-): { html: string; css: string } {
-  const doc = new DOMParser().parseFromString(content.html, 'text/html')
+): string {
+  const doc = new DOMParser().parseFromString(html, 'text/html')
   const shell = doc.querySelector(`[data-knc-surface="${device.toLowerCase()}-booking"]`)
   const flow = shell?.querySelector('[data-knc-fold="booking-flow"]')
   const flowContent = flow?.firstElementChild
   if (!flow || !flowContent) throw new Error('Bokningsvyns fullständiga sidmall kunde inte läsas.')
   flowContent.appendChild(bookingSceneRoot(doc, 'booking-options'))
   if (scene !== 'booking-options') flow.appendChild(bookingSceneRoot(doc, scene))
-  return { ...content, html: doc.body.innerHTML }
+  return doc.body.innerHTML
 }
 
 /** Return editor-only stage placements to their single stored roots before saving. */
@@ -92,10 +86,8 @@ export function* composedCanvasPasses(
 ): Generator<void, ComposedCanvasTree> {
   const content = nativeCanvasTree(page.content[lang], mode)
   yield
-  if (page.path === '/booking' && isBookingStage(scene)) {
-    const booking = composeBookingScene({ html: content.html, css: '' }, scene, device)
-    return { ...content, html: booking.html }
-  }
+  if (page.path === '/booking' && isBookingStage(scene))
+    return { ...content, html: composeBookingScene(content.html, scene, device) }
   if (page.path !== '/') return content
   const about = presentation.pages.find((item) => item.path === '/about')
   if (!about) return content
@@ -129,11 +121,10 @@ export function* composedCanvasPasses(
   }
   // Import source rules once. Preview projections belong to rendered style nodes, never
   // to the editable composer or the CSS exported back to either page.
-  // An earlier unlayered copy is inert, and layered sheets are never deduplicated. A layered
-  // copy stays: the public page renders it too, and removing it here would hide its effect.
+  // An earlier copy is inert.
   const imported = new Set(shared.sheet.children.toArray().map((rule) => generate(rule)))
   css.children.forEach((rule, item, list) => {
-    if (!hasLayer(rule) && imported.has(generate(rule))) list.remove(item)
+    if (imported.has(generate(rule))) list.remove(item)
   })
   css.children.appendList(shared.sheet.children)
   const ids = inactive ? previewIds(source, doc) : new Map<string, string>()
@@ -144,7 +135,8 @@ export function* composedCanvasPasses(
         slot.replaceChildren(...[...copy.body.childNodes].map((node) => node.cloneNode(true)))
     }
   }
-  deduplicateUnlayeredRules(css)
+  // Home and both About copies share source rules. Import each identical rule once.
+  deduplicateRules(css)
   return {
     html: doc.body.innerHTML,
     sheet: css,
@@ -452,10 +444,10 @@ function projectPreviewStyles(css: string, ids: ReadonlyMap<string, string>): st
       } else if (child.type === 'Rule') pending.push(...projectRule(child))
       else if (
         child.type === 'Atrule' &&
-        ['media', 'supports', 'container', 'layer'].includes(ident.decode(child.name).toLowerCase())
+        ['media', 'supports', 'container'].includes(ident.decode(child.name).toLowerCase())
       ) {
         // Move the selector context inside its existing grouping node, once. This
-        // preserves anonymous layers and direct conditional declarations without &.
+        // preserves direct conditional declarations without &.
         flush()
         if (child.block)
           child.block.children = new List<CssNode>().fromArray(
@@ -486,32 +478,6 @@ function projectPreviewStyles(css: string, ids: ReadonlyMap<string, string>): st
   return generate(sheet)
 }
 
-/** Named layers, including statements, establish their order at first occurrence. */
-function isNamedLayer(node: CssNode): boolean {
-  return (
-    node.type === 'Atrule' &&
-    ident.decode(node.name).toLowerCase() === 'layer' &&
-    node.prelude !== null
-  )
-}
-
-function hasLayer(tree: CssNode): boolean {
-  let layered = false
-  walk(tree, {
-    visit: 'Atrule',
-    enter(node) {
-      if (ident.decode(node.name).toLowerCase() === 'layer') layered = true
-    },
-  })
-  return layered
-}
-
-function deduplicateUnlayeredRules(combined: CssNode): void {
-  // Home and both About copies share source rules. Import each identical rule once.
-  // Layer declarations establish order on first occurrence, so retain them verbatim.
-  if (!hasLayer(combined)) deduplicateRules(combined)
-}
-
 /** Static comparison consumers still receive both responsive surfaces. */
 export function composedCanvas(
   page: CmsPage,
@@ -530,37 +496,9 @@ export function composedCanvas(
   return { html: content.html, css: (projectStyles && content.projectStyles?.(css)) || css }
 }
 
-/** Install the deferred tree once, before either idle completion or the first ownership move. */
-export function installHomeAboutPreview(editor: Editor, create: () => string): void {
-  const wrapper = editor.getWrapper()
-  const slot = wrapper
-    ?.find('[data-knc-slot]')
-    .find((candidate) =>
-      candidate
-        .components()
-        .some(
-          (child: Component) =>
-            child.get('tagName') === 'section' && child.getAttributes()['aria-labelledby'],
-        ),
-    )
-  if (!slot) return
-  const preview = create()
-  editor.UndoManager.skip(() => {
-    slot.components(preview)
-    const configure = (component: Component): void => {
-      configureComponent(component, { silent: true })
-      component.components().forEach(configure)
-    }
-    slot.components().forEach(configure)
-  })
-}
-
-/** Only ownership moves on a Home device switch; both responsive trees already exist. */
-export function moveHomeAbout(editor: Editor, device: CanvasDevice): boolean {
-  const wrapper = editor.getWrapper()
-  const from = wrapper?.find('[data-editor-about-slot]')[0]
-  const surface = wrapper?.find(`[data-knc-surface="${device.toLowerCase()}-home"]`)[0]
-  const to = surface
+/** The runtime slot under `root` that holds the named About section. */
+function aboutSlot(root: Component | undefined): Component | undefined {
+  return root
     ?.find('[data-knc-slot]')
     .find((slot) =>
       slot
@@ -570,6 +508,29 @@ export function moveHomeAbout(editor: Editor, device: CanvasDevice): boolean {
             child.get('tagName') === 'section' && child.getAttributes()['aria-labelledby'],
         ),
     )
+}
+
+function configureTree(component: Component): void {
+  configureComponent(component, { silent: true })
+  component.components().forEach(configureTree)
+}
+
+/** Install the deferred tree once, before either idle completion or the first ownership move. */
+export function installHomeAboutPreview(editor: Editor, create: () => string): void {
+  const slot = aboutSlot(editor.getWrapper())
+  if (!slot) return
+  const preview = create()
+  editor.UndoManager.skip(() => {
+    slot.components(preview)
+    slot.components().forEach(configureTree)
+  })
+}
+
+/** Only ownership moves on a Home device switch; both responsive trees already exist. */
+export function moveHomeAbout(editor: Editor, device: CanvasDevice): boolean {
+  const wrapper = editor.getWrapper()
+  const from = wrapper?.find('[data-editor-about-slot]')[0]
+  const to = aboutSlot(wrapper?.find(`[data-knc-surface="${device.toLowerCase()}-home"]`)[0])
   const owner = from?.components().at(0)
   const preview = to?.components().at(0)
   if (
@@ -614,11 +575,7 @@ export function moveBookingScene(editor: Editor, scene: CmsScene, device: Canvas
       stages[0]?.move(content)
       if (scene !== 'booking-options') stages[bookingStages.indexOf(scene)]?.move(flow)
     }
-    const configure = (component: Component): void => {
-      configureComponent(component, { silent: true })
-      component.components().forEach(configure)
-    }
-    for (const stage of stages) if (stage) configure(stage)
+    for (const stage of stages) if (stage) configureTree(stage)
     configureComponent(content, { silent: true })
     configureComponent(flow, { silent: true })
   })
@@ -627,14 +584,13 @@ export function moveBookingScene(editor: Editor, scene: CmsScene, device: Canvas
 
 function deduplicateRules(sheet: CssNode): void {
   // GrapesJS merges repeated media/keyframe blocks, so deduplicate their children too. Only an
-  // earlier unlayered copy is inert. A layered item is a layer of its own or names a layer where
-  // it stands, so equal text does not make two of them interchangeable.
+  // earlier copy is inert.
   walk(sheet, {
     leave(node: CssNode) {
       if (node.type !== 'StyleSheet' && node.type !== 'Block') return
       const seen = new Map<string, { item: Parameters<typeof node.children.remove>[0] }>()
       node.children.forEach((child, item) => {
-        if ((child.type !== 'Rule' && child.type !== 'Atrule') || hasLayer(child)) return
+        if (child.type !== 'Rule' && child.type !== 'Atrule') return
         const key = generate(child)
         const earlier = seen.get(key)
         if (earlier) node.children.remove(earlier.item)
@@ -685,124 +641,8 @@ function namesPageId(
   return found
 }
 
-/** Selector specificity as IDs, then classes, attributes and pseudo-classes, then types and
- * pseudo-elements. */
-type Specificity = readonly [number, number, number]
-
-function compareSpecificity(a: Specificity, b: Specificity): number {
-  return a[0] - b[0] || a[1] - b[1] || a[2] - b[2]
-}
-
-/** The specificity of a selector, or of the most specific selector of a list. :is(), :not(),
- * :has() and :matches() take their most specific argument's, :where() none. */
-function specificity(node: CssNode): Specificity {
-  switch (node.type) {
-    case 'SelectorList': {
-      let highest: Specificity = [0, 0, 0]
-      for (const selector of node.children) {
-        const own = specificity(selector)
-        if (compareSpecificity(own, highest) > 0) highest = own
-      }
-      return highest
-    }
-    case 'Selector': {
-      let [ids, classes, types] = [0, 0, 0]
-      for (const child of node.children) {
-        const [childIds, childClasses, childTypes] = specificity(child)
-        ids += childIds
-        classes += childClasses
-        types += childTypes
-      }
-      return [ids, classes, types]
-    }
-    case 'IdSelector':
-      return [1, 0, 0]
-    case 'ClassSelector':
-    case 'AttributeSelector':
-      return [0, 1, 0]
-    case 'TypeSelector':
-      return node.name === '*' || node.name.endsWith('|*') ? [0, 0, 0] : [0, 0, 1]
-    case 'PseudoElementSelector':
-      return [0, 0, 1]
-    case 'PseudoClassSelector': {
-      const name = ident.decode(node.name).toLowerCase()
-      const argument = node.children?.first
-      if (name === 'where') return [0, 0, 0]
-      if (['before', 'after', 'first-line', 'first-letter'].includes(name)) return [0, 0, 1]
-      if (argument?.type === 'SelectorList' && ['is', 'not', 'has', 'matches'].includes(name))
-        return specificity(argument)
-      if (argument?.type === 'Nth' && argument.selector) {
-        const [ids, classes, types] = specificity(argument.selector)
-        return [ids, classes + 1, types]
-      }
-      return [0, 1, 0]
-    }
-    default:
-      return [0, 0, 0]
-  }
-}
-
-/** A selector that matches no element, since every element matches `*`, with the given
- * specificity from an ID, classes and types inside the same :not(). No page uses them, and an ID
- * inside :not() never decides which page a selector styles. */
-function specificityFiller([ids, classes, types]: Specificity): Selector {
-  const text =
-    (types ? 'knc-never '.repeat(types - 1) + 'knc-never' : '') +
-    '#knc-never'.repeat(ids) +
-    '.knc-never'.repeat(classes)
-  const filler = parse(`:not(*,${text})`, { context: 'selector' })
-  if (filler.type !== 'Selector') throw new Error('Selektorns specificitet kunde inte bevaras.')
-  return filler
-}
-
-/** A specificity filler: a lone :not() whose first argument is `*`. */
-function isFiller(selector: CssNode): boolean {
-  if (selector.type !== 'Selector' || selector.children.size !== 1) return false
-  const only = selector.children.first
-  const list = only?.type === 'PseudoClassSelector' ? only.children?.first : null
-  const first = list?.type === 'SelectorList' ? list.children.first : null
-  return (
-    only?.type === 'PseudoClassSelector' &&
-    ident.decode(only.name).toLowerCase() === 'not' &&
-    first?.type === 'Selector' &&
-    first.children.size === 1 &&
-    first.children.first?.type === 'TypeSelector' &&
-    first.children.first.name === '*'
-  )
-}
-
-const alternativeLists = new Set(['is', 'where', 'matches', 'not'])
-
-/** Remove from each selector list whose alternatives each style elements the alternatives that
- * name a dropped page ID where it decides: those style only that page's elements. A list at an even
- * number of :not() is one, also a :not() list inside one :not(). The remaining alternatives keep
- * their place, conditions and combinators, and a filler that matches nothing keeps the list's
- * specificity. A list that would keep no alternative but fillers stays: its selector styles only
- * dropped elements and leaves whole. */
-function pruneAlternatives(selector: Selector, dropped: IdTest, negations: number): void {
-  for (const node of selector.children) {
-    if (node.type !== 'PseudoClassSelector') continue
-    const name = ident.decode(node.name).toLowerCase()
-    const list = node.children?.first
-    if (!alternativeLists.has(name) || list?.type !== 'SelectorList') continue
-    const depth = name === 'not' ? negations + 1 : negations
-    for (const alternative of list.children)
-      if (alternative.type === 'Selector') pruneAlternatives(alternative, dropped, depth)
-    if (depth % 2) continue
-    const kept = list.children.filter((alternative) => !namesPageId(alternative, dropped))
-    if (kept.size === list.children.size || !kept.some((alternative) => !isFiller(alternative)))
-      continue
-    const whole = specificity(list)
-    if (name !== 'where' && compareSpecificity(specificity({ ...list, children: kept }), whole) < 0)
-      kept.appendData(specificityFiller(whole))
-    list.children = kept
-  }
-}
-
 /** Remove selector branches naming a dropped page ID, or a derived preview ID anywhere, then the
- * blocks that removal emptied. A branch whose selector lists name the dropped ID only in some
- * alternatives keeps the others. Authored empty blocks stay, as does an emptied named layer: it
- * still sets layer order. */
+ * blocks that removal emptied. Authored empty blocks stay. */
 function dropSelectors(sheet: CssNode, dropped: IdTest): void {
   const shrunk = new Set<List<CssNode>>()
   walk(sheet, {
@@ -811,15 +651,13 @@ function dropSelectors(sheet: CssNode, dropped: IdTest): void {
       let unmatched = false
       if (node.type === 'Rule' && node.prelude.type === 'SelectorList') {
         node.prelude.children.forEach((selector, branch, branches) => {
-          if (selector.type === 'Selector' && namesPageId(selector, dropped))
-            pruneAlternatives(selector, dropped, 0)
           if (namesId(selector, isPreviewId) || namesPageId(selector, dropped))
             branches.remove(branch)
         })
         unmatched = node.prelude.children.size === 0
       }
       const children = node.block?.children
-      const emptied = children?.size === 0 && shrunk.has(children) && !isNamedLayer(node)
+      const emptied = children?.size === 0 && shrunk.has(children)
       if ((unmatched || emptied) && item && list) {
         list.remove(item)
         shrunk.add(list)
@@ -845,13 +683,12 @@ interface ComposedHomeOwners extends ComposedOwners {
   aboutHtml: string
 }
 
-/** GrapesJS imports a conditional block as one rule per child, so match either stored form. A layer
- * statement matches as the empty blocks the canvas writes for it. */
+/** GrapesJS imports a conditional block as one rule per child, so match either stored form. */
 function storedItems(css: string): Set<string> {
   const items = new Set<string>()
-  for (const node of parseLayerBlocks(css).children) {
+  for (const node of parseCanvasSheet(css).children) {
     items.add(generate(node))
-    if (node.type !== 'Atrule' || !node.block || hasLayer(node)) continue
+    if (node.type !== 'Atrule' || !node.block) continue
     for (const child of node.block.children)
       items.add(
         generate({
@@ -863,224 +700,8 @@ function storedItems(css: string): Set<string> {
   return items
 }
 
-/** Home's items precede About's on the canvas, so of equal layered items Home owns the first ones,
- * as many as it stored. A stored layer statement counts as the empty blocks the canvas writes. */
-function homeOwned(
-  sheet: StyleSheet,
-  sources: ReadonlyMap<CssNode, string>,
-  home: string,
-): Set<CssNode> {
-  const stored = new Map<string, number>()
-  for (const node of parseLayerBlocks(home).children) {
-    if (!hasLayer(node)) continue
-    const text = generate(node)
-    stored.set(text, (stored.get(text) ?? 0) + 1)
-  }
-  const owned = new Set<CssNode>()
-  sheet.children.forEach((node) => {
-    const source = sources.get(node) ?? ''
-    const left = stored.get(source) ?? 0
-    if (!left) return
-    stored.set(source, left - 1)
-    owned.add(node)
-  })
-  return owned
-}
-
-/** A layer that an item names. Layers are ordered among the layers of the same parent, by the
- * place each is first named. */
-interface LayerMention {
-  /** A named layer by its full name, such as `a.b` for `b` inside `a`; an anonymous layer, a layer
-   * of its own, by its block. */
-  readonly layer: string | CssNode
-  /** The full name of the layer that holds it, or '' at the top. */
-  readonly parent: string
-  /** The name as the item writes it at its layer rule, up to this layer: `a`, then `a.b`, in
-   * `@layer a.b{}`, and `b` in `@layer a{@layer b{}}`. */
-  readonly name: string
-  /** The item's rules from the item itself down to the layer rule. */
-  readonly path: readonly CssNode[]
-  /** Every rule above the layer rule is a named layer, so the item always names the layer. Any
-   * other rule above it can keep it from naming the layer at all. */
-  readonly always: boolean
-  /** The layer holds an !important declaration. */
-  readonly important: boolean
-}
-
-/** The layers an item names, in source order, each after the layers that hold it: `@layer a.b{}`
- * names `a` and `a.b`, as `@layer a{@layer b{}}` does. A layer inside an anonymous layer is named
- * nowhere else, so its order needs no mention. */
-function layerMentions(node: CssNode): LayerMention[] {
-  const mentions: LayerMention[] = []
-  const path: CssNode[] = []
-  // The full name of each enclosing layer rule, null for an anonymous one.
-  const parents: (string | null)[] = []
-  walk(node, {
-    enter(child: CssNode) {
-      if (child.type !== 'Atrule' && child.type !== 'Rule') return
-      path.push(child)
-      if (child.type !== 'Atrule' || ident.decode(child.name).toLowerCase() !== 'layer') return
-      const enclosing = parents.at(-1)
-      if (enclosing === null) {
-        parents.push(null)
-        return
-      }
-      const parent = enclosing ?? ''
-      let important = false
-      walk(child, {
-        visit: 'Declaration',
-        enter(declaration) {
-          if (declaration.important) important = true
-        },
-      })
-      const always = path.slice(0, -1).every(isNamedLayer)
-      const mention = { parent, path: [...path], always, important }
-      if (!child.prelude) {
-        mentions.push({ ...mention, layer: child, name: '' })
-        parents.push(null)
-        return
-      }
-      const list = child.prelude.type === 'AtrulePrelude' ? child.prelude.children.first : null
-      const names: string[] = []
-      if (list && String(list.type) === 'LayerList' && 'children' in list && list.children)
-        list.children.forEach((layer) => {
-          names.push(generate(layer))
-        })
-      else names.push(generate(child.prelude))
-      let full = parent
-      for (const name of names) {
-        full = parent
-        let written = ''
-        for (const segment of name.split(/(?<!\\)\./)) {
-          const layer = full ? `${full}.${segment}` : segment
-          written = written ? `${written}.${segment}` : segment
-          mentions.push({ ...mention, layer, parent: full, name: written })
-          full = layer
-        }
-      }
-      parents.push(full)
-    },
-    leave(child: CssNode) {
-      if (child.type !== 'Atrule' && child.type !== 'Rule') return
-      path.pop()
-      if (child.type === 'Atrule' && ident.decode(child.name).toLowerCase() === 'layer')
-        parents.pop()
-    },
-  })
-  return mentions
-}
-
-/** An item cut down to some of its layer mentions: each named layer emptied, inside the rules that
- * hold it in the item. It names those layers exactly where and when the item did, and holds
- * nothing else. */
-function skeleton(node: CssNode, mentions: readonly LayerMention[], depth = 0): CssNode[] {
-  if (node.type !== 'Atrule' && node.type !== 'Rule') return []
-  const here = mentions.filter(({ path }) => path[depth] === node)
-  if (here.every(({ path }) => path.length === depth + 1))
-    return here.flatMap(({ layer, name }) =>
-      typeof layer === 'string' ? (parse(`@layer ${name}{}`) as StyleSheet).children.toArray() : [],
-    )
-  const children = (node.block?.children.toArray() ?? []).flatMap((child) =>
-    skeleton(child, here, depth + 1),
-  )
-  const block: Block = { type: 'Block', children: new List<CssNode>().fromArray(children) }
-  return [{ ...node, block }]
-}
-
-/** The empty layer copies each kept item needs before it, as dropHomeItems describes them, in one
- * pass over the sheet's mentions. Items About stored are kept and name About's own layers in
- * About's order, so only a kept item About did not store can need copies, and only of a layer a
- * dropped Home item named. */
-function layerCopies(
-  sheet: StyleSheet,
-  held: ReadonlySet<CssNode>,
-  homeItems: ReadonlySet<CssNode>,
-): Map<CssNode, CssNode[]> {
-  type Layer = string | CssNode
-  const copies = new Map<CssNode, CssNode[]>()
-  const entries = sheet.children
-    .toArray()
-    .flatMap((node) => layerMentions(node).map((mention) => ({ node, mention })))
-  // About's order: each layer by the place an item About stored first names it.
-  const rank = new Map<Layer, number>()
-  const important = new Set<Layer>()
-  for (const { node, mention } of entries) {
-    if (held.has(node) && !rank.has(mention.layer)) rank.set(mention.layer, rank.size)
-    if (mention.important && !homeItems.has(node)) important.add(mention.layer)
-  }
-  const kept = (node: CssNode): boolean => !held.has(node) && !homeItems.has(node)
-  if (
-    !entries.some(({ node }) => kept(node)) ||
-    !entries.some(({ node, mention }) => homeItems.has(node) && rank.has(mention.layer))
-  )
-    return copies
-  // A kept mention fixes a layer's place for what follows it when it is About's own or always
-  // applies. Until then the dropped mentions of each of About's layers wait, up to the first that
-  // always applies, and each parent knows its layers with waiting mentions.
-  const settled = new Set<Layer>()
-  const closed = new Set<Layer>()
-  const queued = new Map<Layer, { node: CssNode; mention: LayerMention }[]>()
-  const waiting = new Map<string, Set<Layer>>()
-  for (const entry of entries) {
-    const { node, mention } = entry
-    const { layer, parent } = mention
-    if (homeItems.has(node)) {
-      if (!rank.has(layer) || settled.has(layer) || closed.has(layer)) continue
-      const queue = queued.get(layer) ?? []
-      queue.push(entry)
-      queued.set(layer, queue)
-      if (mention.always) closed.add(layer)
-      const siblings = waiting.get(parent) ?? new Set<Layer>()
-      siblings.add(layer)
-      waiting.set(parent, siblings)
-      continue
-    }
-    const siblings = waiting.get(parent)
-    if (kept(node) && siblings?.size) {
-      const place = rank.get(layer)
-      const due = [...siblings]
-        .filter((other) =>
-          place === undefined
-            ? important.has(layer) && important.has(other)
-            : (rank.get(other) ?? place) < place,
-        )
-        .sort((a, b) => (rank.get(a) ?? 0) - (rank.get(b) ?? 0))
-      const before = copies.get(node) ?? []
-      for (const other of due) {
-        for (const { node: dropped, mention: named } of queued.get(other) ?? [])
-          before.push(...skeleton(dropped, [named]))
-        queued.delete(other)
-        siblings.delete(other)
-      }
-      if (before.length) copies.set(node, before)
-    }
-    if (held.has(node) || mention.always) {
-      settled.add(layer)
-      queued.delete(layer)
-      siblings?.delete(layer)
-    }
-  }
-  return copies
-}
-
 /** A Home item stays out of About unless About stored it or names it: a remainder would follow
- * Home's rule on the public page and override it. Anything unproven stays, so nothing is lost. A
- * layered item Home owns counts as Home's even where About stored the same text: About's own copy
- * follows it on the canvas.
- * Dropping Home's items must also leave About's own cascade as it was. Only a kept item that About
- * did not store can name a layer before About's own blocks do, and it fixes that layer's place only
- * where it always applies: a condition can keep it from naming the layer at all. That matters when
- * it puts one of About's named layers behind a sibling layer About orders after it, or behind a new
- * sibling when both hold !important declarations: the new layer's would then win. A sublayer such
- * as `a.b`, or `b` inside `a`, is ordered among the other sublayers of `a` only. The dropped Home
- * items that named About's layer earlier then leave an empty copy of it, inside the rules that held
- * it, up to the first that always applies. The copies go directly before the first kept item that
- * needs them, in About's order, so About opened on its own keeps that order, and a kept item before
- * them still loses to About's block with its normal declarations. Home keeps every mention the
- * copies repeat, so the public page, which renders Home's sheet first, does not change. Without
- * !important on both sides a new layer needs none: its normal declarations lose to About's later
- * block, and !important beats normal in any order. An anonymous layer of About's needs none
- * either. It is keyed by its own block, so no Home item names it. */
+ * Home's rule on the public page and override it. Anything unproven stays, so nothing is lost. */
 function dropHomeItems(
   sheet: StyleSheet,
   sources: ReadonlyMap<CssNode, string>,
@@ -1089,41 +710,26 @@ function dropHomeItems(
 ): void {
   const about = storedItems(owners.about)
   const home = storedItems(owners.home)
-  const owned = homeOwned(sheet, sources, owners.home)
-  const held = new Set<CssNode>()
-  const homeItems = new Set<CssNode>()
   const aboutId = idsIn(aboutIds)
-  sheet.children.forEach((node) => {
+  sheet.children.forEach((node, item, list) => {
     const source = sources.get(node) ?? ''
     const remainder = generate(node)
-    if (!owned.has(node) && (about.has(source) || about.has(remainder))) {
-      held.add(node)
-      return
-    }
+    if (about.has(source) || about.has(remainder)) return
     // The canvas has one body, so an unstored root rule belongs to the Home being edited.
     const root = bindCmsRootStyles(source, 'root') !== source
     if ((root || home.has(source) || home.has(remainder)) && !namesPageId(node, aboutId))
-      homeItems.add(node)
-  })
-  const copies = layerCopies(sheet, held, homeItems)
-  sheet.children.forEach((node, item, list) => {
-    const before = copies.get(node)
-    if (before) list.insertList(new List<CssNode>().fromArray(before), item)
-    if (homeItems.has(node)) list.remove(item)
+      list.remove(item)
   })
 }
 
 /** Home's stylesheet precedes About's on the public page, and About may not be mounted there.
  * Rules for About's section are gone before this runs, except for IDs Home's own markup holds.
- * Only an item About holds verbatim and Home does not own may leave. Of equal layered items Home
- * owns as many as it stored, so About's copy of a layer Home also stored leaves and Home's stays.
- * A layer copy would outrank About's own, and a rule that lost an About ID would be a partial copy
- * of it; an intact unlayered item is shared site CSS and stays, unless it names a discarded About
- * ID where it decides, also by attribute as in `[id="x"]`, and none of Home's own: it styles only
- * About's section. A rule that still names one of Home's own IDs where it decides stays: About's
- * extraction drops that part. An attribute form never splits, so such a rule stays whole and also
- * styles About's element. A layer may leave only when no layer About lacks stays behind it: that
- * layer would then precede it. */
+ * Only an item About holds verbatim and Home did not store may leave. A rule that lost an About ID
+ * would be a partial copy of it; an intact item is shared site CSS and stays, unless it names a
+ * discarded About ID where it decides, also by attribute as in `[id="x"]`, and none of Home's own:
+ * it styles only About's section. A rule that still names one of Home's own IDs where it decides
+ * stays: About's extraction drops that part. An attribute form never splits, so such a rule stays
+ * whole and also styles About's element. */
 function dropAboutCopies(
   sheet: StyleSheet,
   sources: ReadonlyMap<CssNode, string>,
@@ -1132,27 +738,19 @@ function dropAboutCopies(
 ): void {
   const about = storedItems(owners.about)
   const home = storedItems(owners.home)
-  const owned = homeOwned(sheet, sources, owners.home)
   const own = idsIn(owners.own)
   const aboutId = idsIn(discarded)
-  let keptLayer = false
-  sheet.children.forEachRight((node, item, list) => {
+  sheet.children.forEach((node, item, list) => {
     const source = sources.get(node) ?? ''
     const remainder = generate(node)
-    const layered = hasLayer(node)
     if (
       about.has(source) &&
-      (layered ? !owned.has(node) : !home.has(source) && !home.has(remainder)) &&
-      (layered ||
-        ((source !== remainder || namesPageId(node, aboutId, requiredId)) &&
-          !namesPageId(node, own))) &&
-      !(layered && keptLayer)
-    ) {
+      !home.has(source) &&
+      !home.has(remainder) &&
+      (source !== remainder || namesPageId(node, aboutId, requiredId)) &&
+      !namesPageId(node, own)
+    )
       list.remove(item)
-      return
-    }
-    // A kept item About also holds is Home's own or already blocked; About's copies follow Home's.
-    if (layered && !about.has(source)) keptLayer = true
   })
 }
 
@@ -1211,10 +809,10 @@ export function stripComposedCanvas(
   }
 }
 
-/** Home's part of the canvas sheet: no selector branch or alternative for a discarded ID and, with
- * owners, no copy of About's items. It reads no markup. The canvas sheet is parsed as the stored
- * sheets are, custom properties included: the canvas writes `--x:red !important`, which only
- * then reads as the stored `--x:red!important`. */
+/** Home's part of the canvas sheet: no selector branch for a discarded ID and, with owners, no copy
+ * of About's items. It reads no markup. The canvas sheet is parsed as the stored sheets are, custom
+ * properties included: the canvas writes `--x:red !important`, which only then reads as the stored
+ * `--x:red!important`. */
 export function stripHomeSheet(
   css: string,
   discarded: ReadonlySet<string>,
@@ -1253,9 +851,9 @@ export function extractComposedAbout(
   return { html: saved.body.innerHTML, css: extractAboutSheet(css, aboutIds, otherIds, owners) }
 }
 
-/** About's part of the canvas sheet: no selector branch or alternative for another ID of the
- * canvas and, with owners, none of Home's items, in About's layer order. It reads no markup. The
- * canvas sheet is parsed as stripHomeSheet parses it. */
+/** About's part of the canvas sheet: no selector branch for another ID of the canvas and, with
+ * owners, none of Home's items. It reads no markup. The canvas sheet is parsed as stripHomeSheet
+ * parses it. */
 export function extractAboutSheet(
   css: string,
   aboutIds: ReadonlySet<string>,

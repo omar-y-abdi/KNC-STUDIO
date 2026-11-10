@@ -17,7 +17,6 @@ import {
 import { renderLegalFragment, renderLegalPage } from '@bladeblend/public-web/server/legal-page'
 import { repairDesktopCss } from '@bladeblend/content-contracts/cms-device-css'
 import { siteThemeCss } from '@bladeblend/content-contracts/site-theme'
-import { themeDeclarations } from '@bladeblend/content-contracts/site-theme-declarations'
 import { WorkerEntrypoint } from 'cloudflare:workers'
 import {
   SITE_PAGE_CSS,
@@ -137,6 +136,16 @@ function withNoIndex(response: Response): Response {
   })
 }
 
+/** The deployed 404 page as the answer for a missing URL. */
+function notFoundPage(request: Request, missing: Response): Response {
+  return withNoIndex(
+    new Response(request.method === 'HEAD' ? null : missing.body, {
+      status: 404,
+      headers: missing.headers,
+    }),
+  )
+}
+
 function redirectTo(url: URL, pathname: string): Response {
   url.pathname = pathname
   return new Response(null, { status: 308, headers: { Location: url.toString() } })
@@ -160,6 +169,15 @@ async function serveAsset(
   dynamic = false,
 ): Promise<Response> {
   return env.ASSETS.fetch(assetRequest(request, pathname, dynamic))
+}
+
+/** The headers of a page rendered from `asset`: never stored, and without the validators and
+ * length of the bytes it was rendered from. */
+function renderedHeaders(asset: Response): Headers {
+  const headers = new Headers(asset.headers)
+  for (const name of ['Content-Length', 'ETag', 'Last-Modified']) headers.delete(name)
+  headers.set('Cache-Control', 'no-store')
+  return headers
 }
 
 /** Base sheets of information pages, in cascade order before their stored CSS. */
@@ -270,27 +288,22 @@ async function nativeMetadata(
   }
 }
 
-async function loadPublicCms(env: Env): Promise<PublicCmsPresentation | null> {
-  if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) return null
+/** A public RPC's JSON answer as `read` decodes it; null when it cannot be read. */
+async function publicRpc<T>(
+  env: Env,
+  operation: string,
+  read: (value: unknown) => T | null,
+): Promise<T | null> {
   try {
-    const response = await fetch(
-      `${env.SUPABASE_URL.replace(/\/$/, '')}/rest/v1/rpc/public_cms_presentation`,
-      {
-        method: 'POST',
-        headers: {
-          apikey: env.SUPABASE_ANON_KEY,
-          Authorization: `Bearer ${env.SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: '{}',
-        signal: AbortSignal.timeout(1800),
-      },
-    )
-    if (!response.ok) return null
-    return publicCmsFromWire(await response.json())
+    const response = await publicCmsResponse(env, operation)
+    return response?.ok ? read(await response.json()) : null
   } catch {
     return null
   }
+}
+
+function loadPublicCms(env: Env): Promise<PublicCmsPresentation | null> {
+  return publicRpc(env, 'public_cms_presentation', publicCmsFromWire)
 }
 
 /** One published page with the themes and fonts it renders with (public_cms_page), validated as
@@ -365,27 +378,8 @@ function discoveryFromWire(value: unknown): BusinessDiscovery | null {
   }
 }
 
-async function loadDiscovery(env: Env): Promise<BusinessDiscovery | null> {
-  if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) return null
-  try {
-    const response = await fetch(
-      `${env.SUPABASE_URL.replace(/\/$/, '')}/rest/v1/rpc/public_business_discovery`,
-      {
-        method: 'POST',
-        headers: {
-          apikey: env.SUPABASE_ANON_KEY,
-          Authorization: `Bearer ${env.SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: '{}',
-        signal: AbortSignal.timeout(1800),
-      },
-    )
-    if (!response.ok) return null
-    return discoveryFromWire(await response.json())
-  } catch {
-    return null
-  }
+function loadDiscovery(env: Env): Promise<BusinessDiscovery | null> {
+  return publicRpc(env, 'public_business_discovery', discoveryFromWire)
 }
 
 function tagBounds(
@@ -496,7 +490,7 @@ function requestedCmsMode(value: string | null): CmsMode | null {
 /** One explicit scheme, or both behind `prefers-color-scheme` media queries. */
 type RenderedMode = CmsMode | 'auto'
 
-/** Native markup is restored for one mode here and owned by the app after mount. Authored markup
+/** Native markup is served for one mode and owned by the app after mount. Authored markup
  * (legal and created pages) is complete without the app bundle. */
 type CmsRender =
   | { readonly markup: 'native'; readonly mode: CmsMode; readonly variant: PageVariant }
@@ -866,64 +860,8 @@ export function renderCmsPage(
     authored && !RUNTIME_ISLAND.test(variant.html)
       ? droppedBootAssets(layout, styles, variant.html)
       : []
-  let markup = variant.html
-  if (plan.markup === 'native') {
-    const mode = plan.mode
-    // Source styles are stored once in the document; restore them for the first HTML response.
-    const fragment = parseFragment(markup)
-    const restoreSource = (node: DefaultTreeAdapterMap['node']): void => {
-      if ('attrs' in node && node.attrs.some((attr) => attr.name === 'data-knc-baseline')) {
-        const style =
-          node.attrs.find((attr) => attr.name === `data-knc-${mode}`) ??
-          node.attrs.find((attr) => attr.name === 'data-knc-light')
-        if (style) {
-          node.attrs = node.attrs.filter((attr) => attr.name !== 'style')
-          node.attrs.push({
-            name: 'style',
-            value:
-              presentation && Object.keys(presentation.themes[mode]).length
-                ? themeDeclarations(style.value, mode)
-                : style.value,
-          })
-        }
-        if (mode === 'dark') {
-          const read = (name: string): Record<string, string> => {
-            try {
-              const value: unknown = JSON.parse(
-                node.attrs.find((attr) => attr.name === name)?.value ?? '{}',
-              )
-              return value && typeof value === 'object' && !Array.isArray(value)
-                ? (value as Record<string, string>)
-                : {}
-            } catch {
-              return {}
-            }
-          }
-          const light = read('data-knc-baseline')
-          const dark = node.attrs.some((attr) => attr.name === 'data-knc-dark-attrs')
-            ? read('data-knc-dark-attrs')
-            : light
-          for (const name of [
-            'class',
-            'title',
-            'href',
-            'target',
-            'rel',
-            'src',
-            'alt',
-            'aria-label',
-          ]) {
-            if (node.attrs.find((attr) => attr.name === name)?.value !== light[name]) continue
-            node.attrs = node.attrs.filter((attr) => attr.name !== name)
-            if (typeof dark[name] === 'string') node.attrs.push({ name, value: dark[name] })
-          }
-        }
-      }
-      if ('childNodes' in node) node.childNodes.forEach(restoreSource)
-    }
-    restoreSource(fragment)
-    markup = serialize(fragment)
-  }
+  // Markup that reads as native is served as the parser serialises it.
+  const markup = plan.markup === 'native' ? serialize(parseFragment(variant.html)) : variant.html
   const { headEnd, root, bodyEnd } = layout
   // The metadata is edited in the shell's own bytes, before the first fill that places page bytes.
   const headCut = headEnd ?? root?.tagStart ?? bodyEnd
@@ -1057,6 +995,15 @@ export function renderHomepageMetadata(
   )
 }
 
+/** `html` with the content of its body replaced by `fill` of that content; null without a body. */
+function fillBody(html: string, fill: (body: string) => string): string | null {
+  const opening = /<body\b[^>]*>/i.exec(html)
+  const end = html.lastIndexOf('</body>')
+  if (!opening || end < opening.index + opening[0].length) return null
+  const start = opening.index + opening[0].length
+  return html.slice(0, start) + fill(html.slice(start, end)) + html.slice(end)
+}
+
 /** The fallback owns its head metadata; only its body passes through the fragment parser. */
 export function renderContactMetadata(
   html: string,
@@ -1066,31 +1013,21 @@ export function renderContactMetadata(
   const defaults = contactDefaults(business, 'sv')
   let rendered = replaceElementText(html, 'contact-meta-title', defaults.title)
   rendered = replaceMetaContent(rendered, 'contact-description', defaults.description)
-  const opening = /<body\b[^>]*>/i.exec(rendered)
-  const end = rendered.lastIndexOf('</body>')
-  if (!opening || end < opening.index + opening[0].length)
-    throw new Error('Contact fallback is missing its body')
-  const start = opening.index + opening[0].length
-  return (
-    rendered.slice(0, start) +
-    renderContactFragment(rendered.slice(start, end), business, 'sv', facts) +
-    rendered.slice(end)
-  )
+  const filled = fillBody(rendered, (body) => renderContactFragment(body, business, 'sv', facts))
+  if (filled === null) throw new Error('Contact fallback is missing its body')
+  return filled
 }
 
 export function renderPrivateMetadata(html: string, pathname: string): string {
   const title = privatePageTitle(pathname)
   if (title === null) return html
+  const description = 'Inloggning och administration för salongens personal.'
   let rendered = replaceElementText(html, 'business-title', title)
   for (const id of ['business-og-title', 'business-twitter-title']) {
     rendered = replaceMetaContent(rendered, id, title)
   }
   for (const id of ['business-og-description', 'business-twitter-description']) {
-    rendered = replaceMetaContent(
-      rendered,
-      id,
-      'Inloggning och administration för salongens personal.',
-    )
+    rendered = replaceMetaContent(rendered, id, description)
   }
   const route = pathname.startsWith('/admin') ? '/admin' : withoutTrailingSlash(pathname)
   rendered = replaceShellMetadata(
@@ -1100,11 +1037,7 @@ export function renderPrivateMetadata(html: string, pathname: string): string {
     'content',
     `${SITE_URL}${route}`,
   )
-  rendered = replaceMetaContent(
-    rendered,
-    'business-description',
-    'Inloggning och administration för salongens personal.',
-  )
+  rendered = replaceMetaContent(rendered, 'business-description', description)
   rendered = replaceShellMetadata(rendered, 'link', 'rel="canonical"', 'href', null)
   rendered = replaceShellMetadata(rendered, 'meta', 'name="robots"', 'content', 'noindex, nofollow')
   return rendered
@@ -1129,15 +1062,9 @@ export function renderLegalMetadata(
       : `Så hanterar ${business.name} bokningsuppgifter, cookies, e-post och kalenderkoppling.`,
   )
   // Only the body is parsed and filled as on a CMS legal page; the head is never reserialised.
-  const opening = /<body\b[^>]*>/i.exec(rendered)
-  const end = rendered.lastIndexOf('</body>')
-  if (!opening || end < opening.index + opening[0].length)
-    return renderLegalFragment(rendered, business)
-  const start = opening.index + opening[0].length
   return (
-    rendered.slice(0, start) +
-    renderLegalFragment(rendered.slice(start, end), business) +
-    rendered.slice(end)
+    fillBody(rendered, (body) => renderLegalFragment(body, business)) ??
+    renderLegalFragment(rendered, business)
   )
 }
 
@@ -1300,10 +1227,12 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
   const url = new URL(request.url)
   const pathname = url.pathname
   const cleanPathname = withoutTrailingSlash(pathname)
+  const getOrHead = request.method === 'GET' || request.method === 'HEAD'
+  const lang: CmsLang = url.searchParams.get('lang') === 'en' ? 'en' : 'sv'
 
   const informationPath: InformationPage | null =
     pathname === '/' || pathname === '/about' || pathname === '/contact' ? pathname : null
-  if (informationPath !== null && (request.method === 'GET' || request.method === 'HEAD')) {
+  if (informationPath !== null && getOrHead) {
     const representation = preferredRepresentation(request.headers.get('Accept'))
     if (representation === null) return notAcceptable(request)
     if (representation === 'markdown') {
@@ -1313,7 +1242,7 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
   }
 
   if (pathname === PRESENTATION_PATH) {
-    if (!['GET', 'HEAD'].includes(request.method)) return new Response(null, { status: 405 })
+    if (!getOrHead) return new Response(null, { status: 405 })
     // Publication validates the database document; the browser validates its copy on receipt.
     // Stream this public RPC without cloning/parsing/stringifying megabytes at the edge.
     const response = await publicCmsResponse(env, 'public_cms_presentation')
@@ -1332,24 +1261,18 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
     )
   }
 
-  if (pathname === '/cms-public/source' && ['GET', 'HEAD'].includes(request.method)) {
+  if (pathname === '/cms-public/source' && getOrHead) {
     return cmsFrameResponse(await serveAsset(request, env, '/index.html', true), true)
   }
 
   if (pathname === '/404.html') {
     if (preferredRepresentation(request.headers.get('Accept')) === 'markdown')
       return markdownNotFound(request)
-    const missing = await serveAsset(request, env, '/404.html')
-    return withNoIndex(
-      new Response(request.method === 'HEAD' ? null : missing.body, {
-        status: 404,
-        headers: missing.headers,
-      }),
-    )
+    return notFoundPage(request, await serveAsset(request, env, '/404.html'))
   }
 
   const customerAccessToken = customerAccessTokenFromPath(pathname)
-  if (customerAccessToken !== null && (request.method === 'GET' || request.method === 'HEAD')) {
+  if (customerAccessToken !== null && getOrHead) {
     return new Response(null, {
       status: 302,
       headers: {
@@ -1390,10 +1313,9 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
 
   if (pathname === '/index.html') return redirectTo(url, '/')
 
-  if (NATIVE_PUBLIC_PATHS.includes(pathname) && ['GET', 'HEAD'].includes(request.method)) {
+  if (NATIVE_PUBLIC_PATHS.includes(pathname) && getOrHead) {
     // Native pages already render their CMS document in App. Parsing and embedding the entire
     // editor tree here duplicated that work and exhausted the production 10ms CPU budget.
-    const lang: CmsLang = url.searchParams.get('lang') === 'en' ? 'en' : 'sv'
     const [asset, metadata, discovery] = await Promise.all([
       serveAsset(request, env, '/index.html', true),
       nativeMetadata(env, pathname, lang),
@@ -1441,9 +1363,7 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
       /(<link\b[^>]*rel="canonical"[^>]*href=")[^"]*(")/i,
       `$1${SITE_URL}${pathname}$2`,
     )
-    const headers = new Headers(asset.headers)
-    for (const name of ['Content-Length', 'ETag', 'Last-Modified']) headers.delete(name)
-    headers.set('Cache-Control', 'no-store')
+    const headers = renderedHeaders(asset)
     if (informationPath !== null) {
       headers.set('Content-Type', 'text/html; charset=utf-8')
       varyAccept(headers)
@@ -1452,22 +1372,18 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
     return new Response(request.method === 'HEAD' ? null : body, { status: asset.status, headers })
   }
 
-  const dynamicLegal =
-    (pathname === '/terms' || pathname === '/privacy') &&
-    (request.method === 'GET' || request.method === 'HEAD')
-  const dynamicContact =
-    pathname === '/contact' && (request.method === 'GET' || request.method === 'HEAD')
+  const dynamicLegal = (pathname === '/terms' || pathname === '/privacy') && getOrHead
+  const dynamicContact = pathname === '/contact' && getOrHead
   // Information pages render the business whether the CMS holds them or the static file answers, so
   // discovery is read while the CMS lookup runs, not after it. HEAD never reads it.
   const informationDiscovery =
     (dynamicLegal || dynamicContact) && request.method === 'GET' ? loadDiscovery(env) : null
   if (
-    (request.method === 'GET' || request.method === 'HEAD') &&
+    getOrHead &&
     isCmsPagePath(cleanPathname) &&
     !isPrivatePath(pathname) &&
     pathname !== '/google-calendar'
   ) {
-    const lang: CmsLang = url.searchParams.get('lang') === 'en' ? 'en' : 'sv'
     const published = await publishedCmsPage(
       env,
       cleanPathname,
@@ -1487,11 +1403,7 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
               ? sitePageBaseCss(request, env)
               : '',
       ])
-      const headers = new Headers(index.headers)
-      headers.delete('Content-Length')
-      headers.delete('ETag')
-      headers.delete('Last-Modified')
-      headers.set('Cache-Control', 'no-store')
+      const headers = renderedHeaders(index)
       if (informationPath !== null) {
         varyAccept(headers)
         headers.set('Link', '</llms.txt>; rel="describedby"')
@@ -1500,7 +1412,7 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
       if (published.read === 'exists') return new Response(null, { status: index.status, headers })
       const { cms, page: cmsPage } = published
       const mode = requestedCmsMode(url.searchParams.get('mode'))
-      const canonicalUrl = `${SITE_URL}${cmsPage.path === '/' ? '/' : cmsPage.path}`
+      const canonicalUrl = `${SITE_URL}${cmsPage.path}`
       // Fill only the authored fragment. The SPA shell must never be parsed or reserialised here.
       const page =
         cmsPage.path === '/contact'
@@ -1534,10 +1446,8 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
   if (asset.status !== 404) {
     if (dynamicContact) {
       const discovery = await informationDiscovery
-      const headers = new Headers(asset.headers)
-      for (const key of ['Content-Length', 'ETag', 'Last-Modified']) headers.delete(key)
+      const headers = renderedHeaders(asset)
       headers.set('Content-Type', 'text/html; charset=utf-8')
-      headers.set('Cache-Control', 'no-store')
       headers.set('Link', '</llms.txt>; rel="describedby"')
       varyAccept(headers)
       return new Response(
@@ -1553,11 +1463,7 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
     }
     if (dynamicLegal) {
       const discovery = await informationDiscovery
-      const headers = new Headers(asset.headers)
-      headers.delete('Content-Length')
-      headers.delete('ETag')
-      headers.delete('Last-Modified')
-      headers.set('Cache-Control', 'no-store')
+      const headers = renderedHeaders(asset)
       return new Response(
         request.method === 'HEAD'
           ? null
@@ -1568,7 +1474,7 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
     return isNoIndexPath(pathname) ? withNoIndex(asset) : asset
   }
 
-  if (request.method === 'GET' || request.method === 'HEAD') {
+  if (getOrHead) {
     if (isSpaPath(pathname)) {
       const index = await serveAsset(request, env, '/index.html')
       const headers = new Headers(index.headers)
@@ -1587,14 +1493,7 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
       if (preferredRepresentation(request.headers.get('Accept')) === 'markdown')
         return markdownNotFound(request)
       const missing = await serveAsset(request, env, '/404.html')
-      if (missing.ok) {
-        return withNoIndex(
-          new Response(request.method === 'HEAD' ? null : missing.body, {
-            status: 404,
-            headers: missing.headers,
-          }),
-        )
-      }
+      if (missing.ok) return notFoundPage(request, missing)
     }
   }
 

@@ -36,7 +36,7 @@ export function CustomerEmailLink(props: CustomerEmailLinkProps): JSX.Element | 
   const s = buildBookingStyles(c, props.dark, false)
   const email = props.profile?.email ?? ''
   const verified = parseEmail(email).ok
-  const current = useRef({
+  const freshOwner = () => ({
     port: props.port,
     email,
     code: props.code,
@@ -44,19 +44,13 @@ export function CustomerEmailLink(props: CustomerEmailLinkProps): JSX.Element | 
     sequence: 0,
     busy: false,
   })
+  const current = useRef(freshOwner())
   if (
     current.current.port !== props.port ||
     current.current.email !== email ||
     current.current.code !== props.code
   ) {
-    current.current = {
-      port: props.port,
-      email,
-      code: props.code,
-      active: true,
-      sequence: 0,
-      busy: false,
-    }
+    current.current = freshOwner()
   }
   const owner = current.current
   const initial: LinkState = {

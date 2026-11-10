@@ -28,7 +28,7 @@ import { TypeToConfirmDialog } from '../TypeToConfirmDialog'
 import { useNarrow } from '../chrome'
 import type { Lang } from '@bladeblend/public-web/localization'
 import { adminText } from '../adminStrings'
-import type { BarberAccountState } from '../types'
+import type { BarberAccountState, BarberEdit } from '../types'
 import type { AdminBarber, AdminBarberId, AdminStylesBundle } from './viewTypes'
 
 export interface BarbersViewProps {
@@ -40,16 +40,8 @@ export interface BarbersViewProps {
   readonly onRosterChanged: () => void
 }
 
-interface EditDraft {
-  name: string
-  ig: string
-  roleSv: string
-  roleEn: string
-  bioSv: string
-  bioEn: string
-  active: boolean
-  sortOrder: number
-}
+/** The edit buffer is exactly what `updateBarber` writes. */
+type EditDraft = BarberEdit
 
 interface NewDraft extends EditDraft {
   id: string
@@ -195,14 +187,10 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
   }
 
   const toggleAccountForm = (barberId: AdminBarberId): void => {
-    if (accountFormId === barberId) {
-      setAccountFormId(null)
-      setAccountEmail('')
-    } else {
-      setAccountFormId(barberId)
-      setAccountEmail('')
-      setNotice(null)
-    }
+    const opening = accountFormId !== barberId
+    setAccountFormId(opening ? barberId : null)
+    setAccountEmail('')
+    if (opening) setNotice(null)
   }
 
   const submitCreateAccount = async (barberId: AdminBarberId): Promise<void> => {
@@ -218,9 +206,7 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
       setNotice({ kind: 'err', text: result.error.message })
       return
     }
-    const next = new Map(accounts)
-    next.set(barberId, 'enabled')
-    setAccounts(next)
+    setAccounts(new Map(accounts).set(barberId, 'enabled'))
     setAccountFormId(null)
     setAccountEmail('')
     setNotice({
@@ -240,9 +226,7 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
       setNotice({ kind: 'err', text: result.error.message })
       return
     }
-    const next = new Map(accounts)
-    next.set(barberId, result.value.enabled ? 'enabled' : 'disabled')
-    setAccounts(next)
+    setAccounts(new Map(accounts).set(barberId, result.value.enabled ? 'enabled' : 'disabled'))
     setNotice({
       kind: result.value.authSyncPending ? 'err' : 'ok',
       text: result.value.authSyncPending
@@ -266,10 +250,14 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
     setDeleteBusy(true)
     const outcome = await deleteBarber(barber.id, purge)
     setDeleteBusy(false)
+    // Close the dialogs so the notice (rendered behind the modal) is visible; `has_bookings` instead
+    // swaps the id-confirm for the purge confirm carrying the exact counts.
+    setDeleteTarget(null)
+    setPurgeTarget(
+      outcome.kind === 'has_bookings' ? { barber, count: outcome.count, past: outcome.past } : null,
+    )
     switch (outcome.kind) {
       case 'ok':
-        setDeleteTarget(null)
-        setPurgeTarget(null)
         setNotice({
           kind: outcome.authCleanupPending ? 'err' : 'ok',
           text: outcome.authCleanupPending ? t.barbersAuthCleanupPending : t.barbersDeletedOk,
@@ -278,39 +266,23 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
         props.onRosterChanged()
         return
       case 'has_bookings':
-        // Swap the id-confirm for the purge confirm carrying the exact counts.
-        setDeleteTarget(null)
-        setPurgeTarget({
-          barber,
-          count: outcome.count,
-          past: outcome.past,
-        })
         return
       case 'has_upcoming':
-        setDeleteTarget(null)
-        setPurgeTarget(null)
         setNotice({
           kind: 'err',
           text: t.barbersDeleteUpcomingBlocked.replace('{upcoming}', String(outcome.upcoming)),
         })
         return
       case 'external_cleanup_pending':
-        setDeleteTarget(null)
-        setPurgeTarget(null)
         setNotice({
           kind: 'err',
           text: t.barbersExternalCleanupPending.replace('{count}', String(outcome.calendarEvents)),
         })
         return
       case 'delivery_pending':
-        setDeleteTarget(null)
-        setPurgeTarget(null)
         setNotice({ kind: 'err', text: t.barbersDeliveryPending })
         return
       case 'error':
-        // Close the dialogs so the notice (rendered behind the modal) is visible.
-        setDeleteTarget(null)
-        setPurgeTarget(null)
         setNotice({ kind: 'err', text: outcome.error.message })
         return
     }

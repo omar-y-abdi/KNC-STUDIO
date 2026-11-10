@@ -11,6 +11,7 @@ import {
   reorderServiceResponse,
   serviceRow,
   serviceRows,
+  type ServiceRow,
 } from '../adminSchemas'
 import type { AdminBarberId, AdminResult, AdminService, NewService, ServiceEdit } from '../types'
 import { err, ok } from '../types'
@@ -21,16 +22,7 @@ const WRITE_ERROR = 'Kunde inte spara. Försök igen.'
 const COLUMNS = 'id,barber_id,name,price,duration_min,active,sort_order,available_weekdays'
 
 /** Map a parsed raw services row into the admin domain type. */
-function toService(r: {
-  id: string
-  barber_id: string
-  name: string
-  price: number
-  duration_min: number
-  active: boolean
-  sort_order: number
-  available_weekdays: AdminService['availableWeekdays']
-}): AdminService {
+function toService(r: ServiceRow): AdminService {
   return {
     id: r.id,
     barberId: r.barber_id,

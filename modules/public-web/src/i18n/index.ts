@@ -1,207 +1,21 @@
-// Typed string tables. `Lang` is a closed union; every BookingStrings/AppStrings key is
-// required, so a missing translation is a compile error (no index-signature widening).
+// Typed string tables. `Lang` is a closed union; the Swedish tables define the keys, and every key
+// is required, so a missing translation is a compile error (no index-signature widening).
 
 export type Lang = 'sv' | 'en'
 
 /** Strings used by the booking flow. */
-export interface BookingStrings {
-  chooseBarber: string
-  loadingBarbers: string
-  noBarbers: string
-  chooseDate: string
-  previousMonth: string
-  nextMonth: string
-  dateUnavailable: string
-  chooseTime: string
-  chooseService: string
-  loadingServices: string
-  noServices: string
-  pickDayForService: string
-  pickServiceForTime: string
-  /** Shown in the time column while real availability is loading from the backend. */
-  loadingTimes: string
-  /** Shown in the time column when a barber+date+service is chosen but no bookable times remain
-   * (barber off/on time-off, fully booked, or — for the backend — a read error; fail-closed). */
-  noSlots: string
-  legendChosen: string
-  legendClosed: string
-  yourDetails: string
-  summary: string
-  fBarber: string
-  fWhen: string
-  fService: string
-  fTotal: string
-  name: string
-  namePh: string
-  phone: string
-  phonePh: string
-  email: string
-  emailPh: string
-  book: string
-  policy: string
-  termsLink: string
-  termsLinkLabel: string
-  bookedTitle: string
-  /** Confirmation sentence template. `{email}` and legacy `{phone}` tokens are interpolated. */
-  confirmSent: string
-  addToCal: string
-  calApple: string
-  calGoogle: string
-  directions: string
-  newBooking: string
-  min: string
-  errName: string
-  errPhone: string
-  errEmail: string
-  errSubmit: string
-  /** Gateway rejection: too many booking attempts (per-IP/phone backstop). */
-  errRateLimited: string
-  /** Gateway rejection: the Turnstile human-verification challenge failed. */
-  errChallenge: string
-}
+export type BookingStrings = Record<keyof typeof bookingSv, string>
 
 /** Strings used by the site shell (incl. a11y labels). */
-export interface AppStrings {
-  findUs: string
-  book: string
-  /** Secondary hero action next to/under "Boka tid" — opens the Mina bokningar popup. */
-  myBookings: string
-  kicker: string
-  hours: string
-  addr: string
-  ariaTheme: string
-  ariaBackHome: string
-  ariaCall: string
-  /** Underlined hero links added under the "Boka tid" button. */
-  aboutLink: string
-  cancelLink: string
-  lazyBookingLoading: string
-  lazyBookingError: string
-  lazyMyBookingsError: string
-  lazyReload: string
-}
+export type AppStrings = Record<keyof typeof appSv, string>
 
-export interface PrivacyStrings {
-  title: string
-  lead: string
-  privacyLink: string
-  accept: string
-  reject: string
-  preferences: string
-  save: string
-  functionalTitle: string
-  functionalLead: string
-  necessary: string
-  manage: string
-  manageLabel: string
-}
+export type PrivacyStrings = Record<keyof typeof privacySv, string>
 
 /** Strings for the "Om oss" / About section. */
-export interface AboutStrings {
-  /** Static legal links at the bottom of the About section. */
-  termsLink: string
-  privacyLink: string
-  /** Section eyebrow + heading + intro paragraph. */
-  eyebrow: string
-  heading: string
-  intro: string
-  /** Salon photo gallery. */
-  galleryTitle: string
-  galleryAlt: string
-  galleryLoading: string
-  galleryEmpty: string
-  galleryUnavailable: string
-  /** Stylists block. */
-  stylistsTitle: string
-  /** Customer-cuts gallery. */
-  cutsTitle: string
-  cutsAlt: string
-  /** Reviews require a device receipt or a verified session for a finished booking; phone is a
-   * scope cross-check. The name is derived server-side from that booking ("Förnamn E."), so the
-   * form asks for the phone, not a name. */
-  reviewsTitle: string
-  reviewsLoading: string
-  reviewsEmpty: string
-  reviewsUnavailable: string
-  /** Review page row: `aria-label` of the row, of a page button (`{n}` is replaced) and of the
-   * arrows that move the row to earlier or later page numbers. */
-  reviewPagesLabel: string
-  reviewPageLabel: string
-  reviewPagesPrevious: string
-  reviewPagesNext: string
-  reviewPhone: string
-  reviewPhonePh: string
-  /** Helper line under the phone field explaining the gate + derived name. */
-  reviewPhoneHint: string
-  reviewRating: string
-  reviewText: string
-  reviewTextPh: string
-  reviewSubmit: string
-  reviewThanks: string
-  reviewErrPhone: string
-  reviewErrText: string
-  reviewErrRating: string
-  /** No device receipt or verified session, or no eligible finished, not-yet-reviewed booking in
-   * that scope. */
-  reviewErrNoBooking: string
-  reviewErrInvalid: string
-  reviewErrChallenge: string
-  reviewErrRateLimited: string
-  reviewErrSubmit: string
-  reviewErrUnavailable: string
-  /** `aria-label` for a rendered star rating, e.g. "Betyg: 4 av 5". `{n}` is replaced. */
-  ratingValueLabel: string
-  /** `aria-label` for a star in the keyboard selector, e.g. "4 stjärnor". `{n}` is replaced. */
-  ratingStarLabel: string
-  ratingGroupLabel: string
-}
+export type AboutStrings = Record<keyof typeof aboutSv, string>
 
 /** Strings for the "Mina bokningar" / My-appointments self-service dialog flow. */
-export interface MyBookingsStrings {
-  title: string
-  /** Lookup step - rotate and email the customer's permanent access link. */
-  lookupLead: string
-  email: string
-  emailPh: string
-  lookupBtn: string
-  lookingUp: string
-  errEmail: string
-  accessSent: string
-  errAccess: string
-  errCookies: string
-  deviceBookingsNote: string
-  deviceReady: string
-  deviceUnavailable: string
-  loadingBookings: string
-  /** Network/parse failure. */
-  errSystem: string
-  errChallenge: string
-  errRateLimited: string
-  /** List step. */
-  upcomingTitle: string
-  pastTitle: string
-  upcomingEmpty: string
-  /** Link back to the lookup step (check a different email). */
-  changeEmail: string
-  /** Expanded-row detail labels. */
-  fBarber: string
-  fService: string
-  fDuration: string
-  min: string
-  /** Self-cancel (upcoming rows only). */
-  cancelBtn: string
-  cancelConfirmQ: string
-  cancelConfirmYes: string
-  cancelConfirmNo: string
-  cancelling: string
-  errCancel: string
-  cancelledNote: string
-  /** Localised time connector for a row label ("kl " / ""). */
-  atSep: string
-  ariaClose: string
-  ariaExpandRow: string
-  ariaExpandPast: string
-}
+export type MyBookingsStrings = Record<keyof typeof myBookingsSv, string>
 
 /** Weekday / month / weekday-header label tables, indexed by `Date.getDay()` / month index. */
 export interface CalendarLabels {

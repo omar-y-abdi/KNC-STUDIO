@@ -5,15 +5,9 @@ import {
   prepareEmail,
   sendViaResend,
 } from '../_shared/email.ts'
+import { sha256Hex } from '../_shared/encoding.ts'
 import { corsHeaders, corsJson as json, parse } from '../_shared/http.ts'
 import { requestSchema } from './request.ts'
-
-async function sha256(value: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('')
-}
 
 Deno.serve(async (req: Request): Promise<Response> => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
@@ -51,7 +45,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
   if (newEmail === caller.data.user.email.toLowerCase())
     return json({ ok: false, error: 'same_email' }, 400)
-  const scope = await sha256(`email-change:${caller.data.user.id}`)
+  const scope = await sha256Hex(`email-change:${caller.data.user.id}`)
   const limited = await service.rpc('consume_auth_email_send', {
     p_kind: 'email_change',
     p_scope_hash: scope,

@@ -55,7 +55,17 @@ on the stack PRs (#119 to #138) and on #104. Those runs do not certify productio
 delivery, migration or publication.
 
 E1b part 2 and render-repair removal remain deferred until the owner's post-rollout publication
-and a separate compatibility check of still-supported legacy inputs. Production migration
+and a separate compatibility check of still-supported legacy inputs. A read-only production check
+on 2026-11-10 found that the publication has not happened: the published `/about` English CSS still
+holds legacy `@media (max-width:1440px)` id-only blocks, so every render-time `repairDesktopCss`
+call stays. The Worker's frozen-header serving (`withFrozenActionLinks` and the frozen branch of
+`planCmsRender`) also stays, and not only for that publication: `cms-studio` still accepts a
+created page with `layout: 'independent'` or a `#cms-site-shell` element, so a publication that did
+not pass Studio's adoption step can store one. One legacy path is gone: `renderCmsPage` no longer
+restores per-mode inline styles on markup with the native marker. The four native routes never
+reach `renderCmsPage`, and publication rejects `data-knc-*` attributes on every other path. Markup
+that contains the marker text is still classified native there (one explicit mode, app bundle, no
+reset or theme script) and served as the parser serialises it. Production migration
 squashing/history repair, production deployment and CMS publication remain owner-dependent.
 `presentation.regions` remains because validators and resource readers consume it. Archived PR90/91
 reviews and the [maintenance handoff](MAINTENANCE_HANDOFF.md) remain historical evidence.

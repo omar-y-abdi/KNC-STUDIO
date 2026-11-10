@@ -184,12 +184,7 @@ export function replaceSiteResource(
     // empty alt for decorative images and existing labels for functional graphics.
     const originalAlt = node.attrs.find((attribute) => attribute.name === 'alt')?.value
     const originalLabel = node.attrs.find((attribute) => attribute.name === 'aria-label')?.value
-    const alternative =
-      originalAlt !== undefined
-        ? originalAlt
-        : originalLabel !== undefined
-          ? originalLabel
-          : asset.alt
+    const alternative = originalAlt ?? originalLabel ?? asset.alt
     node.attrs = node.attrs.filter(
       (a) =>
         [

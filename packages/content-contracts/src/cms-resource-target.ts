@@ -27,7 +27,6 @@ export function resourceTarget(
     return person ? { purpose: 'profile', barberId: person.id } : undefined
   }
   if (
-    graphic['data-knc-source'] &&
     ['0 0 460 258', '0 0 460 330'].includes(String(graphic['viewBox'] ?? graphic['viewbox'] ?? ''))
   )
     return { purpose: 'logo' }

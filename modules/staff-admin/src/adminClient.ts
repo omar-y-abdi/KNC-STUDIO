@@ -1,9 +1,8 @@
-// The ADMIN Supabase client seam — a SECOND client instance, DISTINCT from the public
-// `getSupabase()` in `modules/staff-admin/src/supabaseClient.ts`. Two deliberate differences:
+// The ADMIN Supabase client seam — the only module that imports `@supabase/supabase-js`. The public
+// pages read through `publicRest.ts` and `publicRealtime.ts` instead. Two deliberate properties:
 //
 //   1. `persistSession: true` (+ autoRefreshToken) with its OWN `storageKey` — so an owner/barber
-//      stays logged in across reloads WITHOUT touching the public site (which keeps
-//      persistSession:false). The two clients never share session state.
+//      stays logged in across reloads WITHOUT touching the public site, which holds no session.
 //   2. It is imported ONLY from lazy-loaded admin code, so `@supabase/supabase-js`'s auth machinery
 //      lands in the admin chunk and never weighs down the public critical path.
 //

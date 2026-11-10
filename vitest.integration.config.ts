@@ -4,7 +4,7 @@ import { loadStackEnv } from './tests/integration/loadStackEnv.ts'
 // Integration tests run the REAL adapters against the RUNNING local Supabase stack. This config
 // loads the stack's env (URL + keys) at load time by shelling out to `supabase status -o env`, then
 // injects it so:
-//   - the adapters' `getSupabase()`/`getAdminClient()` see `import.meta.env.VITE_SUPABASE_URL/
+//   - the adapters' `getPublicRest()`/`getAdminClient()` see `import.meta.env.VITE_SUPABASE_URL/
 //     ANON_KEY` (vitest's `test.env` populates BOTH import.meta.env and process.env in the worker), and
 //   - the test files read `SUPABASE_*` / `DB_URL` / `SERVICE_ROLE_KEY` from `process.env` for the
 //     anon/authenticated driver clients and the superuser connection.

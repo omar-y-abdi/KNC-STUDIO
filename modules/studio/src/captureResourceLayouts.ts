@@ -2,47 +2,38 @@ import { PREVIEW_MESSAGE, PUBLIC_PREVIEW_URL } from '@bladeblend/public-web/prev
 import { generate, parse, walk } from 'css-tree'
 import type { CmsDocument, CmsLang, CmsMode, CmsPage } from '@bladeblend/content-contracts/cms'
 import { APPEARANCE_FIELDS } from './appearanceFields'
-import { mergeModes, mobileBarberCss, snapshotNative } from './nativePages'
+import { baselineAttributes } from './nativeCanvas'
+import {
+  baselineText,
+  mergeModes,
+  mobileBarberCss,
+  openCaptureFrame,
+  snapshotNative,
+  waitForCapture,
+} from './nativePages'
 
 function preserveOverrides(html: string, previous: string): string {
   const next = new DOMParser().parseFromString(html, 'text/html')
   const old = new DOMParser().parseFromString(previous, 'text/html')
   const identity = (node: Element): string | null =>
     node.getAttribute('data-knc-source') ?? node.getAttribute('data-knc-slot')
+  const baseline = (node: Element): Record<string, string> =>
+    JSON.parse(node.getAttribute('data-knc-baseline') ?? '{}') as Record<string, string>
   const originals = new Map(
     [...old.querySelectorAll('[data-knc-baseline]')].map((node) => [identity(node), node]),
   )
   for (const node of next.querySelectorAll('[data-knc-baseline]')) {
     const prior = originals.get(identity(node))
     if (!prior || prior.tagName !== node.tagName) continue
-    const before = JSON.parse(prior.getAttribute('data-knc-baseline') ?? '{}') as Record<
-      string,
-      string
-    >
-    const fresh = JSON.parse(node.getAttribute('data-knc-baseline') ?? '{}') as Record<
-      string,
-      string
-    >
-    for (const key of [
-      'class',
-      'title',
-      'href',
-      'target',
-      'rel',
-      'src',
-      'alt',
-      'aria-label',
-      'placeholder',
-    ]) {
+    const before = baseline(prior)
+    const fresh = baseline(node)
+    for (const key of baselineAttributes) {
       if (prior.getAttribute(key) === (before[key] ?? null)) continue
       if (before[key] === undefined) Reflect.deleteProperty(fresh, key)
       else fresh[key] = before[key]
     }
-    const text = [...prior.childNodes]
-      .filter((child) => child.nodeType === 3)
-      .map((child) => child.textContent ?? '')
-      .join('')
-    if (text !== before['text'] && before['text'] !== undefined) fresh['text'] = before['text']
+    if (baselineText(prior) !== before['text'] && before['text'] !== undefined)
+      fresh['text'] = before['text']
     // Retain removal history; otherwise a resource refresh resurrects deleted authored children.
     const children: string[] = JSON.parse(fresh['children'] ?? '[]')
     const retained: string[] = JSON.parse(before['children'] ?? '[]')
@@ -58,25 +49,15 @@ export async function captureResourceLayouts(
   draft: CmsDocument,
   signal: AbortSignal,
 ): Promise<CmsPage[]> {
-  const frame = document.createElement('iframe')
-  frame.title = 'Uppdaterar resurser i utkastet'
-  frame.setAttribute('aria-hidden', 'true')
-  frame.tabIndex = -1
-  frame.style.cssText =
-    'position:fixed;left:0;top:0;width:1440px;height:900px;opacity:0;pointer-events:none;z-index:-1;border:0'
-  frame.src = PUBLIC_PREVIEW_URL
-  document.body.appendChild(frame)
-  const wait = async (test: (doc: Document) => boolean): Promise<Document> => {
-    const end = performance.now() + 20000
-    while (performance.now() < end) {
-      signal.throwIfAborted()
-      const doc = frame.contentDocument
-      if (doc?.documentElement && test(doc)) return doc
-      await new Promise((resolve) => setTimeout(resolve, 25))
-    }
-    throw new Error('Resurserna finns i utkastet men sidans förhandsvisning kunde inte uppdateras.')
-  }
-  const captures = new Map<string, { html: string }>()
+  const frame = openCaptureFrame('Uppdaterar resurser i utkastet', PUBLIC_PREVIEW_URL)
+  const wait = (test: (doc: Document) => boolean): Promise<Document> =>
+    waitForCapture(
+      frame,
+      test,
+      'Resurserna finns i utkastet men sidans förhandsvisning kunde inte uppdateras.',
+      signal,
+    )
+  const captures = new Map<string, string>()
   try {
     await wait((doc) => doc.documentElement.dataset['kncSourceListening'] === '1')
     for (const lang of ['sv', 'en'] as const)
@@ -114,9 +95,10 @@ export async function captureResourceLayouts(
               lang
             ].html
             if (!root || previous === undefined) throw new Error('Utkastets originalyta saknas.')
-            captures.set(`${path}:${lang}:${mode}:${device}`, {
-              html: preserveOverrides(snapshotNative(root, surface), previous),
-            })
+            captures.set(
+              `${path}:${lang}:${mode}:${device}`,
+              preserveOverrides(snapshotNative(root, surface), previous),
+            )
           }
         }
   } finally {
@@ -124,7 +106,7 @@ export async function captureResourceLayouts(
   }
   const get = (path: string, lang: CmsLang, mode: CmsMode, device: string) => {
     const value = captures.get(`${path}:${lang}:${mode}:${device}`)
-    if (!value) throw new Error('Resursvyn blev inte fullständig.')
+    if (value === undefined) throw new Error('Resursvyn blev inte fullständig.')
     return value
   }
   return draft.presentation.pages
@@ -133,8 +115,8 @@ export async function captureResourceLayouts(
       const next = structuredClone(page)
       for (const lang of ['sv', 'en'] as const) {
         const html = (mode: CmsMode) =>
-          get(page.path, lang, mode, 'Desktop').html +
-          (page.path === '/' ? get(page.path, lang, mode, 'Mobile').html : '')
+          get(page.path, lang, mode, 'Desktop') +
+          (page.path === '/' ? get(page.path, lang, mode, 'Mobile') : '')
         next.content[lang].html = mergeModes(html('light'), html('dark'))
         for (const mode of ['light', 'dark'] as const)
           next.content[lang].css[mode] =
@@ -142,8 +124,8 @@ export async function captureResourceLayouts(
               ? replaceBarberBaseline(
                   page.content[lang].css[mode],
                   mobileBarberCss(
-                    get(page.path, lang, mode, 'Desktop').html,
-                    get(page.path, lang, mode, 'Mobile').html,
+                    get(page.path, lang, mode, 'Desktop'),
+                    get(page.path, lang, mode, 'Mobile'),
                   ),
                 )
               : page.content[lang].css[mode]

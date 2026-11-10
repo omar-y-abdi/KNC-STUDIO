@@ -62,6 +62,8 @@ import {
   parseCanvasCss,
   parseCanvasSheet,
   readCanvasCss,
+  storesLayer,
+  unkeptSyntax,
   yieldCanvasTask,
 } from './nativeCanvas'
 import { bindCmsRootStyles, canonicalizeCmsRootStyles } from './cmsRootStyles'
@@ -141,6 +143,10 @@ function afterCanvasPaint(callback: () => void): () => void {
   }
 }
 
+/** An image the owner can place: neither archived nor in the trash. */
+const isLibraryImage = (asset: CmsAsset): boolean =>
+  asset.mime.startsWith('image/') && !asset.archived && !asset.trashed_at
+
 function fontFamilyOptions(assets: CmsAsset[]): { id: string; label: string }[] {
   return [
     { id: "'Inter Variable',Inter,system-ui,sans-serif", label: 'Inter' },
@@ -185,6 +191,16 @@ const blockGlyphs = {
   divider: 'M3 12h18M7 6h10M7 18h10',
 } as const
 
+/** One-pixel moves, by arrow key on the canvas and by button in the inspector. */
+const nudges = [
+  { key: 'ArrowLeft', name: 'Flytta åt vänster', icon: 'arrowLeft', dx: -1, dy: 0 },
+  { key: 'ArrowUp', name: 'Flytta uppåt', icon: 'arrowUp', dx: 0, dy: -1 },
+  { key: 'ArrowDown', name: 'Flytta nedåt', icon: 'arrowDown', dx: 0, dy: 1 },
+  { key: 'ArrowRight', name: 'Flytta åt höger', icon: 'arrowRight', dx: 1, dy: 0 },
+] as const
+
+const tabs = ['design', 'layers', 'blocks'] as const
+
 function label(component: Component | null): string {
   if (!component) return 'Sida'
   const tag = String(component.get('tagName') ?? 'div').toUpperCase()
@@ -204,6 +220,11 @@ function fitEditor(editor: Editor): number | undefined {
     zoom: (value) => Math.min(100, Math.floor(value)),
   })
   return editor.Canvas.getZoom()
+}
+
+/** The canvas as a flush compares it: its HTML with ids kept, and its sheet. */
+function canvasSnapshot(editor: Editor): { html: string; css: string } {
+  return { html: editor.getHtml({ cleanId: false }), css: readCanvasCss(editor) }
 }
 
 /** `chrome` is a created page's live header: menu, logo and contact changes invalidate its view. */
@@ -332,6 +353,20 @@ export function CmsEditor(props: Props): JSX.Element {
   latestChrome.current = chrome
   const contextKey = editorContextKey(props, chrome)
   const variant = props.page.content[props.lang]
+  // An edit writes its geometry to the page's other sheets, and on Home to About's, without
+  // importing them into the canvas, which keeps no cascade layer.
+  const syncedSheets = [
+    props.page,
+    ...(props.page.path === '/'
+      ? props.presentation.pages.filter((page) => page.path === '/about')
+      : []),
+  ].flatMap((page) =>
+    (['sv', 'en'] as const).flatMap((lang) => [
+      page.content[lang].css.light,
+      page.content[lang].css.dark,
+    ]),
+  )
+  const layered = useMemo(() => syncedSheets.some(storesLayer), syncedSheets)
   const materializeAbout = (): void => {
     cancelAboutIdle.current?.()
     cancelAboutIdle.current = null
@@ -346,7 +381,7 @@ export function CmsEditor(props: Props): JSX.Element {
       installHomeAboutPreview(editor, create)
       aboutPreviewBuilt.current = true
       deferredAbout.current = null
-      checkpoint.current = { html: editor.getHtml({ cleanId: false }), css: readCanvasCss(editor) }
+      checkpoint.current = canvasSnapshot(editor)
       editor.clearDirtyCount()
       // Startup readiness stays separate from completion of the inactive model tree.
       host.current?.setAttribute('data-cms-about-preview-ready', 'true')
@@ -552,19 +587,12 @@ export function CmsEditor(props: Props): JSX.Element {
         (target instanceof HTMLElement && target.isContentEditable)
       )
         return
-      if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return
+      const move = nudges.find((item) => item.key === event.key)
+      if (!move) return
       const component = editor.getSelected()
       if (!component || isProtected(component) || isReadOnlyPreview(component)) return
-      const delta: [number, number] =
-        event.key === 'ArrowLeft'
-          ? [-1, 0]
-          : event.key === 'ArrowRight'
-            ? [1, 0]
-            : event.key === 'ArrowUp'
-              ? [0, -1]
-              : [0, 1]
       component.setStyle(
-        nudgeStyle(component.getStyle(), delta[0], delta[1], event.shiftKey ? 10 : 1),
+        nudgeStyle(component.getStyle(), move.dx, move.dy, event.shiftKey ? 10 : 1),
       )
       event.preventDefault()
     }
@@ -609,14 +637,15 @@ export function CmsEditor(props: Props): JSX.Element {
         current.page.path === '/'
           ? current.presentation.pages.find((page) => page.path === '/about')
           : undefined
-      const aboutExport = aboutOwner
-        ? extractComposedAbout(
-            nativeExport.html,
-            exportedCss,
-            aboutOwner.content[current.lang].html,
-            { about: aboutOwner.content[current.lang].css[current.mode], home: storedHome },
-          )
-        : null
+      // About's part of a Home canvas, split off against the stored sheets of both pages.
+      const aboutPart = (canvasHtml: string, canvasCss: string) =>
+        aboutOwner
+          ? extractComposedAbout(canvasHtml, canvasCss, aboutOwner.content[current.lang].html, {
+              about: aboutOwner.content[current.lang].css[current.mode],
+              home: storedHome,
+            })
+          : null
+      const aboutExport = aboutPart(nativeExport.html, exportedCss)
       // Home's part of this export and of the checkpoint is stripped with the same owners. In each
       // canvas, the About sheet extracted from it owns its copies. With none extracted, About's
       // stored sheet does, in the form the canvas imported it.
@@ -658,14 +687,7 @@ export function CmsEditor(props: Props): JSX.Element {
         current.mode,
       )
       const checkpointCss = canonicalizeCmsRootStyles(checkpointExport.css, wrapperId)
-      const aboutBaseline = aboutOwner
-        ? extractComposedAbout(
-            checkpointExport.html,
-            checkpointCss,
-            aboutOwner.content[current.lang].html,
-            { about: aboutOwner.content[current.lang].css[current.mode], home: storedHome },
-          )
-        : null
+      const aboutBaseline = aboutPart(checkpointExport.html, checkpointCss)
       const pageBaseline = structuredClone(current.page)
       pageBaseline.content[current.lang].css[current.mode] = stripComposedCanvas(
         checkpointExport.html,
@@ -805,11 +827,7 @@ export function CmsEditor(props: Props): JSX.Element {
       applying.current = false
       if (reused) {
         rendered.current = { ...previous, key: contextKey, chrome }
-        if (timer.current === null)
-          checkpoint.current = {
-            html: editor.getHtml({ cleanId: false }),
-            css: readCanvasCss(editor),
-          }
+        if (timer.current === null) checkpoint.current = canvasSnapshot(editor)
         editor.clearDirtyCount()
         return
       }
@@ -842,7 +860,7 @@ export function CmsEditor(props: Props): JSX.Element {
       editor.select()
       setSelected(null)
       rendered.current = { ...previous, device: props.device, scene: props.scene, key: contextKey }
-      checkpoint.current = { html: editor.getHtml({ cleanId: false }), css: readCanvasCss(editor) }
+      checkpoint.current = canvasSnapshot(editor)
       applying.current = false
       editor.clearDirtyCount()
       if (previousState) restoreViewState(editor, previousState)
@@ -968,10 +986,7 @@ export function CmsEditor(props: Props): JSX.Element {
         html: variant.html,
         css: variant.css[props.mode],
       }
-      checkpoint.current = {
-        html: editor.getHtml({ cleanId: false }),
-        css: readCanvasCss(editor),
-      }
+      checkpoint.current = canvasSnapshot(editor)
       applying.current = false
       editor.clearDirtyCount()
       if (previousState) restoreViewState(editor, previousState)
@@ -1112,7 +1127,7 @@ export function CmsEditor(props: Props): JSX.Element {
     editor.AssetManager.clear()
     editor.AssetManager.add(
       props.assets
-        .filter((asset) => asset.mime.startsWith('image/') && !asset.archived && !asset.trashed_at)
+        .filter(isLibraryImage)
         .map((asset) => ({ src: mediaUrl(asset, SUPABASE_URL ?? ''), name: asset.name })),
     )
   }, [props.assets])
@@ -1234,6 +1249,7 @@ export function CmsEditor(props: Props): JSX.Element {
   const previewPage = props.preview?.presentation.pages.find((item) => item.id === props.page.id)
 
   if (loadError) throw loadError
+  if (layered) throw new Error(unkeptSyntax)
   return (
     <>
       <div
@@ -1325,7 +1341,6 @@ export function CmsEditor(props: Props): JSX.Element {
           aria-label="Egenskapspanel"
           inert={loading}
           onKeyDown={(event) => {
-            const tabs = ['design', 'layers', 'blocks'] as const
             const index = tabs.indexOf(props.tab)
             const next =
               event.key === 'ArrowRight'
@@ -1345,7 +1360,7 @@ export function CmsEditor(props: Props): JSX.Element {
             event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus()
           }}
         >
-          {(['design', 'layers', 'blocks'] as const).map((tab) => (
+          {tabs.map((tab) => (
             <button
               type="button"
               role="tab"
@@ -1506,38 +1521,16 @@ export function CmsEditor(props: Props): JSX.Element {
               )}
               <h3 hidden={!stylable}>Finjustera</h3>
               <div class="cms-nudge-grid" hidden={!stylable}>
-                <button
-                  type="button"
-                  aria-label="Flytta åt vänster"
-                  title="Flytta åt vänster · 1 px, Skift 10 px"
-                  onClick={(e) => nudge(-1, 0, e.shiftKey ? 10 : 1)}
-                >
-                  <CmsIcon name="arrowLeft" />
-                </button>
-                <button
-                  type="button"
-                  aria-label="Flytta uppåt"
-                  title="Flytta uppåt · 1 px, Skift 10 px"
-                  onClick={(e) => nudge(0, -1, e.shiftKey ? 10 : 1)}
-                >
-                  <CmsIcon name="arrowUp" />
-                </button>
-                <button
-                  type="button"
-                  aria-label="Flytta nedåt"
-                  title="Flytta nedåt · 1 px, Skift 10 px"
-                  onClick={(e) => nudge(0, 1, e.shiftKey ? 10 : 1)}
-                >
-                  <CmsIcon name="arrowDown" />
-                </button>
-                <button
-                  type="button"
-                  aria-label="Flytta åt höger"
-                  title="Flytta åt höger · 1 px, Skift 10 px"
-                  onClick={(e) => nudge(1, 0, e.shiftKey ? 10 : 1)}
-                >
-                  <CmsIcon name="arrowRight" />
-                </button>
+                {nudges.map((move) => (
+                  <button
+                    type="button"
+                    aria-label={move.name}
+                    title={`${move.name} · 1 px, Skift 10 px`}
+                    onClick={(e) => nudge(move.dx, move.dy, e.shiftKey ? 10 : 1)}
+                  >
+                    <CmsIcon name={move.icon} />
+                  </button>
+                ))}
                 <button
                   type="button"
                   onClick={() =>
@@ -1654,9 +1647,7 @@ export function CmsEditor(props: Props): JSX.Element {
       {imageTarget && (
         <CmsModal title="Välj bild" onClose={closePicker}>
           <p class="cms-help">Välj en bild. Ladda upp fler via Resurser.</p>
-          {!props.assets.some(
-            (asset) => asset.mime.startsWith('image/') && !asset.archived && !asset.trashed_at,
-          ) && (
+          {!props.assets.some(isLibraryImage) && (
             <div class="cms-resource-empty">
               <CmsIcon name="image" />
               <strong>Inga bilder att välja ännu</strong>
@@ -1664,16 +1655,12 @@ export function CmsEditor(props: Props): JSX.Element {
             </div>
           )}
           <div class="cms-resource-grid">
-            {props.assets
-              .filter(
-                (asset) => asset.mime.startsWith('image/') && !asset.archived && !asset.trashed_at,
-              )
-              .map((asset) => (
-                <button type="button" class="cms-resource-card" onClick={() => pickImage(asset)}>
-                  <img src={mediaUrl(asset, SUPABASE_URL ?? '')} alt={asset.alt} />
-                  <span>{asset.name}</span>
-                </button>
-              ))}
+            {props.assets.filter(isLibraryImage).map((asset) => (
+              <button type="button" class="cms-resource-card" onClick={() => pickImage(asset)}>
+                <img src={mediaUrl(asset, SUPABASE_URL ?? '')} alt={asset.alt} />
+                <span>{asset.name}</span>
+              </button>
+            ))}
           </div>
         </CmsModal>
       )}
