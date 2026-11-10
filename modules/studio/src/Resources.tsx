@@ -1,5 +1,5 @@
 import { useResourceUsage } from './useResourceUsage'
-import { SiteResources } from './SiteResources'
+import { SiteResources, policy, storageOrigin } from './SiteResources'
 import {
   assignResource,
   resourceAssigned,
@@ -16,21 +16,12 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/ho
 import type { CmsAsset, CmsDocument } from '@bladeblend/content-contracts/cms'
 import { mediaKey, mediaUrl } from '@bladeblend/content-contracts/cms'
 import { replaceDocumentResource, resourceUsage } from '@bladeblend/content-contracts/cms-resources'
-import { CMS_BUILT_ASSETS } from '@bladeblend/content-contracts/cms-built-assets'
-import { SUPABASE_URL } from '@bladeblend/public-web/backend-config'
 import { cmsApi, type AssetUsage } from './api'
 import { CmsIcon } from './Icon'
 import { compactWorkspace } from './useResponsivePanels'
 
 type State = 'active' | 'archived' | 'trash'
 type Purpose = ResourcePurpose
-
-const storageOrigin = SUPABASE_URL ?? 'https://unconfigured.invalid'
-const policy = {
-  siteOrigin: window.location.origin,
-  storageOrigin: new URL(storageOrigin).origin,
-  builtAssets: CMS_BUILT_ASSETS,
-}
 
 function stateOf(asset: CmsAsset): State {
   if (asset.trashed_at) return 'trash'
@@ -63,6 +54,14 @@ function resourceLabel(asset: CmsAsset): string {
   }
   return asset.alt.trim() || `${names[purposeOf(asset).purpose]} · ${asset.id.slice(0, 4)}`
 }
+
+/** A stored file goes where the owner placed it, except a font: that is always a site font. */
+const assignStored = (
+  document: CmsDocument,
+  asset: CmsAsset,
+  destination: ResourceDestination,
+): CmsDocument =>
+  assignResource(document, asset, asset.mime === 'font/woff2' ? { purpose: 'fonts' } : destination)
 
 interface Props {
   initialDestination?: ResourceDestination
@@ -177,6 +176,11 @@ export function CmsResources(props: Props): JSX.Element {
     }
   }
 
+  const showDestination = (destination: ResourceDestination): void => {
+    setPurpose(destination.purpose)
+    if (destination.purpose === 'profile') setBarberId(destination.barberId)
+  }
+
   const updateAsset = (id: string, patch: Partial<Pick<CmsAsset, 'name' | 'alt'>>): void =>
     latest.current.onAssets((current) =>
       current.map((item) => (item.id === id ? { ...item, ...patch } : item)),
@@ -275,14 +279,7 @@ export function CmsResources(props: Props): JSX.Element {
         replaceDocumentResource(next, replacement, nextAsset, policy)
         return next
       })
-    else
-      await latest.current.onDocument((current) =>
-        assignResource(
-          current,
-          nextAsset,
-          nextAsset.mime === 'font/woff2' ? { purpose: 'fonts' } : destination,
-        ),
-      )
+    else await latest.current.onDocument((current) => assignStored(current, nextAsset, destination))
     setSelectedId((current) => (current === selectedId ? nextAsset.id : current))
   }
   const uploadFile = (file: File, replacement?: CmsAsset): Promise<void> =>
@@ -305,15 +302,7 @@ export function CmsResources(props: Props): JSX.Element {
       if (stored.length)
         try {
           await latest.current.onDocument((current) =>
-            stored.reduce(
-              (document, asset) =>
-                assignResource(
-                  document,
-                  asset,
-                  asset.mime === 'font/woff2' ? { purpose: 'fonts' } : destination,
-                ),
-              current,
-            ),
+            stored.reduce((document, asset) => assignStored(document, asset, destination), current),
           )
           const first = stored[0]
           if (first) setSelectedId((current) => (current === selectedId ? first.id : current))
@@ -332,8 +321,7 @@ export function CmsResources(props: Props): JSX.Element {
         setUploadError(message)
         throw failures.length === 1 ? failures[0] : new Error(message)
       }
-      setPurpose(destination.purpose)
-      if (destination.purpose === 'profile') setBarberId(destination.barberId)
+      showDestination(destination)
       setState('active')
       setUploadDestination(null)
     }, 'Filen kunde inte laddas upp.')
@@ -430,8 +418,7 @@ export function CmsResources(props: Props): JSX.Element {
         <SiteResources
           onDestination={(destination) => {
             setContextDestination(destination)
-            setPurpose(destination.purpose)
-            if (destination.purpose === 'profile') setBarberId(destination.barberId)
+            showDestination(destination)
             setSelectedId(null)
             setState('active')
             setShowComponents(false)
@@ -476,8 +463,7 @@ export function CmsResources(props: Props): JSX.Element {
           value={destinationFor(purpose, barberId)}
           barbers={props.document.barbers}
           onChange={(destination) => {
-            setPurpose(destination.purpose)
-            if (destination.purpose === 'profile') setBarberId(destination.barberId)
+            showDestination(destination)
             setSelectedId(null)
             setSelectedIds(new Set())
           }}
