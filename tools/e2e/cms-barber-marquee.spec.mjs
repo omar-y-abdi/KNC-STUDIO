@@ -626,8 +626,22 @@ test('cms-barber-marquee', async ({ browserName, evidenceDir, newContext }) => {
       cardBounds && cardBounds.x >= -1 && cardBounds.x + cardBounds.width <= 391,
       `Selected card escaped viewport: ${JSON.stringify({ cardBounds, trackX: await transformX(track) })}`,
     )
+    // The carousel reinitialises in a native ResizeObserver callback, which the injected clock
+    // does not drive. A later observer hears the same layout after it.
+    const resizeObserved = () =>
+      live.evaluate(
+        () =>
+          new Promise((resolve) => {
+            const observer = new globalThis.ResizeObserver(() => {
+              observer.disconnect()
+              resolve()
+            })
+            observer.observe(globalThis.document.documentElement)
+          }),
+      )
     await dragLeft(live, track, 0.18)
     await live.setViewportSize({ width: 400, height: 844 })
+    await resizeObserved()
     await live.clock.runFor(300)
     const afterResize = await transformX(track)
     await live.clock.runFor(900)
@@ -636,6 +650,7 @@ test('cms-barber-marquee', async ({ browserName, evidenceDir, newContext }) => {
       'Resize resumed an expanded card',
     )
     await live.setViewportSize({ width: 768, height: 844 })
+    await resizeObserved()
     await live.clock.runFor(300)
     const wideSelectedBounds = await cards.first().boundingBox()
     assert.ok(
