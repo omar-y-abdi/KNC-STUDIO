@@ -38,7 +38,7 @@ import {
   type ExternalActionService,
 } from '../../supabase/functions/_shared/externalActions'
 
-const MIGRATION = 'supabase/migrations/20261028100000_email_send_log.sql'
+const MIGRATION = 'supabase/migrations/20261105182545_baseline.sql'
 
 const business: EmailBusiness = {
   name: 'Blade & Blend',
@@ -200,11 +200,11 @@ describe('delivery log schema parity', () => {
   const migration = readFileSync(MIGRATION, 'utf8')
 
   function checkList(column: string): readonly string[] {
-    const open = `check (${column} in (`
+    const open = `CONSTRAINT "email_send_log_${column}_check" CHECK (("${column}" = ANY (ARRAY[`
     const start = migration.indexOf(open)
     if (start === -1) throw new Error(`missing CHECK list for ${column}`)
-    const list = migration.slice(start + open.length, migration.indexOf(')', start + open.length))
-    return list.split(',').map((value) => value.trim().replace(/^'|'$/g, ''))
+    const list = migration.slice(start + open.length, migration.indexOf(']', start + open.length))
+    return list.split(',').map((value) => value.trim().replace(/^'|'::"text"$/g, ''))
   }
 
   it('accepts exactly the kinds the senders write', () => {
@@ -224,7 +224,7 @@ describe('delivery log subject bound', () => {
 
   /** The stored subject bound, in characters as PostgreSQL's char_length counts them. */
   const SUBJECT_BOUND = Number(
-    /char_length\(subject\) between 1 and (\d+)/.exec(readFileSync(MIGRATION, 'utf8'))?.[1],
+    /"char_length"\("subject"\) <= (\d+)/.exec(readFileSync(MIGRATION, 'utf8'))?.[1],
   )
   const codePoints = (value: string): number => Array.from(value).length
 

@@ -9,8 +9,8 @@ import {
 } from './_adminHelpers'
 
 // An explicit owner delete ("Radera" in the media library) must remove the stored bytes as well as the
-// library row. Legacy removals through upload-image deliberately keep registered bytes (cms_assets
-// comment, 20261024010000_stop_orphan_sweeper.sql); only cms-studio asset_lifecycle delete erases them.
+// library row. Legacy removals through upload-image deliberately keep registered bytes (see the
+// comment on the cms_assets table); only cms-studio asset_lifecycle delete erases them.
 
 let env: AdminStackEnv
 let service: SupabaseClient

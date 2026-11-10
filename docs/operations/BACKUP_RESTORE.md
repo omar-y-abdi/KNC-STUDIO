@@ -117,7 +117,9 @@ Migration restore replaces only the new target's `supabase_migrations` schema, i
 Source columns and constraints travel with the archive; managed Supabase metadata such as
 `created_by`, `idempotency_key`, and `rollback` must not be guessed from the installed CLI version.
 Archives created before this change lack `history_schema.sql`: obtain the matching source history
-schema before restoring lineage. Do not silently discard unknown columns or mark a data-only archive
+schema before restoring lineage. An archive created before the migration baseline carries the
+106-version history; after restoring it, run the one-time statement in `BACKEND.md` (Migration
+baseline). Do not silently discard unknown columns or mark a data-only archive
 as fully restore-tested. Keep cron and external job dispatch disabled throughout the drill; only
 configure production provider credentials after restore validation and the intended cutover.
 

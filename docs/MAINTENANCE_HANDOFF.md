@@ -100,7 +100,8 @@ the final WIP branch before claiming all known WebKit failures fixed.
   `shared/cms-markup.ts` and `shared/cms-resources.ts` still walk `presentation.regions`.
   Do not omit those keys as a supposed cleanup without a separately verified migration.
 - E1b part 2 waits for the owner's first CMS publish after rollout.
-- F4 part 2 (migration squash/production history repair) waits for owner approval.
+- F4 part 2: the migrations are squashed into one baseline. The production history repair in
+  `BACKEND.md` (Migration baseline) runs once when that change is released.
 - B2/E4 and email-log migrations/functions need an explicitly approved deployment order.
   Deploy the matching CMS backend before its frontend; see `docs/operations/CMS_RELEASE.md`.
 - Native Supabase Auth emails bypass the new email delivery log.
