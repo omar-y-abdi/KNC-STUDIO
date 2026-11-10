@@ -10,11 +10,7 @@ import {
 import { CONTACT_SLOTS, fillSlots } from './businessSlots'
 
 export function escapeAttribute(value: string): string {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('"', '&quot;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
+  return escapeElementText(value).replaceAll('"', '&quot;')
 }
 
 export function escapeElementText(value: string): string {
