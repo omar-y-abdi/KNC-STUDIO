@@ -337,7 +337,7 @@ describe('edge import map', () => {
     for (const name of functions) {
       const imports = read(`${FUNCTIONS}/${name}/deno.json`)
       expect(imports['@supabase/supabase-js'], name).toBe(ESM_SUPABASE)
-      expect(imports['zod'], name).toBe('npm:zod@4.6.6')
+      expect(imports['zod'], name).toBe('npm:zod@4.6.7')
     }
   })
 
@@ -353,12 +353,12 @@ describe('edge import map', () => {
       npm: Record<string, { integrity: string }>
       workspace: { dependencies: string[] }
     }
-    expect(manifest.dependencies['zod']).toBe('4.6.6')
-    expect(npmLock.packages['node_modules/zod']?.version).toBe('4.6.6')
-    expect(read(`${FUNCTIONS}/deno.json`)['zod']).toBe('npm:zod@4.6.6')
-    expect(denoLock.specifiers['npm:zod@4.6.6']).toBe('4.6.6')
-    expect(denoLock.workspace.dependencies).toContain('npm:zod@4.6.6')
-    expect(denoLock.npm['zod@4.6.6']?.integrity).toBe(
+    expect(manifest.dependencies['zod']).toBe('4.6.7')
+    expect(npmLock.packages['node_modules/zod']?.version).toBe('4.6.7')
+    expect(read(`${FUNCTIONS}/deno.json`)['zod']).toBe('npm:zod@4.6.7')
+    expect(denoLock.specifiers['npm:zod@4.6.7']).toBe('4.6.7')
+    expect(denoLock.workspace.dependencies).toContain('npm:zod@4.6.7')
+    expect(denoLock.npm['zod@4.6.7']?.integrity).toBe(
       npmLock.packages['node_modules/zod']?.integrity,
     )
   })

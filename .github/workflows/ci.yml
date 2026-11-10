@@ -25,7 +25,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: ./.github/actions/ci-node
@@ -36,7 +36,7 @@ jobs:
         run: bash tools/ci/format.sh
       - name: Record the exact tested source
         run: node tools/ci/build-artifact.mjs source "$RUNNER_TEMP"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           # Stable per-run names let failed consumers be re-run independently.
           name: ci-source-${{ github.run_id }}
@@ -52,7 +52,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: ./.github/actions/ci-node
@@ -80,7 +80,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: ./.github/actions/ci-node
@@ -103,7 +103,7 @@ jobs:
             npm run build -- --outDir "$RUNNER_TEMP/ci-build/startup" --emptyOutDir
           cp -a "$RUNNER_TEMP/ci-build/startup" "$RUNNER_TEMP/ci-build/public"
           node tools/ci/build-artifact.mjs record "$RUNNER_TEMP/ci-build"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ci-build-${{ github.run_id }}
           path: ${{ runner.temp }}/ci-build
@@ -117,7 +117,7 @@ jobs:
     name: Public, admin and visual browsers (${{ matrix.shard }}/2)
     runs-on: ubuntu-24.04
     container:
-      image: mcr.microsoft.com/playwright:v1.64.1-noble
+      image: mcr.microsoft.com/playwright:v1.65.0-noble
       options: --user 1001 --ipc=host
     timeout-minutes: 15
     strategy:
@@ -128,13 +128,13 @@ jobs:
       E2E_GROUP: public
       E2E_PUBLIC_DIST: .ci-build/public
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: ./.github/actions/ci-node
         with:
           cache: ${{ env.CI_CACHE }}
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ci-build-${{ github.run_id }}
           path: .ci-build
@@ -148,7 +148,7 @@ jobs:
         run: |
           node tools/ci/verify-playwright-report.mjs .ci-expected.json test-results/results.json
           node tools/ci/build-artifact.mjs verify-source .ci-source
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: public-browsers-${{ matrix.shard }}-${{ github.run_attempt }}
@@ -163,7 +163,7 @@ jobs:
     name: CMS contracts (${{ matrix.engine }}, ${{ matrix.shard }}/9)
     runs-on: ubuntu-24.04
     container:
-      image: mcr.microsoft.com/playwright:v1.64.1-noble
+      image: mcr.microsoft.com/playwright:v1.65.0-noble
       options: --user 1001 --ipc=host
     timeout-minutes: 25
     strategy:
@@ -175,7 +175,7 @@ jobs:
       E2E_GROUP: cms
       AXE_PATH: node_modules/axe-core/axe.min.js
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: ./.github/actions/ci-node
@@ -189,7 +189,7 @@ jobs:
         run: |
           node tools/ci/verify-playwright-report.mjs .ci-expected.json test-results/results.json
           node tools/ci/build-artifact.mjs verify-source .ci-source
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: cms-${{ matrix.engine }}-${{ matrix.shard }}-${{ github.run_attempt }}
@@ -209,7 +209,7 @@ jobs:
     name: Production startup (${{ matrix.engine }})
     runs-on: ubuntu-24.04
     container:
-      image: mcr.microsoft.com/playwright:v1.64.1-noble
+      image: mcr.microsoft.com/playwright:v1.65.0-noble
       options: --user 1001 --ipc=host
     timeout-minutes: 10
     strategy:
@@ -220,13 +220,13 @@ jobs:
       E2E_GROUP: startup
       E2E_STARTUP_DIST: .ci-build/startup
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: ./.github/actions/ci-node
         with:
           cache: ${{ env.CI_CACHE }}
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ci-build-${{ github.run_id }}
           path: .ci-build
@@ -240,7 +240,7 @@ jobs:
         run: |
           node tools/ci/verify-playwright-report.mjs .ci-expected.json test-results/results.json
           node tools/ci/build-artifact.mjs verify-source .ci-source
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: startup-${{ matrix.engine }}-${{ github.run_attempt }}
@@ -256,7 +256,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: ./.github/actions/ci-node
@@ -285,7 +285,7 @@ jobs:
     env:
       E2E_GROUP: customer
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: ./.github/actions/ci-node
@@ -324,7 +324,7 @@ jobs:
         run: |
           node tools/ci/verify-playwright-report.mjs "$RUNNER_TEMP/expected.json" test-results/results.json
           node tools/ci/build-artifact.mjs verify-source .ci-source
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: customer-browser-${{ github.run_attempt }}
@@ -346,7 +346,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Enforce every frontend and CMS gate
@@ -361,7 +361,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Enforce the current database gate
