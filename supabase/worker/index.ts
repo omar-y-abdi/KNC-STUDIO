@@ -101,6 +101,7 @@ const PUBLIC_FILE_ALIASES: Readonly<Record<string, string>> = {
 }
 const SITEMAP_PATH = '/sitemap.xml'
 const SECURITY_TXT_PATH = '/.well-known/security.txt'
+const CMS_SOURCE_PATH = '/cms-public/source'
 const FAILURE_DOCUMENT = '/500.html'
 const MAINTENANCE_DOCUMENT = '/maintenance.html'
 type OutageDocument = typeof FAILURE_DOCUMENT | typeof MAINTENANCE_DOCUMENT
@@ -152,6 +153,17 @@ export function fixedRoutePath(pathname: string): string | null {
  * Files, probes and unknown routes never read the presentation. */
 export function isCmsPagePath(pathname: string): boolean {
   return isCreatedPagePath(pathname) || INFORMATION_PAGE_PATHS.includes(pathname)
+}
+
+/** Paths whose GET the Worker answers without a deployed file of that path. */
+export function isWorkerPath(pathname: string): boolean {
+  return (
+    nativePublicPath(pathname) !== null ||
+    isSpaPath(pathname) ||
+    customerAccessTokenFromPath(pathname) !== null ||
+    pathname === SECURITY_TXT_PATH ||
+    pathname === CMS_SOURCE_PATH
+  )
 }
 
 function isNoIndexPath(pathname: string): boolean {
@@ -1596,7 +1608,7 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
     })
   }
 
-  if (pathname === '/cms-public/source' && getOrHead) {
+  if (pathname === CMS_SOURCE_PATH && getOrHead) {
     return cmsFrameResponse(await serveAsset(request, env, '/index.html', true), true)
   }
 
@@ -1820,6 +1832,14 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
       const missing = await serveAsset(request, env, '/404.html')
       if (missing.ok) return notFoundPage(request, missing)
     }
+  } else if (
+    request.method !== 'OPTIONS' &&
+    (isWorkerPath(pathname) ||
+      (isCreatedPagePath(pathname) &&
+        (await publishedCmsPage(env, pathname, lang, 'HEAD')) !== null))
+  ) {
+    const refused = new Response(null, { status: 405, headers: ownHeaders({ Allow: 'GET, HEAD' }) })
+    return isNoIndexPath(pathname) ? withNoIndex(refused) : refused
   }
 
   return withNoIndex(asset)

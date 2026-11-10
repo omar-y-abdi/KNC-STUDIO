@@ -1610,8 +1610,8 @@ describe('security.txt (J)', () => {
       createEnv(),
       noPublicContent,
     )
-    // No status is asserted: the Worker passes on the asset layer's own answer to a POST, and the
-    // ASSETS stand-in of this file answers by path alone.
+    expect(response.status).toBe(405)
+    expect(response.headers.get('Allow')).toBe('GET, HEAD')
     const body = await response.text()
     expect(body).not.toContain('Contact:')
     expect(body).not.toContain('Expires:')
