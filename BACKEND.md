@@ -34,7 +34,7 @@ precedence. Form hints live only in component memory; consent withdrawal, receip
 without replacing fields the customer has edited. The frontend tolerates older gateways without
 this additive response field.
 
-After the [device-review rollout](docs/operations/DEVICE_REVIEW_RELEASE.md), the same receipt also
+After the device-review rollout, the same receipt also
 allows a review for an exact owned booking without an email click. The service-only
 `create_review_for_browser` RPC uses the list/cancel predicate: verified profile emails, or exact
 receipt IDs restricted to that verified session's original parent email when a session exists.
@@ -70,7 +70,7 @@ retry and completion. Resend HTTP success requires a valid message UUID before d
 Function logs record only that provider ID, never message bodies or customer-access links. The
 owner-only email send log stores a copy of each app email (recipient, subject, HTML and text) with
 sign-in and access links replaced by `[dold länk]`; a daily purge deletes it once 30 days have
-passed since the first send attempt. See `docs/operations/EMAIL_DELIVERY.md`.
+passed since the first send attempt.
 
 ## Public frontend configuration
 
@@ -97,8 +97,11 @@ A merge to `main` applies migrations, deploys Edge Functions and builds the Work
 version on the other side. A change that needs a strict order ships as two releases: the first
 stops using the old interface, and the second removes it once the first is verified live. The
 legacy gallery/logo writer RPCs follow this pattern: they stay in this release, and the
-`supabase/functions/upload-image/README.md` describes their later removal. The frontend deploy
-also waits for the matching `cms-studio`; see `docs/operations/CMS_RELEASE.md`.
+`supabase/functions/upload-image/README.md` describes their later removal. One order is checked,
+not waited for: `npm run deploy:frontend` (`package.json`) runs `verifyBackend` in
+`tools/release/cms-release.mjs` before `wrangler deploy`. It sends one request to the deployed
+`cms-studio` and stops the deploy unless that function reports the CMS release digest of this
+checkout.
 Use the current migration tree and `supabase/config.toml` as the deployment inventory; completed
 September rollout checklists are retired. The public gateway contract is already authoritative:
 never restore anonymous execution of booking/customer RPCs during recovery. After an irreversible
@@ -108,9 +111,6 @@ The durable `booking_calendar_sync_on_change` trigger queues Calendar work throu
 `calendar_event_sync`; `external-cleanup` dispatches it. The legacy Calendar webhook/function
 is retired. Verify the current schema, function inventory and Edge/Vault secret parity before
 release; repository source alone does not prove a hosted environment matches it.
-
-Follow `docs/operations/CMS_RELEASE.md` for backend/frontend compatibility, publication checks
-and recovery. Follow `docs/operations/BACKUP_RESTORE.md` before database changes.
 
 ### Migration baseline
 
@@ -128,8 +128,10 @@ repository lacks. Remove the 105 older rows once, when this change is released:
 delete from supabase_migrations.schema_migrations where version <> '20261105182545';
 ```
 
-The statement changes no schema or data. A backup taken before it restores the 106-row history and
-needs the same statement after `docs/operations/BACKUP_RESTORE.md`'s history restore. Migration
+The statement changes no schema or data. A backup taken before it holds the 106-row history in its
+`history_schema.sql` and `history_data.sql`. Restoring that history into a new restore target runs
+`tools/backup/prepare-migration-history.sql`, then `history_schema.sql`, then `history_data.sql`,
+in one transaction; it brings the 106 rows back, so run the same statement after it. Migration
 file names from before the baseline in older release records refer to the original chain;
 `git log -- supabase/migrations` has them.
 
@@ -148,10 +150,6 @@ file names from before the baseline in older release records refer to the origin
 - Inspect delivery and provider evidence before retrying work. Do not force jobs to completed or
   resend them in bulk. The [booking-email recovery contract](supabase/functions/send-confirmation/README.md)
   owns generation-safe token repair and retries that preserve acknowledged recipients.
-
-The dated September customer-access, device-access, launch and gateway runbooks in `docs/operations/` are
-archived receipts. Their recorded migrations, deployments and password rotation must not be replayed
-as a current release procedure.
 
 ### Runtime configuration
 
@@ -181,12 +179,32 @@ Database Vault must contain:
 Create or rotate these through Supabase SQL Editor with `vault.create_secret` / `vault.update_secret`.
 Do not commit their values.
 
+The eight functions the admin panel calls from the browser (`admin-create-barber`,
+`admin-manage-barber`, `calendar-disconnect`, `calendar-oauth-start`, `redeem-staff-invite`,
+`send-email-change`, `send-recovery-email`, `upload-image`) send `Access-Control-Allow-Origin` only
+to these origins: `https://bladeblendstudio.se`, `https://www.bladeblendstudio.se`,
+`http://localhost:<port>`, `http://127.0.0.1:<port>` and each origin in the comma-separated
+`CMS_ALLOWED_ORIGINS`, the list `cms-studio` also reads. A browser on any other origin gets no such
+header and refuses the answer. `calendar-oauth-start` also answers 403 `origin_not_allowed` to an
+`https` Origin outside `PUBLIC_SITE_ORIGINS` (unset: the two production origins).
+`send-email-change` requires the caller's current password as `current_password` and checks it
+with a sign-in that uses `SUPABASE_ANON_KEY` from the function environment, which
+`admin-manage-barber` and `upload-image` also read; without it the function answers 503
+`not_configured`.
+
 Cloudflare Worker also needs `SUPABASE_ANON_KEY` as a secret so initial HTML, JSON-LD, and
 `/llms.txt` use current public CMS data:
 
 ```bash
 printf '%s' '<public-anon-key>' | npx wrangler secret put SUPABASE_ANON_KEY
 ```
+
+The Worker also generates two discovery files. `/sitemap.xml` lists the five core pages and every
+created page of the current publication; when the publication cannot be read, the static
+`public/sitemap.xml` answers with the core pages only. `/.well-known/security.txt` names the
+business email as contact and expires 180 days after the day it is served. `/my-bookings` is an
+account page: its HTML says `noindex, follow` and has no canonical link, and the response carries
+`X-Robots-Tag: noindex`.
 
 The Worker customer proxy also needs the same high-entropy `CUSTOMER_GATEWAY_SECRET` value that the
 `public-booking-actions` Edge Function uses. Missing or mismatched values fail closed; deploy both
@@ -272,8 +290,8 @@ encrypted daily database-and-Storage artifact with migration lineage and byte ve
 all repository secrets/variables are configured. On 2026-09-13 the owner authorized a database-password
 rotation, `SUPABASE_DB_URL` was configured, and production backup run `34764434644` succeeded.
 Its encrypted artifact passed checksum, decryption and inventory checks. The daily schedule remains
-02:17 UTC; that verified run was manually dispatched. Setup and restore drills are documented in
-`docs/operations/BACKUP_RESTORE.md`; keep migrations in source control and never upload plaintext dumps.
+02:17 UTC; that verified run was manually dispatched. Keep migrations in source control and never
+upload plaintext dumps.
 
 ## Mock fallback
 

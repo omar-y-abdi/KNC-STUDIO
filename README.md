@@ -62,7 +62,10 @@ visible copy through browser navigation and reload.
 For interactive development, configure `.env.local` with the local `VITE_SUPABASE_URL` and
 `VITE_SUPABASE_ANON_KEY` from `npx supabase status`. Put the local `SUPABASE_URL`, `SUPABASE_ANON_KEY`
 and matching `CUSTOMER_GATEWAY_SECRET` in ignored `.dev.vars`; add the exact Vite origin to the local
-Edge `PUBLIC_SITE_ORIGINS`. Start `npm run cloudflare:dev -- --local --ip 127.0.0.1 --port 8787` in one
+Edge `PUBLIC_SITE_ORIGINS`. An HTTPS origin also goes in the local Edge `CMS_ALLOWED_ORIGINS`: the
+functions the admin panel calls send their CORS header only to the production origins,
+`http://localhost:<port>`, `http://127.0.0.1:<port>` and that list (see `BACKEND.md`). Start
+`npm run cloudflare:dev -- --local --ip 127.0.0.1 --port 8787` in one
 terminal and `npm run dev` in another. Preview uses the same proxy after `npm run build`.
 
 Cookie acceptance must also be tested with HTTPS. Vite accepts certificate paths in `LOCAL_HTTPS_KEY`
@@ -93,8 +96,8 @@ Production routing and cookie policy are unchanged.
 
 ## Architecture
 
-CMS changes span Cloudflare and Supabase. Follow the [CMS release guide](docs/operations/CMS_RELEASE.md)
-before deploying; a Cloudflare build alone does not update the publication backend.
+CMS changes span Cloudflare and Supabase; a Cloudflare build alone does not update the publication
+backend.
 
 Effects live at the edges; the domain stays pure and referentially transparent.
 [CODEBASE-MAP.md](CODEBASE-MAP.md) maps areas to entry files, tests and common change routes.
@@ -124,7 +127,7 @@ protocol separate from its lazy runtime entry. Neither public startup nor staff 
 
 [Module boundaries and local commands](tools/modules/README.md) describes the enforced interfaces
 and the workspace commands. For example, `npm run check --workspace @bladeblend/studio` runs the
-boundary check, typechecks, Studio lint and the unit suite. [CI architecture](docs/CI.md) explains
+boundary check, typechecks, Studio lint and the unit suite. The same document explains
 the source-bound plan that lets Studio and staff-admin source edits skip the backend jobs;
 [qualification evidence](docs/qa/2026-11-05-module-boundaries.md) records the extraction, review
 and execution results.
@@ -135,14 +138,13 @@ The owner edits pages, site/About copy, business and appearance settings, galler
 and email templates in `/admin/cms`. Publication uses the validated, revision-checked `cms-studio`
 gateway. The new database authority migration removes authenticated REST writes to the content
 tables and reserves direct owner setting writes for `cancellation_policy_hours`. That operational
-setting remains under admin Inställningar and outside reversible CMS history. Apply the migrations
-in the [release order](docs/operations/CMS_RELEASE.md); source code does not establish their hosted state.
+setting remains under admin Inställningar and outside reversible CMS history. Source code does not
+establish the hosted state of the migrations.
 
 Created pages store their body and use the current homepage header/menu in the editor, preview
 and public response. Contact is a protected information route alongside Privacy and Terms;
 existing owner-authored Contact bodies remain supported. Mejl includes template editing and
-owner-only delivery status. See the [implementation ledger](docs/WIP_IMPLEMENTATION.md) for the
-recovered feature scope, test anchors, deployment dependencies and deferred owner actions.
+owner-only delivery status.
 
 ### The clock is injectable
 
@@ -199,7 +201,7 @@ node tools/visual/capture.mjs   # optional design evidence: BASE=<url> OUT=<dir>
 The policy retains the prior `0.1` pixel colour threshold, maximum `0.001` mismatch ratio and 2×
 image dimensions. Missing snapshots fail; CI never creates or updates approved baselines. Playwright
 also waits for consecutive stable screenshots. Design capture, collage and social-card tools remain
-explicit automation utilities. See [CI architecture and verification](docs/CI.md) for the complete gates.
+explicit automation utilities. See [the CI workflow](.github/workflows/ci.yml) for the complete gates.
 
 ---
 

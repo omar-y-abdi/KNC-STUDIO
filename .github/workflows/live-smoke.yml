@@ -1,0 +1,50 @@
+name: Live site smoke test
+
+# Reads the deployed site and its public backend entry points once a day. Scheduled runs use this
+# file from the default branch only.
+on:
+  schedule:
+    - cron: '43 4 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: live-site-smoke
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  smoke:
+    name: Deployed site and public backend entry points
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Check the deployed site
+        env:
+          SITE_ORIGIN: https://bladeblendstudio.se
+        run: |
+          # A failing command, also on the left of a pipe, fails the step.
+          set -eo pipefail
+          # .env is tracked and holds only the public values the production bundle is built with.
+          SUPABASE_URL="$(sed -n 's/^VITE_SUPABASE_URL=//p' .env)"
+          SUPABASE_ANON_KEY="$(sed -n 's/^VITE_SUPABASE_ANON_KEY=//p' .env)"
+          export SUPABASE_URL SUPABASE_ANON_KEY
+          # Green needs both: the script exits 0 and its output has the all-green verdict line.
+          node tools/smoke-live.mjs | tee "$RUNNER_TEMP/live-smoke.log"
+          grep -qx 'VERDICT: ALL_GREEN' "$RUNNER_TEMP/live-smoke.log"

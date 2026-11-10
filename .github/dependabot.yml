@@ -14,3 +14,11 @@ updates:
         patterns:
           - wrangler
           - '@cloudflare/workers-types'
+  - package-ecosystem: github-actions
+    # `/` covers .github/workflows only; each composite action is listed to keep its pins moving.
+    directories:
+      - /
+      - /.github/actions/ci-browsers
+      - /.github/actions/ci-node
+    schedule:
+      interval: weekly

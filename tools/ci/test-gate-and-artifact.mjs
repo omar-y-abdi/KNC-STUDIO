@@ -129,16 +129,6 @@ test('the YAML parser is a direct exact dependency matching the existing install
   assert.equal(version, lock.packages['node_modules/js-yaml'].version)
 })
 
-test('CI documentation describes event coverage and the actual preparation owners', () => {
-  const docs = readFileSync('docs/CI.md', 'utf8').replace(/\s+/g, ' ')
-  assert.doesNotMatch(docs, /runs the complete graph|source identity verification and Furl setup/)
-  assert.ok(docs.includes('Pushes to `main` and manual runs always use full verification'))
-  assert.ok(docs.includes('Furl setup and regression tests belong to the quality job'))
-  assert.ok(docs.includes(workflow.jobs.cms.container.image))
-  assert.ok(docs.includes('UID 1001'))
-  assert.ok(docs.includes('`nodeModulesDir: none`'))
-})
-
 test('only browser-only jobs use the matching Playwright image and skip browser installation', () => {
   const { devDependencies } = JSON.parse(readFileSync('package.json', 'utf8'))
   assert.equal(devDependencies.playwright, devDependencies['@playwright/test'])

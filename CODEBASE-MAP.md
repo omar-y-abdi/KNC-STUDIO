@@ -3,8 +3,6 @@
 Start with the area row, then follow its entry file and focused tests. This map describes
 source ownership, not production deployment state. Paths are relative to the repository root.
 Backend setup and security boundaries live in `BACKEND.md`; local setup lives in `README.md`.
-The current recovered CMS/admin scope and rollout dependencies are indexed in
-[the WIP implementation ledger](docs/WIP_IMPLEMENTATION.md).
 
 ## Areas
 
@@ -12,7 +10,7 @@ The current recovered CMS/admin scope and rollout dependencies are indexed in
 | --------------------- | --------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Browser shell         | Mount, routes, language, theme and responsive layout                                                                  | `src/main.tsx`, `src/Root.tsx`, `modules/public-web/src/app/App.tsx`                                                                                                                                           | `tests/unit/homepageBoot.test.ts`, `tools/e2e/public-smoke.spec.mjs`                                                                                                                                       |
 | Desktop/mobile layout | Public site composition and mobile folding                                                                            | `modules/public-web/src/app/DesktopSite.tsx`, `modules/public-web/src/app/MobileSite.tsx`, `modules/public-web/src/app/mobileFold.ts`                                                                          | `tests/unit/mobileFold.test.ts`, `tools/e2e/visual-stored.spec.mjs`                                                                                                                                        |
-| Worker                | HTML, metadata, published pages and same-origin customer gateways                                                     | `supabase/worker/index.ts`                                                                                                                                                                                     | `tests/unit/workerRoutes.test.ts`, `tests/unit/workerCache.test.ts`, `tools/e2e/customer.spec.mjs`                                                                                                         |
+| Worker                | HTML, metadata, published pages, generated sitemap and security.txt, and same-origin customer gateways                | `supabase/worker/index.ts`                                                                                                                                                                                     | `tests/unit/workerRoutes.test.ts`, `tests/unit/workerCache.test.ts`, `tools/e2e/customer.spec.mjs`                                                                                                         |
 | Public data           | REST/RPC decoding, catalog cache and Realtime                                                                         | `modules/public-web/src/backend/publicRest.ts`, `modules/public-web/src/backend/publicRealtime.ts`, `modules/public-web/src/booking/adapters/supabaseBookingCatalog.ts`                                        | `tests/unit/publicRest.test.ts`, `tests/unit/publicRealtime.test.ts`, `tests/unit/bookingCatalog.test.ts`                                                                                                  |
 | Booking               | Calendar, service selection, details, confirmation and gateway submission                                             | `modules/public-web/src/booking/BookingFlow.tsx`, `modules/public-web/src/booking/adapters/supabaseBooking.ts`                                                                                                 | `tests/unit/calendar.test.ts`, `tests/unit/publicBookingActionAdapters.test.ts`, `tests/integration/booking.test.ts`                                                                                       |
 | Customer history      | Email links, cookie sessions, cancellation and identity linking                                                       | `modules/public-web/src/mybookings/MyBookingsDialog.tsx`, `supabase/worker/customerGateway.ts`                                                                                                                 | `tests/unit/customerAccessSecurityContract.test.ts`, `tests/integration/reviews.test.ts`, `tools/e2e/customer.spec.mjs`                                                                                    |
@@ -36,7 +34,7 @@ The current recovered CMS/admin scope and rollout dependencies are indexed in
 | Media gateway         | Validate uploads and compensate failed Storage operations                                                             | `supabase/functions/upload-image/index.ts`, `modules/staff-admin/src/adapters/mediaGateway.ts`                                                                                                                 | `tests/unit/uploadImageRuntime.test.ts`, `tests/unit/imageUploadAdapters.test.ts`                                                                                                                          |
 | Database              | Schema, RLS, transactional RPCs, triggers and scheduled dispatch                                                      | `supabase/migrations/`, `supabase/tests/`                                                                                                                                                                      | `tests/integration/`, `supabase/tests/`                                                                                                                                                                    |
 | Verification helpers  | Shared browser routing/CORS and fixtures; fake component hooks                                                        | `tools/e2e/route-api.mjs`, `tools/e2e/builders.mjs`, `tests/unit/helpers/fakeHooks.ts`                                                                                                                         | `tests/unit/e2eHelpers.test.ts`, `tests/unit/homepageBoot.test.ts`                                                                                                                                         |
-| CI/release/backup     | Quality gates, artifacts, CMS compatibility and encrypted backups                                                     | `.github/workflows/ci.yml`, `tools/release/cms-release.mjs`, `tools/backup/`                                                                                                                                   | `tests/unit/cmsRelease.test.ts`, `tests/unit/backupScripts.test.ts`, `tools/ci/`                                                                                                                           |
+| CI/release/backup     | Quality gates, artifacts, CMS compatibility, encrypted backups and the daily live smoke test                          | `.github/workflows/ci.yml`, `.github/workflows/live-smoke.yml`, `tools/smoke-live.mjs`, `tools/release/cms-release.mjs`, `tools/backup/`                                                                       | `tests/unit/cmsRelease.test.ts`, `tests/unit/backupScripts.test.ts`, `tests/unit/smokeLive.test.ts`, `tools/ci/`                                                                                           |
 
 ## Common changes — edit in this order
 
@@ -112,8 +110,11 @@ Search `useBarberMarquee` and `gaplessLoopFloor` to find the live strip and edit
 - Studio owns page, site/About copy, business/appearance, gallery/logo and email-template publication.
   The schema in `supabase/migrations/` denies authenticated REST content writes and limits direct owner `site_settings` writes to
   `cancellation_policy_hours`. That operational setting stays in `modules/staff-admin/src/views/SettingsView.tsx`
-  and outside CMS history/fingerprints. See `docs/operations/CMS_RELEASE.md` before rollout.
+  and outside CMS history/fingerprints.
 - Public routes use the narrow REST/Realtime seams; the full Auth client belongs to admin.
+- The Worker generates `/sitemap.xml` from the current publication, with `public/sitemap.xml` as
+  the fallback when the publication cannot be read, and generates `/.well-known/security.txt`.
+  `/my-bookings` is an account page and is served `noindex`.
 - Contract packages must not import application implementations. Studio consumes staff's protected
   capabilities through explicit package exports and must not import staff views. Public preview
   owns its renderer; Studio consumes its protocol. `tools/modules/README.md` documents the enforced
@@ -123,7 +124,7 @@ Search `useBarberMarquee` and `gaplessLoopFloor` to find the live strip and edit
   the retired calendar-sync Edge Function is not a current deployment target.
 - The Edge senders call `supabase/functions/_shared/emailSendLog.ts`; the Studio reads owner-only
   database RPCs through `modules/staff-admin/src/adapters/emailDeliveryAdmin.ts`. There is no separate log endpoint.
-  See `docs/operations/EMAIL_DELIVERY.md` for retention, redaction and rollout.
+  See `BACKEND.md` for retention and redaction.
 - Booking mail uses booking_email_delivery_jobs; other external work uses external_action_jobs.
   See `supabase/functions/send-confirmation/README.md` for delivery recovery.
 - Homepage changes must preserve the hydrated pixels unless a visual change is explicitly requested.
@@ -136,18 +137,18 @@ Search `useBarberMarquee` and `gaplessLoopFloor` to find the live strip and edit
   `README.md`, `modules/studio/src/UX-CONTRACT.md` and `modules/studio/src/DESIGN.md`.
 - Unit tests cover pure logic/adapters; integration tests require local Supabase; browser suites
   cover real interaction and pixels. None alone proves production delivery or deployment state.
-- `.github/workflows/ci.yml` owns current gates; `docs/CI.md` explains the architecture.
-- `docs/operations/CMS_RELEASE.md` owns CMS compatibility/recovery;
-  `docs/operations/BACKUP_RESTORE.md` owns encrypted backup/restore.
-- `modules/studio/src/UX-CONTRACT.md`, `modules/studio/src/DESIGN.md` and `docs/CMS_PARITY.md`
-  retain the editor feature contract. `docs/REVIEW_FINDINGS.md` is archived evidence.
-- `docs/WIP_RECOVERY_PLAN.md` owns current recovery authorization and gates;
-  `docs/WIP_IMPLEMENTATION.md` maps the recovered features to source, tests and rollout dependencies.
-- `docs/REPO_IMPROVEMENT_PLAN.md` retains the owner decisions and historical batch scope.
+- `.github/workflows/ci.yml` owns current gates; `tools/modules/README.md` explains the
+  affected-job plan.
+- `.github/workflows/live-smoke.yml` runs `tools/smoke-live.mjs` against production once a day. A
+  red "Live site smoke test" run means that a deployed page, a public file, the www redirect or a
+  public backend entry point did not answer as that script's header lists, and each `[FAIL]` line
+  shows what came back; check 1 also goes red when no barber in the public catalog has a free slot
+  3 to 23 days ahead.
+- `modules/studio/src/UX-CONTRACT.md` and `modules/studio/src/DESIGN.md` retain the editor
+  feature contract.
 - Dependency version source: installed npm versions come from `package-lock.json`, not a registry
   lookup. Deno lock scope is `supabase/functions/deno.lock`; shared imports live in
   `supabase/functions/deno.json`, with per-function maps such as `supabase/functions/cms-studio/deno.json`.
 - Future tooling, deferred until after handover: knip 6.42.1 and dependency-cruiser 18.7.0,
   exact-pinned if adopted. F3 adds neither dependencies nor configurations for these tools.
-- After a field rename or module move, update this map and run its path test. After a backend
-  validator change, follow the CMS release guide's compatibility workflow.
+- After a field rename or module move, update this map and run its path test.
