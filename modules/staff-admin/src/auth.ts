@@ -321,47 +321,10 @@ export function verifyInviteTokenHash(tokenHash: string): Promise<AdminResult<vo
 }
 
 /**
- * Establish a recovery session from the implicit-flow tokens carried in the `/reset` URL hash. The
- * admin client has `detectSessionInUrl: false`, so the page parses the URL (`recoveryLink.ts`) and
- * hands the tokens here; `setSession` validates them (an expired link => error). On success the client
- * holds a short-lived session that authorizes exactly one thing: `setNewPassword`.
- */
-export async function establishRecoverySession(
-  accessToken: string,
-  refreshToken: string,
-): Promise<AdminResult<void>> {
-  const supabase = getAdminClient()
-  try {
-    const { error } = await supabase.auth.setSession({
-      access_token: accessToken,
-      refresh_token: refreshToken,
-    })
-    if (error !== null) return err('auth', RECOVERY_LINK_INVALID)
-    return ok(undefined)
-  } catch {
-    return err('network', NETWORK_ERROR)
-  }
-}
-
-/**
- * Exchange a PKCE `code` (the alternate recovery-link shape) for a session. Only used if the flow is
- * ever switched to PKCE; the default implicit flow uses `establishRecoverySession` instead.
- */
-export async function exchangeRecoveryCode(code: string): Promise<AdminResult<void>> {
-  const supabase = getAdminClient()
-  try {
-    const { error } = await supabase.auth.exchangeCodeForSession(code)
-    if (error !== null) return err('auth', RECOVERY_LINK_INVALID)
-    return ok(undefined)
-  } catch {
-    return err('network', NETWORK_ERROR)
-  }
-}
-
-/**
  * Set a new password using the active recovery session, then sign out so the user logs in fresh with
- * it. Call ONLY after `establishRecoverySession` / `exchangeRecoveryCode` succeeded. `validateNewPassword`
- * should gate the input first; a server rejection maps to a generic validation error.
+ * it. Call ONLY after the link's token was verified (`verifyRecoveryTokenHash`,
+ * `redeemStaffInvitation` or `verifyInviteTokenHash`). `validateNewPassword` should gate the input
+ * first; a server rejection maps to a generic validation error.
  */
 export async function setNewPassword(newPassword: string): Promise<AdminResult<void>> {
   const result = await updatePasswordForCurrentSession(newPassword)

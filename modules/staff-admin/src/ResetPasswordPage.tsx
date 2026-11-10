@@ -16,8 +16,6 @@ import { AuthCard } from './AuthCard'
 import { buildAdminStyles } from './adminStyles'
 import { LangSwitch } from './chrome'
 import {
-  establishRecoverySession,
-  exchangeRecoveryCode,
   setNewPassword,
   redeemStaffInvitation,
   verifyInviteTokenHash,
@@ -95,12 +93,7 @@ export function ResetPasswordPage(props: ResetPasswordPageProps): JSX.Element {
       return
     }
     const link = parseRecoveryLink(window.location.hash, window.location.search, props.linkType)
-    if (
-      link.kind === 'tokens' ||
-      link.kind === 'code' ||
-      link.kind === 'token_hash' ||
-      link.kind === 'staff_invite'
-    ) {
+    if (link.kind === 'token_hash' || link.kind === 'staff_invite') {
       setPhase({ kind: 'pending', link })
     } else {
       setPhase({ kind: 'invalid' })
@@ -114,15 +107,11 @@ export function ResetPasswordPage(props: ResetPasswordPageProps): JSX.Element {
     const result =
       link.kind === 'staff_invite'
         ? await redeemStaffInvitation(link.token)
-        : link.kind === 'tokens'
-          ? await establishRecoverySession(link.accessToken, link.refreshToken)
-          : link.kind === 'code'
-            ? await exchangeRecoveryCode(link.code)
-            : link.kind === 'token_hash'
-              ? props.linkType === 'invite'
-                ? await verifyInviteTokenHash(link.tokenHash)
-                : await verifyRecoveryTokenHash(link.tokenHash)
-              : null
+        : link.kind === 'token_hash'
+          ? props.linkType === 'invite'
+            ? await verifyInviteTokenHash(link.tokenHash)
+            : await verifyRecoveryTokenHash(link.tokenHash)
+          : null
     if (result !== null && result.ok) setPhase({ kind: 'ready' })
     else setPhase({ kind: 'invalid' })
   }
