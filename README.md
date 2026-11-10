@@ -19,6 +19,11 @@ npm run build      # type-check (tsc -b) + production build to dist/
 npm run preview    # serve the built dist/ locally
 ```
 
+Builds and type checks use TypeScript 7's native `tsc` through the `@typescript/native` npm alias.
+The `typescript` alias provides Microsoft's TypeScript 6 compatibility API for ESLint and the repository's
+source scanners. Keep both aliases when updating the toolchain; this follows Microsoft's
+[side-by-side migration](https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/).
+
 ### Local customer links and cookies
 
 Vite serves the UI. Customer history needs the real Worker and Edge Function too. Both `dev` and
