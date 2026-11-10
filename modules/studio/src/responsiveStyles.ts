@@ -258,7 +258,13 @@ function declaredBy(location: LayoutLocation, property: string): LayoutLocation 
   }
 }
 
-function declarations(css: string): Declarations {
+function parseSheet(css: string): StyleSheet {
+  const tree = parse(css)
+  if (tree.type !== 'StyleSheet') throw new Error('Sidans layout saknar sitt CSS-träd.')
+  return tree
+}
+
+function declarations(tree: StyleSheet): Declarations {
   const result: Declarations = new Map()
   let order = 0
   const visit = (block: LayoutBlock, path: LayoutContext[]): void => {
@@ -357,8 +363,6 @@ function declarations(css: string): Declarations {
       } else if (node.block) visit(node.block, nextPath)
     })
   }
-  const tree = parse(css)
-  if (tree.type !== 'StyleSheet') throw new Error('Sidans layout saknar sitt CSS-träd.')
   visit(tree, [])
   return result
 }
@@ -516,11 +520,7 @@ function contextBlocks(block: LayoutBlock, path: LayoutContext[], bounded = true
   const target =
     !bounded && !remaining.length ? { header: context.header, position: context.position } : context
   return matchingContexts(block, target, bounded).flatMap((node) =>
-    node.block
-      ? remaining.length
-        ? contextBlocks(node.block, remaining, bounded)
-        : [node.block]
-      : [],
+    node.block ? contextBlocks(node.block, remaining, bounded) : [],
   )
 }
 
@@ -632,9 +632,7 @@ function eachComponentRule(
 
 /** The keys whose last word in a sheet is a guard: a nested guard takes the key, and a declaration
  * of the component rule takes it back. */
-function guardLastKeys(css: string): Set<string> {
-  const tree = parse(css)
-  if (tree.type !== 'StyleSheet') throw new Error('Sidans layout saknar sitt CSS-träd.')
+function guardLastKeys(tree: StyleSheet): Set<string> {
   const keys = new Set<string>()
   eachComponentRule(tree, ({ block }, selector, key) => {
     block.children.forEach((child) => {
@@ -768,12 +766,11 @@ function insertPlain(tree: StyleSheet, change: LayoutChange): void {
       ),
   )
   const depth = anchor ? shared(anchor.conditions) : layer
-  const added = parse(
+  const added = parseSheet(
     location.conditions
       .slice(depth)
       .reduceRight((rule, { header }) => `${header}{${rule}}`, `${location.selector}{${body}}`),
   )
-  if (added.type !== 'StyleSheet') throw new Error('Sidans layout saknar sitt CSS-träd.')
   const at = anchor?.items[depth]
   if (at) at.block.children.insertList(added.children, at.item)
   else if (!layer) tree.children.appendList(added.children)
@@ -815,32 +812,26 @@ function applyLayout(
       mapped.set(placementKey(next), { location: next, values: changed, guardLast, later })
   }
   if (!mapped.size) return other
-  const tree = parse(other)
-  if (tree.type !== 'StyleSheet') throw new Error('Sidans layout saknar sitt CSS-träd.')
+  const tree = parseSheet(other)
   const shrunk = new Set<List<CssNode>>()
+  const removeChanged = (children: List<CssNode>, values: ReadonlyMap<string, unknown>): void =>
+    children.forEach((declaration, item) => {
+      if (declaration.type === 'Declaration' && values.has(declaration.property)) {
+        children.remove(item)
+        shrunk.add(children)
+      }
+    })
   // A plain change replaces the property only under the conditions of the edited rule.
   for (const { rule, selector, conditions } of plainRules(tree)) {
     const changed = mapped.get(placementKey({ selector, conditions }))
-    if (!changed || changed.location.path) continue
-    rule.block.children.forEach((declaration, item) => {
-      if (declaration.type === 'Declaration' && changed.values.has(declaration.property)) {
-        rule.block.children.remove(item)
-        shrunk.add(rule.block.children)
-      }
-    })
+    if (changed && !changed.location.path) removeChanged(rule.block.children, changed.values)
   }
   for (const { location, values } of mapped.values()) {
     if (!location.path) continue
     // A counterpart may combine guards. Remove the changed properties throughout the
     // semantic context before choosing their source-ordered insertion destinations.
-    const blocks = contextBlocks(tree, location.path, false)
-    for (const block of blocks)
-      block.children.forEach((declaration, item) => {
-        if (declaration.type === 'Declaration' && values.has(declaration.property)) {
-          block.children.remove(item)
-          shrunk.add(block.children)
-        }
-      })
+    for (const block of contextBlocks(tree, location.path, false))
+      removeChanged(block.children, values)
     const additions = [...values.values()].filter((value): value is CssNode => value !== null)
     if (additions.length) {
       const block = contextBlocks(tree, location.path).at(-1) ?? ensureContext(tree, location.path)
@@ -859,10 +850,9 @@ function applyLayout(
 
 /** Copy only changed geometry, preserving independent colors and untouched layout drift. */
 export function syncLayout(before: string, after: string, other: string): string {
-  return applyLayout(
-    layoutChanges(declarations(before), declarations(after), guardLastKeys(after)),
-    other,
-  )
+  const previous = declarations(parseSheet(before))
+  const edited = parseSheet(after)
+  return applyLayout(layoutChanges(previous, declarations(edited), guardLastKeys(edited)), other)
 }
 
 type Node = DefaultTreeAdapterMap['node']
@@ -907,21 +897,19 @@ export function connectTextAutoHeight(editor: Editor, disabled: () => boolean): 
 
 function layoutElements(html: string): Map<string, LayoutTarget> {
   const result = new Map<string, LayoutTarget>()
+  const isText = (node: Node): boolean =>
+    node.nodeName === '#text' && 'value' in node && Boolean(node.value.trim())
   const hasText = (node: Node): boolean =>
-    (node.nodeName === '#text' && 'value' in node && Boolean(node.value.trim())) ||
-    ('childNodes' in node && node.childNodes.some(hasText))
+    isText(node) || ('childNodes' in node && node.childNodes.some(hasText))
   const visit = (node: Node): void => {
     if ('tagName' in node) {
       const id = node.attrs.find((attr) => attr.name === 'id')?.value
       if (id) {
-        const directText = node.childNodes.some(
-          (child) => child.nodeName === '#text' && 'value' in child && child.value.trim(),
-        )
         result.set(id, {
           selector: `#${ident.encode(id)}`,
           text:
             node.namespaceURI === 'http://www.w3.org/1999/xhtml' &&
-            (directText || (textTags.has(node.tagName) && hasText(node))),
+            (node.childNodes.some(isText) || (textTags.has(node.tagName) && hasText(node))),
         })
       }
     }
@@ -959,11 +947,12 @@ export function syncPageLayout(
   const baseline = isSitePage(before)
     ? normalizeSitePageContent(before.content[lang], `${before.id}-${lang}`)
     : before.content[lang]
-  const previous = declarations(baseline.css[mode])
-  const next = declarations(edited.content[lang].css[mode])
+  const previous = declarations(parseSheet(baseline.css[mode]))
+  const sheet = parseSheet(edited.content[lang].css[mode])
+  const next = declarations(sheet)
   // The canvas's legacy breakpoint repair is not an owner edit. With no geometry delta,
   // leave every other stored sheet untouched.
-  const changes = layoutChanges(previous, next, guardLastKeys(edited.content[lang].css[mode]))
+  const changes = layoutChanges(previous, next, guardLastKeys(sheet))
   if (!changes.size) return edited
   const otherLang = lang === 'sv' ? 'en' : 'sv'
   const otherMode = mode === 'light' ? 'dark' : 'light'
