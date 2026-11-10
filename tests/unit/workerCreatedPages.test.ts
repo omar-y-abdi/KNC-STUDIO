@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { gunzipSync } from 'node:zlib'
-import { parse, parseFragment, serializeOuter, type DefaultTreeAdapterMap } from 'parse5'
+import { parse, serializeOuter, type DefaultTreeAdapterMap } from 'parse5'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   emptyDocument,
@@ -12,6 +12,7 @@ import {
 import { CMS_BUILT_ASSETS } from '../../packages/content-contracts/src/cms-built-assets'
 import { validateDocumentMarkupPlacements } from '../../packages/content-contracts/src/cms-markup'
 import {
+  SITE_PAGE_CSS,
   createSitePage,
   isFrozenSitePage,
   type SiteContact,
@@ -266,8 +267,7 @@ describe('a created page under a homepage logo whose text contains URL(', () => 
 
 // A created page as main (93ff329) stored it: `html` is main's createSitePage output, byte for byte,
 // for the Studio's default new page under the revision 56 homepage. `css` keeps only the first rule
-// of each stored sheet; the whole sheets are 59 to 87 kB. Main's Worker retargeted the language and
-// theme actions of this header on every response.
+// of each stored sheet; the whole sheets are 59 to 87 kB.
 const LEGACY_HTML: Readonly<Record<CmsLang, string>> = {
   sv: `<div id="cms-site-shell"><header id="cms-site-header"><div id="knc-desktop-home-0-i0" class="cms-site-chrome"><a id="knc-desktop-home-0-i0-i0" href="/?lang=sv&amp;mode=light" class="cms-site-brand"><div id="knc-desktop-home-0-i0-i0-i0"><svg viewBox="0 0 322 48" height="30" width="201.25" role="img" aria-label="Blade &amp; Blend Studio" fill="currentColor" id="knc-knc-desktop-home-0-i0-i0-i0-0"><line x1="6" y1="9" x2="52" y2="9" stroke="currentColor" stroke-width="1.6" id="knc-knc-desktop-home-0-i0-i0-i0-0-i0"></line><text x="29" y="33" text-anchor="middle" font-family="'Playfair Display'" font-weight="400" font-size="21" letter-spacing="4" id="knc-knc-desktop-home-0-i0-i0-i0-0-i1">BNB</text><line x1="6" y1="40" x2="52" y2="40" stroke="currentColor" stroke-width="1.6" id="knc-knc-desktop-home-0-i0-i0-i0-0-i2"></line><text x="70" y="32" text-anchor="start" font-family="'Playfair Display'" font-weight="700" font-size="22" letter-spacing="3" id="knc-knc-desktop-home-0-i0-i0-i0-0-i3">BLADE &amp; BLEND</text></svg></div></a><div id="knc-desktop-home-0-i0-i1" class="cms-site-controls"><a href="https://maps.apple.com/?q=Geijersgatan%2010,%20G%C3%B6teborg" target="_blank" rel="noopener noreferrer" id="knc-desktop-home-0-i0-i1-i0" class="cms-site-directions"><img src="/icons/mappin.circle.fill.svg" alt="" id="knc-desktop-home-0-i0-i1-i0-i0">Hitta oss</a><a href="tel:0793043671" id="knc-desktop-home-0-i0-i1-i1" class="cms-site-phone"><img src="/icons/phone.svg" alt="Ring" id="knc-desktop-home-0-i0-i1-i1-i0">079‑304 36 71</a><a id="knc-desktop-home-0-i0-i1-i2" href="/hemsida?lang=en&amp;mode=light" aria-label="Byt språk till engelska" class="cms-site-action-language"><span id="knc-desktop-home-0-i0-i1-i2-i0">SV</span><span id="knc-desktop-home-0-i0-i1-i2-i1">EN</span></a><a title="Växla ljust/mörkt" aria-label="Växla ljust/mörkt" id="knc-desktop-home-0-i0-i1-i3" href="/hemsida?lang=sv&amp;mode=dark" class="cms-site-action-theme"><img src="/icons/moon.svg" alt="" id="knc-desktop-home-0-i0-i1-i3-i0"><span id="knc-desktop-home-0-i0-i1-i3-i1"><img src="/icons/sun.max.svg" alt="" id="knc-desktop-home-0-i0-i1-i3-i1-i0"></span></a></div></div></header><nav id="cms-site-menu" aria-label="Sidmeny"><a href="/?lang=sv&amp;mode=light">Hem</a><a href="/booking?lang=sv&amp;mode=light">Boka tid</a><a href="/about?lang=sv&amp;mode=light">Om oss</a></nav><div id="cms-site-content"><main id="cms-page-20000000-0000-4000-8000-000000000002-sv-0"><h1 id="cms-page-20000000-0000-4000-8000-000000000002-sv-1">Ny sida</h1><p id="cms-page-20000000-0000-4000-8000-000000000002-sv-2">Skriv din text här.</p></main></div><footer id="cms-site-footer"><div id="knc-desktop-home-0-i1-i0-i5"><span id="knc-desktop-home-0-i1-i0-i5-i0">Öppet Mån–Lör 09–18 · Sön stängt</span><span id="knc-desktop-home-0-i1-i0-i5-i1">Geijersgatan 10, 411 34 Göteborg</span></div><footer id="knc-about-0-i1"><a href="/terms" id="knc-about-0-i1-i0" class="scp0">Villkor</a><a href="/privacy" id="knc-about-0-i1-i1" class="scp0">Integritetspolicy</a><a href="/#privacy-preferences" aria-label="Hantera integritetsinställningar" id="knc-about-0-i1-i2" class="scp0">Integritet</a></footer></footer></div>`,
   en: `<div id="cms-site-shell"><header id="cms-site-header"><div id="knc-desktop-home-0-i0" class="cms-site-chrome"><a id="knc-desktop-home-0-i0-i0" href="/?lang=en&amp;mode=light" class="cms-site-brand"><div id="knc-desktop-home-0-i0-i0-i0"><svg viewBox="0 0 322 48" height="30" width="201.25" role="img" aria-label="Blade &amp; Blend Studio" fill="currentColor" id="knc-knc-desktop-home-0-i0-i0-i0-0"><line x1="6" y1="9" x2="52" y2="9" stroke="currentColor" stroke-width="1.6" id="knc-knc-desktop-home-0-i0-i0-i0-0-i0"></line><text x="29" y="33" text-anchor="middle" font-family="'Playfair Display'" font-weight="400" font-size="21" letter-spacing="4" id="knc-knc-desktop-home-0-i0-i0-i0-0-i1">BNB</text><line x1="6" y1="40" x2="52" y2="40" stroke="currentColor" stroke-width="1.6" id="knc-knc-desktop-home-0-i0-i0-i0-0-i2"></line><text x="70" y="32" text-anchor="start" font-family="'Playfair Display'" font-weight="700" font-size="22" letter-spacing="3" id="knc-knc-desktop-home-0-i0-i0-i0-0-i3">BLADE &amp; BLEND</text></svg></div></a><div id="knc-desktop-home-0-i0-i1" class="cms-site-controls"><a href="https://maps.apple.com/?q=Geijersgatan%2010,%20G%C3%B6teborg" target="_blank" rel="noopener noreferrer" id="knc-desktop-home-0-i0-i1-i0" class="cms-site-directions"><img src="/icons/mappin.circle.fill.svg" alt="" id="knc-desktop-home-0-i0-i1-i0-i0">Find us</a><a href="tel:0793043671" id="knc-desktop-home-0-i0-i1-i1" class="cms-site-phone"><img src="/icons/phone.svg" alt="Call" id="knc-desktop-home-0-i0-i1-i1-i0">079‑304 36 71</a><a id="knc-desktop-home-0-i0-i1-i2" href="/hemsida?lang=sv&amp;mode=light" aria-label="Switch language to Swedish" class="cms-site-action-language"><span id="knc-desktop-home-0-i0-i1-i2-i0">SV</span><span id="knc-desktop-home-0-i0-i1-i2-i1">EN</span></a><a title="Toggle light/dark" aria-label="Toggle light/dark" id="knc-desktop-home-0-i0-i1-i3" href="/hemsida?lang=en&amp;mode=dark" class="cms-site-action-theme"><img src="/icons/moon.svg" alt="" id="knc-desktop-home-0-i0-i1-i3-i0"><span id="knc-desktop-home-0-i0-i1-i3-i1"><img src="/icons/sun.max.svg" alt="" id="knc-desktop-home-0-i0-i1-i3-i1-i0"></span></a></div></div></header><nav id="cms-site-menu" aria-label="Pages"><a href="/?lang=en&amp;mode=light">Home</a><a href="/booking?lang=en&amp;mode=light">Book</a><a href="/about?lang=en&amp;mode=light">About</a></nav><div id="cms-site-content"><main id="cms-page-20000000-0000-4000-8000-000000000002-en-0"><h1 id="cms-page-20000000-0000-4000-8000-000000000002-en-1">Ny sida</h1><p id="cms-page-20000000-0000-4000-8000-000000000002-en-2">Write your page here.</p></main></div><footer id="cms-site-footer"><div id="knc-desktop-home-0-i1-i0-i5"><span id="knc-desktop-home-0-i1-i0-i5-i0">Open Mon–Sat 09–18 · Sun closed</span><span id="knc-desktop-home-0-i1-i0-i5-i1">Geijersgatan 10, 411 34 Göteborg</span></div><footer id="knc-about-0-i1"><a href="/terms" id="knc-about-0-i1-i0" class="scp0">Terms</a><a href="/privacy" id="knc-about-0-i1-i1" class="scp0">Privacy policy</a><a href="/#privacy-preferences" aria-label="Manage privacy preferences" id="knc-about-0-i1-i2" class="scp0">Privacy</a></footer></footer></div>`,
@@ -277,7 +277,7 @@ const LEGACY_CSS = {
     '[id="cms-site-shell"]{min-height:100vh;display:flex;flex-direction:column;background:var(--knc-background,rgb(255,255,255));color:var(--knc-text,rgb(28,28,30));font-family:var(--knc-fontFamily,"Inter Variable",-apple-system,system-ui,sans-serif);-webkit-font-smoothing:antialiased;padding-bottom:var(--privacy-overlay-space, 0px)}',
   dark: '[id="cms-site-shell"]{min-height:100vh;display:flex;flex-direction:column;background:var(--knc-background,rgb(28,28,30));color:var(--knc-text,rgb(245,245,247));font-family:var(--knc-fontFamily,"Inter Variable",-apple-system,system-ui,sans-serif);-webkit-font-smoothing:antialiased;padding-bottom:var(--privacy-overlay-space, 0px)}',
 }
-function legacyPage(html: Readonly<Record<CmsLang, string>> = LEGACY_HTML): CmsPage {
+function legacyPage(): CmsPage {
   return {
     id: '20000000-0000-4000-8000-000000000002',
     kind: 'page',
@@ -287,8 +287,8 @@ function legacyPage(html: Readonly<Record<CmsLang, string>> = LEGACY_HTML): CmsP
     title: { sv: 'Ny sida', en: 'New page' },
     description: { sv: '', en: '' },
     content: {
-      sv: { html: html.sv, css: { ...LEGACY_CSS } },
-      en: { html: html.en, css: { ...LEGACY_CSS } },
+      sv: { html: LEGACY_HTML.sv, css: { ...LEGACY_CSS } },
+      en: { html: LEGACY_HTML.en, css: { ...LEGACY_CSS } },
     },
     layout: 'independent',
   }
@@ -299,176 +299,25 @@ function withLegacy(page: CmsPage): CmsPresentation {
   return presentation
 }
 
-function action(root: Element, name: string): Element {
-  const found = descendants(root).find(
-    (node) => node.tagName === 'a' && (value(node, 'class') ?? '').split(/\s+/).includes(name),
-  )
-  if (!found) throw new Error(`No ${name} link`)
-  return found
-}
-function setHref(link: Element, href: string): void {
-  link.attrs = link.attrs.map((item) => (item.name === 'href' ? { ...item, value: href } : item))
-}
-const otherLang = (lang: CmsLang): CmsLang => (lang === 'sv' ? 'en' : 'sv')
-// The mode main's theme action named for each requested mode, read from main's own
-// renderSitePage (light, dark) and renderIndependentSitePage (auto) on LEGACY_HTML: the other
-// pinned mode, and dark when the response follows the OS.
-const MAIN_THEME_MODE = { light: 'dark', dark: 'light', auto: 'dark' } as const
-
 describe('a created page stored with a frozen header by main', () => {
   afterEach(() => {
     vi.restoreAllMocks()
   })
 
-  it('is frozen, valid as a stored document, and stores its language action pinned to light', () => {
-    expect(isFrozenSitePage(legacyPage())).toBe(true)
-    expectValid(withLegacy(legacyPage()))
-    for (const lang of ['sv', 'en'] as const)
-      expect(
-        value(
-          action(
-            withId(parseFragment(LEGACY_HTML[lang]), 'cms-site-shell'),
-            'cms-site-action-language',
-          ),
-          'href',
-        ),
-      ).toBe(`/hemsida?lang=${otherLang(lang)}&mode=light`)
-  })
-
-  it.each(
-    (['sv', 'en'] as const).flatMap((lang) =>
-      (['light', 'dark', 'auto'] as const).map((mode) => ({ lang, mode })),
-    ),
-  )(
-    '$lang $mode: the language switch keeps the shown mode and the theme switch matches main; the stored page and CSS are served intact',
-    async ({ lang, mode }) => {
+  // Publication refuses this format, so no head holds it; a head that did is still served.
+  it.each(['sv', 'en'] as const)(
+    '%s: is rendered as any created page, the stored markup under the live header',
+    async (lang) => {
       const page = legacyPage()
+      expect(isFrozenSitePage(page)).toBe(true)
       const stored = page.content[lang]
-      const pinned = mode === 'auto' ? '' : `&mode=${mode}`
-      const html = await serve(withLegacy(page), `/hemsida?lang=${lang}${pinned}`)
-      expect(html).toContain(`data-cms-mode="${mode}"`)
-      const language = `/hemsida?lang=${otherLang(lang)}${pinned}`
-      const served = withId(parse(html), 'cms-site-shell')
-      expect(value(action(served, 'cms-site-action-language'), 'href')).toBe(language)
-      const expected = withId(parseFragment(stored.html), 'cms-site-shell')
-      setHref(action(expected, 'cms-site-action-language'), language)
-      const theme = `/hemsida?lang=${lang}&mode=${MAIN_THEME_MODE[mode]}`
-      expect(value(action(served, 'cms-site-action-theme'), 'href')).toBe(theme)
-      setHref(action(expected, 'cms-site-action-theme'), theme)
-      expect(serializeOuter(served)).toBe(serializeOuter(expected))
-      expect(html).toContain(stored.html.slice(stored.html.indexOf('<nav id="cms-site-menu"')))
-      for (const scheme of mode === 'auto' ? (['light', 'dark'] as const) : [mode])
-        expect(sheet(html, `cms-page-${scheme}`)).toBe(stored.css[scheme])
+      const html = await serve(withLegacy(page), `/hemsida?lang=${lang}&mode=dark`)
+      expect(html).toContain(
+        `</header><div id="cms-site-content">${stored.html}</div><footer id="cms-site-footer">`,
+      )
+      expect(html).toContain('<header id="cms-site-header"><div class="cms-site-bar">')
+      expect(sheet(html, 'cms-base')).toBe(`${tokens}\n${SITE_PAGE_CSS}`)
+      expect(sheet(html, 'cms-page-dark')).toBe(stored.css.dark)
     },
   )
-
-  it('keeps an owner-edited stored body byte for byte while the language switch keeps dark', async () => {
-    // Entities, a void element and both quote styles, as an owner edit may leave them.
-    const body = `<main id="owner"><h1 id='owner-title' title="Tid &amp; plats">Öppet&nbsp;i dag &lt;3</h1><p>Rad ett<br>rad två</p></main>`
-    const edited = (lang: CmsLang): string =>
-      LEGACY_HTML[lang].replace(/<main\b[^>]*>[\s\S]*<\/main>/, body)
-    const page = legacyPage({ sv: edited('sv'), en: edited('en') })
-    expect(page.content.sv.html).toContain(body)
-    const presentation = withLegacy(page)
-    expectValid(presentation)
-    const html = await serve(presentation, '/hemsida?lang=sv&mode=dark')
-    expect(
-      value(action(withId(parse(html), 'cms-site-shell'), 'cms-site-action-language'), 'href'),
-    ).toBe('/hemsida?lang=en&mode=dark')
-    const stored = page.content.sv.html
-    expect(html).toContain(stored.slice(stored.indexOf('<nav id="cms-site-menu"')))
-  })
-
-  it('finds untagged actions by their labels, rewrites their hrefs in their own quotes, and restores the theme class', async () => {
-    // Main's Studio edited the whole stored page, header included; main matched an action without
-    // its class by the label it gave the action. The theme action also regains its class, because
-    // CMS_THEME_SCRIPT retargets only `a.cms-site-action-theme`; the language action stays classless,
-    // its rewritten href already pointing at the other language.
-    const edited = LEGACY_HTML.sv
-      .replace(' class="cms-site-action-language"', '')
-      .replace(' class="cms-site-action-theme"', '')
-      .replace('href="/hemsida?lang=en&amp;mode=light"', "href='/hemsida?lang=en&mode=light'")
-      .replace('title="Växla ljust/mörkt"', "title='Växla ljust/mörkt'")
-    expect(edited).not.toContain('cms-site-action-')
-    const page = legacyPage({ sv: edited, en: LEGACY_HTML.en })
-    const html = await serve(withLegacy(page), '/hemsida?lang=sv&mode=dark')
-    expect(html).toContain(
-      edited
-        .replace("href='/hemsida?lang=en&mode=light'", "href='/hemsida?lang=en&amp;mode=dark'")
-        .replace('href="/hemsida?lang=sv&amp;mode=dark"', 'href="/hemsida?lang=sv&amp;mode=light"')
-        .replace(
-          "<a title='Växla ljust/mörkt'",
-          `<a class="cms-site-action-theme" title='Växla ljust/mörkt'`,
-        ),
-    )
-  })
-
-  it.each([
-    ['an action title', 'title="Växla ljust/mörkt"', 'title="Växla ljust/mörkt </header>"'],
-    [
-      'a comment',
-      '<header id="cms-site-header">',
-      '<header id="cms-site-header"><!-- </header> -->',
-    ],
-  ])('retargets both actions when the first </header> sits in %s', async (_where, from, to) => {
-    const edited = LEGACY_HTML.sv.replace(from, to)
-    // The markup up to the first `</header>` leaves out the theme action, so only the whole
-    // markup's parse finds both.
-    expect(edited.indexOf('</header>')).toBeLessThan(
-      edited.indexOf(' class="cms-site-action-theme"'),
-    )
-    const page = legacyPage({ sv: edited, en: LEGACY_HTML.en })
-    const html = await serve(withLegacy(page), '/hemsida?lang=sv&mode=dark')
-    expect(html).toContain(
-      edited
-        .replace('href="/hemsida?lang=en&amp;mode=light"', 'href="/hemsida?lang=en&amp;mode=dark"')
-        .replace('href="/hemsida?lang=sv&amp;mode=dark"', 'href="/hemsida?lang=sv&amp;mode=light"'),
-    )
-  })
-})
-
-// A.R06: an owner edit or import can drop the `cms-site-action-theme` class from a frozen page's
-// theme toggle while keeping its label. withFrozenActionLinks still rewrites the href by label, but
-// leaves the class off; CMS_THEME_SCRIPT only retargets `a.cms-site-action-theme`, so in auto-dark
-// the link stays pinned to dark and a click cannot reach light. Restoring the class is the fix.
-describe('a classless legacy theme link (A.R06)', () => {
-  afterEach(() => {
-    vi.restoreAllMocks()
-  })
-
-  const THEME_ID = 'knc-desktop-home-0-i0-i1-i3'
-  const untagTheme = (html: string): string => html.replace(' class="cms-site-action-theme"', '')
-  const classes = (node: Element): string[] =>
-    (value(node, 'class') ?? '').split(/\s+/).filter(Boolean)
-
-  it.each(
-    (['sv', 'en'] as const).flatMap((lang) =>
-      (['auto', 'dark'] as const).map((mode) => ({ lang, mode })),
-    ),
-  )(
-    'restores cms-site-action-theme on an untagged $lang theme link ($mode)',
-    async ({ lang, mode }) => {
-      const page = legacyPage({ sv: untagTheme(LEGACY_HTML.sv), en: untagTheme(LEGACY_HTML.en) })
-      expect(page.content[lang].html).not.toContain('cms-site-action-theme')
-      const presentation = withLegacy(page)
-      expectValid(presentation)
-      const pinned = mode === 'auto' ? '' : `&mode=${mode}`
-      const html = await serve(presentation, `/hemsida?lang=${lang}${pinned}`)
-      const link = withId(parse(html), THEME_ID)
-      // Red on f499463: the served theme link carries no class, so the browser script skips it.
-      expect(classes(link)).toContain('cms-site-action-theme')
-      // The href already follows main's mode, class or not; it stays the control.
-      expect(value(link, 'href')).toBe(`/hemsida?lang=${lang}&mode=${MAIN_THEME_MODE[mode]}`)
-    },
-  )
-
-  it('appends the class to an owner-styled theme link, keeping that link’s own class', async () => {
-    const edited = LEGACY_HTML.sv.replace(' class="cms-site-action-theme"', ' class="owner-theme"')
-    const page = legacyPage({ sv: edited, en: LEGACY_HTML.en })
-    const presentation = withLegacy(page)
-    expectValid(presentation)
-    const html = await serve(presentation, '/hemsida?lang=sv')
-    const link = withId(parse(html), THEME_ID)
-    expect(classes(link)).toEqual(expect.arrayContaining(['owner-theme', 'cms-site-action-theme']))
-  })
 })

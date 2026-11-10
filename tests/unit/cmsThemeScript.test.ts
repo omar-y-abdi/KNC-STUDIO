@@ -125,9 +125,8 @@ describe('CMS page theme script', () => {
     expect(page.themeColor.content).toBe('rgb(28, 28, 30)')
   })
 
-  // A.R06: the server restores the `cms-site-action-theme` class on a frozen page's theme toggle;
-  // this confirms that, with the class present, the script does retarget the toggle to the opposite
-  // of the shown scheme in auto mode. So restoring the class is all the browser half needs.
+  // The live header's theme toggle carries the `cms-site-action-theme` class; the script retargets
+  // it to the opposite of the shown scheme in auto mode.
   it('retargets a class-marked theme link to the opposite of the shown scheme in auto-dark', () => {
     const link = { href: 'https://bladeblendstudio.se/hemsida?lang=sv&mode=dark' }
     runInNewContext(CMS_THEME_SCRIPT, {

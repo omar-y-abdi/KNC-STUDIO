@@ -562,13 +562,10 @@ export interface SitePageRender {
   readonly css: Record<CmsMode, string>
 }
 
-/** A created page in the current format: its stored body goes under the live header. */
-export const isLiveSitePage = (page: CmsPage): boolean =>
-  isSitePage(page) && !isFrozenSitePage(page)
-
 /** One renderer for the Worker, the editor canvas and the locked preview: the live header built
- * from the current presentation above the stored body, and the live footer below it. Takes
- * current-format pages only (isLiveSitePage); migrate a frozen page with dropFrozenChrome first. */
+ * from the current presentation above the stored body, and the live footer below it. The stored
+ * markup is the body whatever it holds; the Studio migrates a frozen page with dropFrozenChrome
+ * before it renders one. */
 export function renderSitePage(
   presentation: CmsPresentation,
   page: CmsPage,
