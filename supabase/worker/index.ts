@@ -137,6 +137,16 @@ function withNoIndex(response: Response): Response {
   })
 }
 
+/** The deployed 404 page as the answer for a missing URL. */
+function notFoundPage(request: Request, missing: Response): Response {
+  return withNoIndex(
+    new Response(request.method === 'HEAD' ? null : missing.body, {
+      status: 404,
+      headers: missing.headers,
+    }),
+  )
+}
+
 function redirectTo(url: URL, pathname: string): Response {
   url.pathname = pathname
   return new Response(null, { status: 308, headers: { Location: url.toString() } })
@@ -160,6 +170,15 @@ async function serveAsset(
   dynamic = false,
 ): Promise<Response> {
   return env.ASSETS.fetch(assetRequest(request, pathname, dynamic))
+}
+
+/** The headers of a page rendered from `asset`: never stored, and without the validators and
+ * length of the bytes it was rendered from. */
+function renderedHeaders(asset: Response): Headers {
+  const headers = new Headers(asset.headers)
+  for (const name of ['Content-Length', 'ETag', 'Last-Modified']) headers.delete(name)
+  headers.set('Cache-Control', 'no-store')
+  return headers
 }
 
 /** Base sheets of information pages, in cascade order before their stored CSS. */
@@ -1033,6 +1052,15 @@ export function renderHomepageMetadata(
   )
 }
 
+/** `html` with the content of its body replaced by `fill` of that content; null without a body. */
+function fillBody(html: string, fill: (body: string) => string): string | null {
+  const opening = /<body\b[^>]*>/i.exec(html)
+  const end = html.lastIndexOf('</body>')
+  if (!opening || end < opening.index + opening[0].length) return null
+  const start = opening.index + opening[0].length
+  return html.slice(0, start) + fill(html.slice(start, end)) + html.slice(end)
+}
+
 /** The fallback owns its head metadata; only its body passes through the fragment parser. */
 export function renderContactMetadata(
   html: string,
@@ -1042,31 +1070,21 @@ export function renderContactMetadata(
   const defaults = contactDefaults(business, 'sv')
   let rendered = replaceElementText(html, 'contact-meta-title', defaults.title)
   rendered = replaceMetaContent(rendered, 'contact-description', defaults.description)
-  const opening = /<body\b[^>]*>/i.exec(rendered)
-  const end = rendered.lastIndexOf('</body>')
-  if (!opening || end < opening.index + opening[0].length)
-    throw new Error('Contact fallback is missing its body')
-  const start = opening.index + opening[0].length
-  return (
-    rendered.slice(0, start) +
-    renderContactFragment(rendered.slice(start, end), business, 'sv', facts) +
-    rendered.slice(end)
-  )
+  const filled = fillBody(rendered, (body) => renderContactFragment(body, business, 'sv', facts))
+  if (filled === null) throw new Error('Contact fallback is missing its body')
+  return filled
 }
 
 export function renderPrivateMetadata(html: string, pathname: string): string {
   const title = privatePageTitle(pathname)
   if (title === null) return html
+  const description = 'Inloggning och administration för salongens personal.'
   let rendered = replaceElementText(html, 'business-title', title)
   for (const id of ['business-og-title', 'business-twitter-title']) {
     rendered = replaceMetaContent(rendered, id, title)
   }
   for (const id of ['business-og-description', 'business-twitter-description']) {
-    rendered = replaceMetaContent(
-      rendered,
-      id,
-      'Inloggning och administration för salongens personal.',
-    )
+    rendered = replaceMetaContent(rendered, id, description)
   }
   const route = pathname.startsWith('/admin') ? '/admin' : withoutTrailingSlash(pathname)
   rendered = replaceShellMetadata(
@@ -1076,11 +1094,7 @@ export function renderPrivateMetadata(html: string, pathname: string): string {
     'content',
     `${SITE_URL}${route}`,
   )
-  rendered = replaceMetaContent(
-    rendered,
-    'business-description',
-    'Inloggning och administration för salongens personal.',
-  )
+  rendered = replaceMetaContent(rendered, 'business-description', description)
   rendered = replaceShellMetadata(rendered, 'link', 'rel="canonical"', 'href', null)
   rendered = replaceShellMetadata(rendered, 'meta', 'name="robots"', 'content', 'noindex, nofollow')
   return rendered
@@ -1105,15 +1119,9 @@ export function renderLegalMetadata(
       : `Så hanterar ${business.name} bokningsuppgifter, cookies, e-post och kalenderkoppling.`,
   )
   // Only the body is parsed and filled as on a CMS legal page; the head is never reserialised.
-  const opening = /<body\b[^>]*>/i.exec(rendered)
-  const end = rendered.lastIndexOf('</body>')
-  if (!opening || end < opening.index + opening[0].length)
-    return renderLegalFragment(rendered, business)
-  const start = opening.index + opening[0].length
   return (
-    rendered.slice(0, start) +
-    renderLegalFragment(rendered.slice(start, end), business) +
-    rendered.slice(end)
+    fillBody(rendered, (body) => renderLegalFragment(body, business)) ??
+    renderLegalFragment(rendered, business)
   )
 }
 
@@ -1317,13 +1325,7 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
   if (pathname === '/404.html') {
     if (preferredRepresentation(request.headers.get('Accept')) === 'markdown')
       return markdownNotFound(request)
-    const missing = await serveAsset(request, env, '/404.html')
-    return withNoIndex(
-      new Response(request.method === 'HEAD' ? null : missing.body, {
-        status: 404,
-        headers: missing.headers,
-      }),
-    )
+    return notFoundPage(request, await serveAsset(request, env, '/404.html'))
   }
 
   const customerAccessToken = customerAccessTokenFromPath(pathname)
@@ -1418,9 +1420,7 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
       /(<link\b[^>]*rel="canonical"[^>]*href=")[^"]*(")/i,
       `$1${SITE_URL}${pathname}$2`,
     )
-    const headers = new Headers(asset.headers)
-    for (const name of ['Content-Length', 'ETag', 'Last-Modified']) headers.delete(name)
-    headers.set('Cache-Control', 'no-store')
+    const headers = renderedHeaders(asset)
     if (informationPath !== null) {
       headers.set('Content-Type', 'text/html; charset=utf-8')
       varyAccept(headers)
@@ -1460,11 +1460,7 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
               ? sitePageBaseCss(request, env)
               : '',
       ])
-      const headers = new Headers(index.headers)
-      headers.delete('Content-Length')
-      headers.delete('ETag')
-      headers.delete('Last-Modified')
-      headers.set('Cache-Control', 'no-store')
+      const headers = renderedHeaders(index)
       if (informationPath !== null) {
         varyAccept(headers)
         headers.set('Link', '</llms.txt>; rel="describedby"')
@@ -1507,10 +1503,8 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
   if (asset.status !== 404) {
     if (dynamicContact) {
       const discovery = await informationDiscovery
-      const headers = new Headers(asset.headers)
-      for (const key of ['Content-Length', 'ETag', 'Last-Modified']) headers.delete(key)
+      const headers = renderedHeaders(asset)
       headers.set('Content-Type', 'text/html; charset=utf-8')
-      headers.set('Cache-Control', 'no-store')
       headers.set('Link', '</llms.txt>; rel="describedby"')
       varyAccept(headers)
       return new Response(
@@ -1526,11 +1520,7 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
     }
     if (dynamicLegal) {
       const discovery = await informationDiscovery
-      const headers = new Headers(asset.headers)
-      headers.delete('Content-Length')
-      headers.delete('ETag')
-      headers.delete('Last-Modified')
-      headers.set('Cache-Control', 'no-store')
+      const headers = renderedHeaders(asset)
       return new Response(
         request.method === 'HEAD'
           ? null
@@ -1560,14 +1550,7 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
       if (preferredRepresentation(request.headers.get('Accept')) === 'markdown')
         return markdownNotFound(request)
       const missing = await serveAsset(request, env, '/404.html')
-      if (missing.ok) {
-        return withNoIndex(
-          new Response(request.method === 'HEAD' ? null : missing.body, {
-            status: 404,
-            headers: missing.headers,
-          }),
-        )
-      }
+      if (missing.ok) return notFoundPage(request, missing)
     }
   }
 
