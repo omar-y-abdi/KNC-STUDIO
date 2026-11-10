@@ -9,7 +9,8 @@
 -- An e-mail address is IN USE while any of these exists:
 --   * a booking with that address, whatever its status or date,
 --   * an access session for it that has not expired,
---   * an unused, unexpired access challenge for it,
+--   * an unused, unexpired access challenge for it (a requested access link whose e-mail is still
+--     to be sent; see "Access requests that can no longer be sent" below),
 --   * an unexpired device receipt that names it as the parent address,
 --   * a customer_email_links row that names it as source or target. Every stored link counts, not
 --     only a pending one: the existing statement in this function removes a link one day after it
@@ -23,6 +24,22 @@
 -- then the profile once it has no membership left. It deletes nothing of a group that is in use, so
 -- a customer with at least one booking keeps the token, the membership and the profile. Phone
 -- numbers are not an access key in this schema; a token is found by its e-mail address only.
+--
+-- Access requests that can no longer be sent. When a customer asks for an access link, the request
+-- stores a challenge (e-mail address, phone number, token hash) that never expires and queues the
+-- e-mail as an external_action_jobs row. Sending the e-mail deletes the challenge, and so does the
+-- next request for the same address. Without either it stayed for ever: when the e-mail could not
+-- be delivered (the job is blocked, and the ten-minute cleanup_customer_access_email_actions then
+-- deletes the job only), or the job ended without sending (at dispatch the customer had no
+-- confirmed booking left), the challenge kept the address, with its token row and phone number,
+-- in use.
+-- The rule now: an unused, unexpired challenge is kept only while its e-mail is still to be sent,
+-- that is, while a job for it is pending (waiting for its first attempt or for a retry) or
+-- dispatching (being sent right now). Once its job is blocked or no longer exists, the nightly job
+-- deletes the challenge before it looks for unused addresses, so from the run that deletes it the
+-- address is in use only if something else in the list above uses it. One run deletes the dead
+-- challenges of at most 200 addresses and skips an address whose lock or row is held; those wait
+-- for a later night. cleanup_customer_access_email_actions is not changed.
 --
 -- Deployment order: old application code calls nothing that changes here, and nothing here needs
 -- new application code. The cron schedule and the grants of the function are not touched.
@@ -85,6 +102,7 @@ set search_path = ''
 as $$
 declare v_count integer := 0; v_deleted integer := 0;
   v_orphaned integer := 0;
+  v_dead text[] := '{}';
   v_profiles uuid[];
   v_emails text[] := '{}';
   v_email text;
@@ -104,8 +122,77 @@ begin
 
   begin
     -- Orphaned contact data. Each step is its own statement, so each sees what was committed
-    -- before it started; the locks taken in steps 1 and 2 keep the functions that write these rows
-    -- out until this transaction ends, and every delete decides again from its own, later view.
+    -- before it started; the locks taken in steps 0, 1 and 2 keep the functions that take the same
+    -- locks out until this transaction ends, and every delete decides again from its own, later
+    -- view. The worker that consumes a challenge after a send and the legacy exchange take no such
+    -- lock; step 0 skips a row either of them holds.
+
+    -- Step 0. Access requests whose e-mail can no longer be sent.
+    -- A challenge is dead when it is unused and unexpired (it still counts as in use) and no access
+    -- e-mail job for it is pending or dispatching: the job is blocked, or there is none. A job is
+    -- created only together with its challenge, in one transaction
+    -- (rotate_customer_booking_access_token), and no caller queues a job again for a challenge
+    -- that already exists, so a challenge that is dead stays dead.
+    --
+    -- First take the per-address lock, the key of lock_customer_access_emails, for up to 200
+    -- addresses that have a dead challenge. An address whose lock is held (a request for it is
+    -- running right now) is skipped, never waited for; a later run handles it.
+    for v_email in
+      select d.email
+      from (
+        select distinct pg_catalog.lower(pg_catalog.btrim(c.email)) as email
+        from public.customer_booking_access_challenges c
+        where c.used_at is null
+          and c.expires_at > pg_catalog.now()
+          and not exists (
+            select 1
+            from public.external_action_jobs j
+            where j.action_type = 'customer_access_email_send'
+              and j.payload ->> 'challenge_id' = c.id::text
+              and j.status in ('pending', 'dispatching')
+          )
+      ) d
+      order by d.email
+      limit 200
+    loop
+      if pg_catalog.pg_try_advisory_xact_lock(
+           pg_catalog.hashtext('customer-email-access'), pg_catalog.hashtext(v_email)) then
+        v_dead := v_dead || v_email;
+      end if;
+    end loop;
+
+    -- Then delete the dead challenges of the locked addresses, in one statement that starts after
+    -- the locks are held and decides again from its own view. No request can lose its challenge:
+    --   * A request takes the address lock before it writes. Either it committed before this
+    --     statement began, and then this statement sees its new challenge together with the
+    --     pending job of the same transaction, and its earlier challenge already deleted; or it
+    --     has not got the lock yet and waits until this transaction ends.
+    --   * The ten-minute job cleanup deletes jobs only: blocked ones and those whose challenge is
+    --     gone. A blocked job and a missing job read the same here, so its timing does not matter,
+    --     and this statement never removes the challenge of a pending or dispatching job, so that
+    --     cleanup deletes exactly the jobs it deleted before.
+    --   * A challenge row another transaction is working on (the worker deleting it after a send,
+    --     a legacy exchange marking it used) is skipped, never waited for.
+    with dead as (
+      select c.id
+      from public.customer_booking_access_challenges c
+      where pg_catalog.lower(pg_catalog.btrim(c.email)) = any (v_dead)
+        and c.used_at is null
+        and c.expires_at > pg_catalog.now()
+        and not exists (
+          select 1
+          from public.external_action_jobs j
+          where j.action_type = 'customer_access_email_send'
+            and j.payload ->> 'challenge_id' = c.id::text
+            and j.status in ('pending', 'dispatching')
+        )
+      for update of c skip locked
+    )
+    delete from public.customer_booking_access_challenges c
+    using dead
+    where c.id = dead.id;
+    get diagnostics v_deleted = row_count;
+    v_orphaned := v_orphaned + v_deleted;
 
     -- Step 1. Lock up to 200 profiles none of whose addresses is in use. A profile another
     -- transaction holds (a customer is linking or merging addresses right now) is skipped, never

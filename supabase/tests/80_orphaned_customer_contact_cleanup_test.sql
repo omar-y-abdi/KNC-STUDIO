@@ -5,8 +5,11 @@
 -- unexpired device receipt, no stored e-mail link. Each boundary has a row just inside and a row
 -- just outside. The baseline's four statements still do what they did. A profile whose addresses
 -- are not all reached by one run is left whole for a later run.
+-- An unused, unexpired challenge counts only while its access e-mail is still to be sent (its job
+-- is pending or dispatching). Once the job is blocked or gone the run deletes the challenge, and
+-- with it whatever the address then no longer needs.
 begin;
-select plan(52);
+select plan(69);
 
 -- Privileges and schedule are what the baseline left.
 select is((select pg_catalog.count(*)::int
@@ -132,6 +135,12 @@ values
   ('0708000000', 'challenge-expired@orphan.local', pg_temp.hash('c-expired'), pg_catalog.now(), null),
   ('0708000000', 'old-challenge@orphan.local', pg_temp.hash('c-old'),
    pg_catalog.now() - interval '1 day' - interval '1 microsecond', null);
+-- A challenge counts only while its access e-mail is still to be sent. The two that must keep
+-- their address get the job the request function queues for a challenge, still pending.
+select public.queue_external_action('customer_access_email_send', c.id::text,
+  pg_catalog.jsonb_build_object('challenge_id', c.id, 'lang', 'sv'))
+from public.customer_booking_access_challenges c
+where c.email in ('challenge@orphan.local', 'challenge-open@orphan.local');
 insert into public.customer_booking_receipts (token_hash, expires_at) values
   (pg_temp.hash('r-live'), pg_catalog.now() + interval '1 microsecond'),
   (pg_temp.hash('r-expired'), pg_catalog.now());
@@ -239,7 +248,7 @@ select ok(pg_temp.has_profile('80000000-0000-4000-8000-000000000102')
 
 -- ---- challenges --------------------------------------------------------------------------------
 select is(pg_temp.state('challenge@orphan.local'), 'TM',
-  'an unused challenge that expires one microsecond from now keeps the address');
+  'an unused challenge that expires one microsecond from now, its e-mail still queued, keeps the address');
 select is(pg_temp.state('challenge-open@orphan.local'), 'TM',
   'an unused challenge that never expires (a pending access e-mail) keeps the address');
 select is(pg_temp.state('challenge-used@orphan.local'), '--',
@@ -351,6 +360,156 @@ select is(public.cleanup_customer_booking_access(), 5,
 select is(pg_temp.state('r4a@limit.local') || pg_temp.state('r4z@limit.local')
     || pg_temp.has_profile('80000000-0000-4000-8000-000000000201')::text, '----false',
   'nothing of the profile remains');
+
+-- ---- access requests whose e-mail can no longer be sent ------------------------------------------
+-- Every request below is made by the real request function, which needs a confirmed booking, and
+-- its job is then moved by the functions the dispatcher and the worker call. Where a case needs an
+-- address nothing else uses, the booking is deleted afterwards.
+create function pg_temp.book(p_n integer, p_email text) returns void language sql as $$
+  insert into public.bookings
+    (id, barber_id, service_id, service_name, price, duration_min, start_at, end_at,
+     customer_name, method, phone, email, lang)
+  values
+    (('80000000-0000-4000-8000-0000000003' || pg_catalog.lpad(p_n::text, 2, '0'))::uuid,
+     'orphanbar', 'h', 'Hår', 350, 45,
+     '2098-07-01 09:00+00'::timestamptz + pg_catalog.make_interval(days => p_n),
+     '2098-07-01 09:45+00'::timestamptz + pg_catalog.make_interval(days => p_n),
+     'Send Kund', 'email', '07080003' || pg_catalog.lpad(p_n::text, 2, '0'), p_email, 'sv')
+$$;
+create function pg_temp.request_access(p_email text) returns boolean language sql as $$
+  select public.rotate_customer_booking_access_token(
+    p_email, pg_temp.hash('permanent:' || p_email), 'v1.' || repeat('D', 40),
+    pg_temp.hash('code:' || p_email), 'sv')
+$$;
+-- Moves the access e-mail job of an address the way the outbox does. The dispatcher claims it; the
+-- worker then blocks it (permanent failure), fails it (a retry follows), or consumes the challenge
+-- and completes the job (sent). 'dispatching' leaves it claimed: the worker is still at work.
+create function pg_temp.settle_access_job(p_email text, p_outcome text) returns boolean
+language plpgsql as $$
+declare
+  v_challenge uuid;
+  v_job uuid;
+  v_dispatch uuid;
+begin
+  select c.id, j.id into v_challenge, v_job
+  from public.customer_booking_access_challenges c
+  join public.external_action_jobs j
+    on j.action_type = 'customer_access_email_send' and j.dedupe_key = c.id::text
+  where c.email = p_email;
+  perform public.claim_external_action(v_job);
+  select j.dispatch_token into v_dispatch from public.external_action_jobs j where j.id = v_job;
+  if p_outcome = 'blocked' then
+    return public.block_external_action(v_job, v_dispatch, 'send_failed_permanent');
+  elsif p_outcome = 'retry' then
+    return public.fail_external_action(v_job, v_dispatch, 'send_failed');
+  elsif p_outcome = 'sent' then
+    perform public.consume_customer_access_email_challenge(v_challenge);
+    return public.complete_external_action(v_job, v_dispatch);
+  end if;
+  return v_dispatch is not null;
+end;
+$$;
+-- '-' when the address has no challenge; otherwise the state of the job of its challenge.
+create function pg_temp.send_state(p_email text) returns text language sql as $$
+  select coalesce((
+    select coalesce(
+      j.status || case when j.status = 'pending' and j.attempt_count > 0 then '+retry' else '' end,
+      'no job')
+    from public.customer_booking_access_challenges c
+    left join public.external_action_jobs j
+      on j.action_type = 'customer_access_email_send' and j.dedupe_key = c.id::text
+    where c.email = p_email
+  ), '-')
+$$;
+
+-- The first request: its e-mail failed for good, and the ten-minute cleanup has already run.
+select pg_temp.book(1, 'gone@send.local');
+select pg_temp.request_access('gone@send.local');
+select pg_temp.settle_access_job('gone@send.local', 'blocked');
+select public.cleanup_customer_access_email_actions();
+select is(pg_temp.send_state('gone@send.local'), 'no job',
+  'the ten-minute cleanup deletes a blocked job and leaves its challenge');
+
+-- The other requests. g6 and g7 are two linked pairs: the -a address asked for the link, the -b
+-- address had the booking.
+select pg_temp.book(v.n, v.email)
+from (values (2, 'blocked@send.local'), (3, 'pending@send.local'), (4, 'retry@send.local'),
+             (5, 'flight@send.local'), (6, 'sent@send.local'), (7, 'booked@send.local'),
+             (8, 'g6-b@send.local'), (9, 'g7-b@send.local')) as v(n, email);
+insert into public.customer_profile_emails (email, profile_id)
+select v.email, e.profile_id
+from (values ('g6-a@send.local', 'g6-b@send.local'), ('g7-a@send.local', 'g7-b@send.local'))
+  as v(email, sibling)
+join public.customer_profile_emails e on e.email = v.sibling;
+select pg_temp.request_access(e) from unnest(array['blocked@send.local', 'pending@send.local',
+  'retry@send.local', 'flight@send.local', 'sent@send.local', 'booked@send.local',
+  'g6-a@send.local', 'g7-a@send.local']) as e;
+select pg_temp.settle_access_job(v.email, v.outcome)
+from (values ('blocked@send.local', 'blocked'), ('retry@send.local', 'retry'),
+             ('flight@send.local', 'dispatching'), ('sent@send.local', 'sent'),
+             ('booked@send.local', 'blocked'), ('g6-a@send.local', 'blocked'),
+             ('g7-a@send.local', 'blocked')) as v(email, outcome);
+select pg_temp.add_token(e) from unnest(array['g6-b@send.local', 'g7-b@send.local']) as e;
+insert into public.customer_booking_access_sessions (phone, email, token_hash, expires_at) values
+  ('0708000000', 'g7-b@send.local', pg_temp.hash('s-g7'), pg_catalog.now() + interval '1 hour');
+-- Only sent@ and booked@ keep their booking.
+update public.booking_email_delivery_jobs set status = 'delivered', completed_at = pg_catalog.now()
+where booking_id in (
+  select b.id from public.bookings b
+  where b.email like '%@send.local' and b.email not in ('sent@send.local', 'booked@send.local'));
+delete from public.bookings b
+where b.email like '%@send.local' and b.email not in ('sent@send.local', 'booked@send.local');
+
+select is(array[pg_temp.send_state('blocked@send.local'), pg_temp.send_state('pending@send.local'),
+    pg_temp.send_state('retry@send.local'), pg_temp.send_state('flight@send.local'),
+    pg_temp.send_state('sent@send.local'), pg_temp.send_state('booked@send.local'),
+    pg_temp.send_state('g6-a@send.local'), pg_temp.send_state('g7-a@send.local')],
+  array['blocked', 'pending', 'pending+retry', 'dispatching', '-', 'blocked', 'blocked', 'blocked'],
+  'before the run every request is in the state its case names; the sent one has no challenge left');
+select set_config('test.access_jobs', (select pg_catalog.count(*)::text
+  from public.external_action_jobs j where j.action_type = 'customer_access_email_send'), true);
+
+-- Five dead challenges (gone, blocked, booked, g6-a, g7-a), then what three unused groups still
+-- held: four tokens, four memberships and three profiles (gone, blocked, g6).
+select is(public.cleanup_customer_booking_access(), 16,
+  'one run deletes the five dead challenges and the eleven rows of the addresses nothing else uses');
+select is(pg_temp.send_state('blocked@send.local') || ' ' || pg_temp.state('blocked@send.local'),
+  '- --', 'a blocked e-mail: the challenge goes, and in the same run the token and membership of its unused address');
+select is(pg_temp.send_state('gone@send.local') || ' ' || pg_temp.state('gone@send.local'),
+  '- --', 'a challenge whose job the ten-minute cleanup already deleted goes the same way');
+select is(pg_temp.send_state('pending@send.local') || ' ' || pg_temp.state('pending@send.local'),
+  'pending TM', 'a request whose e-mail waits for its first attempt keeps challenge, token and membership');
+select is(pg_temp.send_state('retry@send.local') || ' ' || pg_temp.state('retry@send.local'),
+  'pending+retry TM', 'a request whose e-mail failed and will be retried keeps them too');
+select is(pg_temp.send_state('flight@send.local') || ' ' || pg_temp.state('flight@send.local'),
+  'dispatching TM', 'a request whose e-mail is being sent right now keeps them too');
+select is(pg_temp.send_state('sent@send.local') || ' ' || pg_temp.state('sent@send.local'),
+  '- TM', 'after a successful send nothing changes: no challenge, and the booked address keeps its token');
+select is(pg_temp.send_state('booked@send.local') || ' ' || pg_temp.state('booked@send.local'),
+  '- TM', 'an address with a booking loses the dead challenge and keeps its token and membership');
+select is(pg_temp.send_state('g6-a@send.local') || ' ' || pg_temp.state('g6-a@send.local')
+    || pg_temp.state('g6-b@send.local'), '- ----',
+  'linked addresses whose only use was a dead challenge are deleted together');
+select is(pg_temp.send_state('g7-a@send.local') || ' ' || pg_temp.state('g7-a@send.local')
+    || pg_temp.state('g7-b@send.local'), '- TMTM',
+  'a dead challenge goes while a live session of a linked address keeps the whole group');
+select is((select pg_catalog.count(*)::text from public.external_action_jobs j
+  where j.action_type = 'customer_access_email_send'), current_setting('test.access_jobs'),
+  'the nightly run deletes no job');
+select is(public.cleanup_customer_booking_access(), 0,
+  'a second run deletes nothing: the requests still to be sent hold their addresses');
+select is(public.cleanup_customer_access_email_actions(), 4,
+  'the ten-minute cleanup still deletes exactly the four blocked jobs and no job still to be sent');
+
+-- One run handles at most 200 addresses that have a dead challenge.
+insert into public.customer_booking_access_challenges (phone, email, token_hash, expires_at)
+select '0708000000', 'cap' || pg_catalog.lpad(g::text, 3, '0') || '@send.local',
+       pg_temp.hash('cap:' || g::text), 'infinity'::timestamptz
+from pg_catalog.generate_series(1, 201) as g;
+select is(public.cleanup_customer_booking_access(), 200,
+  'one run deletes the dead challenges of at most 200 addresses');
+select is(public.cleanup_customer_booking_access(), 1,
+  'the next run deletes the one that was left');
 
 select * from finish();
 rollback;
