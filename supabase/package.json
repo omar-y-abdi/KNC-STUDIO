@@ -11,7 +11,7 @@
     "@bladeblend/content-contracts": "*",
     "@bladeblend/public-web": "*",
     "@imagemagick/magick-wasm": "0.0.42",
-    "@supabase/supabase-js": "2.112.2",
+    "@supabase/supabase-js": "2.119.0",
     "fontkit": "2.0.4",
     "parse5": "8.0.1",
     "zod": "4.6.6"
