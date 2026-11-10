@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import test from 'node:test'
 import { dependenciesOf, inspectBoundaries, modulePaths } from './boundaries.mjs'
-import { commandsFor, modulePlan } from './run.mjs'
+import { commandsFor } from './run.mjs'
 
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), 'bladeblend-modules-'))
@@ -168,20 +168,11 @@ test('backend local commands check real Deno entrypoints and package Worker with
   assert.deepEqual(commandsFor('backend', 'database')[0].args.slice(-2), ['test', 'db'])
 })
 
-test('workspace tests run the whole native unit suite and the plan previews the CI jobs', () => {
-  for (const id of Object.keys(modulePaths)) {
+test('workspace tests run the whole native unit suite', () => {
+  for (const id of Object.keys(modulePaths))
     assert.deepEqual(commandsFor(id, 'test'), [
       { executable: process.execPath, args: ['node_modules/vitest/vitest.mjs', 'run'] },
     ])
-    const omitted = Object.entries(modulePlan(id).jobs)
-      .filter(([, job]) => !job.required)
-      .map(([job]) => job)
-    assert.deepEqual(
-      omitted,
-      ['studio', 'staff-admin'].includes(id) ? ['edge-functions', 'database-current'] : [],
-      id,
-    )
-  }
 })
 
 test('the workspace runner prints the whole browser group for a dry run', () => {

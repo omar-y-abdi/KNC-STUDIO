@@ -117,7 +117,7 @@ Search `useBarberMarquee` and `gaplessLoopFloor` to find the live strip and edit
 - Contract packages must not import application implementations. Studio consumes staff's protected
   capabilities through explicit package exports and must not import staff views. Public preview
   owns its renderer; Studio consumes its protocol. `tools/modules/README.md` documents the enforced
-  package interfaces and the CI plan.
+  package interfaces and the workspace commands.
 - Read-only source/preview ports live in `modules/public-web/src/cms/homepageReplicaPorts.ts`; their write methods deny submission.
 - The booking_calendar_sync_on_change trigger queues Calendar work. The dispatcher owns retry;
   the retired calendar-sync Edge Function is not a current deployment target.
