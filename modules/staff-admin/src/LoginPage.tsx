@@ -206,22 +206,22 @@ export function LoginPage(props: LoginPageProps): JSX.Element {
     </div>
   )
 
+  /** The full-viewport page column; the two layouts differ only in their surface colour. */
+  const pageStyle = (background: string): JSX.CSSProperties => ({
+    minHeight: '100dvh',
+    display: 'flex',
+    flexDirection: 'column',
+    background,
+    color: shell.text,
+    fontFamily: FONT_DISPLAY,
+    WebkitFontSmoothing: 'antialiased',
+  })
+
   // ---- MOBILE: the public mobile hero's shape — warm panel surface, safe-area top row, centred
   // pole logo + wordmark, then the form. ----
   if (narrow) {
     return (
-      <div
-        class="bb-page"
-        style={{
-          minHeight: '100dvh',
-          display: 'flex',
-          flexDirection: 'column',
-          background: dark ? '#242427' : '#f4f3f0',
-          color: shell.text,
-          fontFamily: "'Inter Variable',-apple-system,system-ui,sans-serif",
-          WebkitFontSmoothing: 'antialiased',
-        }}
-      >
+      <div class="bb-page" style={pageStyle(dark ? '#242427' : '#f4f3f0')}>
         {/* Safe-area-aware top row (mirrors MobileSite's chrome row: nothing under the notch). */}
         <div style={{ flex: 'none', padding: '0 22px' }}>
           <div style={{ height: 'calc(env(safe-area-inset-top, 0px) + 30px)' }} />
@@ -287,18 +287,7 @@ export function LoginPage(props: LoginPageProps): JSX.Element {
 
   // ---- DESKTOP: the public desktop chrome — nav bar + hero typography + form card. ----
   return (
-    <div
-      class="bb-page"
-      style={{
-        minHeight: '100dvh',
-        display: 'flex',
-        flexDirection: 'column',
-        background: shell.bg,
-        color: shell.text,
-        fontFamily: "'Inter Variable',-apple-system,system-ui,sans-serif",
-        WebkitFontSmoothing: 'antialiased',
-      }}
-    >
+    <div class="bb-page" style={pageStyle(shell.bg)}>
       <div
         style={{
           display: 'flex',
