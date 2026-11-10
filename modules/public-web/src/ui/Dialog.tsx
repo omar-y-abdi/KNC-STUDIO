@@ -10,7 +10,7 @@
 //  - prefers-reduced-motion: gate the entry animation only (settled appearance unchanged)
 
 import type { ComponentChildren, JSX } from 'preact'
-import { useEffect, useRef } from 'preact/hooks'
+import { useLayoutEffect, useRef } from 'preact/hooks'
 import { useNativeSurface } from '../cms/NativeSurface'
 import type { CmsLang, CmsMode } from '@bladeblend/content-contracts/cms'
 import { prefersReducedMotion } from './reducedMotion'
@@ -45,7 +45,9 @@ export function Dialog(props: DialogProps): JSX.Element {
   const cardRef = useRef<HTMLDivElement>(null)
   const previouslyFocused = useRef<HTMLElement | null>(null)
 
-  useEffect(() => {
+  // Focus in the opening commit: a deferred effect runs a frame after the dialog is interactive and
+  // would pull focus out of a field the customer already entered, dropping what they type next.
+  useLayoutEffect(() => {
     previouslyFocused.current =
       document.activeElement instanceof HTMLElement ? document.activeElement : null
     const card = cardRef.current
