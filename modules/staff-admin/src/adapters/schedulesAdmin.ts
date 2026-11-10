@@ -58,7 +58,6 @@ export async function saveWeek(
   allowExistingBookings = false,
 ): Promise<AvailabilityMutationOutcome<WeekSchedule>> {
   const rows = week.map((d) => ({
-    barber_id: barberId,
     weekday: d.weekday,
     working: d.working,
     start_min: d.startMin,
@@ -67,12 +66,7 @@ export async function saveWeek(
   try {
     const { data, error } = await getAdminClient().rpc('admin_save_barber_week', {
       p_barber_id: barberId,
-      p_week: rows.map((row) => ({
-        weekday: row.weekday,
-        working: row.working,
-        start_min: row.start_min,
-        end_min: row.end_min,
-      })),
+      p_week: rows,
       p_allow_existing_bookings: allowExistingBookings,
     })
     if (error !== null) return { kind: 'error', error: { kind: 'network', message: WRITE_ERROR } }
