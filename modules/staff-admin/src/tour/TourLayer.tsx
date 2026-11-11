@@ -188,16 +188,20 @@ export function TourLayer(props: TourLayerProps): JSX.Element {
       }
     }
     const block = (event: Event): void => event.preventDefault()
+    const blockTouch = (event: TouchEvent): void => {
+      if (event.touches.length > 1 || (window.visualViewport?.scale ?? 1) > 1.01) return
+      event.preventDefault()
+    }
 
     request = window.requestAnimationFrame(tick)
     window.addEventListener('keydown', onKey)
     window.addEventListener('wheel', block, { passive: false })
-    window.addEventListener('touchmove', block, { passive: false })
+    window.addEventListener('touchmove', blockTouch, { passive: false })
     return () => {
       window.cancelAnimationFrame(request)
       window.removeEventListener('keydown', onKey)
       window.removeEventListener('wheel', block)
-      window.removeEventListener('touchmove', block)
+      window.removeEventListener('touchmove', blockTouch)
     }
   }, [])
 
