@@ -44,7 +44,7 @@ export const bookingEn: BookingStrings = {
   termsLink: 'Read booking terms',
   termsLinkLabel: 'Read booking terms (opens in a new tab)',
   policy:
-    'By booking you agree that cancellations must be made at least {hours} hours before the visit. Late cancellation or a no‑show entitles {businessName} to charge for the booked time.',
+    'By booking you agree that cancellations must be made at least {hours} hours before the visit. After a late cancellation or a no‑show, {businessName} may ask you to pay for the booked time. You have a 14-day right of withdrawal under the booking terms, and you pay at the salon after your treatment.',
   bookedTitle: 'Thanks — your appointment is booked!',
   confirmSent:
     'A booking confirmation has been sent to {email}. Manage the booking with a secure link under "My appointments".',

@@ -41,7 +41,7 @@ export const bookingSv = {
   termsLink: 'Läs bokningsvillkoren',
   termsLinkLabel: 'Läs bokningsvillkoren (öppnas i ny flik)',
   policy:
-    'Vid bokning accepterar du att avbokning måste ske senast {hours} timmar före besöket. Sen avbokning eller utebliven tid ger {businessName} rätt att debitera för den bokade tiden.',
+    'Vid bokning accepterar du att avbokning måste ske senast {hours} timmar före besöket. Vid sen avbokning eller utebliven tid kan {businessName} begära betalning för den bokade tiden. Du har 14 dagars ångerrätt enligt bokningsvillkoren och betalar i salongen efter behandlingen.',
   bookedTitle: 'Tack — din tid är bokad!',
   /** Confirmation sentence template. `{email}` and legacy `{phone}` tokens are interpolated. */
   confirmSent:
