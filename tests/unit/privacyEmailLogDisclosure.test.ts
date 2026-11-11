@@ -758,6 +758,9 @@ describe('public privacy disclosure of retention, backups, reviews and browser s
     expect(source('modules/staff-admin/src/adminClient.ts')).toContain(
       "const ADMIN_STORAGE_KEY = 'knc-admin-auth'",
     )
+    expect(source('modules/public-web/src/onboarding/trigger.ts')).toContain(
+      "export const HOME_SCREEN_GUIDE_KEY = 'bladeblend_home_screen_guide'",
+    )
     // The names are long words without a break point; the rule lets them wrap on a narrow screen.
     expect(source('public/privacy.html')).toContain(
       'code { padding: 0.1em 0.35em; border-radius: 5px; background: var(--bb-surface); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.88em; overflow-wrap: anywhere; }',
@@ -769,6 +772,7 @@ describe('public privacy disclosure of retention, backups, reviews and browser s
       CUSTOMER_SESSION_COOKIE,
       CUSTOMER_RECEIPT_COOKIE,
       'knc-admin-auth',
+      'bladeblend_home_screen_guide',
     ])
       expect(privacy.split(`<code>${name}</code>`), name).toHaveLength(3)
     expect(privacy).toContain(
@@ -793,6 +797,21 @@ describe('public privacy disclosure of retention, backups, reviews and browser s
     expect(privacy).toContain(
       'necessary HttpOnly session for up to 30 days, in the cookie ' +
         `<code>${CUSTOMER_SESSION_COOKIE}</code>.`,
+    )
+    // The guide's note is neither customer data nor an access credential.
+    expect(privacy).toContain(
+      'kan fyllas i vid nästa bokning. Har du godkänt valfri lagring sparas också en notering i ' +
+        'webbläsarens localStorage, under namnet <code>bladeblend_home_screen_guide</code>, om att ' +
+        'guiden för att lägga till webbplatsen på hemskärmen har visats, så att den inte visas igen. ' +
+        'När du återkallar valet tas enhetsåtkomsten, förifyllningen och noteringen bort, medan ' +
+        'bokningarna finns kvar.',
+    )
+    expect(privacy).toContain(
+      'may prefill your next booking. If you have accepted optional storage, a note is also kept ' +
+        "in the browser's localStorage, under the name <code>bladeblend_home_screen_guide</code>, " +
+        'that the guide for adding the website to the Home Screen has been shown, so that it is ' +
+        'not shown again. Withdrawal removes device access, the prefill and the note while ' +
+        'preserving your bookings.',
     )
     expect(privacy).toContain(
       'Inga kunduppgifter eller kunders åtkomstbevis sparas i localStorage eller sessionStorage',

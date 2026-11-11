@@ -174,6 +174,8 @@ export interface BookingFlowProps {
   readonly business?: BusinessSettings
   readonly initialContact?: BookingContact
   readonly onBookingComplete?: () => void
+  /** The confirmation of a booking made here was closed, other than through "Mina bokningar". */
+  readonly onConfirmationClosed?: () => void
   /** The initial roster has resolved, including a truthful empty/error state. */
   readonly onRosterReady?: () => void
 }
@@ -671,8 +673,14 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   const onPopupBackdrop = (e: JSX.TargetedMouseEvent<HTMLDivElement>): void => {
     if (e.target === e.currentTarget) closePopup()
   }
+  const closeConfirmation = (): void => {
+    reset()
+    // A Studio scene or preview confirms nothing.
+    if (result?.ok === true && scene === undefined && previewPorts === undefined)
+      props.onConfirmationClosed?.()
+  }
   const onConfirmBackdrop = (e: JSX.TargetedMouseEvent<HTMLDivElement>): void => {
-    if (e.target === e.currentTarget) reset()
+    if (e.target === e.currentTarget) closeConfirmation()
   }
   const onContact =
     (field: keyof FieldErrors) =>
@@ -1203,7 +1211,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
           mapsHref={mapsHref}
           showDirections={showDirections}
           calRowHover={calRowHover}
-          onReset={reset}
+          onReset={closeConfirmation}
           onMyBookings={
             props.onMyBookings
               ? () => {

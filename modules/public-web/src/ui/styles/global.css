@@ -91,6 +91,24 @@ body {
     transform: scale(1.04);
   }
 }
+/* The home-screen guide's entrance (onboarding/HomeScreenGuide.tsx); each row sets its delay. */
+.knc-guide-tile {
+  animation: kncGuideTile 0.42s cubic-bezier(0.22, 1, 0.36, 1) 0.12s backwards;
+}
+.knc-guide-step {
+  animation: kncPendingRise 0.32s cubic-bezier(0.32, 0.72, 0, 1) backwards;
+}
+@keyframes kncGuideTile {
+  from {
+    transform: scale(0.8);
+  }
+  60% {
+    transform: scale(1.04);
+  }
+  to {
+    transform: scale(1);
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .knc-stripes {
     animation: none;
@@ -107,6 +125,10 @@ body {
   }
   .knc-pending-head {
     display: none;
+  }
+  .knc-guide-tile,
+  .knc-guide-step {
+    animation: none;
   }
 }
 

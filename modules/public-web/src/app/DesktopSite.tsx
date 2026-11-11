@@ -67,6 +67,7 @@ export interface DesktopSiteProps extends ShellProps {
   readonly initialContact?: CustomerProfile
   readonly initialBookingContact?: BookingContact
   readonly onBookingComplete?: () => void
+  readonly onConfirmationClosed?: () => void
   readonly privacy?: PrivacyControls
   readonly onManagePrivacy?: () => void
 }
@@ -448,6 +449,9 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
                       : { initialContact: props.initialContact ?? props.initialBookingContact })}
                     {...(props.onBookingComplete
                       ? { onBookingComplete: props.onBookingComplete }
+                      : {})}
+                    {...(props.onConfirmationClosed
+                      ? { onConfirmationClosed: props.onConfirmationClosed }
                       : {})}
                     {...(props.previewPorts === undefined
                       ? {}

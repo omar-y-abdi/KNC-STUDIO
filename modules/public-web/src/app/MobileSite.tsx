@@ -79,6 +79,7 @@ export interface MobileSiteProps {
   readonly initialContact?: CustomerProfile
   readonly initialBookingContact?: BookingContact
   readonly onBookingComplete?: () => void
+  readonly onConfirmationClosed?: () => void
   readonly privacy?: PrivacyControls
   readonly onManagePrivacy?: () => void
 }
@@ -599,6 +600,9 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
                 ? {}
                 : { initialContact: props.initialContact ?? props.initialBookingContact })}
               {...(props.onBookingComplete ? { onBookingComplete: props.onBookingComplete } : {})}
+              {...(props.onConfirmationClosed
+                ? { onConfirmationClosed: props.onConfirmationClosed }
+                : {})}
             />
           </LazySurface>
         ) : (

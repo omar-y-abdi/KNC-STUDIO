@@ -130,8 +130,11 @@
         här. Den innehåller inga kontaktuppgifter och gäller i högst 30 dagar. Den ger inte åtkomst
         till äldre bokningar genom inskrivet mejl eller telefon. Du kan återkalla valet via
         Integritet på startsidan eller länken längst ned i Om oss. Kontaktuppgifter från den senaste
-        bokningen på enheten kan fyllas i vid nästa bokning. När du återkallar valet tas
-        enhetsåtkomsten och denna förifyllning bort, medan bokningarna finns kvar.
+        bokningen på enheten kan fyllas i vid nästa bokning. Har du godkänt valfri lagring sparas
+        också en notering i webbläsarens localStorage, under namnet
+        <code>bladeblend_home_screen_guide</code>, om att guiden för att lägga till webbplatsen på
+        hemskärmen har visats, så att den inte visas igen. När du återkallar valet tas
+        enhetsåtkomsten, förifyllningen och noteringen bort, medan bokningarna finns kvar.
       </p>
       <p>
         Efter giltig e-postlänk används en separat, nödvändig HttpOnly-sessioncookie,
@@ -367,8 +370,11 @@
           created here for up to 30 days. It contains no contact details and does not grant earlier
           history based on entered email or phone. You can withdraw your choice through Privacy on
           the home page or the link at the bottom of About. Contact details from the latest booking
-          on this device may prefill your next booking. Withdrawal removes device access and this
-          prefill while preserving your bookings.
+          on this device may prefill your next booking. If you have accepted optional storage, a
+          note is also kept in the browser's localStorage, under the name
+          <code>bladeblend_home_screen_guide</code>, that the guide for adding the website to the
+          Home Screen has been shown, so that it is not shown again. Withdrawal removes device
+          access, the prefill and the note while preserving your bookings.
         </p>
         <p>
           A valid email link establishes a separate, necessary HttpOnly session for up to 30 days,
