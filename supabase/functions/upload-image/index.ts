@@ -13,6 +13,7 @@ import {
 import { json } from '../_shared/http.ts'
 import { staffCors } from '../_shared/staffCors.ts'
 import { deleteSchema, formFields, uploadSchema } from './request.ts'
+import { deleteWorkPhoto, storeWorkPhoto, WORK_BUCKET } from './workPhoto.ts'
 
 const MAX_INPUT_BYTES = 5 * 1024 * 1024
 let imageMagickReady: Promise<void> | null = null
@@ -224,6 +225,10 @@ async function handle(req: Request): Promise<Response> {
       return json({ ok: false, error: 'forbidden' }, 403)
     }
 
+    if (deletion.kind === 'barber_work') {
+      return deleteWorkPhoto(service, deletion.barberId, deletion.storagePath)
+    }
+
     const queued = await service.rpc('internal_delete_barber_photo', {
       p_barber_id: deletion.barberId,
       p_expected_path: deletion.storagePath,
@@ -320,7 +325,10 @@ async function handle(req: Request): Promise<Response> {
   }
 
   try {
-    processed = processImage(new Uint8Array(await upload.file.arrayBuffer()), upload.kind).bytes
+    processed = processImage(
+      new Uint8Array(await upload.file.arrayBuffer()),
+      upload.kind === 'barber_work' ? 'gallery' : upload.kind,
+    ).bytes
   } catch (error) {
     if (error instanceof ImageValidationError) {
       return json({ ok: false, error: error.code }, 422)
@@ -328,6 +336,17 @@ async function handle(req: Request): Promise<Response> {
 
     console.warn('upload-image: image decode failed', error)
     return json({ ok: false, error: 'invalid_image' }, 422)
+  }
+
+  if (upload.kind === 'barber_work') {
+    return storeWorkPhoto(
+      service,
+      upload.barberId,
+      processed,
+      (path) =>
+        createClient(publicSupabaseUrl, anonKey).storage.from(WORK_BUCKET).getPublicUrl(path).data
+          .publicUrl,
+    )
   }
 
   const bucket = 'barber-photos'

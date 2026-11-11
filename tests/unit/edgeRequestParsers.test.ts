@@ -509,4 +509,68 @@ describe('upload-image request', () => {
   ])('rejects the deletion %j', (raw) => {
     expect(deleteSchema.safeParse(raw).success).toBe(false)
   })
+
+  const work = { ...profile, kind: 'barber_work' }
+
+  it('accepts a scoped work picture upload', () => {
+    const parsed = uploadSchema.safeParse(formFields(form(work)))
+    expect(parsed.success && parsed.data).toEqual(work)
+  })
+
+  it.each<[string, FormData]>([
+    ['an unknown field', form({ ...work, extra: 'x' })],
+    ['an empty file', form({ ...work, file: new File([], 'a.png') })],
+    ['a repeated field', form(work, [['barberId', 'victor']])],
+    ['a missing file', form({ kind: 'barber_work', barberId: 'hassan' })],
+    ['a missing barber id', form({ kind: 'barber_work', file: image })],
+    ['a bad barber id', form({ ...work, barberId: 'Bad Id' })],
+    ['an unknown kind', form({ ...work, kind: 'barber_works' })],
+  ])('rejects a work picture upload with %s', (_name, data) => {
+    expect(uploadSchema.safeParse(formFields(data)).success).toBe(false)
+  })
+
+  const picture = `hassan/${ID}.webp`
+
+  it('accepts a scoped work picture deletion', () => {
+    const raw = { action: 'delete', kind: 'barber_work', barberId: 'hassan', storagePath: picture }
+    const parsed = deleteSchema.safeParse(raw)
+    expect(parsed.success && parsed.data).toEqual(raw)
+  })
+
+  it.each([
+    { action: 'delete', kind: 'barber_work', barberId: 'hassan', storagePath: `victor/${ID}.webp` },
+    {
+      action: 'delete',
+      kind: 'barber_work',
+      barberId: 'hassan',
+      storagePath: `hassan-2/${ID}.webp`,
+    },
+    {
+      action: 'delete',
+      kind: 'barber_work',
+      barberId: 'hassan',
+      storagePath: `hassan/../victor/${ID}.webp`,
+    },
+    {
+      action: 'delete',
+      kind: 'barber_work',
+      barberId: 'hassan',
+      storagePath: `hassan/a/${ID}.webp`,
+    },
+    { action: 'delete', kind: 'barber_work', barberId: 'hassan', storagePath: 'hassan/a.webp' },
+    {
+      action: 'delete',
+      kind: 'barber_work',
+      barberId: 'hassan',
+      storagePath: `hassan/${ID.toUpperCase()}.webp`,
+    },
+    { action: 'delete', kind: 'barber_work', barberId: 'hassan', storagePath: `hassan/${ID}.png` },
+    { action: 'delete', kind: 'barber_work', storagePath: picture },
+    { action: 'delete', kind: 'barber_work', barberId: 'hassan' },
+    { action: 'delete', kind: 'barber_work', barberId: 'hassan', storagePath: picture, extra: 1 },
+    { action: 'delete', kind: 'barber_works', barberId: 'hassan', storagePath: picture },
+    { action: 'remove', kind: 'barber_work', barberId: 'hassan', storagePath: picture },
+  ])('rejects the work picture deletion %j', (raw) => {
+    expect(deleteSchema.safeParse(raw).success).toBe(false)
+  })
 })

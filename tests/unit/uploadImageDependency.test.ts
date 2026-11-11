@@ -14,6 +14,7 @@ const media = vi.hoisted(() => {
     storedBucket: '',
     storedPath: '',
     upload: vi.fn(),
+    remove: vi.fn(),
     rpc: vi.fn(),
     previousPhoto: vi.fn(),
     initialize: vi.fn(),
@@ -72,7 +73,10 @@ vi.mock('@supabase/supabase-js', () => ({
           media.storedPath = path
           return media.upload(path, bytes, options)
         },
-        getPublicUrl: () => ({ data: { publicUrl: 'https://assets.example.test/image.webp' } }),
+        remove: (paths: string[]) => media.remove(bucket, paths),
+        getPublicUrl: (path: string) => ({
+          data: { publicUrl: `https://assets.example.test/${bucket}/${path}` },
+        }),
       }),
     },
   }),
@@ -103,6 +107,7 @@ describe('upload-image HTTP paths', () => {
     media.storedBucket = ''
     media.storedPath = ''
     media.upload.mockReset().mockResolvedValue({ error: null })
+    media.remove.mockReset().mockResolvedValue({ data: [], error: null })
     media.previousPhoto.mockReset().mockResolvedValue({ data: null, error: null })
     media.rpc.mockReset().mockImplementation(async (name: string) => {
       if (name === 'internal_cms_assert_owner')
@@ -663,6 +668,243 @@ describe('upload-image HTTP paths', () => {
       expect(logged.mock.calls.filter(([text]) => String(text).includes('admin log'))).toEqual([
         ['upload-image: admin log write failed:', 'timeout'],
       ])
+    },
+  )
+
+  const WORK_ID = '54000000-0000-4000-8000-00000000000a'
+  const workPath = (barberId: string) => `${barberId}/54000000-0000-4000-8000-00000000000b.webp`
+
+  function uploadWork(barberId = 'hassan'): Promise<Response> {
+    const form = new FormData()
+    form.set('kind', 'barber_work')
+    form.set('barberId', barberId)
+    form.set('file', new File([new Uint8Array([1])], 'work.png', { type: 'image/png' }))
+    return handler(
+      new Request('https://edge.example.test/upload-image', {
+        method: 'POST',
+        headers: { authorization: 'Bearer unit-token' },
+        body: form,
+      }),
+    )
+  }
+
+  function deleteWork(barberId = 'hassan', storagePath = workPath(barberId)): Promise<Response> {
+    return handler(
+      new Request('https://edge.example.test/upload-image', {
+        method: 'POST',
+        headers: { authorization: 'Bearer unit-token', 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'delete', kind: 'barber_work', barberId, storagePath }),
+      }),
+    )
+  }
+
+  function withWorkRows(
+    added: () => unknown = () => ({ data: { ok: true, id: WORK_ID }, error: null }),
+    deleted: () => unknown = () => ({ data: { ok: true }, error: null }),
+  ): void {
+    media.rpc.mockImplementation(async (name: string) => {
+      if (name === 'internal_add_barber_work_photo') return added()
+      if (name === 'internal_delete_barber_work_photo') return deleted()
+      throw new Error(`Unexpected RPC: ${name}`)
+    })
+  }
+
+  it('stores a work picture as a gallery image in barber-work and records only its row', async () => {
+    media.profile = { role: 'barber', barber_id: 'hassan', account_enabled: true }
+    withWorkRows()
+
+    const response = await uploadWork()
+
+    expect(response.status).toBe(200)
+    expect(media.process).toHaveBeenCalledExactlyOnceWith(new Uint8Array([1]), 'gallery')
+    expect(media.storedBucket).toBe('barber-work')
+    expect(media.upload).toHaveBeenCalledExactlyOnceWith(
+      expect.stringMatching(
+        /^hassan\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.webp$/,
+      ),
+      new Uint8Array([1, 2]),
+      { contentType: 'image/webp', upsert: false, cacheControl: '31536000' },
+    )
+    expect(await response.json()).toEqual({
+      ok: true,
+      kind: 'barber_work',
+      id: WORK_ID,
+      path: media.storedPath,
+      publicUrl: `https://assets.example.test/barber-work/${media.storedPath}`,
+    })
+    expect(media.rpc.mock.calls).toEqual([
+      ['internal_add_barber_work_photo', { p_barber_id: 'hassan', p_path: media.storedPath }],
+    ])
+    expect(media.previousPhoto).not.toHaveBeenCalled()
+    expect(media.remove).not.toHaveBeenCalled()
+  })
+
+  it.each<[string, 'owner' | 'barber', string | null, string, number]>([
+    ['a barber for their own barber', 'barber', 'hassan', 'hassan', 200],
+    ['a barber for another barber', 'barber', 'hassan', 'victor', 403],
+    ['a barber account without a barber', 'barber', null, 'hassan', 403],
+    ['the owner for any barber', 'owner', null, 'victor', 200],
+  ])(
+    'scopes work pictures like the profile photo: %s',
+    async (_, role, ownBarber, target, status) => {
+      media.profile = { role, barber_id: ownBarber, account_enabled: true }
+      withWorkRows()
+
+      const uploaded = await uploadWork(target)
+      const deleted = await deleteWork(target)
+
+      expect([uploaded.status, deleted.status]).toEqual([status, status])
+      if (status === 403) {
+        expect(await uploaded.json()).toEqual({ ok: false, error: 'forbidden' })
+        expect(await deleted.json()).toEqual({ ok: false, error: 'forbidden' })
+        expect(media.process).not.toHaveBeenCalled()
+        expect(media.upload).not.toHaveBeenCalled()
+        expect(media.remove).not.toHaveBeenCalled()
+        expect(media.rpc).not.toHaveBeenCalled()
+      } else {
+        expect(media.rpc.mock.calls.map(([name, args]) => [name, args.p_barber_id])).toEqual([
+          ['internal_add_barber_work_photo', target],
+          ['internal_delete_barber_work_photo', target],
+        ])
+      }
+    },
+  )
+
+  it('refuses a work picture of a disabled account before any side effect', async () => {
+    media.profile = { role: 'barber', barber_id: 'hassan', account_enabled: false }
+    withWorkRows()
+
+    expect((await uploadWork()).status).toBe(401)
+    expect((await deleteWork()).status).toBe(401)
+    expect(media.upload).not.toHaveBeenCalled()
+    expect(media.remove).not.toHaveBeenCalled()
+    expect(media.rpc).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    [
+      'the function does not exist yet',
+      () => ({ data: null, error: { code: 'PGRST202', message: 'function not found' } }),
+    ],
+    ['the barber is gone', () => ({ data: { ok: false, error: 'not_found' }, error: null })],
+    ['the answer has no id', () => ({ data: { ok: true }, error: null })],
+  ])('removes a stored work picture again when its row is not written: %s', async (_, added) => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    withWorkRows(added)
+
+    const response = await uploadWork()
+
+    expect(response.status).toBe(500)
+    expect(await response.json()).toEqual({ ok: false, error: 'database_failed' })
+    expect(media.storedBucket).toBe('barber-work')
+    expect(media.remove).toHaveBeenCalledExactlyOnceWith('barber-work', [media.storedPath])
+    expect(media.rpc.mock.calls.map(([name]) => name)).toEqual(['internal_add_barber_work_photo'])
+    expect(JSON.stringify(logged.mock.calls)).not.toContain('.webp')
+  })
+
+  it('answers a failed work picture row the same when its object cannot be removed again', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    withWorkRows(() => ({ data: null, error: { code: 'PGRST202' } }))
+    media.remove.mockResolvedValue({ data: null, error: { message: 'storage unavailable' } })
+
+    const response = await uploadWork()
+
+    expect(response.status).toBe(500)
+    expect(await response.json()).toEqual({ ok: false, error: 'database_failed' })
+    expect(logged).toHaveBeenCalledWith(
+      'upload-image: failed to remove barber-work object',
+      'storage unavailable',
+    )
+  })
+
+  it('writes no row when a work picture cannot be stored', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    withWorkRows()
+    media.upload.mockResolvedValue({ error: { message: 'Bucket not found' } })
+
+    const response = await uploadWork()
+
+    expect(response.status).toBe(500)
+    expect(await response.json()).toEqual({ ok: false, error: 'storage_failed' })
+    expect(media.rpc).not.toHaveBeenCalled()
+    expect(media.remove).not.toHaveBeenCalled()
+  })
+
+  it('removes a work picture object before its row', async () => {
+    const order: string[] = []
+    media.remove.mockImplementation(async () => {
+      order.push('object')
+      return { data: [{ name: workPath('hassan') }], error: null }
+    })
+    withWorkRows(undefined, () => {
+      order.push('row')
+      return { data: { ok: true }, error: null }
+    })
+
+    const response = await deleteWork()
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ ok: true })
+    expect(order).toEqual(['object', 'row'])
+    expect(media.remove).toHaveBeenCalledExactlyOnceWith('barber-work', [workPath('hassan')])
+    expect(media.rpc.mock.calls).toEqual([
+      ['internal_delete_barber_work_photo', { p_barber_id: 'hassan', p_path: workPath('hassan') }],
+    ])
+  })
+
+  // Storage answers a removal that matched no object with an empty list and no error.
+  it('counts a work picture object that is already gone as removed', async () => {
+    media.remove.mockResolvedValue({ data: [], error: null })
+    withWorkRows()
+
+    const response = await deleteWork()
+
+    expect(response.status).toBe(200)
+    expect(media.rpc.mock.calls.map(([name]) => name)).toEqual([
+      'internal_delete_barber_work_photo',
+    ])
+  })
+
+  it('keeps the work picture row when its object cannot be removed', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    media.remove.mockResolvedValue({ data: null, error: { message: 'storage unavailable' } })
+    withWorkRows()
+
+    const response = await deleteWork()
+
+    expect(response.status).toBe(500)
+    expect(await response.json()).toEqual({ ok: false, error: 'storage_failed' })
+    expect(media.rpc).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['the function does not exist yet', () => ({ data: null, error: { code: 'PGRST202' } })],
+    ['the answer is not ok', () => ({ data: { ok: false }, error: null })],
+  ])(
+    'answers a retryable error when the work picture row is not deleted: %s',
+    async (_, deleted) => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined)
+      withWorkRows(undefined, deleted)
+
+      const response = await deleteWork()
+
+      expect(response.status).toBe(500)
+      expect(await response.json()).toEqual({ ok: false, error: 'database_failed' })
+      expect(media.remove).toHaveBeenCalledExactlyOnceWith('barber-work', [workPath('hassan')])
+    },
+  )
+
+  it.each(['victor/54000000-0000-4000-8000-00000000000b.webp', 'hassan/photo.webp'])(
+    'removes nothing for a work picture deletion of %s by barber hassan',
+    async (storagePath) => {
+      withWorkRows()
+
+      const response = await deleteWork('hassan', storagePath)
+
+      expect(response.status).toBe(400)
+      expect(await response.json()).toEqual({ ok: false, error: 'invalid_payload' })
+      expect(media.remove).not.toHaveBeenCalled()
+      expect(media.rpc).not.toHaveBeenCalled()
     },
   )
 })

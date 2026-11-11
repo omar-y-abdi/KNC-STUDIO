@@ -9,6 +9,16 @@ as WebP before Storage receives them. Browser clients cannot insert or update bu
 images and the homepage logo to the canonical public read models. `barber_photo` remains available
 to the owner and to the barber for their own profile, including exact-path deletion.
 
+`barber_work` stores a barber's work picture outside the CMS, with the same sign-in, account and
+barber scope as `barber_photo`. The multipart upload (`kind`, `file`, `barberId`) is processed like
+a gallery image and stored at `barber-work/<barberId>/<uuid>.webp`, then recorded by
+`internal_add_barber_work_photo`; if that fails, the object is removed again. The JSON delete
+`{action: 'delete', kind: 'barber_work', barberId, storagePath}` accepts only that path shape. It
+removes the object first (a missing object counts as removed) and then the row through
+`internal_delete_barber_work_photo`; when the object cannot be removed, the answer is HTTP 500
+`storage_failed` and the row stays, so the request can be retried. Work pictures write no admin
+log entry. `admin-manage-barber` removes a deleted barber's `barber-work/<barberId>/` objects.
+
 This gateway no longer accepts the legacy `gallery` and `site_logo` upload and JSON-delete kinds.
 Even an authenticated owner receives HTTP 400 `invalid_payload` for these old-client requests,
 before image decoding or Storage/metadata writes. Use the current Studio media library and publish
