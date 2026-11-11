@@ -16,7 +16,7 @@ const BACKDROP_STYLE = sheetBackdropStyle(40)
 
 /** While the pending layer covers `card`: the card at its top, the focus inside it. The release
  * gives back the scroll position, and the focus the inert form dropped. */
-function holdCard(card: HTMLElement): () => void {
+export function holdCard(card: HTMLElement): () => void {
   const top = card.scrollTop
   const before = document.activeElement
   const dropped =
@@ -27,6 +27,8 @@ function holdCard(card: HTMLElement): () => void {
   if (dropped) card.focus({ preventScroll: true })
   return () => {
     card.scrollTop = top
+    // Safari counts a zoomed card's position in whole pixels and lands one short of it.
+    if (card.scrollTop < top) card.scrollTop = top + 1
     if (
       dropped &&
       document.activeElement === card &&

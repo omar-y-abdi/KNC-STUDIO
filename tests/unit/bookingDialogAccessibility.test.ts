@@ -19,7 +19,7 @@ Object.defineProperty(globalThis, 'document', {
   },
 })
 
-const [{ DetailsDialog }, { ConfirmationDialog }] = await Promise.all([
+const [{ DetailsDialog, holdCard }, { ConfirmationDialog }] = await Promise.all([
   import('../../modules/public-web/src/booking/DetailsDialog'),
   import('../../modules/public-web/src/booking/ConfirmationDialog'),
 ])
@@ -226,6 +226,35 @@ describe('booking dialog close controls', () => {
     })
     expect((idle as VNodeLike).props?.['cardStyle']).toBe(styles.overlayCardStyle)
   })
+
+  // Safari keeps a card zoomed 0.85 on whole device pixels and reports whole CSS pixels, both
+  // rounded down; other engines give back the position they were set to.
+  it.each([
+    ['whole pixels under zoom 0.85', 0.85, Math.floor],
+    ['the exact position', 1, (value: number): number => value],
+  ] as const)(
+    'gives the held card back its scroll position, counted in %s',
+    (_label, zoom, read) => {
+      for (let device = 1; device <= 400; device++) {
+        let offset = device
+        const card = {
+          get scrollTop(): number {
+            return read(offset / zoom)
+          },
+          set scrollTop(value: number) {
+            offset = Math.floor(value * zoom)
+          },
+          contains: (): boolean => false,
+          focus: (): void => undefined,
+        }
+        const before = card.scrollTop
+        const release = holdCard(card as unknown as HTMLElement)
+        expect(card.scrollTop).toBe(0)
+        release()
+        expect([device, card.scrollTop, offset]).toEqual([device, before, device])
+      }
+    },
+  )
 
   it.each([
     ['sv', '/terms'],
