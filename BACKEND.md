@@ -103,6 +103,18 @@ The `gallery_public_read` and `barber_photos_public_read` Storage policies are d
 and `authenticated` can no longer list the `gallery` and `barber-photos` buckets. Their objects are
 still served by public URL.
 
+A barber edits their own name, bios and Instagram and TikTok handles through `staff_barber_profile`
+and `staff_update_barber_profile` (the owner, or that barber for their own row). Work pictures live
+in `barber_work_photos`, closed to every API role, and in the public `barber-work` bucket, outside
+the CMS: `upload-image` (`kind=barber_work`) stores and deletes them, the owner hides one with
+`staff_set_barber_work_photo_hidden`, `public_booking_catalog` lists each barber's visible ones, and
+`admin-manage-barber` removes a deleted barber's objects. The storage outbox and the nightly orphan
+sweep do not cover this bucket.
+
+`staff_tour_progress` holds each barber account's tutorial state (tours seen, removed), closed to
+every API role and reached only through `own_staff_tour_progress` and
+`set_own_staff_tour_progress`.
+
 ## Public frontend configuration
 
 Only public values use the `VITE_` prefix:

@@ -13,10 +13,10 @@ import {
 } from './_adminHelpers'
 import { withClient } from './_helpers'
 
-const BUCKETS = ['gallery', 'barber-photos'] as const
+const BUCKETS = ['gallery', 'barber-photos', 'barber-work'] as const
 type Bucket = (typeof BUCKETS)[number]
 
-/** Both buckets accept only `image/webp` up to 512 kB; this is a valid 1x1 lossless WebP. */
+/** These buckets accept only `image/webp` up to 512 kB; this is a valid 1x1 lossless WebP. */
 const WEBP_1X1 = Buffer.from('UklGRhoAAABXRUJQVlA4TA0AAAAvAAAAEAcQERGIiP4HAA==', 'base64')
 const FOLDER = 'it-public-read'
 const LOCAL_HOSTS = ['localhost', '127.0.0.1']
