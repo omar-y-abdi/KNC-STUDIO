@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { useLayoutEffect } from 'preact/hooks'
-import { PrivacyBanner } from '../../modules/public-web/src/site/PrivacyBanner'
+import { PrivacyBanner, PrivacyManageButton } from '../../modules/public-web/src/site/PrivacyBanner'
 import { ref, render, reset } from './helpers/fakeHooks'
 
 vi.mock('preact/hooks', () => import('./helpers/fakeHooks'))
@@ -80,4 +80,31 @@ it('measures before first paint, then coalesces privacy resizes outside observer
   expect(disconnect).toHaveBeenCalledOnce()
   expect(removeProperty).toHaveBeenCalledWith('--privacy-overlay-space')
   expect(values.has('--privacy-overlay-space')).toBe(false)
+})
+
+it('focuses the reopening pill without a scroll before the open panel shortens the page', () => {
+  reset()
+  const order: string[] = []
+  const focus = vi.fn<(options?: FocusOptions) => void>(() => void order.push('focus'))
+  const openPreferences = vi.fn(() => void order.push('open'))
+  const pill = render(() =>
+    PrivacyManageButton({
+      lang: 'sv',
+      dark: false,
+      controls: {
+        preferences: { functional: false },
+        expanded: false,
+        functional: false,
+        setFunctional: vi.fn(),
+        openPreferences,
+        choose: vi.fn(),
+      },
+    }),
+  )
+  const onClick: unknown = pill?.props.onClick
+  if (typeof onClick !== 'function') throw new Error('The privacy pill has no click handler')
+  Reflect.apply(onClick, undefined, [{ currentTarget: { focus } }])
+  // WebKit reveals the focused pill on a later task, when the root is already shorter.
+  expect(focus).toHaveBeenCalledExactlyOnceWith({ preventScroll: true })
+  expect(order).toEqual(['focus', 'open'])
 })

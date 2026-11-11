@@ -190,7 +190,8 @@ export function PrivacyManageButton({
       aria-label={tx.manageLabel}
       disabled={controls.expanded}
       onClick={(event) => {
-        event.currentTarget.focus()
+        // WebKit reveals a focused element on a later task, after the open panel shortens the root.
+        event.currentTarget.focus({ preventScroll: true })
         controls.openPreferences()
       }}
       style={{

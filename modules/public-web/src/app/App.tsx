@@ -21,7 +21,7 @@ import { canReplaceDocumentMetadata, useSiteChrome } from '../site/useSiteChrome
 import { buildBusinessStructuredData } from '../site/business'
 import { nativePublicPath } from '../site/routeMetadata'
 import { formatBusinessAddress, resolveSiteText, type SiteChrome } from '../site/siteChrome'
-import { paintEdgeTints, paintViewport } from '../ui/paintViewport'
+import { paintViewport, showEdgeTints } from '../ui/paintViewport'
 import { scheduleIdle } from '../ui/idle'
 import { LazySurface } from '../ui/LazySurface'
 import {
@@ -475,7 +475,12 @@ export function App({
     const top = background(header, topBar)
     const page = isMobile && !inSection ? top : background(surface, pageBg)
     paintViewport(page, top, state.mode)
-    return edgeTints ? paintEdgeTints(top, page) : undefined
+    return edgeTints
+      ? showEdgeTints({
+          top,
+          bottom: { panel: top, section: background(surface, c.bg), document: page },
+        })
+      : undefined
   }, [pageBg, topBar, isMobile, inSection, state.mode, cmsPresentation, edgeTints])
 
   const langMini = (on: boolean): JSX.CSSProperties => ({

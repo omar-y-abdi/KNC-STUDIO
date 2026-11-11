@@ -32,6 +32,7 @@ import type { BookingPopupText } from '../booking/BookingFlow'
 import { LazyBookingFlow, preloadBookingFlow } from '../booking/lazyBookingFlow'
 import { preloadMyBookingsDialog } from '../mybookings/lazyMyBookingsDialog'
 import { LazySurface } from '../ui/LazySurface'
+import { reportLowerEdge, type LowerEdge } from '../ui/paintViewport'
 import {
   scalePx,
   type BusinessSettings,
@@ -165,6 +166,9 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
   useLayoutEffect(() => {
     mounted.current = true
   }, [])
+  // An open privacy panel shortens this root: the document background meets the lower edge.
+  const lowerEdge: LowerEdge = privacyOpen ? 'document' : compactPanel ? 'section' : 'panel'
+  useLayoutEffect(() => reportLowerEdge(lowerEdge), [lowerEdge])
   useEffect(() => {
     const root = scrollRoot.current
     if (root === null) return
