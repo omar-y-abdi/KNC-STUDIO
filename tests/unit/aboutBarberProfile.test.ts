@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AboutSection } from '../../modules/public-web/src/about/AboutSection'
 import { GalleryMarquee } from '../../modules/public-web/src/about/GalleryMarquee'
 import type { GalleryPhoto } from '../../modules/public-web/src/about/gallery/port'
@@ -14,10 +14,11 @@ const reads = vi.hoisted(() => ({
   gallery: vi.fn(),
   marquee: { selected: null as string | null, reducedMotion: true },
 }))
+const native = vi.hoisted(() => ({ source: false }))
 vi.mock('preact/hooks', () => import('./helpers/fakeHooks'))
 vi.mock('../../modules/public-web/src/ui/pseudo', () => ({ FOCUS_CLS: '', pseudoClass: () => '' }))
 vi.mock('../../modules/public-web/src/cms/NativeSurface', () => ({
-  useNativeSource: () => false,
+  useNativeSource: () => native.source,
   useNativeSurface: (node: unknown) => node,
   useNativeChild: () => (node: unknown) => node,
 }))
@@ -63,6 +64,9 @@ beforeEach(() => {
   reset()
   vi.clearAllMocks()
   reads.marquee = { selected: null, reducedMotion: true }
+})
+afterEach(() => {
+  native.source = false
 })
 
 describe('About barber card handle', () => {
@@ -113,29 +117,47 @@ const shape = (info: RenderedNode) => [
   ]),
 ]
 
+/** The card info style before this feature, with role copy: desktop, collapsed and open mobile. */
+const legacyInfo = [
+  ['desktop', false, null, { display: 'flex', flexDirection: 'column', gap: '3px' }],
+  [
+    'collapsed mobile',
+    true,
+    null,
+    { display: 'grid', gridTemplateRows: 'auto 0fr 0fr', gap: 0, transition: 'none' },
+  ],
+  [
+    'open mobile',
+    true,
+    'a',
+    { display: 'grid', gridTemplateRows: 'auto 1fr 1fr', gap: '3px', transition: 'none' },
+  ],
+] as const
+
 describe('About barber card TikTok line', () => {
-  it.each([
-    ['desktop', false, null, { display: 'flex', flexDirection: 'column', gap: '3px' }],
-    [
-      'collapsed mobile',
-      true,
-      null,
-      { display: 'grid', gridTemplateRows: 'auto 0fr 0fr', gap: 0, transition: 'none' },
-    ],
-    [
-      'open mobile',
-      true,
-      'a',
-      { display: 'grid', gridTemplateRows: 'auto 1fr 1fr', gap: '3px', transition: 'none' },
-    ],
-  ] as const)('renders the %s card info as before without a handle', (_, mobile, open, style) => {
-    reads.marquee.selected = open
-    const absent = cardInfo({ ...entry('a', 'anna'), copy }, mobile)
-    expect(absent.props['style']).toEqual(style)
-    expect(kinds(absent)).toEqual(['span', 'instagram', 'bio', null])
-    const empty = cardInfo({ ...entry('a', 'anna'), copy, tiktok: '' }, mobile)
-    expect(shape(empty)).toEqual(shape(absent))
-  })
+  it.each(legacyInfo)(
+    'renders the %s card info as before without a handle',
+    (_, mobile, open, style) => {
+      reads.marquee.selected = open
+      const absent = cardInfo({ ...entry('a', 'anna'), copy }, mobile)
+      expect(absent.props['style']).toEqual(style)
+      expect(kinds(absent)).toEqual(['span', 'instagram', 'bio', null])
+      const empty = cardInfo({ ...entry('a', 'anna'), copy, tiktok: '' }, mobile)
+      expect(shape(empty)).toEqual(shape(absent))
+    },
+  )
+
+  it.each(legacyInfo)(
+    'renders the %s card info as before for a barber with a handle as the CMS source',
+    (_, mobile, open, style) => {
+      native.source = true
+      reads.marquee.selected = open
+      const handle = cardInfo({ ...entry('a', 'anna'), copy, tiktok: 'anna.tt' }, mobile)
+      expect(handle.props['style']).toEqual(style)
+      expect(kinds(handle)).toEqual(['span', 'instagram', 'bio', null])
+      expect(shape(handle)).toEqual(shape(cardInfo({ ...entry('a', 'anna'), copy }, mobile)))
+    },
+  )
 
   it('adds the desktop TikTok line last, placed on the row under the Instagram line', () => {
     reads.marquee.reducedMotion = false
@@ -197,6 +219,25 @@ describe('About cuts gallery', () => {
       { id: '/w/a1', url: '/w/a1', alt: '', credit: { platform: 'instagram', handle: 'anna' } },
       { id: '/w/b1', url: '/w/b1', alt: '', credit: { platform: 'instagram', handle: 'bo' } },
     ])
+  })
+
+  it('gives the cuts gallery only the owner cuts as the CMS source', () => {
+    native.source = true
+    const roster = [entry('a', 'anna', ['/w/a1']), entry('b', 'bo', ['/w/b1'])]
+    const [salonGallery, cutsGallery] = galleries(about(roster, 'ready'))
+    expect(salonGallery?.['photos']).toBe(salon)
+    expect(cutsGallery?.['photos']).toEqual([
+      { ...cuts[0], credit: { platform: 'instagram', handle: 'bnbstudio_gbg' } },
+    ])
+    reads.gallery.mockImplementation((kind: string) => ({
+      status: 'ready',
+      photos: kind === 'salon' ? salon : [],
+    }))
+    const ownerless = nodes(AboutSection({ mode: 'light', lang: 'sv' }))
+    expect(galleries(ownerless)).toHaveLength(1)
+    expect(
+      ownerless.some((node) => node.props['role'] === 'status' && text(node) === tx.galleryEmpty),
+    ).toBe(true)
   })
 
   it('shows work pictures when the owner has published no cuts', () => {

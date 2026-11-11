@@ -73,10 +73,13 @@ test('cms-populated', async ({ page, context, browserName }) => {
           })
         if (url.pathname === '/rest/v1/rpc/public_booking_catalog')
           return reply({
-            barbers: document.barbers.map((barber) => ({
+            barbers: document.barbers.map((barber, index) => ({
               ...barber,
               active: true,
               photo_path: document.photos[barber.id],
+              ...(index === 0
+                ? { tiktok: 'fixture.a', work: [`${barber.id}/${id(50)}.webp`] }
+                : {}),
             })),
             services,
           })
@@ -109,6 +112,14 @@ test('cms-populated', async ({ page, context, browserName }) => {
     await library.getByRole('button', { name: 'Startsida', exact: true }).click()
     await frame.getByAltText('Fixture salon photo 1', { exact: true }).first().waitFor()
     await frame.getByText('Fixture barber A', { exact: true }).first().waitFor()
+    await frame.getByAltText('Fixture cuts photo 1', { exact: true }).first().waitFor({
+      state: 'attached',
+    })
+    assert.equal(
+      await frame.locator('img[src*="/barber-work/"]').count(),
+      0,
+      "The CMS source must not hold a barber's work pictures",
+    )
     await frame
       .getByAltText('Fixture salon photo 1', { exact: true })
       .first()
@@ -214,6 +225,11 @@ test('cms-populated', async ({ page, context, browserName }) => {
       await live.waitForFunction(aboutAtTop)
       await live.getByText('Fixture barber A', { exact: true }).waitFor()
       await live.getByAltText('Fixture salon photo 1', { exact: true }).first().waitFor()
+      if (viewport.width === 1440)
+        await live
+          .locator('img[src*="/storage/v1/object/public/barber-work/"]')
+          .first()
+          .waitFor({ state: 'attached' })
       await live.screenshot({
         path: test.info().outputPath(`cms-native-${name}-about-${viewport.width}-reload.png`),
       })

@@ -183,12 +183,14 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
   // Distinguish loading, unpublished galleries and read failures; only real photos are interactive.
   const salonPhotos = useGallery('salon', props.galleryPort, dataActive)
   const cutPhotos = useGallery('cuts', props.galleryPort, dataActive)
+  // Studio stores only gallery, barber-photos and cms-library references, and a barber's own
+  // additions stay outside the CMS document.
   const cuts = useMemo(
     () =>
       cutPhotos.status === 'ready'
-        ? { ...cutPhotos, photos: cutsWithWork(cutPhotos.photos, roster) }
+        ? { ...cutPhotos, photos: cutsWithWork(cutPhotos.photos, nativeSource ? [] : roster) }
         : cutPhotos,
-    [cutPhotos, roster],
+    [cutPhotos, roster, nativeSource],
   )
 
   // Reviews list: server-published entries only. The offline fallback is intentionally empty.
@@ -586,7 +588,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
             const b = entry.barber
             const copy = stylistCopyFor(entry, lang)
             const active = props.mobile && selectedBarber === b.id
-            const tiktok = entry.tiktok ?? ''
+            const tiktok = nativeSource ? '' : (entry.tiktok ?? '')
             const tiktokTrack = tiktok === '' ? '' : ` ${active ? '1fr' : '0fr'}`
             const infoTransition = reducedMotion
               ? 'none'

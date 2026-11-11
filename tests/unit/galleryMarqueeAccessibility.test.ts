@@ -10,6 +10,7 @@ import { useEffect, useLayoutEffect, useState } from 'preact/hooks'
 import { useGallery } from '../../modules/public-web/src/about/gallery/useGallery'
 import { supabaseGalleryAdapter } from '../../modules/public-web/src/about/gallery/supabaseGallery'
 import type { GalleryPhoto } from '../../modules/public-web/src/about/gallery/port'
+import type * as NativeSurfaceModule from '../../modules/public-web/src/cms/NativeSurface'
 import {
   nodes as elements,
   mount,
@@ -19,10 +20,17 @@ import {
   type RenderedNode,
 } from './helpers/fakeHooks'
 
+const native = vi.hoisted(() => ({ source: false }))
+vi.mock('../../modules/public-web/src/cms/NativeSurface', async (original) => ({
+  ...(await original<typeof NativeSurfaceModule>()),
+  useNativeSource: () => native.source,
+}))
+
 beforeEach(reset)
 afterEach(() => {
   vi.useRealTimers()
   vi.unstubAllGlobals()
+  native.source = false
 })
 
 describe('gallery marquee interaction contract', () => {
@@ -154,8 +162,7 @@ function layout(): void {
   for (const [effect] of vi.mocked(useLayoutEffect).mock.calls.slice(-4)) effect()
 }
 
-/** A 400 px row of the plain photos (twelve tiles, 1344 px per loop half) after its first layout. */
-function measuredRow(): (selectedKey?: string | null) => RenderedNode[] {
+function stubResizeObserver(): void {
   vi.stubGlobal(
     'ResizeObserver',
     class {
@@ -163,9 +170,18 @@ function measuredRow(): (selectedKey?: string | null) => RenderedNode[] {
       disconnect = vi.fn()
     },
   )
+}
+
+/** Gives the plain row its 400 px width and 2688 px track (twelve tiles, 1344 px per loop half). */
+const measure = (): void =>
+  ref(1, { scrollWidth: 2688, parentElement: { clientWidth: 400 }, style: {} })
+
+/** The plain row after its first layout. */
+function measuredRow(): (selectedKey?: string | null) => RenderedNode[] {
+  stubResizeObserver()
   const row = firstRow(plainPhotos)
   row()
-  ref(1, { scrollWidth: 2688, parentElement: { clientWidth: 400 }, style: {} })
+  measure()
   layout()
   return row
 }
@@ -274,20 +290,32 @@ describe('gallery photo credit', () => {
 
 describe('gallery image window', () => {
   it('requests no photo before the row is measured, then only the tiles near its strip and their copies', () => {
-    vi.stubGlobal(
-      'ResizeObserver',
-      class {
-        observe = vi.fn()
-        disconnect = vi.fn()
-      },
-    )
+    stubResizeObserver()
     const row = firstRow(plainPhotos)
     expect(sources(row())).toEqual(holding())
     layout()
     expect(sources(row())).toEqual(holding())
-    ref(1, { scrollWidth: 2688, parentElement: { clientWidth: 400 }, style: {} })
+    measure()
     layout()
     expect(sources(row())).toEqual(holding(0, 1, 2, 5, 6, 7, 8, 11))
+  })
+
+  it('keeps every photo as the CMS source, before measurement and after tiles leave the window', () => {
+    native.source = true
+    vi.useFakeTimers()
+    stubResizeObserver()
+    const all = holding(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11)
+    const row = firstRow(plainPhotos)
+    expect(sources(row())).toEqual(all)
+    measure()
+    layout()
+    expect(sources(row())).toEqual(all)
+    ref(2, -300) // The track offset: tiles 0, 5, 6 and 11 leave the window.
+    row()
+    layout()
+    expect(vi.getTimerCount()).toBe(4)
+    vi.advanceTimersByTime(1500)
+    expect(sources(row())).toEqual(all)
   })
 
   it('keeps the photo of a tile that left the window for 1.5 s', () => {

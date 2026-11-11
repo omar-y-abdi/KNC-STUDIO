@@ -1,4 +1,4 @@
-import { useNativeChild } from '../cms/NativeSurface'
+import { useNativeChild, useNativeSource } from '../cms/NativeSurface'
 // GalleryMarquee — two counter-scrolling, draggable photo rows for an About gallery section.
 //
 // Behaviour (per spec):
@@ -14,7 +14,8 @@ import { useNativeChild } from '../cms/NativeSurface'
 //
 // The scroll transform is written straight to the track ref inside requestAnimationFrame, so the
 // motion causes NO React re-renders; only selection (rare) and the set of tiles holding a photo
-// (it changes when a tile crosses the window's edge, galleryWindow.ts) are component state.
+// (it changes when a tile crosses the window's edge, galleryWindow.ts) are component state. As the
+// CMS source every tile keeps its photo: Studio stores each captured tile's src.
 // prefers-reduced-motion disables the auto-scroll (dragging still works).
 
 import type { JSX } from 'preact'
@@ -86,6 +87,7 @@ export function resolvePointerEnd(
 
 function MarqueeRow(props: MarqueeRowProps): JSX.Element {
   const present = useNativeChild()
+  const source = useNativeSource()
   const rowRef = useRef<HTMLDivElement>(null)
   const trackRef = useRef<HTMLDivElement>(null)
   const offset = useRef(0)
@@ -544,7 +546,7 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
             >
               <div style={photoWrapStyle(props.c)}>
                 <img
-                  src={loaded.has(j) ? photo.url : undefined}
+                  src={source || loaded.has(j) ? photo.url : undefined}
                   alt={alt}
                   draggable={false}
                   style={IMG_STYLE}
