@@ -28,9 +28,10 @@ import {
   type TourProgress,
 } from '../../modules/staff-admin/src/tour/tourModel'
 import { paddedBox, scrollDelta, type Box } from '../../modules/staff-admin/src/tour/tourPlacement'
-import type { TourAnchor } from '../../modules/staff-admin/src/tour/tourSteps'
+import { TOURS, type TourAnchor } from '../../modules/staff-admin/src/tour/tourSteps'
 import {
   useStaffTour,
+  type RunningTour,
   type StaffTour,
   type TutorialControls,
 } from '../../modules/staff-admin/src/tour/useStaffTour'
@@ -43,7 +44,7 @@ import {
 import { SettingsView } from '../../modules/staff-admin/src/views/SettingsView'
 import { TutorialSection } from '../../modules/staff-admin/src/views/TutorialSection'
 import { WeekHoursCard } from '../../modules/staff-admin/src/views/WeekHoursCard'
-import { commit, nodes, render, reset, type RenderedNode } from './helpers/fakeHooks'
+import { commit, mount, nodes, render, reset, type RenderedNode } from './helpers/fakeHooks'
 
 vi.mock('preact/hooks', () => import('./helpers/fakeHooks'))
 vi.mock('wouter-preact', async (original) => ({
@@ -717,5 +718,102 @@ describe('the step scroll', () => {
     const moved: Box = { ...target, top: target.top - first }
     expect(Math.abs(delta(moved, topInset))).toBeLessThanOrEqual(1)
     expect(inBand(moved, topInset)).toBe(fits)
+  })
+})
+
+describe('the tour layer’s scroll guard', () => {
+  interface GuardEvent {
+    readonly touches?: { readonly length: number }
+    readonly preventDefault: () => void
+  }
+  type Listener = (event: GuardEvent) => void
+  interface Added {
+    readonly type: string
+    readonly listener: Listener
+    readonly options: unknown
+  }
+
+  const running: RunningTour = {
+    kind: 'running',
+    tour: 'overview',
+    steps: TOURS.overview.steps,
+    index: 0,
+  }
+
+  const mountLayer = (visualViewport?: { readonly scale: number }) => {
+    const added: Added[] = []
+    const removed: { readonly type: string; readonly listener: Listener }[] = []
+    vi.stubGlobal('window', {
+      ...(visualViewport === undefined ? {} : { visualViewport }),
+      matchMedia: () => ({
+        matches: false,
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+      }),
+      requestAnimationFrame: () => 1,
+      cancelAnimationFrame: () => undefined,
+      addEventListener: (type: string, listener: Listener, options?: unknown) => {
+        added.push({ type, listener, options })
+      },
+      removeEventListener: (type: string, listener: Listener) => {
+        removed.push({ type, listener })
+      },
+    })
+    render(() =>
+      TourLayer({
+        running,
+        dark: false,
+        lang: 'en',
+        s,
+        onNext: vi.fn(),
+        onBack: vi.fn(),
+        onSkip: vi.fn(),
+        onLost: vi.fn(),
+        setMenuOpen: vi.fn(),
+      }),
+    )
+    const unmount = mount()
+    const on = (type: string): Added => {
+      const entry = added.find((item) => item.type === type)
+      if (entry === undefined) throw new Error(`No ${type} listener`)
+      return entry
+    }
+    return { on, removed, unmount }
+  }
+
+  it.each([
+    { name: 'one finger, page at its own size', fingers: 1, viewport: { scale: 1 }, held: true },
+    { name: 'one finger, no visualViewport', fingers: 1, viewport: undefined, held: true },
+    { name: 'one finger, scale 1.005', fingers: 1, viewport: { scale: 1.005 }, held: true },
+    { name: 'two fingers', fingers: 2, viewport: { scale: 1 }, held: false },
+    { name: 'one finger on a zoomed page', fingers: 1, viewport: { scale: 1.5 }, held: false },
+  ])('touchmove, $name: prevented $held', ({ fingers, viewport, held }) => {
+    const touch = { touches: { length: fingers }, preventDefault: vi.fn() }
+
+    mountLayer(viewport).on('touchmove').listener(touch)
+
+    expect(touch.preventDefault).toHaveBeenCalledTimes(held ? 1 : 0)
+  })
+
+  it('still prevents every wheel', () => {
+    const wheel = { preventDefault: vi.fn() }
+
+    mountLayer({ scale: 1.5 }).on('wheel').listener(wheel)
+
+    expect(wheel.preventDefault).toHaveBeenCalledTimes(1)
+  })
+
+  it('listens actively and removes the same listeners when it unmounts', () => {
+    const layer = mountLayer({ scale: 1 })
+
+    expect(layer.on('touchmove').options).toEqual({ passive: false })
+    expect(layer.on('wheel').options).toEqual({ passive: false })
+    expect(layer.removed).toEqual([])
+
+    layer.unmount()
+    for (const type of ['keydown', 'wheel', 'touchmove'])
+      expect(layer.removed.find((item) => item.type === type)?.listener).toBe(
+        layer.on(type).listener,
+      )
   })
 })

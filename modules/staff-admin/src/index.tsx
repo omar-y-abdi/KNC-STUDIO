@@ -9,10 +9,12 @@
 
 import type { JSX } from 'preact'
 import { lazy } from 'preact/compat'
+import { useEffect } from 'preact/hooks'
 import { Route, Switch } from 'wouter-preact'
 import { LoginRoute } from './LoginRoute'
 import { AdminLazySurface } from './AdminLazySurface'
 import { adminText } from './adminStrings'
+import { capInputZoom } from './inputZoom'
 const ResetPasswordRoute = lazy(() =>
   import('./ResetPasswordRoute').then((module) => ({ default: module.ResetPasswordRoute })),
 )
@@ -29,6 +31,7 @@ const AdminApp = lazy(() => import('./AdminApp').then((module) => ({ default: mo
 /** Default export so `Root` can `lazy(() => import('./admin'))` and get this component. */
 export default function AdminEntry(): JSX.Element {
   const t = adminText('sv')
+  useEffect(() => capInputZoom(), [])
   return (
     <AdminLazySurface
       loadingLabel={t.lazyLoading}

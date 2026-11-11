@@ -21,7 +21,7 @@ import {
 } from '../../modules/staff-admin/src/views/ScheduleDayGrid'
 import { ScheduleView } from '../../modules/staff-admin/src/views/ScheduleView'
 import { ServicesView } from '../../modules/staff-admin/src/views/ServicesView'
-import { nodes, render, reset, type RenderedNode } from './helpers/fakeHooks'
+import { commit, mount, nodes, render, reset, type RenderedNode } from './helpers/fakeHooks'
 
 vi.mock('preact/hooks', () => import('./helpers/fakeHooks'))
 vi.mock('wouter-preact', async (original) => ({
@@ -50,6 +50,8 @@ vi.mock('../../modules/staff-admin/src/useTheme', () => ({
 }))
 const roster = vi.hoisted(() => vi.fn())
 vi.mock('../../modules/staff-admin/src/useBarbers', () => ({ useBarbers: roster }))
+const capInputZoom = vi.hoisted(() => vi.fn())
+vi.mock('../../modules/staff-admin/src/inputZoom', () => ({ capInputZoom }))
 
 const s = buildAdminStyles(palette(false), false)
 const sv = adminText('sv')
@@ -313,5 +315,36 @@ describe('the panel’s lazy surface', () => {
     expect(fallback.map((node) => node.type)).toEqual(['div', LazyLoadingMessage])
     expect(fallback[0]?.props['style']).toEqual({ opacity: 0 })
     expect(fallback[1]?.props).toEqual({ label: 'loading', overlay: false, minHeight: '100vh' })
+  })
+})
+
+describe('the staff entry and input zoom', () => {
+  const undo = vi.fn()
+  beforeEach(() => {
+    capInputZoom.mockReset()
+    capInputZoom.mockReturnValue(undo)
+    undo.mockReset()
+  })
+
+  it('caps input zoom once on mount and undoes it on unmount', () => {
+    render(() => AdminEntry())
+    const unmount = mount()
+
+    expect(capInputZoom).toHaveBeenCalledTimes(1)
+    expect(capInputZoom).toHaveBeenCalledWith()
+    expect(undo).not.toHaveBeenCalled()
+
+    unmount()
+    expect(undo).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the one cap across re-renders', () => {
+    render(() => AdminEntry())
+    commit()
+    render(() => AdminEntry())
+    commit()
+
+    expect(capInputZoom).toHaveBeenCalledTimes(1)
+    expect(undo).not.toHaveBeenCalled()
   })
 })
