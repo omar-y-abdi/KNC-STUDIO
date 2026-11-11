@@ -926,7 +926,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
                         {b.name}
                       </span>
                       <span style="font-size:11.5px;opacity:.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-                        @{b.ig}
+                        {b.ig === '' ? null : `@${b.ig}`}
                       </span>
                     </span>
                     {b.selected ? (

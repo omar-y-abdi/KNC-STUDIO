@@ -72,6 +72,9 @@ const DEFAULT_SEO_TEMPLATES: Readonly<Record<Lang, SeoSettings>> = {
   },
 }
 
+/** The studio's Instagram handle, credited on the owner's cuts pictures. */
+export const STUDIO_INSTAGRAM = 'bnbstudio_gbg'
+
 const DEFAULT_BUSINESS_NAME = 'Blade & Blend Studio'
 const DEFAULT_BUSINESS_CITY = 'Göteborg'
 

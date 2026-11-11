@@ -25,6 +25,10 @@ export interface RosterBarber {
   readonly copy: BarberCopy | null
   /** Resolved public URL of the barber's profile photo, or `null` (→ the placeholder avatar). */
   readonly photoUrl: string | null
+  /** TikTok handle; absent means none. */
+  readonly tiktok?: string
+  /** Public URLs of the barber's visible work pictures, newest first; absent means none. */
+  readonly work?: readonly string[]
 }
 
 export interface BarbersPort {

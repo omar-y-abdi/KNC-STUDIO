@@ -236,7 +236,14 @@ export const publicServiceRow = z.object({
 export type PublicServiceRow = z.infer<typeof publicServiceRow>
 
 export const publicBookingCatalogResponse = z.object({
-  barbers: z.array(publicBarberRow.extend({ photo_path: z.string().nullable() })),
+  barbers: z.array(
+    publicBarberRow.extend({
+      photo_path: z.string().nullable(),
+      // Later additions: an older function omits them, and a malformed value never fails booking.
+      tiktok: z.string().optional().catch(undefined),
+      work: z.array(z.string()).optional().catch(undefined),
+    }),
+  ),
   services: z.array(publicServiceRow),
 })
 
