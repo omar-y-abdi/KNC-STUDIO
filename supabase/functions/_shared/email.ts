@@ -357,10 +357,10 @@ export function defaultEmailTemplate(
   return DEFAULTS[template][lang]
 }
 
-// The distance contracts act wants these on the durable confirmation; the owner cannot edit them.
+// One line by the owner's ruling: it points to the terms, and the owner cannot edit it.
 const CONFIRMATION_SMALL_PRINT: Record<EmailLanguage, string> = {
-  sv: 'Ångerrätt: du får ångra bokningen inom 14 dagar från den dag du bokade, utan kostnad, genom att avboka under Mina bokningar eller kontakta oss. Att utebli räknas inte som att ångra, och när behandlingen har utförts kan bokningen inte längre ångras. Betalning: du betalar i salongen efter behandlingen, med kort, Swish eller kontanter. Vid sen avbokning eller utebliven tid kan barberaren begära betalning för den bokade tiden, högst behandlingens pris. Vid tvist kan du vända dig till Allmänna reklamationsnämnden (ARN), www.arn.se. Fullständiga villkor och ångerblankett:',
-  en: 'Right of withdrawal: you may withdraw from the booking within 14 days of the day you booked, free of charge, by cancelling in My appointments or by contacting us. Not turning up does not count as withdrawing, and once the treatment has been carried out the booking can no longer be withdrawn. Payment: you pay at the salon after your treatment, by card, Swish or cash. After a late cancellation or a no-show, the barber may ask you to pay for the booked time, at most the price of the treatment. In a dispute you can turn to the National Board for Consumer Disputes (ARN), www.arn.se. Full terms and withdrawal form:',
+  sv: 'Villkor och ångerrätt hittar du på',
+  en: 'See our terms and right of withdrawal at',
 }
 
 export function confirmationSmallPrint(

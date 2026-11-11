@@ -465,12 +465,14 @@ describe('the small print of the customer confirmation', () => {
     expect(site).toBe('https://bladeblendstudio.se')
     expect(smallPrint('sv').href).toBe('https://bladeblendstudio.se/terms')
     expect(smallPrint('en').href).toBe('https://bladeblendstudio.se/terms?lang=en')
-    expect(smallPrint('sv').text).toMatch(/^Ångerrätt: du får ångra bokningen inom 14 dagar /)
-    expect(smallPrint('sv').text).toMatch(/ Fullständiga villkor och ångerblankett:$/)
-    expect(smallPrint('en').text).toMatch(
-      /^Right of withdrawal: you may withdraw from the booking /,
-    )
-    expect(smallPrint('en').text).toMatch(/ Full terms and withdrawal form:$/)
+    expect(smallPrint('sv').text).toBe('Villkor och ångerrätt hittar du på')
+    expect(smallPrint('en').text).toBe('See our terms and right of withdrawal at')
+    // The owner's ruling: one sentence of at most ten words, the link included.
+    for (const lang of ['sv', 'en'] as const) {
+      const { text, href } = smallPrint(lang)
+      expect(`${text} ${href}`.split(' ').length, lang).toBeLessThanOrEqual(10)
+      expect(text, lang).not.toMatch(/[.:!?]/)
+    }
     const sender = readFileSync('supabase/functions/send-confirmation/index.ts', 'utf8')
     expect(sender).toContain(
       'const smallPrint = confirmationSmallPrint(templateName, lang, new URL(ctaHref).origin)',
