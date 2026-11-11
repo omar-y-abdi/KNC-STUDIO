@@ -23,6 +23,8 @@ import {
   type EmailFormStatus,
 } from './emailChangeForm'
 import { ReviewModerationSection } from './ReviewModerationSection'
+import type { TutorialControls } from '../tour/useStaffTour'
+import { TutorialSection } from './TutorialSection'
 import type { AdminStylesBundle } from './viewTypes'
 
 const defaultPort = { list: listSiteSettings, save: saveSiteSetting }
@@ -34,6 +36,7 @@ export interface SettingsViewProps {
   readonly s: AdminStylesBundle
   readonly profile: AdminProfile
   readonly port?: SettingsViewPort
+  readonly tutorial?: TutorialControls
 }
 
 type FormStatus =
@@ -339,6 +342,18 @@ export function SettingsView(props: SettingsViewProps): JSX.Element {
             {passwordStatus.kind === 'submitting' ? t.changePwSaving : t.changePwSubmit}
           </button>
         </form>
+
+        {props.tutorial === undefined ? null : (
+          <>
+            <hr style={dividerStyle} />
+            <TutorialSection
+              lang={props.lang}
+              s={s}
+              headingStyle={subheadingStyle}
+              controls={props.tutorial}
+            />
+          </>
+        )}
 
         {isOwner ? (
           <>

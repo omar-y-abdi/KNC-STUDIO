@@ -10,8 +10,16 @@ import type { Lang } from '@bladeblend/public-web/localization'
 import { adminText } from '../adminStrings'
 import { INVISIBLE } from '../adminStyles'
 import { getBarberPhoto, removeBarberPhoto, uploadBarberPhoto } from '../adapters/barberPhotoAdmin'
+import {
+  barberProfilePort,
+  orderedProfileOperation,
+  type BarberProfilePort,
+} from '../adapters/barberProfile'
 import { ConfirmDialog } from '../ConfirmDialog'
+import type { BarberSelfProfile } from '../types'
+import { ProfileDetailsCard } from './ProfileDetailsCard'
 import type { AdminBarberId, AdminStylesBundle } from './viewTypes'
+import { WorkPhotosCard } from './WorkPhotosCard'
 
 export interface ProfileViewProps {
   readonly dark: boolean
@@ -19,7 +27,11 @@ export interface ProfileViewProps {
   readonly s: AdminStylesBundle
   readonly barberId: AdminBarberId
   readonly barberName: string
+  readonly isOwner: boolean
+  /** After a saved name, so the headings, the greeting and the owner's selector show it. */
+  readonly onRosterChanged: () => void
   readonly port?: ProfileViewPort
+  readonly profilePort?: BarberProfilePort
 }
 
 const defaultProfilePort = { getBarberPhoto, removeBarberPhoto, uploadBarberPhoto }
@@ -130,7 +142,7 @@ export function ProfileView(props: ProfileViewProps): JSX.Element {
   const mutationBusy = busy || deleteBusy
   const targetLoaded = loaded && loadedGeneration === barberScope.current.generation
 
-  return (
+  const photoCard = (
     <section style={s.card} aria-labelledby="profile-heading">
       <h2 id="profile-heading" style={s.sectionTitle}>
         {t.profileTitle} · {props.barberName}
@@ -180,6 +192,7 @@ export function ProfileView(props: ProfileViewProps): JSX.Element {
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', flex: '1 1 200px' }}>
             <label
+              data-tour={url === null ? 'profile-upload' : undefined}
               style={{
                 ...s.primaryBtn,
                 textAlign: 'center',
@@ -190,6 +203,7 @@ export function ProfileView(props: ProfileViewProps): JSX.Element {
               {busy ? t.profileUploading : url !== null ? t.profileReplace : t.profileUpload}
               <input
                 ref={fileRef}
+                id="profile-photo-input"
                 type="file"
                 accept="image/jpeg,image/png,image/webp,image/avif,image/heic,image/heif"
                 disabled={mutationBusy}
@@ -237,5 +251,111 @@ export function ProfileView(props: ProfileViewProps): JSX.Element {
         />
       ) : null}
     </section>
+  )
+
+  return (
+    <>
+      {photoCard}
+      <ProfileCards
+        key={props.barberId}
+        dark={props.dark}
+        lang={lang}
+        s={s}
+        barberId={props.barberId}
+        barberName={props.barberName}
+        isOwner={props.isOwner}
+        onRosterChanged={props.onRosterChanged}
+        port={props.profilePort ?? barberProfilePort}
+      />
+    </>
+  )
+}
+
+interface ProfileCardsProps {
+  readonly dark: boolean
+  readonly lang: Lang
+  readonly s: AdminStylesBundle
+  readonly barberId: AdminBarberId
+  readonly barberName: string
+  readonly isOwner: boolean
+  readonly onRosterChanged: () => void
+  readonly port: BarberProfilePort
+}
+
+type ProfileLoad =
+  | { readonly kind: 'loading' }
+  | { readonly kind: 'failed' }
+  | { readonly kind: 'loaded'; readonly profile: BarberSelfProfile }
+
+/** The details and work cards, read once per barber; mounted per barber id by `ProfileView`. */
+function ProfileCards(props: ProfileCardsProps): JSX.Element {
+  const { s } = props
+  const t = adminText(props.lang)
+  const [load, setLoad] = useState<ProfileLoad>({ kind: 'loading' })
+
+  useEffect(() => {
+    let active = true
+    void orderedProfileOperation(props.barberId, () => props.port.read(props.barberId)).then(
+      (result) => {
+        if (active)
+          setLoad(result.ok ? { kind: 'loaded', profile: result.value } : { kind: 'failed' })
+      },
+    )
+    return () => {
+      active = false
+    }
+  }, [props.barberId, props.port])
+
+  if (load.kind === 'loading') {
+    const placeholder = (): JSX.Element => (
+      <section style={{ ...s.card, ...INVISIBLE }}>
+        <p style={s.emptyState}>{t.profileLoading}</p>
+      </section>
+    )
+    return (
+      <>
+        {placeholder()}
+        {placeholder()}
+      </>
+    )
+  }
+  if (load.kind === 'failed') {
+    const failed = (title: string): JSX.Element => (
+      <section style={s.card}>
+        <h2 style={s.sectionTitle}>
+          {title} · {props.barberName}
+        </h2>
+        <div style={{ ...s.emptyState, color: s.errorText.color }}>{t.profileDetailsLoadError}</div>
+      </section>
+    )
+    return (
+      <>
+        {failed(t.profileDetailsTitle)}
+        {failed(t.workTitle)}
+      </>
+    )
+  }
+  return (
+    <>
+      <ProfileDetailsCard
+        lang={props.lang}
+        s={s}
+        barberId={props.barberId}
+        barberName={props.barberName}
+        initial={load.profile.details}
+        port={props.port}
+        onNameSaved={props.onRosterChanged}
+      />
+      <WorkPhotosCard
+        dark={props.dark}
+        lang={props.lang}
+        s={s}
+        barberId={props.barberId}
+        barberName={props.barberName}
+        isOwner={props.isOwner}
+        initial={load.profile.work}
+        port={props.port}
+      />
+    </>
   )
 }

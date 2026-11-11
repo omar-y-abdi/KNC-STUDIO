@@ -34,6 +34,10 @@ import {
   tabFromAdminUrl,
   withAdminNavigationHistoryState,
 } from './navigationState'
+import type { AdminTab as Tab } from './adminTabs'
+import type { TourProgressPort } from './adapters/tourProgress'
+import { TourLayer } from './tour/TourLayer'
+import { useStaffTour } from './tour/useStaffTour'
 import type { AdminBarberId, AdminProfile } from './types'
 import './AdminShell.css'
 
@@ -60,10 +64,9 @@ export interface AdminShellProps {
   readonly toggleMode: () => void
   readonly setLang: (lang: Lang) => void
   readonly onSignOut: () => void
+  /** Tutorial progress of a barber account; without it there is no tutorial. */
+  readonly tourProgress?: TourProgressPort
 }
-
-/** The tabs a barber can see; the owner gets all of them. */
-type Tab = 'bookings' | 'schedule' | 'services' | 'profile' | 'allBookings' | 'barbers' | 'settings'
 
 interface TabDef {
   readonly id: Tab
@@ -197,6 +200,14 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
     return () => window.removeEventListener('popstate', onPopState)
   }, [visibleTabIds])
 
+  const staffTour = useStaffTour({
+    port: props.tourProgress,
+    tab,
+    selectTab,
+    setMenuOpen: setMobileMenuOpen,
+  })
+  const touring = staffTour.tour !== null || undefined
+
   // The roster (for the owner's barber selector + resolving ids -> names in views). A barber doesn't
   // strictly need it, but the active-roster read is harmless (RLS lets them read active barbers).
   const { barbers, loading: rosterLoading, reload: reloadBarbers } = useBarbers()
@@ -302,10 +313,24 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
             s={s}
             barberId={effectiveBarberId}
             barberName={effectiveBarberName}
+            isOwner={isOwner}
+            onRosterChanged={() => {
+              // A rename can reorder the roster; keep the owner's default barber selected.
+              setActingBarberId(effectiveBarberId)
+              void reloadBarbers()
+            }}
           />
         )
       case 'settings':
-        return <SettingsView dark={props.dark} lang={props.lang} s={s} profile={profile} />
+        return (
+          <SettingsView
+            dark={props.dark}
+            lang={props.lang}
+            s={s}
+            profile={profile}
+            {...(staffTour.tutorial === null ? {} : { tutorial: staffTour.tutorial })}
+          />
+        )
     }
   }
 
@@ -315,6 +340,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
       <button
         key={def.id}
         type="button"
+        data-tour={'nav-' + def.id}
         onClick={() => {
           if (navigationLocked && !active) return
           selectTab(def.id)
@@ -344,7 +370,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
 
   return (
     <div style={s.appShell} class="knc-admin-shell">
-      <nav style={s.sidebar} class="knc-admin-sidebar" aria-label={t.ariaNav}>
+      <nav style={s.sidebar} class="knc-admin-sidebar" aria-label={t.ariaNav} inert={touring}>
         <button
           type="button"
           class="knc-admin-mobile-menu-toggle"
@@ -383,6 +409,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
         </div>
         <div
           id="admin-nav-tabs"
+          data-tour="nav"
           style={s.navList}
           class={`knc-admin-navlist${mobileMenuOpen ? ' knc-admin-navlist-open' : ''}`}
         >
@@ -416,7 +443,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
         </button>
       </nav>
 
-      <main style={s.content}>
+      <main style={s.content} inert={touring}>
         <header style={s.topbar} class="knc-admin-topbar">
           {/* Barbers see their first name on the left; the owner's context lives in the selector. */}
           {!isOwner && (
@@ -472,6 +499,19 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
           {renderView()}
         </Suspense>
       </main>
+      {staffTour.tour === null ? null : (
+        <TourLayer
+          running={staffTour.tour.running}
+          dark={props.dark}
+          lang={props.lang}
+          s={s}
+          onNext={staffTour.tour.next}
+          onBack={staffTour.tour.back}
+          onSkip={staffTour.tour.skip}
+          onLost={staffTour.tour.lost}
+          setMenuOpen={setMobileMenuOpen}
+        />
+      )}
     </div>
   )
 }

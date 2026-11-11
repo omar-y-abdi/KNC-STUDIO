@@ -30,6 +30,7 @@ import {
   type ServicesViewPort,
 } from '../../modules/staff-admin/src/views/ServicesView'
 import { ProfileView, type ProfileViewPort } from '../../modules/staff-admin/src/views/ProfileView'
+import type { BarberProfilePort } from '../../modules/staff-admin/src/adapters/barberProfile'
 import {
   BookingsView,
   type BookingsViewPort,
@@ -53,6 +54,12 @@ import {
   useCalendarSync,
   type UseCalendarSync,
 } from '../../modules/staff-admin/src/calendar/useCalendarSync'
+import type { TourProgressPort } from '../../modules/staff-admin/src/adapters/tourProgress'
+import {
+  FRESH_PROGRESS,
+  TOUR_IDS,
+  type TourProgress,
+} from '../../modules/staff-admin/src/tour/tourModel'
 
 export { h, render }
 
@@ -504,6 +511,48 @@ export function mountAdminNavigationHarness(role: 'owner' | 'barber'): void {
   )
 }
 
+interface StaffTourWrite {
+  readonly seen: readonly string[]
+  readonly removed: boolean
+}
+
+let staffTourWrites: StaffTourWrite[] = []
+
+/** Every tutorial progress the staff tour harness saved, oldest first. */
+export function staffTourHarnessWrites(): readonly StaffTourWrite[] {
+  return staffTourWrites
+}
+
+/** The barber's shell with an in-memory tutorial port that starts from fresh progress. */
+export function mountStaffTourHarness(): void {
+  const target = root()
+  staffTourWrites = []
+  let stored: TourProgress = FRESH_PROGRESS
+  const port: TourProgressPort = {
+    read: async () => ok(stored),
+    write: async (progress) => {
+      staffTourWrites.push({
+        seen: TOUR_IDS.filter((id) => progress.seen.has(id)),
+        removed: progress.removed,
+      })
+      stored = progress
+      return ok(undefined)
+    },
+  }
+  render(
+    h(AdminShell, {
+      profile: barber,
+      dark: false,
+      lang: 'en',
+      toggleMode: () => undefined,
+      setLang: () => undefined,
+      onSignOut: () => undefined,
+      tourProgress: port,
+    }),
+    target,
+  )
+}
+
 /**
  * Stored copy whose body and links the e2e check finds inside the sandboxed iframe: the relative
  * placeholder a secret link becomes, and an absolute link as plain kinds keep it.
@@ -923,6 +972,25 @@ export function mountAdminMutationHarness(
       return ok({ pending: false })
     },
   }
+  // The details and work cards load an empty profile and issue no request.
+  const barberProfilePort: BarberProfilePort = {
+    read: async () => ({
+      ok: true,
+      value: { details: { name: '', ig: '', tiktok: '', bioSv: '', bioEn: '' }, work: [] },
+    }),
+    save: async () => {
+      throw new Error('unexpected profile save')
+    },
+    uploadWork: async () => {
+      throw new Error('unexpected work upload')
+    },
+    removeWork: async () => {
+      throw new Error('unexpected work removal')
+    },
+    setWorkHidden: async () => {
+      throw new Error('unexpected work hide')
+    },
+  }
   const bookingsPort: BookingsViewPort = {
     listBookings: async (id) => ok(id === 'b' ? [] : [{ ...booking }]),
     cancelBooking: async () => {
@@ -962,7 +1030,13 @@ export function mountAdminMutationHarness(
     return kind === 'services'
       ? h(ServicesView, { ...props, port: servicesPort })
       : kind === 'profile'
-        ? h(ProfileView, { ...props, port: profilePort })
+        ? h(ProfileView, {
+            ...props,
+            isOwner: false,
+            onRosterChanged: () => undefined,
+            port: profilePort,
+            profilePort: barberProfilePort,
+          })
         : h(BookingsView, {
             ...props,
             port: bookingsPort,

@@ -46,6 +46,31 @@ export type NewBarber = Omit<AdminBarber, 'active'>
 /** Fields the owner may edit on an existing barber (id is the immutable key). */
 export type BarberEdit = Omit<AdminBarber, 'id'>
 
+/** What a barber edits of their own public profile in the Profil tab. */
+export interface BarberProfileDetails {
+  readonly name: string
+  readonly ig: string
+  readonly tiktok: string
+  readonly bioSv: string
+  readonly bioEn: string
+}
+
+/** A picture of a barber's work; `path` is its object in the `barber-work` bucket. */
+export interface BarberWorkPhoto {
+  readonly id: string
+  readonly path: string
+  readonly hidden: boolean
+}
+
+export interface BarberSelfProfile {
+  readonly details: BarberProfileDetails
+  /** Newest first. */
+  readonly work: readonly BarberWorkPhoto[]
+}
+
+export type ProfileSaveFailure =
+  'invalid_name' | 'invalid_handle' | 'invalid_bio' | 'forbidden' | 'failed'
+
 /** A per-barber service-menu row as the admin manages it (the full row, incl. inactive). */
 export interface AdminService {
   readonly id: string
@@ -178,6 +203,11 @@ export function ok<T>(value: T): AdminResult<T> {
 export function err<T>(kind: AdminError['kind'], message: string): AdminResult<T> {
   return { ok: false, error: { kind, message } }
 }
+
+/** Not an `AdminResult`: the profile cards word each failure code themselves, and no `AdminError`
+ * kind names a form field. */
+export type ProfileResult<T, E extends string> =
+  { readonly ok: true; readonly value: T } | { readonly ok: false; readonly error: E }
 
 /** Build the `error` branch of a structured outcome (availability mutation / barber delete). */
 export function outcomeError(

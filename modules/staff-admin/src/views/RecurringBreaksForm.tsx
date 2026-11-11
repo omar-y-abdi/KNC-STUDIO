@@ -47,7 +47,10 @@ export function RecurringBreaksForm(props: RecurringBreaksFormProps): JSX.Elemen
         marginTop: '14px',
       }}
     >
-      <label style={{ display: 'inline-flex', alignItems: 'center', gap: '7px' }}>
+      <label
+        data-tour="breaks"
+        style={{ display: 'inline-flex', alignItems: 'center', gap: '7px' }}
+      >
         <input
           type="checkbox"
           checked={showRecurringBreakForm}

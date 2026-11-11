@@ -69,6 +69,7 @@ export function TimeOffCard(props: TimeOffCardProps): JSX.Element {
       <p style={s.sectionLead}>{t.scheduleTimeOffLead}</p>
 
       <div
+        data-tour="time-off"
         style={{
           display: narrow ? 'grid' : 'flex',
           // On narrow screens a single column stacks Från/Till vertically so the date inputs
