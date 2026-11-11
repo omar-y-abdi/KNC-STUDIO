@@ -4,6 +4,7 @@
 // default popup renders exactly as the mock did.
 
 import type { JSX } from 'preact'
+import { useLayoutEffect, useRef } from 'preact/hooks'
 import type { BookingStrings, Lang } from '../i18n/index'
 import { Dialog, type DialogProps } from '../ui/Dialog'
 import { langHref } from '../ui/langHref'
@@ -12,6 +13,29 @@ import { sheetBackdropStyle, type BookingStyles } from './bookingStyles'
 import type { FieldErrors } from './validation'
 
 const BACKDROP_STYLE = sheetBackdropStyle(40)
+
+/** While the pending layer covers `card`: the card at its top, the focus inside it. The release
+ * gives back the scroll position, and the focus the inert form dropped. */
+function holdCard(card: HTMLElement): () => void {
+  const top = card.scrollTop
+  const before = document.activeElement
+  const dropped =
+    before === null ||
+    before === document.body ||
+    (card.contains(before) && before.closest('[inert]') !== null)
+  card.scrollTop = 0
+  if (dropped) card.focus({ preventScroll: true })
+  return () => {
+    card.scrollTop = top
+    if (
+      dropped &&
+      document.activeElement === card &&
+      before instanceof HTMLElement &&
+      card.contains(before)
+    )
+      before.focus({ preventScroll: true })
+  }
+}
 
 export interface DetailsDialogProps {
   readonly cms?: DialogProps['cms']
@@ -28,7 +52,8 @@ export interface DetailsDialogProps {
   readonly phoneValue: string
   readonly emailValue: string
   readonly bookDisabled: boolean
-  /** A submit is on its way: `aria-busy` only; the button looks and works as before. */
+  /** A submit is on its way: the pending layer covers the card, whose form is inert meanwhile; the
+   * button itself only gets `aria-busy`. */
   readonly bookBusy: boolean
   /** Per-field error flags from the last failed submit (all false = pristine popup). */
   readonly fieldErrors: FieldErrors
@@ -48,6 +73,13 @@ export interface DetailsDialogProps {
 export function DetailsDialog(props: DetailsDialogProps): JSX.Element {
   const { t, s } = props
   const e = props.fieldErrors
+  const busy = props.bookBusy
+  // On an existing control: a ref makes an element required in the CMS, and this one already is.
+  const closeRef = useRef<HTMLButtonElement>(null)
+  useLayoutEffect(() => {
+    const card = busy ? closeRef.current?.closest<HTMLElement>('[role="dialog"]') : null
+    return card ? holdCard(card) : undefined
+  }, [busy])
 
   // A field's input swaps to the error style (red border + ring) when flagged; a localized red
   // note renders directly under it inside the same label column. When not flagged, the markup
@@ -92,9 +124,9 @@ export function DetailsDialog(props: DetailsDialogProps): JSX.Element {
       backdropClass="knc-sheet-backdrop"
       backdropStyle={BACKDROP_STYLE}
       cardClass="knc-sheet-card"
-      cardStyle={s.overlayCardStyle}
+      cardStyle={busy ? { ...s.overlayCardStyle, overflow: 'hidden' } : s.overlayCardStyle}
     >
-      <div style={s.overlayHeaderStyle}>
+      <div style={s.overlayHeaderStyle} inert={busy}>
         {/* A heading by role, not tag: the published presentation stores it as a span. */}
         <span
           id="knc-details-title"
@@ -104,11 +136,16 @@ export function DetailsDialog(props: DetailsDialogProps): JSX.Element {
         >
           {t.yourDetails}
         </span>
-        <button onClick={props.onClose} style={s.closeBtnStyle} aria-label={props.closeLabel}>
+        <button
+          ref={closeRef}
+          onClick={props.onClose}
+          style={s.closeBtnStyle}
+          aria-label={props.closeLabel}
+        >
           ×
         </button>
       </div>
-      <div style="padding:16px 18px 18px;">
+      <div style="padding:16px 18px 18px;" inert={busy}>
         <div style={s.summaryBoxStyle}>
           <span style="font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;opacity:.55;">
             {t.summary}
@@ -171,6 +208,31 @@ export function DetailsDialog(props: DetailsDialogProps): JSX.Element {
           {t.book}
         </button>
       </div>
+      {busy ? (
+        <div
+          key="booking-pending"
+          class="knc-pending"
+          role="status"
+          aria-live="polite"
+          style={s.pendingStyle}
+        >
+          <div class="knc-pending-body" style={s.pendingBodyStyle}>
+            <div aria-hidden="true" style={s.pendingIndicatorStyle}>
+              <div class="knc-pending-orbit" style={s.pendingOrbitStyle}>
+                <div class="knc-pending-comet" style={s.pendingCometStyle}></div>
+                <div class="knc-pending-head" style={s.pendingHeadStyle}></div>
+              </div>
+              <div class="knc-pending-disc" style={s.pendingDiscStyle}>
+                <img src="/icons/calendar.svg" alt="" style={s.pendingIconStyle} />
+              </div>
+            </div>
+            <div style={s.pendingTitleStyle}>{t.bookingInProgress}</div>
+            <div style={s.pendingSubStyle}>
+              {props.sumWhen} · {props.sumService}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </Dialog>
   )
 }

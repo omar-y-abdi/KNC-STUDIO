@@ -465,3 +465,114 @@ test('verified profile hydration remains available with optional storage off', a
   await page.goto(harnessOrigin)
   await values(await details(page), contact)
 })
+
+// The sheet says the booking is on its way, for at least 900 ms unless reduced motion is asked
+// for; the confirmation's check then plays once and rests as before. Reduced motion has no
+// minimum, so there the answer is held back while the sheet is looked at.
+for (const reducedMotion of ['no-preference', 'reduce'])
+  test(`the details sheet shows the booking on its way, then the check lands (${reducedMotion})`, async ({
+    page,
+    context,
+  }) => {
+    const moving = reducedMotion === 'no-preference'
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.emulateMedia({ reducedMotion })
+    await setup(context)
+    let release = () => undefined
+    const gate = new Promise((resolve) => {
+      release = resolve
+    })
+    let held = false
+    if (!moving)
+      await context.route('**/api/bookings', async (route) => {
+        held = true
+        await gate
+        await route.fallback()
+      })
+    await page.goto(harnessOrigin)
+    const fields = await details(page)
+    for (const [index, value] of Object.values(contact).entries())
+      await fields.nth(index).fill(value)
+    const dialog = page.getByRole('dialog')
+    const book = dialog.getByRole('button', { name: 'Boka tid', exact: true })
+    // Times from the press; the check's animations as they are in the commit that shows it.
+    await page.evaluate(() => {
+      const doc = globalThis.document
+      const seen = { pressedAt: 0, pendingAt: 0, confirmedAt: 0, pendingWithConfirmation: false }
+      globalThis.bookingSeen = seen
+      doc.addEventListener(
+        'click',
+        (event) => {
+          if (!seen.pressedAt && event.target.closest('button')?.textContent === 'Boka tid')
+            seen.pressedAt = globalThis.performance.now()
+        },
+        true,
+      )
+      const observer = new globalThis.MutationObserver(() => {
+        if (!seen.pendingAt && doc.querySelector('.knc-pending'))
+          seen.pendingAt = globalThis.performance.now()
+        const title = doc.getElementById('knc-booked-title')
+        if (!title) return
+        observer.disconnect()
+        seen.confirmedAt = globalThis.performance.now()
+        seen.pendingWithConfirmation = doc.querySelector('.knc-pending') !== null
+        const disc = title.previousElementSibling
+        globalThis.checkAnimations = [
+          ...disc.getAnimations(),
+          ...disc.firstElementChild.getAnimations(),
+        ]
+      })
+      observer.observe(doc.body, { childList: true, subtree: true })
+    })
+    await book.click()
+    if (!moving) {
+      await expect.poll(() => held).toBe(true)
+      const pending = dialog.getByRole('status').filter({ hasText: 'Bokar din tid …' })
+      await expect(pending).toBeVisible()
+      await expect(pending).toContainText(', 10:00 · ')
+      await expect(book).toHaveAttribute('aria-busy', 'true')
+      release()
+    }
+    await expect(
+      page.getByRole('heading', { name: 'Tack — din tid är bokad!', exact: true }),
+    ).toBeVisible()
+    const result = await page.evaluate(async () => {
+      const animations = globalThis.checkAnimations
+      const timings = animations.map((animation) => {
+        const { delay, duration, fill } = animation.effect.getTiming()
+        return [delay, duration, fill]
+      })
+      await Promise.all(animations.map((animation) => animation.finished))
+      const disc = globalThis.document.getElementById('knc-booked-title').previousElementSibling
+      const check = disc.firstElementChild
+      const rest = (element) => {
+        const style = globalThis.getComputedStyle(element)
+        return [style.transform, style.opacity, style.boxShadow, style.clipPath]
+      }
+      return {
+        seen: globalThis.bookingSeen,
+        timings,
+        states: animations.map((animation) => animation.playState),
+        left: [...disc.getAnimations(), ...check.getAnimations()].length,
+        disc: rest(disc),
+        check: rest(check),
+      }
+    })
+    expect(result.seen.pressedAt).toBeGreaterThan(0)
+    expect(result.seen.pendingAt).toBeGreaterThanOrEqual(result.seen.pressedAt)
+    expect(result.seen.pendingWithConfirmation).toBe(false)
+    if (moving) expect(result.seen.confirmedAt - result.seen.pressedAt).toBeGreaterThanOrEqual(900)
+    expect(result.timings).toEqual(
+      moving
+        ? [
+            [140, 560, 'backwards'],
+            [440, 700, 'none'],
+            [360, 460, 'backwards'],
+          ]
+        : [],
+    )
+    expect(result.states).toEqual(moving ? ['finished', 'finished', 'finished'] : [])
+    expect(result.left).toBe(0)
+    expect(result.disc).toEqual(['none', '1', 'none', 'none'])
+    expect(result.check).toEqual(['none', '1', 'none', 'none'])
+  })

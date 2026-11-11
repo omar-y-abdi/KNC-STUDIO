@@ -22,7 +22,8 @@ test.describe('mobile viewport chrome', () => {
     await page.goto(`${harnessOrigin}/?mode=dark`)
     const toggle = page.getByRole('button', { name: 'Växla ljust/mörkt' })
     await toggle.waitFor()
-    const assertPaint = async (mode, view) => {
+    // `lower`: what meets the lower edge, the panel at rest or the page once the panel folds away.
+    const assertPaint = async (mode, view, lower = view === 'home' ? 'panel' : 'page') => {
       await expect
         .poll(() =>
           page.evaluate(
@@ -87,7 +88,7 @@ test.describe('mobile viewport chrome', () => {
               ['top', mode === 'light' ? 'rgb(244, 243, 240)' : 'rgb(36, 36, 39)'],
               [
                 'bottom',
-                view === 'home'
+                lower === 'panel'
                   ? mode === 'light'
                     ? 'rgb(244, 243, 240)'
                     : 'rgb(36, 36, 39)'
@@ -106,6 +107,15 @@ test.describe('mobile viewport chrome', () => {
     await assertPaint('light', 'booking')
     const scroll = page.getByTestId('mobile-site-scroll')
     await expect.poll(() => scroll.evaluate((element) => element.scrollTop)).toBe(732)
+    const scrollTo = (top) =>
+      scroll.evaluate((element, top) => {
+        element.scrollTop = top
+      }, top)
+    // Scrolled fully back, the hero above the booking reaches the lower edge again.
+    await scrollTo(0)
+    await assertPaint('light', 'booking', 'panel')
+    await scrollTo(732)
+    await assertPaint('light', 'booking')
     // Hit the already visible control. Locator auto-scroll can move an inner scroller to a
     // sticky descendant's normal-flow position before issuing the pointer event.
     const toggleBox = await toggle.boundingBox()
@@ -114,12 +124,96 @@ test.describe('mobile viewport chrome', () => {
     await page.mouse.click(toggleBox.x + toggleBox.width / 2, toggleBox.y + toggleBox.height / 2)
     await assertPaint('dark', 'booking')
     await expect.poll(() => scroll.evaluate((element) => element.scrollTop)).toBe(732)
+    await scrollTo(0)
+    await assertPaint('dark', 'booking', 'panel')
+    await scrollTo(732)
+    await assertPaint('dark', 'booking')
     const back = page.getByRole('button', { name: 'Till startsidan' })
     await back.focus()
     expect(await scroll.evaluate((element) => element.scrollTop)).toBe(732)
     await back.press('Enter')
     await assertPaint('dark', 'home')
+    // Scrolled into "Om oss", the page meets the lower edge, also straight after a mode switch.
+    await scrollTo(900)
+    await assertPaint('dark', 'home', 'page')
+    const foldedToggle = await toggle.boundingBox()
+    expect(foldedToggle.y + foldedToggle.height).toBeLessThanOrEqual(112)
+    await page.mouse.click(
+      foldedToggle.x + foldedToggle.width / 2,
+      foldedToggle.y + foldedToggle.height / 2,
+    )
+    await assertPaint('light', 'home', 'page')
+    await scrollTo(0)
+    await assertPaint('light', 'home')
   })
+
+  for (const mode of ['light', 'dark'])
+    test(`both edge strips show the booking details backdrop over their colours (${mode})`, async ({
+      page,
+      context,
+    }) => {
+      await installPublicBackend(context)
+      await context.addCookies([
+        { name: 'bladeblend_storage_preferences', value: 'essential', url: harnessOrigin },
+      ])
+      await context.route('**/rest/v1/rpc/available_slots_for_service', (route) =>
+        route.fulfill({
+          headers: { 'access-control-allow-origin': '*' },
+          json: ['10:00', '11:00'],
+        }),
+      )
+      await page.goto(`${harnessOrigin}/?mode=${mode}`)
+      await page.getByRole('button', { name: 'Boka tid', exact: true }).click()
+      await page.getByTestId('booking-barber-option').first().click()
+      await page
+        .getByRole('button', { name: /^\S+ \d+ \S+ \d{4}$/ })
+        .and(page.locator(':not([disabled])'))
+        .first()
+        .click()
+      await page.getByTestId('booking-service-option').first().click()
+      await page.getByRole('button', { name: '10:00', exact: true }).click()
+      const dialog = page.getByRole('dialog')
+      await expect(dialog).toBeVisible()
+      expect(
+        await dialog.evaluate((card) => {
+          const style = globalThis.getComputedStyle(card.parentElement)
+          return [style.backgroundColor, style.zIndex]
+        }),
+      ).toEqual(['rgba(10, 10, 12, 0.42)', '40'])
+      const edges = () =>
+        page.evaluate(() =>
+          [...globalThis.document.querySelectorAll('body > [data-viewport-edge]')].map((edge) => {
+            const style = globalThis.getComputedStyle(edge)
+            return [edge.dataset.viewportEdge, style.backgroundColor, style.zIndex]
+          }),
+        )
+      // rgba(10,10,12,.42) over the panel (top) and over the booking page (bottom), one level
+      // above the backdrop so that Safari's edge hit test finds the strips.
+      await expect.poll(edges).toEqual(
+        mode === 'light'
+          ? [
+              ['top', 'rgb(146, 145, 144)', '41'],
+              ['bottom', 'rgb(152, 152, 153)', '41'],
+            ]
+          : [
+              ['top', 'rgb(25, 25, 28)', '41'],
+              ['bottom', 'rgb(20, 20, 22)', '41'],
+            ],
+      )
+      await dialog.getByRole('button', { name: 'Stäng', exact: true }).click()
+      await expect(dialog).toHaveCount(0)
+      await expect.poll(edges).toEqual(
+        mode === 'light'
+          ? [
+              ['top', 'rgb(244, 243, 240)', '20'],
+              ['bottom', 'rgb(255, 255, 255)', '20'],
+            ]
+          : [
+              ['top', 'rgb(36, 36, 39)', '20'],
+              ['bottom', 'rgb(28, 28, 30)', '20'],
+            ],
+      )
+    })
 })
 
 for (const mode of ['light', 'dark'])
@@ -176,7 +270,12 @@ for (const mode of ['light', 'dark'])
             },
             remove: () => widgetContainer?.replaceChildren(),
           }
-          globalThis.renderDetails = (errors = false, verifier = false, resetNonce = 0) => {
+          globalThis.renderDetails = (
+            errors = false,
+            verifier = false,
+            resetNonce = 0,
+            busy = false,
+          ) => {
             const dialog = h(DetailsDialog, {
               cms: { surface: 'booking-details', lang: 'sv', mode },
               t: {
@@ -195,6 +294,7 @@ for (const mode of ['light', 'dark'])
               phoneValue: '',
               emailValue: '',
               bookDisabled: false,
+              bookBusy: busy,
               fieldErrors: { name: errors, phone: errors, email: errors },
               submitError: errors ? 'Bokningen kunde inte genomföras. Försök igen.' : null,
               onName: noop,
@@ -318,6 +418,51 @@ for (const mode of ['light', 'dark'])
       await page.setViewportSize({ width: 390, height: 420 })
       await dialog.locator('input').last().focus()
       await assertFit()
+      // While a booking is on its way its layer, the card's last child, covers exactly the visible
+      // card, held at its top over an inert form; afterwards the card scrolls from where it was.
+      const scrolled = await dialog.evaluate((card) => card.scrollTop)
+      expect(scrolled).toBeGreaterThan(0)
+      await page.evaluate(() => globalThis.renderDetails(true, true, 1, true))
+      const pending = dialog.getByRole('status').filter({ hasText: 'Bokar din tid …' })
+      await expect(pending).toContainText('Fredag 13 november, 09:00 · Hårklippning')
+      expect(
+        await dialog.evaluate((card) => {
+          const layer = card.lastElementChild
+          const box = layer.getBoundingClientRect()
+          const frame = card.getBoundingClientRect()
+          const edges = [
+            box.top - frame.top,
+            box.left - frame.left,
+            frame.bottom - box.bottom,
+            frame.right - box.right,
+          ]
+          return {
+            layer: layer.className,
+            covers: edges.every((edge) => Math.abs(edge) <= 1),
+            top: card.scrollTop,
+            overflow: globalThis.getComputedStyle(card).overflowY,
+            inert: [...card.children].slice(0, 2).map((child) => child.inert),
+            focusInside: card.contains(globalThis.document.activeElement),
+          }
+        }),
+      ).toEqual({
+        layer: 'knc-pending',
+        covers: true,
+        top: 0,
+        overflow: 'hidden',
+        inert: [true, true],
+        focusInside: true,
+      })
+      await page.evaluate(() => globalThis.renderDetails(true, true, 1, false))
+      await expect(pending).toHaveCount(0)
+      expect(
+        await dialog.evaluate((card) => [
+          card.scrollTop,
+          globalThis.getComputedStyle(card).overflowY,
+          [...card.children].slice(0, 2).map((child) => child.inert),
+          card.contains(globalThis.document.activeElement),
+        ]),
+      ).toEqual([scrolled, 'auto', [false, false], true])
       await page.evaluate(() => globalThis.renderConfirmation())
       const reset = dialog.getByRole('button', { name: 'Boka en ny tid', exact: true })
       await reset.scrollIntoViewIfNeeded()
@@ -506,10 +651,39 @@ for (const stored of [false, true])
     await page.getByRole('button', { name: 'Till startsidan' }).click()
     await toggle.click()
     await assertTheme('rgb(244, 243, 240)')
-    await page
+    // Every frame's scroll position across `act`, then once more after a following task: WebKit
+    // reveals a focused element on a later task, after the open panel has shortened the root.
+    const scrollAcross = async (act) => {
+      await scroll.evaluate((root) => {
+        globalThis.scrollFrames = []
+        const sample = () => {
+          globalThis.scrollFrames.push(root.scrollTop)
+          if (globalThis.scrollFrames.length < 30) globalThis.requestAnimationFrame(sample)
+        }
+        globalThis.requestAnimationFrame(sample)
+      })
+      await act()
+      await expect.poll(() => page.evaluate(() => globalThis.scrollFrames.length)).toBe(30)
+      await page.evaluate(() => new Promise((resolve) => globalThis.setTimeout(resolve, 0)))
+      return [
+        ...(await page.evaluate(() => globalThis.scrollFrames)),
+        await scroll.evaluate((root) => root.scrollTop),
+      ]
+    }
+    const overlaySpace = () =>
+      page.evaluate(() =>
+        globalThis.document.documentElement.style.getPropertyValue('--privacy-overlay-space'),
+      )
+    await expect.poll(() => scroll.evaluate((element) => element.scrollTop)).toBe(0)
+    const pill = await page
       .getByRole('button', { name: 'Hantera integritetsinställningar', exact: true })
-      .click()
+      .boundingBox()
+    // The pill at rest opens the panel and the hero stays where it is.
+    expect(
+      await scrollAcross(() => page.mouse.click(pill.x + pill.width / 2, pill.y + pill.height / 2)),
+    ).toEqual(Array(31).fill(0))
     await expect(page.locator('#privacy-preferences')).toBeVisible()
+    expect(Number.parseFloat(await overlaySpace())).toBeGreaterThan(0)
     await scroll.evaluate((element) => {
       element.scrollTop = 0
     })
@@ -533,7 +707,12 @@ for (const stored of [false, true])
       element.scrollTop = 0
     })
     await assertTheme('rgb(244, 243, 240)')
-    await page.getByRole('button', { name: 'Spara val', exact: true }).click()
+    expect(
+      await scrollAcross(() =>
+        page.getByRole('button', { name: 'Spara val', exact: true }).click(),
+      ),
+    ).toEqual(Array(31).fill(0))
+    expect(await overlaySpace()).toBe('')
     await page.getByRole('button', { name: 'Mina bokningar', exact: true }).click()
     await expect(page.getByRole('dialog')).toBeVisible()
     await page.getByRole('dialog').getByRole('button', { name: 'Stäng', exact: true }).click()

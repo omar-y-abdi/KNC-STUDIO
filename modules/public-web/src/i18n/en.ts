@@ -40,6 +40,7 @@ export const bookingEn: BookingStrings = {
   email: 'Email',
   emailPh: 'name@example.com',
   book: 'Book appointment',
+  bookingInProgress: 'Booking your appointment …',
   termsLink: 'Read booking terms',
   termsLinkLabel: 'Read booking terms (opens in a new tab)',
   policy:

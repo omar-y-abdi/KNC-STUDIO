@@ -59,9 +59,19 @@ function click(node: RenderedNode | undefined): void {
   ;(node.props['onClick'] as () => void)()
 }
 
+// The pending state's minimum is not what these tests are about (bookingPendingHold.test.ts).
+const noDelay = (): Promise<void> => Promise.resolve()
+
 function screen(port: BookingPort) {
   const all = nodes(
-    render(() => BookingFlow({ port, defaultLang: 'sv', clock: () => new Date(2040, 2, 12, 9) })),
+    render(() =>
+      BookingFlow({
+        port,
+        defaultLang: 'sv',
+        clock: () => new Date(2040, 2, 12, 9),
+        delay: noDelay,
+      }),
+    ),
   )
   return {
     all,

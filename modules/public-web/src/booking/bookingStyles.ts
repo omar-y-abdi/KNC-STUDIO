@@ -122,7 +122,21 @@ export interface BookingStyles {
   fieldErrorNoteStyle: JSX.CSSProperties
   /** Generic system/submit-error line shown above the Book button (red, full opacity). */
   submitErrorStyle: JSX.CSSProperties
+  /** The details card's "booking on its way" layer and its parts (`.knc-pending*` in global.css). */
+  pendingStyle: JSX.CSSProperties
+  pendingBodyStyle: JSX.CSSProperties
+  pendingIndicatorStyle: JSX.CSSProperties
+  pendingOrbitStyle: JSX.CSSProperties
+  pendingCometStyle: JSX.CSSProperties
+  pendingHeadStyle: JSX.CSSProperties
+  pendingDiscStyle: JSX.CSSProperties
+  pendingIconStyle: JSX.CSSProperties
+  pendingTitleStyle: JSX.CSSProperties
+  pendingSubStyle: JSX.CSSProperties
 }
+
+const PENDING_RING_MASK =
+  'radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px))'
 
 /** Apple-system red, mode-aware (light `#ff3b30`, dark `#ff453a`). */
 export function systemRed(dark: boolean): string {
@@ -362,5 +376,62 @@ export function buildBookingStyles(
       margin: '0 0 10px',
       lineHeight: 1.45,
     },
+    pendingStyle: {
+      position: 'absolute',
+      inset: 0,
+      zIndex: 3,
+      boxSizing: 'border-box',
+      padding: '24px 22px',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      textAlign: 'center',
+      background: c.bg,
+      borderRadius: 'inherit',
+    },
+    pendingBodyStyle: { display: 'flex', flexDirection: 'column', alignItems: 'center' },
+    pendingIndicatorStyle: {
+      position: 'relative',
+      width: '70px',
+      height: '70px',
+      marginBottom: '18px',
+      color: c.text,
+    },
+    pendingOrbitStyle: { position: 'absolute', inset: 0 },
+    pendingCometStyle: {
+      position: 'absolute',
+      inset: 0,
+      borderRadius: '50%',
+      mask: PENDING_RING_MASK,
+      WebkitMask: PENDING_RING_MASK,
+    },
+    pendingHeadStyle: {
+      position: 'absolute',
+      top: 0,
+      left: '50%',
+      width: '2px',
+      height: '2px',
+      marginLeft: '-1px',
+      borderRadius: '50%',
+    },
+    pendingDiscStyle: {
+      position: 'absolute',
+      inset: '8px',
+      borderRadius: '50%',
+      background: c.subtle,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    pendingIconStyle: { width: '24px', height: '24px', filter: c.iconF, opacity: 0.8 },
+    pendingTitleStyle: {
+      fontFamily: "'Inter Variable'",
+      fontWeight: 600,
+      fontSize: '20px',
+      marginBottom: '6px',
+      color: c.text,
+    },
+    pendingSubStyle: { fontSize: '13.5px', opacity: 0.6, lineHeight: 1.45, maxWidth: '300px' },
   }
 }

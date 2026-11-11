@@ -36,6 +36,8 @@ export const bookingSv = {
   email: 'E-post',
   emailPh: 'namn@exempel.se',
   book: 'Boka tid',
+  /** The details popup while its booking is on its way. */
+  bookingInProgress: 'Bokar din tid …',
   termsLink: 'Läs bokningsvillkoren',
   termsLinkLabel: 'Läs bokningsvillkoren (öppnas i ny flik)',
   policy:
