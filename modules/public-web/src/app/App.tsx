@@ -17,11 +17,23 @@ import { ABOUT_SECTION_ID } from '../about/AboutSection'
 import { consumeBookingAccessLink, type BookingAccessLink } from '../mybookings/accessLink'
 import { defaultMyBookingsPort } from '../mybookings/adapters/index'
 import { LazyMyBookingsDialog, preloadMyBookingsDialog } from '../mybookings/lazyMyBookingsDialog'
+import {
+  LazyHomeScreenGuide,
+  homeScreenGuideLoaded,
+  loadHomeScreenGuide,
+} from '../onboarding/lazyHomeScreenGuide'
+import {
+  forgetHomeScreenGuide,
+  guideOffer,
+  offersHomeScreenGuide,
+  onIphone,
+  type ListedBookings,
+} from '../onboarding/trigger'
 import { canReplaceDocumentMetadata, useSiteChrome } from '../site/useSiteChrome'
 import { buildBusinessStructuredData } from '../site/business'
 import { nativePublicPath } from '../site/routeMetadata'
 import { formatBusinessAddress, resolveSiteText, type SiteChrome } from '../site/siteChrome'
-import { paintEdgeTints, paintViewport } from '../ui/paintViewport'
+import { paintViewport, showEdgeTints } from '../ui/paintViewport'
 import { scheduleIdle } from '../ui/idle'
 import { LazySurface } from '../ui/LazySurface'
 import {
@@ -207,6 +219,11 @@ export function App({
     undefined,
   )
   const [bookingRefresh, setBookingRefresh] = useState(0)
+  // Read when a confirmation closes, through a callback an earlier render may have handed out.
+  const listedBookings = useRef<ListedBookings | null>(null)
+  const completedBookings = useRef(bookingRefresh)
+  completedBookings.current = bookingRefresh
+  const [guideBookings, setGuideBookings] = useState<number | null>(null)
   // A Studio frame has no history driver: it never changes an address. `headAddress` stays null
   // until the app itself changes path or query, so a server-rendered head stays.
   const [headAddress, setHeadAddress] = useState<string | null>(null)
@@ -259,6 +276,7 @@ export function App({
   useEffect(() => {
     if (preview) return
     const clearOptionalAccess = (): void => {
+      forgetHomeScreenGuide(() => window.localStorage, readStoragePreferences())
       if (readStoragePreferences()?.functional === false) {
         // Invalidate device hints even if consent is enabled again before their replies arrive.
         deviceContactEpoch.current++
@@ -396,6 +414,12 @@ export function App({
             ? result.bookingContact
             : undefined,
         )
+        if (!result.ok) return
+        const count = result.bookings.upcoming.length + result.bookings.past.length
+        listedBookings.current = { after: bookingRefresh, count }
+        // Fetched while the confirmation is read, so it is in when that closes.
+        if (bookingRefresh > 0 && offersHomeScreenGuide(count) && onIphone(navigator.userAgent))
+          void loadHomeScreenGuide()
       })
       .catch(() => undefined)
     return () => {
@@ -475,7 +499,12 @@ export function App({
     const top = background(header, topBar)
     const page = isMobile && !inSection ? top : background(surface, pageBg)
     paintViewport(page, top, state.mode)
-    return edgeTints ? paintEdgeTints(top, page) : undefined
+    return edgeTints
+      ? showEdgeTints({
+          top,
+          bottom: { panel: top, section: background(surface, c.bg), document: page },
+        })
+      : undefined
   }, [pageBg, topBar, isMobile, inSection, state.mode, cmsPresentation, edgeTints])
 
   const langMini = (on: boolean): JSX.CSSProperties => ({
@@ -592,6 +621,11 @@ export function App({
     setBookingAccess({})
     setEmailLinkCode(undefined)
     setState({ myBookingsOpen: false })
+  }
+  const onConfirmationClosed = (): void => {
+    const count = guideOffer(listedBookings.current, completedBookings.current)
+    // A guide arriving after the close could open over the next dialog.
+    if (count !== null && homeScreenGuideLoaded()) setGuideBookings(count)
   }
 
   // --- shared chrome (nav controls) ---
@@ -756,6 +790,7 @@ export function App({
     ...(customerProfile === undefined ? {} : { initialContact: customerProfile }),
     ...(deviceBookingContact === undefined ? {} : { initialBookingContact: deviceBookingContact }),
     onBookingComplete: () => setBookingRefresh((value) => value + 1),
+    onConfirmationClosed,
     dark,
     c,
     view,
@@ -789,6 +824,16 @@ export function App({
       {myBookingsDialog}
       {(!preview || preview.interactive) && (
         <PrivacyBanner lang={lang} dark={dark} controls={privacy} />
+      )}
+      {guideBookings === null || state.myBookingsOpen ? null : (
+        <LazyHomeScreenGuide
+          key="home-screen-guide"
+          mode={state.mode}
+          lang={lang}
+          businessName={business.name}
+          bookings={guideBookings}
+          onClose={() => setGuideBookings(null)}
+        />
       )}
     </>
   )

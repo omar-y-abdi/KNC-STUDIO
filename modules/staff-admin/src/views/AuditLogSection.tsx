@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from 'preact/hooks'
 import type { Lang } from '@bladeblend/public-web/localization'
 import { listAuditLog, type AuditLogEntry } from '../adapters/auditLogAdmin'
 import { adminText } from '../adminStrings'
+import { INVISIBLE } from '../adminStyles'
 import { orderedAdminOperation } from '../orderedOperations'
 import type { AdminError } from '../types'
 import { useBarbers } from '../useBarbers'
@@ -200,7 +201,7 @@ function AuditLogList(props: AuditLogListProps): JSX.Element {
       </div>
 
       {loaded.state === 'loading' ? (
-        <div role="status" style={s.emptyState}>
+        <div role="status" style={{ ...s.emptyState, ...INVISIBLE }}>
           {t.auditLoading}
         </div>
       ) : null}

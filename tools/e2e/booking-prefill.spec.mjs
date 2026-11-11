@@ -465,3 +465,369 @@ test('verified profile hydration remains available with optional storage off', a
   await page.goto(harnessOrigin)
   await values(await details(page), contact)
 })
+
+// The sheet says the booking is on its way, for at least 900 ms unless reduced motion is asked
+// for; the confirmation's check then plays once and rests as before. Reduced motion has no
+// minimum, so there the answer is held back while the sheet is looked at.
+for (const reducedMotion of ['no-preference', 'reduce'])
+  test(`the details sheet shows the booking on its way, then the check lands (${reducedMotion})`, async ({
+    page,
+    context,
+  }) => {
+    const moving = reducedMotion === 'no-preference'
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.emulateMedia({ reducedMotion })
+    await setup(context)
+    let release = () => undefined
+    const gate = new Promise((resolve) => {
+      release = resolve
+    })
+    let held = false
+    if (!moving)
+      await context.route('**/api/bookings', async (route) => {
+        held = true
+        await gate
+        await route.fallback()
+      })
+    await page.goto(harnessOrigin)
+    const fields = await details(page)
+    for (const [index, value] of Object.values(contact).entries())
+      await fields.nth(index).fill(value)
+    const dialog = page.getByRole('dialog')
+    const book = dialog.getByRole('button', { name: 'Boka tid', exact: true })
+    // Times from the press; the check's animations as they are in the commit that shows it.
+    await page.evaluate(() => {
+      const doc = globalThis.document
+      const seen = { pressedAt: 0, pendingAt: 0, confirmedAt: 0, pendingWithConfirmation: false }
+      globalThis.bookingSeen = seen
+      doc.addEventListener(
+        'click',
+        (event) => {
+          if (!seen.pressedAt && event.target.closest('button')?.textContent === 'Boka tid')
+            seen.pressedAt = globalThis.performance.now()
+        },
+        true,
+      )
+      const observer = new globalThis.MutationObserver(() => {
+        if (!seen.pendingAt && doc.querySelector('.knc-pending'))
+          seen.pendingAt = globalThis.performance.now()
+        const title = doc.getElementById('knc-booked-title')
+        if (!title) return
+        observer.disconnect()
+        seen.confirmedAt = globalThis.performance.now()
+        seen.pendingWithConfirmation = doc.querySelector('.knc-pending') !== null
+        const disc = title.previousElementSibling
+        globalThis.checkAnimations = [
+          ...disc.getAnimations(),
+          ...disc.firstElementChild.getAnimations(),
+        ]
+      })
+      observer.observe(doc.body, { childList: true, subtree: true })
+    })
+    await book.click()
+    if (!moving) {
+      await expect.poll(() => held).toBe(true)
+      const pending = dialog.getByRole('status').filter({ hasText: 'Bokar din tid …' })
+      await expect(pending).toBeVisible()
+      await expect(pending).toContainText(', 10:00 · ')
+      await expect(book).toHaveAttribute('aria-busy', 'true')
+      release()
+    }
+    await expect(
+      page.getByRole('heading', { name: 'Tack — din tid är bokad!', exact: true }),
+    ).toBeVisible()
+    const result = await page.evaluate(async () => {
+      const animations = globalThis.checkAnimations
+      const timings = animations.map((animation) => {
+        const { delay, duration, fill } = animation.effect.getTiming()
+        return [delay, duration, fill]
+      })
+      await Promise.all(animations.map((animation) => animation.finished))
+      const disc = globalThis.document.getElementById('knc-booked-title').previousElementSibling
+      const check = disc.firstElementChild
+      const rest = (element) => {
+        const style = globalThis.getComputedStyle(element)
+        return [style.transform, style.opacity, style.boxShadow, style.clipPath]
+      }
+      return {
+        seen: globalThis.bookingSeen,
+        timings,
+        states: animations.map((animation) => animation.playState),
+        left: [...disc.getAnimations(), ...check.getAnimations()].length,
+        disc: rest(disc),
+        check: rest(check),
+      }
+    })
+    expect(result.seen.pressedAt).toBeGreaterThan(0)
+    expect(result.seen.pendingAt).toBeGreaterThanOrEqual(result.seen.pressedAt)
+    expect(result.seen.pendingWithConfirmation).toBe(false)
+    if (moving) expect(result.seen.confirmedAt - result.seen.pressedAt).toBeGreaterThanOrEqual(900)
+    expect(result.timings).toEqual(
+      moving
+        ? [
+            [140, 560, 'backwards'],
+            [440, 700, 'none'],
+            [360, 460, 'backwards'],
+          ]
+        : [],
+    )
+    expect(result.states).toEqual(moving ? ['finished', 'finished', 'finished'] : [])
+    expect(result.left).toBe(0)
+    expect(result.disc).toEqual(['none', '1', 'none', 'none'])
+    expect(result.check).toEqual(['none', '1', 'none', 'none'])
+  })
+
+// The home-screen guide: offered to iPhone Safari visitors in a browser tab once the device lists
+// more than two bookings, after the confirmation of a booking made here is closed.
+const iphone = (browser) =>
+  'Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 ' +
+  `(KHTML, like Gecko) ${browser} Mobile/15E148 Safari/604.1`
+const GUIDE_TEXT = {
+  sv: {
+    book: 'Boka tid',
+    booked: 'Tack — din tid är bokad!',
+    again: 'Boka en ny tid',
+    title: 'Lägg till på hemskärmen',
+    first: 'Tryck på symbolen till vänster i adressfältet',
+    ok: 'Okej',
+  },
+  en: {
+    book: 'Book appointment',
+    booked: 'Thanks — your appointment is booked!',
+    again: 'Book another time',
+    title: 'Add to your Home Screen',
+    first: 'Tap the icon at the left of the address field',
+    ok: 'Got it',
+  },
+}
+
+/** The device lists `prior` bookings plus each one submitted here; `served.after` is how many
+ * had been submitted when the latest list was read, `served.count` how many it listed. */
+async function deviceBookings(context, state, prior) {
+  const served = { after: -1, count: 0 }
+  await context.route('**/api/customer-bookings', (route) => {
+    if (route.request().postDataJSON().action !== 'list') return route.fallback()
+    served.after = state.submitCalls
+    served.count = prior + state.submitCalls
+    const bookings = Array.from({ length: served.count }, (_, index) => ({
+      ...row,
+      id: `76000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+      start_at: `2099-01-${String(index + 1).padStart(2, '0')}T10:00:00Z`,
+    }))
+    return route.fulfill({
+      json: {
+        ok: true,
+        authority: 'device',
+        session_proof: receiptProof,
+        receipt_proof: receiptProof,
+        bookings,
+        booking_contact: contact,
+      },
+    })
+  })
+  return served
+}
+
+async function visitAsIphone(
+  page,
+  context,
+  { prior, lang = 'sv', colorScheme = 'light', consent = true },
+) {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.emulateMedia({ reducedMotion: 'reduce', colorScheme })
+  const state = await setup(context, { consent })
+  const served = await deviceBookings(context, state, prior)
+  await page.goto(lang === 'en' ? `${harnessOrigin}/?lang=en` : harnessOrigin)
+  return { state, served }
+}
+
+/** Books 10:00 and closes the confirmation once the list read after the booking is in. */
+async function bookAndClose(page, { state, served }, text, open) {
+  if (open) await page.getByRole('button', { name: text.book, exact: true }).first().click()
+  await page.getByTestId('booking-barber-option').first().click()
+  await page
+    .getByRole('button', { name: /^\S+ \d+ \S+ \d{4}$/ })
+    .and(page.locator(':not([disabled])'))
+    .first()
+    .click()
+  await page.getByTestId('booking-service-option').first().click()
+  await page.getByRole('button', { name: '10:00', exact: true }).click()
+  const fields = page.getByRole('dialog').locator('input:not([type="hidden"])')
+  for (const [index, value] of Object.values(contact).entries()) await fields.nth(index).fill(value)
+  await page.getByRole('dialog').getByRole('button', { name: text.book, exact: true }).click()
+  await expect(page.getByRole('heading', { name: text.booked, exact: true })).toBeVisible()
+  await expect.poll(() => served.after).toBe(state.submitCalls)
+  // The app fetches the guide's chunk itself once the list read after a booking has more than two.
+  await expect.poll(() => guideChunkLoaded(page)).toBe(served.count > 2)
+  await frames(page)
+  await page.getByRole('button', { name: text.again, exact: true }).click()
+}
+
+/** Asking does not fetch the chunk. */
+const guideChunkLoaded = (page) =>
+  page.evaluate(async () =>
+    (
+      await import('/modules/public-web/src/onboarding/lazyHomeScreenGuide.tsx')
+    ).homeScreenGuideLoaded(),
+  )
+
+const frames = (page) =>
+  page.evaluate(
+    () =>
+      new Promise((resolve) =>
+        globalThis.requestAnimationFrame(() => globalThis.requestAnimationFrame(resolve)),
+      ),
+  )
+
+/** The guide's chunk is in and what the app decided with it is painted. */
+async function settled(page) {
+  await page.evaluate(async () => {
+    const lazy = await import('/modules/public-web/src/onboarding/lazyHomeScreenGuide.tsx')
+    await lazy.loadHomeScreenGuide()
+  })
+  await frames(page)
+}
+
+const GUIDE_NOTE = [['bladeblend_home_screen_guide', 'shown']]
+const deviceStorage = (page) =>
+  page.evaluate(() => ({
+    local: Object.entries(globalThis.localStorage),
+    session: Object.entries(globalThis.sessionStorage),
+  }))
+
+async function attachGuide(page, testInfo, name) {
+  await testInfo.attach(name, { body: await page.screenshot(), contentType: 'image/png' })
+}
+
+test.describe('home-screen guide in Safari 27 on iPhone', () => {
+  test.use({ userAgent: iphone('Version/27.0') })
+
+  for (const lang of ['sv', 'en'])
+    for (const colorScheme of ['light', 'dark'])
+      test(`appears after a third booking, closes and stays away, reload included (${lang}, ${colorScheme})`, async ({
+        page,
+        context,
+      }, testInfo) => {
+        const text = GUIDE_TEXT[lang]
+        const visit = await visitAsIphone(page, context, { prior: 2, lang, colorScheme })
+        await bookAndClose(page, visit, text, true)
+        const guide = page.getByRole('dialog', { name: text.title })
+        await expect(guide).toBeVisible()
+        await expect(guide.getByRole('listitem')).toHaveCount(4)
+        await expect(guide.getByRole('listitem').first()).toContainText(text.first)
+        expect(await guide.locator('img').first().getAttribute('src')).toBe(
+          await page.locator('link[rel="apple-touch-icon"]').getAttribute('href'),
+        )
+        await attachGuide(page, testInfo, `home-screen-guide-27-${lang}-${colorScheme}.png`)
+
+        await guide.getByRole('button', { name: text.ok, exact: true }).click()
+        await expect(guide).toHaveCount(0)
+        expect(await deviceStorage(page)).toEqual({ local: GUIDE_NOTE, session: [] })
+        await bookAndClose(page, visit, text, false)
+        await settled(page)
+        await expect(page.getByRole('dialog')).toHaveCount(0)
+
+        // The reload keeps the booking view and its language; only the note remembers the guide.
+        await page.reload()
+        await bookAndClose(page, visit, text, false)
+        await settled(page)
+        await expect(page.getByRole('dialog')).toHaveCount(0)
+        expect(await deviceStorage(page)).toEqual({ local: GUIDE_NOTE, session: [] })
+      })
+
+  test('without optional storage, stores nothing and comes back after a reload', async ({
+    page,
+    context,
+  }) => {
+    const text = GUIDE_TEXT.sv
+    const visit = await visitAsIphone(page, context, { prior: 2, consent: false })
+    const guide = page.getByRole('dialog', { name: text.title })
+    await bookAndClose(page, visit, text, true)
+    await guide.getByRole('button', { name: text.ok, exact: true }).click()
+    await expect(guide).toHaveCount(0)
+    await bookAndClose(page, visit, text, false)
+    await settled(page)
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    expect(await deviceStorage(page)).toEqual({ local: [], session: [] })
+
+    await page.reload()
+    await bookAndClose(page, visit, text, false)
+    await expect(guide).toBeVisible()
+    await guide.getByRole('button', { name: text.ok, exact: true }).click()
+    expect(await deviceStorage(page)).toEqual({ local: [], session: [] })
+  })
+
+  test('withdrawing optional storage removes the note', async ({ page, context }) => {
+    const text = GUIDE_TEXT.sv
+    const visit = await visitAsIphone(page, context, { prior: 2 })
+    const guide = page.getByRole('dialog', { name: text.title })
+    await bookAndClose(page, visit, text, true)
+    await guide.getByRole('button', { name: text.ok, exact: true }).click()
+    expect(await deviceStorage(page)).toEqual({ local: GUIDE_NOTE, session: [] })
+    await page.evaluate(async () =>
+      (await import('/modules/public-web/src/site/storageConsent.ts')).saveStoragePreferences({
+        functional: false,
+      }),
+    )
+    expect(await deviceStorage(page)).toEqual({ local: [], session: [] })
+  })
+
+  // Withdrawn on an earlier page load, or in another tab: the shell removes it on load, chunk unused.
+  test('a page load without optional storage removes a note it finds', async ({
+    page,
+    context,
+  }) => {
+    await context.addInitScript(() => {
+      globalThis.localStorage.setItem('bladeblend_home_screen_guide', 'shown')
+    })
+    await visitAsIphone(page, context, { prior: 2, consent: false })
+    await expect.poll(async () => (await deviceStorage(page)).local).toEqual([])
+    expect(await guideChunkLoaded(page)).toBe(false)
+  })
+
+  test('never appears with two bookings', async ({ page, context }) => {
+    await bookAndClose(page, await visitAsIphone(page, context, { prior: 1 }), GUIDE_TEXT.sv, true)
+    await settled(page)
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+  })
+
+  test('never appears in the web app opened from the Home Screen', async ({ page, context }) => {
+    await context.addInitScript(() => {
+      Object.defineProperty(globalThis.navigator, 'standalone', { value: true })
+    })
+    await bookAndClose(page, await visitAsIphone(page, context, { prior: 2 }), GUIDE_TEXT.sv, true)
+    await settled(page)
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+  })
+})
+
+for (const [version, first, rows] of [
+  ['26.0', 'Tryck på knappen med tre punkter till höger om adressfältet', 4],
+  ['18.6', 'Tryck på Dela längst ned i Safari', 3],
+])
+  test.describe(`home-screen guide in Safari ${version} on iPhone`, () => {
+    test.use({ userAgent: iphone(`Version/${version}`) })
+
+    test('shows the steps of its Safari', async ({ page, context }, testInfo) => {
+      await bookAndClose(
+        page,
+        await visitAsIphone(page, context, { prior: 2 }),
+        GUIDE_TEXT.sv,
+        true,
+      )
+      const guide = page.getByRole('dialog', { name: GUIDE_TEXT.sv.title })
+      await expect(guide.getByRole('listitem')).toHaveCount(rows)
+      await expect(guide.getByRole('listitem').first()).toContainText(first)
+      await attachGuide(page, testInfo, `home-screen-guide-${version}-sv-light.png`)
+    })
+  })
+
+test.describe('home-screen guide in Chrome on iPhone', () => {
+  test.use({ userAgent: iphone('CriOS/140.0.0.0') })
+
+  test('never appears', async ({ page, context }) => {
+    await bookAndClose(page, await visitAsIphone(page, context, { prior: 2 }), GUIDE_TEXT.sv, true)
+    await settled(page)
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+  })
+})

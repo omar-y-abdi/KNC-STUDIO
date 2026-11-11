@@ -17,6 +17,7 @@ import type {
   EmailTemplateCopy,
   EmailBusiness,
   EmailMessage,
+  EmailSmallPrint,
 } from '../../../packages/content-contracts/src/email-render.ts'
 export { buildEmailMessage } from '../../../packages/content-contracts/src/email-render.ts'
 export { prepareEmail } from './emailSendLog.ts'
@@ -354,6 +355,24 @@ export function defaultEmailTemplate(
   lang: EmailLanguage,
 ): EmailTemplateCopy {
   return DEFAULTS[template][lang]
+}
+
+// One line by the owner's ruling: it points to the terms, and the owner cannot edit it.
+const CONFIRMATION_SMALL_PRINT: Record<EmailLanguage, string> = {
+  sv: 'Villkor och ångerrätt hittar du på',
+  en: 'See our terms and right of withdrawal at',
+}
+
+export function confirmationSmallPrint(
+  template: EmailTemplateName,
+  lang: EmailLanguage,
+  siteOrigin: string,
+): EmailSmallPrint | null {
+  if (template !== 'customer_confirmation') return null
+  return {
+    text: CONFIRMATION_SMALL_PRINT[lang],
+    href: `${siteOrigin}/terms${lang === 'en' ? '?lang=en' : ''}`,
+  }
 }
 
 /**

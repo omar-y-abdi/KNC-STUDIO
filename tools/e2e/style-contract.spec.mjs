@@ -32,7 +32,8 @@ const PAGES = [
   { url: '/500.html', ready: 'h1', surface: DOC },
   { url: '/maintenance.html', ready: 'h1', surface: DOC },
   { url: '/no-such-page', ready: 'h1', surface: APP },
-  { url: '/login', ready: 'text=Laddar', surface: APP, holdAdminChunk: true },
+  // Root's fallback paints no text, and axe measures no contrast on text with opacity 0.
+  { url: '/login', ready: 'text=Laddar', surface: APP, holdAdminChunk: true, noPaintedText: true },
   { url: '/login', ready: '#admin-email', surface: APP },
   { url: '/reset', ready: 'h1', surface: APP },
   { url: '/privacy.html', ready: 'h1', surface: DOC },
@@ -205,7 +206,8 @@ for (const scheme of ['light', 'dark']) {
         const result = await audit(page)
         testInfo.annotations.push({ type: 'metrics', description: JSON.stringify(result) })
         expect(result.violations, `${label}: axe wcag2aa`).toEqual([])
-        expect(result.minContrast, `${label}: lowest text contrast`).toBeGreaterThanOrEqual(4.5)
+        if (!target.noPaintedText)
+          expect(result.minContrast, `${label}: lowest text contrast`).toBeGreaterThanOrEqual(4.5)
         if (target.surface)
           expect(await tokenSurface(page, target.surface), `${label}: token surface`).toEqual({
             background: SURFACE[scheme],

@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from 'preact/hooks'
 import { cap, weekdayLabel } from '@bladeblend/public-web/calendar'
 import type { Lang } from '@bladeblend/public-web/localization'
 import { adminText } from '../adminStrings'
+import { INVISIBLE } from '../adminStyles'
 import {
   createService,
   deleteService,
@@ -444,7 +445,7 @@ export function ServicesView(props: ServicesViewProps): JSX.Element {
       {loadError !== null && targetLoaded ? (
         <div style={{ ...s.emptyState, color: s.errorText.color }}>{loadError}</div>
       ) : !targetLoaded ? (
-        <div style={s.emptyState}>{t.svcLoading}</div>
+        <div style={{ ...s.emptyState, ...INVISIBLE }}>{t.svcLoading}</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '12px' }}>
           {rows.length === 0 ? <div style={s.emptyState}>{t.svcEmpty}</div> : rows.map(serviceRow)}

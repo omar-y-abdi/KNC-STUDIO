@@ -117,6 +117,15 @@ describe('editable public copy', () => {
     expect(defaultSiteText('sv', 48, 'Northside Barbers').policy).toContain('48 timmar')
     expect(defaultSiteText('en', 12, 'Northside Barbers').policy).toContain('12 hours')
     expect(defaultSiteText('sv', 48, 'Northside Barbers').policy).toContain('Northside Barbers')
+    for (const [lang, fee, withdrawal] of [
+      ['sv', 'kan Northside Barbers begära betalning', 'Du har 14 dagars ångerrätt'],
+      ['en', 'Northside Barbers may ask you to pay', 'You have a 14-day right of withdrawal'],
+    ] as const) {
+      const policy = defaultSiteText(lang, 48, 'Northside Barbers').policy
+      expect(policy).toContain(fee)
+      expect(policy).toContain(withdrawal)
+      expect(policy).not.toMatch(/debitera|entitles/)
+    }
   })
 
   it('overlays saved copy but keeps defaults for missing or blank rows', () => {

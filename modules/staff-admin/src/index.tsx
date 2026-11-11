@@ -11,7 +11,7 @@ import type { JSX } from 'preact'
 import { lazy } from 'preact/compat'
 import { Route, Switch } from 'wouter-preact'
 import { LoginRoute } from './LoginRoute'
-import { LazySurface } from '@bladeblend/public-web/lazy-surface'
+import { AdminLazySurface } from './AdminLazySurface'
 import { adminText } from './adminStrings'
 const ResetPasswordRoute = lazy(() =>
   import('./ResetPasswordRoute').then((module) => ({ default: module.ResetPasswordRoute })),
@@ -30,11 +30,10 @@ const AdminApp = lazy(() => import('./AdminApp').then((module) => ({ default: mo
 export default function AdminEntry(): JSX.Element {
   const t = adminText('sv')
   return (
-    <LazySurface
+    <AdminLazySurface
       loadingLabel={t.lazyLoading}
       errorLabel={t.lazyError}
       retryLabel={t.lazyReload}
-      minHeight="100vh"
     >
       <Switch>
         <Route path="/login" component={LoginRoute} />
@@ -44,6 +43,6 @@ export default function AdminEntry(): JSX.Element {
         <Route path="/admin/:rest*" component={AdminApp} />
         <Route path="/admin" component={AdminApp} />
       </Switch>
-    </LazySurface>
+    </AdminLazySurface>
   )
 }

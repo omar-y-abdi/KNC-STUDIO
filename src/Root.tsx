@@ -32,7 +32,11 @@ const CmsRoute = lazy(() => import('./CmsRoute').then((module) => ({ default: mo
 
 /** Lightweight fallback while the admin chunk loads (no admin code; the shared status look). */
 function AdminFallback(): JSX.Element {
-  return <div class="bb-status bb-muted">Laddar …</div>
+  return (
+    <div class="bb-status bb-muted">
+      <span style={{ opacity: 0 }}>Laddar …</span>
+    </div>
+  )
 }
 
 /** The admin entry behind its loading fallback, as a route's render child. */

@@ -1,6 +1,8 @@
 // One renderer for delivered transactional emails and the owner's CMS preview.
-import { expand, renderDesignedEmail } from './cms-email.ts'
+import { expand, renderDesignedEmail, type EmailSmallPrint } from './cms-email.ts'
 import type { EmailDesign } from './email-design.ts'
+
+export type { EmailSmallPrint }
 
 export type EmailLanguage = 'sv' | 'en'
 export type EmailTemplateName =
@@ -49,6 +51,7 @@ export interface EmailBuildInput {
   readonly rows?: readonly EmailDetailRow[]
   readonly ctaHref: string
   readonly business: EmailBusiness
+  readonly smallPrint?: EmailSmallPrint
 }
 
 const SENDING_MAILBOX = 'booking@mail.bladeblendstudio.se'
@@ -89,6 +92,7 @@ export function buildEmailMessage(input: EmailBuildInput): EmailMessage {
     contactLead === null || business.phoneDisplay === null
       ? null
       : `${contactLead} ${business.phoneDisplay}`,
+    input.smallPrint === undefined ? null : `${input.smallPrint.text} ${input.smallPrint.href}`,
     business.address,
     business.phoneDisplay,
   ]

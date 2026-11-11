@@ -12,12 +12,17 @@ export interface DesignedEmailCopy {
   contactLead: string | null
   designLogoUrl?: string
 }
+export interface EmailSmallPrint {
+  readonly text: string
+  readonly href: string
+}
 export interface DesignedEmailInput {
   lang: CmsLang
   copy: DesignedEmailCopy
   variables?: Readonly<Record<string, string>>
   rows?: readonly { label: string; value: string }[]
   ctaHref: string
+  smallPrint?: EmailSmallPrint
   business: {
     name: string
     phoneDisplay: string | null
@@ -75,14 +80,20 @@ export function renderDesignedEmail(
     business.phoneHref !== null && business.phoneDisplay !== null
       ? `<a href="${escape(business.phoneHref)}" style="color:${colors.text};text-decoration:underline;text-decoration-color:${delivered('border', '#68686d')};text-underline-offset:3px;white-space:nowrap">${escape(business.phoneDisplay)}</a>`
       : ''
+  const footerText = `color:${delivered('muted', '#737378')};font-size:12px;line-height:1.65`
+  const footerLink = `color:${secondary};text-decoration:none`
   const addressLink =
     business.mapsHref === null
       ? escape(business.address)
-      : `<a href="${escape(business.mapsHref)}" style="color:${secondary};text-decoration:none">${escape(business.address)}</a>`
+      : `<a href="${escape(business.mapsHref)}" style="${footerLink}">${escape(business.address)}</a>`
   const footerPhone =
     business.phoneHref === null || business.phoneDisplay === null
       ? ''
-      : `<br><a href="${escape(business.phoneHref)}" style="color:${secondary};text-decoration:none">${escape(business.phoneDisplay)}</a>`
+      : `<br><a href="${escape(business.phoneHref)}" style="${footerLink}">${escape(business.phoneDisplay)}</a>`
+  const smallPrint =
+    input.smallPrint === undefined
+      ? ''
+      : `<p style="margin:28px 0 0;${footerText}">${escape(input.smallPrint.text)} <a href="${escape(input.smallPrint.href)}" style="${footerLink}">${escape(input.smallPrint.href)}</a></p>`
   const rowsHtml = rows
     .map((row, index) => {
       const padding = index === 0 ? '0 0 14px' : '14px 0'
@@ -98,7 +109,7 @@ export function renderDesignedEmail(
       : `<p data-email-part="details" style="margin:0 0 12px;color:${colors.muted};font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase">${text(input.copy.sectionTitle ?? '')}</p><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="${inset}" style="width:100%;background:${inset};border:1px solid ${insetBorder};border-radius:${Math.min(18, design.radius)}px;border-collapse:separate;padding:20px 22px">${rowsHtml}</table>`,
     note: `<p data-email-part="note" style="margin:28px 0 22px;color:${colors.muted};font-size:${design.textSize - 2}px;line-height:1.65">${text(input.copy.note)}</p>`,
     cta: `<table data-email-part="cta" role="presentation" cellspacing="0" cellpadding="0"><tr><td bgcolor="${colors.button}" style="background:${colors.button};border-radius:${Math.min(12, design.radius)}px"><a href="${escape(input.ctaHref)}" style="display:inline-block;padding:15px 22px;color:${colors.buttonText};text-decoration:none;font-size:${design.textSize - 1}px;font-weight:750">${text(input.copy.ctaLabel)}</a></td></tr></table>`,
-    contact: `${input.copy.contactLead === null || !phoneLink ? '' : `<p data-email-part="contact" style="margin:28px 0 0;color:${contactColor};font-size:13px;line-height:1.6">${text(input.copy.contactLead)} ${phoneLink}</p>`}<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;margin-top:38px;border-top:1px solid ${colors.border}"><tr><td style="padding-top:22px;color:${delivered('muted', '#737378')};font-size:12px;line-height:1.65">${addressLink}${footerPhone}</td></tr></table>`,
+    contact: `${input.copy.contactLead === null || !phoneLink ? '' : `<p data-email-part="contact" style="margin:28px 0 0;color:${contactColor};font-size:13px;line-height:1.6">${text(input.copy.contactLead)} ${phoneLink}</p>`}${smallPrint}<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;margin-top:38px;border-top:1px solid ${colors.border}"><tr><td style="padding-top:22px;${footerText}">${addressLink}${footerPhone}</td></tr></table>`,
   }
   const logo =
     design.logo && input.copy.designLogoUrl

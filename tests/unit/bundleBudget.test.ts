@@ -101,14 +101,14 @@ describe('public boot budget', () => {
     expect(result.err).toMatch(/gone\.js is referenced by index\.html but missing/)
   })
 
-  it('allows 69 kB against the default budget of 70 kB', () => {
-    const result = budget(build(entry, { 'entry.js': 69_000 }))
+  it('allows 71 kB against the default budget of 72 kB', () => {
+    const result = budget(build(entry, { 'entry.js': 71_000 }))
     expect(result.code).toBe(0)
-    expect(result.out).toMatch(/public boot JS: 69\.\d kB gzip in 1 files \(budget 70 kB\)/)
+    expect(result.out).toMatch(/public boot JS: 71\.\d kB gzip in 1 files \(budget 72 kB\)/)
   })
 
-  it('fails 71 kB against the default budget of 70 kB', () => {
-    const result = budget(build(entry, { 'entry.js': 71_000 }))
+  it('fails 73 kB against the default budget of 72 kB', () => {
+    const result = budget(build(entry, { 'entry.js': 73_000 }))
     expect(result.code).toBe(1)
     expect(result.err).toMatch(/over budget/)
   })

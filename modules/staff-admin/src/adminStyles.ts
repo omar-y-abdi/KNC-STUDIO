@@ -254,6 +254,9 @@ export function buildAdminStyles(c: Palette, dark: boolean): AdminStyles {
   }
 }
 
+/** Paints nothing but keeps the box, so nothing moves and assistive technology still reads it. */
+export const INVISIBLE: JSX.CSSProperties = { opacity: 0 }
+
 // --- Dialog chrome: the admin popups share one backdrop, one card and one title -----------------
 
 /** Backdrop of every admin popup: a dimmed full-viewport layer that centres the card. */

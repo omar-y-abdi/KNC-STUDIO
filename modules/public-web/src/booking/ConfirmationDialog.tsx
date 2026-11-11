@@ -3,12 +3,17 @@
 // mock's link strings, so output is identical.
 
 import type { JSX } from 'preact'
+import { useLayoutEffect, useRef } from 'preact/hooks'
+import { useNativeSource } from '../cms/NativeSurface'
 import type { BookingStrings } from '../i18n/index'
 import { Dialog, type DialogProps } from '../ui/Dialog'
 import { pseudoClass } from '../ui/pseudo'
+import { prefersReducedMotion } from '../ui/reducedMotion'
 import { sheetBackdropStyle, type BookingStyles } from './bookingStyles'
+import { checkMoves, checkTargets, inkOf, playCheck, type CheckEntrance } from './checkAnimation'
 
 const BACKDROP_STYLE = sheetBackdropStyle(50)
+const TITLE_ID = 'knc-booked-title'
 
 export interface ConfirmationDialogProps {
   readonly cms?: DialogProps['cms']
@@ -32,13 +37,25 @@ export interface ConfirmationDialogProps {
   /** Label for the "Mina bokningar" button (from the shell strings); required when onMyBookings is set. */
   readonly myBookingsLabel?: string | undefined
   readonly onBackdropClick: (e: JSX.TargetedMouseEvent<HTMLDivElement>) => void
+  /** `still` in the Studio's confirmation scene, where nothing was just booked. */
+  readonly checkEntrance: CheckEntrance
 }
 
 export function ConfirmationDialog(props: ConfirmationDialogProps): JSX.Element {
   const { t, s } = props
+  const frame = useNativeSource() ? 'source' : 'site'
+  // On an existing control: a ref makes an element required in the CMS, and this one already is.
+  const closeRef = useRef<HTMLButtonElement>(null)
+  useLayoutEffect(() => {
+    const motion = prefersReducedMotion() ? 'reduced' : 'full'
+    if (!checkMoves(props.checkEntrance, motion, frame)) return
+    const card = closeRef.current?.closest('[role="dialog"]')
+    const targets = card ? checkTargets(card, TITLE_ID) : undefined
+    if (card && targets) playCheck(targets, inkOf(getComputedStyle(card).color))
+  }, [])
   return (
     <Dialog
-      titleId="knc-booked-title"
+      titleId={TITLE_ID}
       {...(props.cms ? { cms: props.cms } : {})}
       onClose={props.onReset}
       onBackdropClick={props.onBackdropClick}
@@ -47,7 +64,12 @@ export function ConfirmationDialog(props: ConfirmationDialogProps): JSX.Element 
       cardClass="knc-sheet-card"
       cardStyle={s.overlayCardStyle}
     >
-      <button onClick={props.onReset} style={s.confirmCloseStyle} aria-label={props.closeLabel}>
+      <button
+        ref={closeRef}
+        onClick={props.onReset}
+        style={s.confirmCloseStyle}
+        aria-label={props.closeLabel}
+      >
         ×
       </button>
       <div style="padding:28px 22px 20px;text-align:center;">
@@ -56,7 +78,7 @@ export function ConfirmationDialog(props: ConfirmationDialogProps): JSX.Element 
         </div>
         {/* A heading by role, not tag: the published presentation stores it as a div. */}
         <div
-          id="knc-booked-title"
+          id={TITLE_ID}
           role="heading"
           aria-level={2}
           style="font-family:'Inter Variable';font-weight:600;font-size:20px;margin-bottom:6px;"

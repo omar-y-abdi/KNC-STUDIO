@@ -1,15 +1,33 @@
+import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   buildEmailMessage,
+  confirmationSmallPrint,
   deliverEmailBatch,
   defaultEmailTemplate,
   loadEmailBusiness,
+  prepareEmail,
   ResendDeliveryError,
   resendDeliveryFailureCode,
   sendViaResend,
+  type EmailBusiness,
+  type EmailLanguage,
+  type EmailTemplateName,
   type PreparedEmail,
 } from '../../supabase/functions/_shared/email'
+import { customerAccessUrl } from '../../supabase/functions/_shared/customerAccess'
+import { HIDDEN_LINK } from '../../packages/backend-contracts/src/email-send-log'
+import { EMAIL_NAMES } from '../../packages/content-contracts/src/cms'
+import {
+  defaultEmailDesign,
+  EMAIL_PARTS,
+  type EmailDesign,
+} from '../../packages/content-contracts/src/email-design'
+import type {
+  EmailBuildInput,
+  EmailSmallPrint,
+} from '../../packages/content-contracts/src/email-render'
 import { appStrings } from '../../modules/public-web/src/i18n/index'
 
 function discoveryClient(settings: Record<string, string>) {
@@ -368,5 +386,163 @@ describe('Resend delivery failure classification', () => {
     )
 
     expect(result).toEqual({ sent: [], failureCode: 'send_failed_permanent' })
+  })
+})
+
+describe('the small print of the customer confirmation', () => {
+  const business: EmailBusiness = {
+    name: 'Current Studio',
+    email: 'contact@current.example',
+    phoneDisplay: '031-12 34 56',
+    phoneHref: 'tel:+4631123456',
+    address: 'Current Street 7, 411 11 Göteborg',
+    mapsHref: 'https://maps.example/current',
+    cancellationPolicyHours: 36,
+  }
+  const reordered: EmailDesign = {
+    ...defaultEmailDesign(),
+    defaultMode: 'light',
+    order: [...EMAIL_PARTS].reverse(),
+  }
+  const site = new URL(customerAccessUrl('0'.repeat(64))).origin
+  const input = (
+    template: EmailTemplateName,
+    lang: EmailLanguage,
+    design: EmailDesign | null,
+  ): EmailBuildInput => ({
+    to: 'customer@example.com',
+    lang,
+    copy: { ...defaultEmailTemplate(template, lang), design },
+    variables: {
+      customer_name: 'Omar <Ö>',
+      barber_name: 'Ada & Co',
+      booking_date: 'fredag 13 november 2026',
+      booking_time: '09:00',
+      cancellation_hours: '36',
+      new_email: 'ny@example.com',
+    },
+    rows: [{ label: 'Pris', value: '350 kr' }],
+    ctaHref: 'https://bladeblendstudio.se/token',
+    business,
+  })
+  const escaped = (value: string): string =>
+    value
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#039;')
+  const smallPrint = (lang: EmailLanguage): EmailSmallPrint => {
+    const found = confirmationSmallPrint('customer_confirmation', lang, site)
+    if (found === null) throw new Error('The confirmation has no small print')
+    return found
+  }
+
+  // Digests of every template rendered before the small print existed, in both languages, with the
+  // delivered design and with a light one whose parts run backwards.
+  it.each([
+    ['customer_confirmation', '716a89b399925d4a3585ed06129eb7177e27fc3e4f4f36b11203a00bfb49e242'],
+    ['barber_confirmation', 'ffc6693d8e28e9e4c764dc6db2010d5e93fbf8918edad32b6e55b4dc93003eb6'],
+    ['customer_cancellation', 'c2fe6deb45f2552ed7b66dcbb8ac6ebdf2d38d66634d51e5a041d65aa526faab'],
+    ['barber_cancellation', '0d62f0f8b3dd2336f1bcd95d3c81f5db436548d95596508ae04b2b0a43c2ca30'],
+    ['customer_reminder', '8b52774897e320458ae53be242dc15b31f129a7506841c821fc2a6a170a89751'],
+    ['customer_booking_access', '6f9e8653225c233ae424aa9d1d653950487c6ca7fd5bbf9ee167fc730809ecf2'],
+    ['auth_recovery', '37c2c51031418fc91ec29df7fcab063860e527ea9496f1f7230c5ffcabc4576f'],
+    ['auth_email_change', 'ca60ae6603c880e7da8b89f4d457e03f3547ba3326d5ba8fa7fd51458bf4a4fd'],
+    ['auth_invite', 'ee518e86391dad6bc6096952fde23538ae07093a276a68056b7c75fc78e2ed80'],
+  ] as const)('leaves %s byte for byte as it was without small print', (template, digest) => {
+    const messages = (['sv', 'en'] as const).flatMap((lang) =>
+      [null, reordered].map((design) => buildEmailMessage(input(template, lang, design))),
+    )
+    expect(createHash('sha256').update(JSON.stringify(messages)).digest('hex')).toBe(digest)
+  })
+
+  it('belongs to the customer confirmation alone and links the terms in its language', () => {
+    for (const template of EMAIL_NAMES)
+      for (const lang of ['sv', 'en'] as const)
+        if (template !== 'customer_confirmation')
+          expect(confirmationSmallPrint(template, lang, site), `${template} ${lang}`).toBeNull()
+    expect(site).toBe('https://bladeblendstudio.se')
+    expect(smallPrint('sv').href).toBe('https://bladeblendstudio.se/terms')
+    expect(smallPrint('en').href).toBe('https://bladeblendstudio.se/terms?lang=en')
+    expect(smallPrint('sv').text).toBe('Villkor och ångerrätt hittar du på')
+    expect(smallPrint('en').text).toBe('See our terms and right of withdrawal at')
+    // The owner's ruling: one sentence of at most ten words, the link included.
+    for (const lang of ['sv', 'en'] as const) {
+      const { text, href } = smallPrint(lang)
+      expect(`${text} ${href}`.split(' ').length, lang).toBeLessThanOrEqual(10)
+      expect(text, lang).not.toMatch(/[.:!?]/)
+    }
+    const sender = readFileSync('supabase/functions/send-confirmation/index.ts', 'utf8')
+    expect(sender).toContain(
+      'const smallPrint = confirmationSmallPrint(templateName, lang, new URL(ctaHref).origin)',
+    )
+    expect(sender).toContain('...(smallPrint === null ? {} : { smallPrint }),')
+  })
+
+  it.each(['sv', 'en'] as const)(
+    'adds the %s small print between the contact line and the footer, in html and text',
+    (lang) => {
+      const print = smallPrint(lang)
+      const without = buildEmailMessage(input('customer_confirmation', lang, null))
+      const message = buildEmailMessage({
+        ...input('customer_confirmation', lang, null),
+        smallPrint: print,
+      })
+      const footerText = /<td style="padding-top:22px;([^"]+)">/.exec(without.html)?.[1]
+      const footerLink = /<a href="https:\/\/maps\.example\/current" style="([^"]+)">/.exec(
+        without.html,
+      )?.[1]
+      expect(footerText).toBe('color:#737378;font-size:12px;line-height:1.65')
+      expect(footerLink).toBe('color:#98989d;text-decoration:none')
+      const paragraph =
+        `<p style="margin:28px 0 0;${footerText}">${escaped(print.text)} ` +
+        `<a href="${print.href}" style="${footerLink}">${print.href}</a></p>`
+      const footer =
+        '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;margin-top:38px;'
+      expect(message.html).toContain(`</p>${paragraph}${footer}`)
+      expect(message.html.indexOf('data-email-part="contact"')).toBeLessThan(
+        message.html.indexOf(paragraph),
+      )
+      expect(message.html.replace(paragraph, '')).toBe(without.html)
+      const line = `${print.text} ${print.href}`
+      expect(message.text).toContain(`${business.phoneDisplay}\n\n${line}\n\n${business.address}`)
+      expect(message.text.replace(`${line}\n\n`, '')).toBe(without.text)
+      expect(message.subject).toBe(without.subject)
+    },
+  )
+
+  it('keeps hostile small print escaped in the html and plain in the text', () => {
+    const hostile = {
+      text: `<img src=x onerror="alert('x')"> & {customer_name}`,
+      href: 'https://bladeblendstudio.se/terms?a="><script>',
+    }
+    const message = buildEmailMessage({
+      ...input('customer_confirmation', 'sv', null),
+      smallPrint: hostile,
+    })
+    expect(message.html).not.toContain('<img src=x')
+    expect(message.html).not.toContain('"><script>')
+    expect(message.html).toContain(
+      '&lt;img src=x onerror=&quot;alert(&#039;x&#039;)&quot;&gt; &amp; {customer_name} <a href="https://bladeblendstudio.se/terms?a=&quot;&gt;&lt;script&gt;"',
+    )
+    expect(message.text).toContain(`${hostile.text} ${hostile.href}`)
+  })
+
+  it('keeps the terms link in the stored copy, which hides only the access link', () => {
+    const print = smallPrint('sv')
+    const email = prepareEmail(
+      'customer_confirmation',
+      { ...input('customer_confirmation', 'sv', null), smallPrint: print },
+      null,
+    )
+    expect(email.stored.html).toContain(`<a href="${print.href}"`)
+    expect(email.stored.text).toContain(`${print.text} ${print.href}`)
+    expect(email.stored.html).toBe(
+      email.message.html.replace(
+        'href="https://bladeblendstudio.se/token"',
+        `href="${HIDDEN_LINK}"`,
+      ),
+    )
   })
 })

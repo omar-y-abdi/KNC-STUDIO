@@ -12,6 +12,7 @@
 //    carry an `inert` their renderer owns. (These three: ui/dialogFocus.ts.)
 //  - Escape closes (in addition to the existing backdrop click-to-close)
 //  - prefers-reduced-motion: gate the entry animation only (settled appearance unchanged)
+//  - the viewport-edge strips show the backdrop's dim while open (ui/paintViewport.ts)
 
 import type { ComponentChildren, JSX } from 'preact'
 import { useLayoutEffect, useRef } from 'preact/hooks'
@@ -23,6 +24,7 @@ import {
   settleFocusAfterClose,
   tabLeavesCard,
 } from './dialogFocus'
+import { dimViewportEdges } from './paintViewport'
 import { prefersReducedMotion } from './reducedMotion'
 
 export interface DialogProps {
@@ -71,6 +73,12 @@ export function Dialog(props: DialogProps): JSX.Element {
       // dialog closed with the one it opened from loses it). Outside the public shell: nothing.
       queueMicrotask(() => settleFocusAfterClose(prev))
     }
+  }, [])
+  useLayoutEffect(() => {
+    const backdrop = cardRef.current?.parentElement
+    if (!backdrop) return
+    const style = getComputedStyle(backdrop)
+    return dimViewportEdges({ color: style.backgroundColor, zIndex: Number(style.zIndex) || 0 })
   }, [])
 
   const onKeyDown = (e: JSX.TargetedKeyboardEvent<HTMLDivElement>): void => {

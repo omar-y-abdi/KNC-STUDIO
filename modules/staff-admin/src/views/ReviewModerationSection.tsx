@@ -11,6 +11,7 @@ import {
   type AdminReview,
 } from '../adapters/reviewsAdmin'
 import { adminText } from '../adminStrings'
+import { INVISIBLE } from '../adminStyles'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { orderedAdminOperation } from '../orderedOperations'
 import type { AdminError } from '../types'
@@ -341,7 +342,7 @@ function ReviewModerationList(props: ReviewModerationListProps): JSX.Element {
       </div>
 
       {loaded.state === 'loading' ? (
-        <div role="status" style={s.emptyState}>
+        <div role="status" style={{ ...s.emptyState, ...INVISIBLE }}>
           {t.reviewsLoading}
         </div>
       ) : null}

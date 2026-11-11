@@ -48,8 +48,86 @@ body {
     transform: translateY(-7px);
   }
 }
+/* The details card's layer while a booking is on its way (booking/DetailsDialog.tsx). */
+.knc-pending {
+  animation: kncOverlay 0.2s ease-out both;
+}
+.knc-pending-body {
+  animation: kncPendingRise 0.32s cubic-bezier(0.32, 0.72, 0, 1) 0.06s both;
+}
+.knc-pending-orbit {
+  animation: kncOrbit 1s linear infinite;
+}
+.knc-pending-disc {
+  animation: kncBreath 2.4s ease-in-out infinite;
+}
+.knc-pending-comet {
+  background: conic-gradient(from 0deg, transparent 0deg 90deg, currentColor 360deg);
+}
+.knc-pending-head {
+  background: currentColor;
+}
+@keyframes kncPendingRise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes kncOrbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes kncBreath {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.04);
+  }
+}
+/* The home-screen guide's entrance (onboarding/HomeScreenGuide.tsx); each row sets its delay. */
+.knc-guide-tile {
+  animation: kncGuideTile 0.42s cubic-bezier(0.22, 1, 0.36, 1) 0.12s backwards;
+}
+.knc-guide-step {
+  animation: kncPendingRise 0.32s cubic-bezier(0.32, 0.72, 0, 1) backwards;
+}
+@keyframes kncGuideTile {
+  from {
+    transform: scale(0.8);
+  }
+  60% {
+    transform: scale(1.04);
+  }
+  to {
+    transform: scale(1);
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .knc-stripes {
+    animation: none;
+  }
+  .knc-pending,
+  .knc-pending-body,
+  .knc-pending-orbit,
+  .knc-pending-disc {
+    animation: none;
+  }
+  .knc-pending-comet {
+    background: currentColor;
+    opacity: 0.13;
+  }
+  .knc-pending-head {
+    display: none;
+  }
+  .knc-guide-tile,
+  .knc-guide-step {
     animation: none;
   }
 }

@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import {
+  confirmationSmallPrint,
   deliverEmailBatch,
   defaultEmailTemplate,
   loadEmailBusiness,
@@ -229,6 +230,8 @@ async function message(
     client === null
       ? defaultEmailTemplate(templateName, lang)
       : await loadEmailTemplate(client, templateName, lang)
+  // The customer's links share the Mina bokningar link's origin (customerAccessUrl).
+  const smallPrint = confirmationSmallPrint(templateName, lang, new URL(ctaHref).origin)
   return prepareEmail(
     templateName,
     {
@@ -239,6 +242,7 @@ async function message(
       rows,
       ctaHref,
       business,
+      ...(smallPrint === null ? {} : { smallPrint }),
     },
     booking.id,
   )

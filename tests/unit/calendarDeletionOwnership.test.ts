@@ -71,6 +71,53 @@ describe('Calendar external-action ownership', () => {
   })
 })
 
+describe('Calendar status while it is read', () => {
+  const t = adminText('sv')
+  const reading = (error: 'status' | 'action' | null): RenderedNode => {
+    vi.mocked(useCalendarSync).mockReturnValue({
+      status: null,
+      loading: true,
+      busy: false,
+      error,
+      connect: vi.fn().mockResolvedValue(undefined),
+      disconnect: vi.fn().mockResolvedValue(undefined),
+      refresh: vi.fn().mockResolvedValue(undefined),
+    })
+    return CalendarConnectButton({
+      s: buildAdminStyles(palette(false), false),
+      dark: false,
+      lang: 'sv',
+    })
+  }
+  const hiddenText = (tree: RenderedNode): readonly RenderedNode[] =>
+    elements(tree).filter(
+      (node) => node.props?.children === t.calendarLoading && node.props['style'] !== undefined,
+    )
+
+  it('paints neither the frame nor the text but keeps both in place and the status', () => {
+    const tree = reading(null)
+
+    expect(tree.props?.['style']).toMatchObject({ padding: '12px 14px', opacity: 0 })
+    const status = elements(tree).filter((node) => node.props?.['role'] === 'status')
+    expect(status.map(content)).toEqual([t.calendarLoading])
+    expect(elements(tree).some((node) => node.type === 'button')).toBe(false)
+  })
+
+  it('keeps the frame with the retry and the error and hides only the reading text', () => {
+    const tree = reading('status')
+
+    expect(tree.props?.['style']).not.toHaveProperty('opacity')
+    const status = elements(tree).find((node) => node.props?.['role'] === 'status')
+    expect(content(status)).toBe(t.calendarLoading)
+    expect(hiddenText(status ?? {}).map((node) => node.props?.['style'])).toEqual([{ opacity: 0 }])
+    const retry = elements(tree).find((node) => node.type === 'button')
+    expect(content(retry)).toBe(t.calendarLoading)
+    expect(content(elements(tree).find((node) => node.props?.['role'] === 'alert'))).toBe(
+      t.calendarStatusError,
+    )
+  })
+})
+
 const dispatch = vi.hoisted(() => ({ rpc: vi.fn(), settle: vi.fn() }))
 vi.mock('@supabase/supabase-js', () => ({ createClient: () => ({ rpc: dispatch.rpc }) }))
 vi.mock('../../supabase/functions/_shared/externalActions', async (original) => ({

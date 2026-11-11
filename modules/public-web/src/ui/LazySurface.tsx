@@ -1,5 +1,7 @@
 import { Component, type ComponentChildren, type JSX } from 'preact'
 import { Suspense } from 'preact/compat'
+import { useLayoutEffect } from 'preact/hooks'
+import { dimViewportEdges, type ViewportDim } from './paintViewport'
 
 interface LazyLoadBoundaryProps {
   readonly children: ComponentChildren
@@ -32,6 +34,12 @@ export interface LazySurfaceProps {
   readonly minHeight?: string
 }
 
+const OVERLAY_DIM: ViewportDim = { color: 'rgba(10,10,12,.42)', zIndex: 80 }
+
+function useOverlayDim(overlay: boolean): void {
+  useLayoutEffect(() => (overlay ? dimViewportEdges(OVERLAY_DIM) : undefined), [overlay])
+}
+
 function frameStyle(overlay: boolean, minHeight: string): JSX.CSSProperties {
   const base: JSX.CSSProperties = {
     minHeight,
@@ -51,8 +59,8 @@ function frameStyle(overlay: boolean, minHeight: string): JSX.CSSProperties {
         ...base,
         position: 'fixed',
         inset: 0,
-        zIndex: 80,
-        background: 'rgba(10,10,12,.42)',
+        zIndex: OVERLAY_DIM.zIndex,
+        background: OVERLAY_DIM.color,
         color: '#fff',
       }
     : base
@@ -64,6 +72,7 @@ export function LazyLoadingMessage(props: {
   readonly overlay: boolean
   readonly minHeight: string
 }): JSX.Element {
+  useOverlayDim(props.overlay)
   return (
     <div
       role="status"
@@ -82,6 +91,7 @@ function ErrorMessage(props: {
   readonly overlay: boolean
   readonly minHeight: string
 }): JSX.Element {
+  useOverlayDim(props.overlay)
   return (
     <div
       role="alert"

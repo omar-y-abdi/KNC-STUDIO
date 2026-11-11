@@ -40,6 +40,7 @@ import { Turnstile, turnstileConfigured } from './Turnstile'
 import { DetailsDialog } from './DetailsDialog'
 import { ConfirmationDialog } from './ConfirmationDialog'
 import { stockholmWallClockDate } from './stockholmTime'
+import { pendingHold, pendingMinimumMs, timerDelay, type Delay } from './pendingHold'
 import { focusQuietly } from '../ui/pageFocus'
 import { pseudoClass } from '../ui/pseudo'
 import { prefersReducedMotion } from '../ui/reducedMotion'
@@ -159,6 +160,8 @@ export interface BookingFlowProps {
   readonly clock?: Clock
   /** Injected submit seam (default: env-selected; local adapter when no backend is configured). */
   readonly port?: BookingPort
+  /** Injected wait that keeps a fast answer behind the pending state (default: a timer). */
+  readonly delay?: Delay
   /** Injected roster seam — barbers shown in step 1 (default: env-selected; offline = empty). */
   readonly barbersPort?: BarbersPort
   /** Injected services seam — chosen barber's menu in step 3 (default: env-selected; offline = empty). */
@@ -171,6 +174,8 @@ export interface BookingFlowProps {
   readonly business?: BusinessSettings
   readonly initialContact?: BookingContact
   readonly onBookingComplete?: () => void
+  /** The confirmation of a booking made here was closed, other than through "Mina bokningar". */
+  readonly onConfirmationClosed?: () => void
   /** The initial roster has resolved, including a truthful empty/error state. */
   readonly onRosterReady?: () => void
 }
@@ -668,8 +673,14 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   const onPopupBackdrop = (e: JSX.TargetedMouseEvent<HTMLDivElement>): void => {
     if (e.target === e.currentTarget) closePopup()
   }
+  const closeConfirmation = (): void => {
+    reset()
+    // A Studio scene or preview confirms nothing.
+    if (result?.ok === true && scene === undefined && previewPorts === undefined)
+      props.onConfirmationClosed?.()
+  }
   const onConfirmBackdrop = (e: JSX.TargetedMouseEvent<HTMLDivElement>): void => {
-    if (e.target === e.currentTarget) reset()
+    if (e.target === e.currentTarget) closeConfirmation()
   }
   const onContact =
     (field: keyof FieldErrors) =>
@@ -729,6 +740,13 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
       turnstileToken,
     }
     markPending(submittedSlot)
+    const minimumShown = pendingHold(
+      pendingMinimumMs(
+        previewPorts === undefined && scene === undefined ? 'live' : 'preview',
+        prefersReducedMotion() ? 'reduced' : 'full',
+      ),
+      props.delay ?? timerDelay,
+    )
     let answer: BookingResult
     try {
       answer = await port.submit(booking, business)
@@ -737,6 +755,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
       // booking may exist all the same: it is handled as an answer that does not say what happened.
       answer = { ok: false, error: { kind: 'unconfirmed', message: t.errUnconfirmed } }
     }
+    await minimumShown
     // Nothing below is inside a `try`: a failure in handling the answer is never taken for a
     // failed submit. The submit is over first, whatever follows.
     markPending(null)
@@ -1192,7 +1211,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
           mapsHref={mapsHref}
           showDirections={showDirections}
           calRowHover={calRowHover}
-          onReset={reset}
+          onReset={closeConfirmation}
           onMyBookings={
             props.onMyBookings
               ? () => {
@@ -1203,6 +1222,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
           }
           myBookingsLabel={appStrings(lang).myBookings}
           onBackdropClick={onConfirmBackdrop}
+          checkEntrance={scene === 'confirmation' ? 'still' : 'animate'}
         />
       ) : null}
     </div>,
