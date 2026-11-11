@@ -224,6 +224,20 @@ describe('compositeOver', () => {
     expect(compositeOver('#1c1c1e', [BACKDROP, BACKDROP])).toBe('rgb(16, 16, 18)')
   })
 
+  it('reads a channel as digits with an optional fraction, or a bare fraction, and nothing else', () => {
+    for (const alpha of ['0.42', '.42', ' 0.42 '])
+      expect(compositeOver('#ffffff', [`rgba(10, 10, 12,${alpha})`]), alpha).toBe(
+        'rgb(152, 152, 153)',
+      )
+    for (const alpha of ['1.', '.', '0..5', '0.4.2', '1e0', '+1', ''])
+      expect(compositeOver('#ffffff', [`rgba(10, 10, 12,${alpha})`]), alpha).toBe('#ffffff')
+    // Linear in its length: a quadratic pattern needs seconds for this one.
+    const digits = `rgba(${'0'.repeat(200_000)}x, 0, 0, 1)`
+    const started = performance.now()
+    expect(compositeOver('#ffffff', [digits])).toBe('#ffffff')
+    expect(performance.now() - started).toBeLessThan(500)
+  })
+
   it('treats a clear overlay as no dim and an opaque one as the whole colour', () => {
     expect(compositeOver('#f4f3f0', ['rgba(0, 0, 0, 0)'])).toBe('rgb(244, 243, 240)')
     expect(compositeOver('#f4f3f0', ['rgb(10, 10, 12)'])).toBe('rgb(10, 10, 12)')

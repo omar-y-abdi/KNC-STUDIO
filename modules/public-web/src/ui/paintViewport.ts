@@ -75,15 +75,22 @@ interface Rgba {
   readonly a: number
 }
 
+/** Digits with an optional fraction, or a bare fraction; NaN for anything else. */
+function channel(part: string): number {
+  const [whole = '', fraction, ...more] = part.trim().split('.')
+  const digits = (text: string): boolean => /^\d+$/.test(text)
+  const valid =
+    more.length === 0 &&
+    (fraction === undefined ? digits(whole) : digits(fraction) && (whole === '' || digits(whole)))
+  return valid ? Number(part) : NaN
+}
+
 function parseColor(value: string): Rgba | undefined {
   const text = value.trim()
   const hex = /^#([\da-f]{6})$/i.exec(text)?.[1]
   const parts =
     hex === undefined
-      ? /^rgba?\((.*)\)$/i
-          .exec(text)?.[1]
-          ?.split(',')
-          .map((part) => (/^\s*\d*\.?\d+\s*$/.test(part) ? Number(part) : NaN))
+      ? /^rgba?\((.*)\)$/i.exec(text)?.[1]?.split(',').map(channel)
       : [0, 2, 4].map((at) => Number.parseInt(hex.slice(at, at + 2), 16))
   if (parts === undefined || parts.length < 3 || parts.length > 4) return undefined
   const [r = NaN, g = NaN, b = NaN, a = 1] = parts
