@@ -12,6 +12,7 @@ import {
   type GatewayRateLimit,
 } from '../../supabase/worker/customerGateway'
 import worker, { PublicContent } from '../../supabase/worker/index'
+import { requestSchema as submitBooking } from '../../supabase/functions/submit-booking/request'
 
 const source = (path: string): string => readFileSync(path, 'utf8').replace(/\s+/g, ' ')
 
@@ -277,7 +278,8 @@ describe('public privacy disclosure of stored email copies', () => {
     expect(privacy).toContain(
       'Sparade kopior av skickade mejl raderas automatiskt 30 dagar efter det första sändningsförsöket.',
     )
-    expect(privacy).toContain('Senast uppdaterad 10 november 2026')
+    expect(privacy).toContain('Senast uppdaterad 11 november 2026')
+    expect(privacy).not.toContain('Senast uppdaterad 10 november 2026')
     expect(privacy).not.toContain('Senast uppdaterad 4 november 2026')
   })
 
@@ -297,7 +299,8 @@ describe('public privacy disclosure of stored email copies', () => {
     expect(privacy).toContain(
       'Stored copies of sent email are deleted automatically 30 days after the first send attempt.',
     )
-    expect(privacy).toContain('Last updated 10 November 2026')
+    expect(privacy).toContain('Last updated 11 November 2026')
+    expect(privacy).not.toContain('Last updated 10 November 2026')
     expect(privacy).not.toContain('Last updated 4 November 2026')
   })
 })
@@ -638,6 +641,58 @@ describe('public privacy disclosure of retention, backups, reviews and browser s
         'shown on the website, or remove it. If you want your review removed, contact the salon ' +
         'through the <a href="/contact?lang=en">contact page</a>.',
     )
+    // Submitting publishes; only the owner deletes, and no customer action removes a review.
+    expect(BOOKING_ACTIONS.filter((action) => action.includes('review'))).toEqual(['review'])
+    expect(privacy).toContain(
+      'Omdömen publiceras med ditt samtycke, som du lämnar när du skickar omdömet. Du kan när ' +
+        'som helst återkalla samtycket genom att kontakta salongen, och då tar vi bort omdömet. ' +
+        'Ett omdöme sparas tills salongens ägare tar bort det.',
+    )
+    expect(privacy).toContain(
+      'Reviews are published with your consent, which you give when you submit the review. You ' +
+        'can withdraw your consent at any time by contacting the salon, and we will then remove ' +
+        'the review. A review is kept until the salon owner removes it.',
+    )
+  })
+
+  it('states the details a booking needs and the processors that receive them', async () => {
+    const booking = {
+      barberId: 'b',
+      serviceId: 's',
+      startAt: '2026-11-13T09:00:00+01:00',
+      phone: '0701234567',
+      email: 'kund@example.com',
+      lang: 'sv',
+      customerName: 'Ada',
+    }
+    expect(submitBooking.safeParse({ booking }).success).toBe(true)
+    for (const field of ['customerName', 'phone', 'email'] as const)
+      expect(submitBooking.safeParse({ booking: { ...booking, [field]: '' } }).success, field).toBe(
+        false,
+      )
+    const privacy = await servedPrivacyPolicy()
+    expect(privacy).toContain(
+      'Du behöver lämna namn, telefonnummer och e-postadress för att kunna boka. Utan dem kan vi ' +
+        'inte ta emot bokningen eller skicka bekräftelsen.',
+    )
+    expect(privacy).toContain(
+      'You need to give your name, phone number and email address to book. Without them we ' +
+        'cannot accept the booking or send the confirmation.',
+    )
+    expect(privacy).toContain(
+      'Supabase, Cloudflare, Resend och GitHub behandlar uppgifter för salongens räkning som ' +
+        'personuppgiftsbiträden. Några av dem kan behandla uppgifter i USA.',
+    )
+    expect(privacy).toContain(
+      "Supabase, Cloudflare, Resend and GitHub process data on the salon's behalf as " +
+        'processors. Some of them may process data in the United States.',
+    )
+    expect(privacy).toContain('Du kan få en kopia av skyddsåtgärderna genom att kontakta salongen.')
+    expect(privacy).toContain('You can get a copy of the safeguards by contacting the salon.')
+    expect(privacy).not.toContain(
+      'Kontakta salongen för information om tillämpliga överföringsskydd',
+    )
+    expect(privacy).not.toContain('Ask the salon about applicable transfer safeguards')
   })
 
   it('states the e-mail the booked barber receives', async () => {
@@ -770,17 +825,72 @@ describe('public terms page', () => {
 
   it('carries the date of its last change in both languages', () => {
     const terms = source('public/terms.html')
-    expect(terms).toContain('· Uppdaterad 10 november 2026</p>')
-    expect(terms).toContain('Updated 10 November 2026. </p>')
+    expect(terms).toContain('· Uppdaterad 11 november 2026</p>')
+    expect(terms).toContain('Updated 11 November 2026. </p>')
+    expect(terms).not.toContain('10 november 2026')
+    expect(terms).not.toContain('10 November 2026')
     expect(terms).not.toContain('13 september 2026')
+  })
+
+  it('points the withdrawal form at the business details above it in each language', () => {
+    const terms = source('public/terms.html')
+    const at = [
+      '<div id="legal-business-details-sv"></div>',
+      'Till: salongen, på adressen och e-postadressen som står överst på sidan.',
+      '<section lang="en"> <h2>Booking terms in English</h2> <div id="legal-business-details-en"></div>',
+      'To: the salon, at the address and email stated at the start of the English terms.',
+    ].map((text) => terms.indexOf(text))
+    expect(at.every((index) => index >= 0)).toBe(true)
+    expect([...at].sort((a, b) => a - b)).toEqual(at)
+    // Only the line under the page heading comes before the Swedish details.
+    expect(terms.slice(0, at[0]).match(/<(?:h2|p|div)\b/g)).toEqual(['<p'])
   })
 
   it('gives the English section the statements the Swedish text makes', () => {
     const terms = source('public/terms.html')
     for (const [swedish, english] of [
       [
-        'Webbplatsen tar inte emot betalning; betalningsfrågor hanteras med salongen.',
-        'The website does not collect payment; payment questions are handled with the salon.',
+        'Priset som visas är totalpriset i svenska kronor. Du betalar i salongen efter ' +
+          'behandlingen. Vi tar emot kort, Swish och kontanter. Webbplatsen tar inte emot betalning.',
+        'The price shown is the total price in Swedish kronor. You pay at the salon after your ' +
+          'treatment. We accept card, Swish and cash. The website does not take payment.',
+      ],
+      ['Bokningen kan göras på svenska eller engelska.', 'You can book in Swedish or English.'],
+      [
+        'kan barberaren begära betalning för den bokade tiden, högst priset för den bokade ' +
+          'behandlingen. Det avgörs i varje enskilt fall',
+        'the barber may ask you to pay for the booked time, at most the price of the booked ' +
+          'treatment. This is decided case by case',
+      ],
+      [
+        'Ingen betalning begärs om du har ångrat bokningen med din ångerrätt.',
+        'No payment is requested if you have withdrawn from the booking under your right of withdrawal.',
+      ],
+      ['<h2>Ångerrätt</h2>', '<h3>Right of withdrawal</h3>'],
+      [
+        'rätt att ångra bokningen inom 14 dagar från den dag du bokade.',
+        'the right to withdraw from the booking within 14 days of the day you booked.',
+      ],
+      [
+        'Avbokning under Mina bokningar går fram till tidsgränsen ovan; därefter kontaktar du salongen.',
+        'Cancellation in My appointments is possible until the deadline above; after that, contact the salon.',
+      ],
+      [
+        'När behandlingen har utförts kan du inte längre ångra bokningen.',
+        'Once the treatment has been carried out, you can no longer withdraw.',
+      ],
+      ['<h3>Ångerblankett</h3>', '<h4>Withdrawal form</h4>'],
+      [
+        'Jag meddelar härmed att jag frånträder mitt avtal om följande tjänst:',
+        'I hereby give notice that I withdraw from my contract for the following service:',
+      ],
+      [
+        'Kontakta salongen inom skälig tid efter att du har märkt felet.',
+        'Contact the salon within a reasonable time after you notice the problem.',
+      ],
+      [
+        'Allmänna reklamationsnämnden (ARN), Box 174, 101 23 Stockholm, www.arn.se.',
+        'National Board for Consumer Disputes (ARN), Box 174, 101 23 Stockholm, Sweden, www.arn.se.',
       ],
       [
         'En avbokning är klar när du får bekräftelse på att den genomförts.',
@@ -796,11 +906,13 @@ describe('public terms page', () => {
       ],
       [
         'Beskriv vad som hänt och vilken bokning det gäller.',
-        'describe what happened and which booking it concerns.',
+        'Describe what happened and which booking it concerns.',
       ],
     ] as const) {
       expect(terms).toContain(swedish)
       expect(terms).toContain(english)
     }
+    expect(terms).not.toContain('betalningsfrågor hanteras med salongen')
+    expect(terms).not.toContain('payment questions are handled with the salon')
   })
 })

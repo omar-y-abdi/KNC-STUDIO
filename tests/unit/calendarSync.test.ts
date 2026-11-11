@@ -178,6 +178,38 @@ describe('public Calendar privacy disclosure', () => {
     expect(privacy).not.toContain('<code>calendar.events</code>')
   })
 
+  it('lists Google as recipient of exactly the booking fields the event carries', async () => {
+    const event = buildEvent({
+      service_name: 'Klippning',
+      customer_name: 'Ada Berg',
+      phone: '0701234567',
+      email: 'ada@example.com',
+      start_at: '2026-07-24T12:00:00+00:00',
+      end_at: '2026-07-24T12:30:00+00:00',
+    })
+    expect(Object.keys(event)).toEqual(['summary', 'description', 'start', 'end', 'reminders'])
+    expect(event.summary).toBe('Ada Berg — Klippning')
+    expect(event.description.split('\n')).toEqual([
+      'Kund: Ada Berg',
+      'Telefon: 0701234567',
+      'E-post: ada@example.com',
+      'Tjänst: Klippning',
+    ])
+    const privacy = await privacyPolicy()
+    expect(privacy).toContain(
+      'Om barberaren du bokar har kopplat sin Google-kalender förs bokningen in i den kalendern ' +
+        'med ditt namn, ditt telefonnummer och din e-postadress samt behandling och start- och ' +
+        'sluttid. Google är då mottagare av de uppgifterna.',
+    )
+    expect(privacy).toContain(
+      'If the barber you book has connected a Google Calendar, the booking is entered in that ' +
+        'calendar with your name, your phone number and your email address, and the service and ' +
+        'start and end time. Google then receives those details.',
+    )
+    expect(privacy).not.toContain('Google får bokningsuppgifter när ansvarig barberare')
+    expect(privacy).not.toContain('Google receives booking details when the assigned barber')
+  })
+
   it('marks the English policy section with its document language', async () => {
     const privacy = await privacyPolicy()
     expect(privacy).toContain('<section lang="en">')
