@@ -12,9 +12,10 @@ import { lazy } from 'preact/compat'
 import { useLocation } from 'wouter-preact'
 import { palette } from '@bladeblend/public-web/booking-styles'
 import { adminText } from './adminStrings'
+import { INVISIBLE } from './adminStyles'
 import { useTheme } from './useTheme'
 import { useAdminSession } from './useAdminSession'
-import { LazySurface } from '@bladeblend/public-web/lazy-surface'
+import { AdminLazySurface } from './AdminLazySurface'
 
 const AdminShell = lazy(() =>
   import('./AdminShell').then((module) => ({ default: module.AdminShell })),
@@ -52,7 +53,7 @@ export function AdminApp(): JSX.Element {
             </button>
           </div>
         ) : (
-          t.lazyLoading
+          <span style={INVISIBLE}>{t.lazyLoading}</span>
         )}
       </div>
     )
@@ -65,11 +66,10 @@ export function AdminApp(): JSX.Element {
           {error}
         </p>
       )}
-      <LazySurface
+      <AdminLazySurface
         loadingLabel={t.lazyLoading}
         errorLabel={t.lazyError}
         retryLabel={t.lazyReload}
-        minHeight="100vh"
       >
         <AdminShell
           key={`${gate.profile.userId}:${gate.profile.role}:${gate.profile.barberId ?? ''}`}
@@ -80,7 +80,7 @@ export function AdminApp(): JSX.Element {
           setLang={theme.setLang}
           onSignOut={onSignOut}
         />
-      </LazySurface>
+      </AdminLazySurface>
     </>
   )
 }

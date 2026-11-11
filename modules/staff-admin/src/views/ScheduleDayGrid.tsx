@@ -18,6 +18,7 @@ import { cap, formatWhenLabel, monthLabel, weekdayLabel } from '@bladeblend/publ
 import { defaultClock } from '@bladeblend/public-web/configuration'
 import type { Lang } from '@bladeblend/public-web/localization'
 import { adminText, type AdminStrings } from '../adminStrings'
+import { INVISIBLE } from '../adminStyles'
 import { stockholmWallClockDate } from '@bladeblend/public-web/scheduling-time'
 import { createManualBooking } from '../adapters/bookingsAdmin'
 import { listServices } from '../adapters/servicesAdmin'
@@ -496,7 +497,7 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
 
       {/* Hour grid / day-off state */}
       {blocks === null && error === null ? (
-        <div style={s.emptyState}>{t.scheduleGridLoading}</div>
+        <div style={{ ...s.emptyState, ...INVISIBLE }}>{t.scheduleGridLoading}</div>
       ) : dayIsOff ? (
         <div
           style={{

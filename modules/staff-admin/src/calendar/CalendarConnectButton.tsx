@@ -6,6 +6,7 @@ import type { JSX } from 'preact'
 import { palette } from '@bladeblend/public-web/booking-styles'
 import type { Lang } from '@bladeblend/public-web/localization'
 import { adminText } from '../adminStrings'
+import { INVISIBLE } from '../adminStyles'
 import type { AdminStylesBundle } from '../views/viewTypes'
 import type { CalendarSyncPort } from './port'
 import { useCalendarSync } from './useCalendarSync'
@@ -36,7 +37,7 @@ export function CalendarConnectButton(props: CalendarConnectButtonProps): JSX.El
     margin: '10px 0 2px',
   }
 
-  const heading = (main: string, sub: string | null): JSX.Element => (
+  const heading = (main: string | JSX.Element, sub: string | null): JSX.Element => (
     <div
       role="status"
       style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}
@@ -51,6 +52,7 @@ export function CalendarConnectButton(props: CalendarConnectButtonProps): JSX.El
   const disconnectPending = status?.disconnectPending === true
   const repairRequired = status?.repairRequired === true
   const disabled = cal.busy || cal.loading
+  const onlyReading = status === null && cal.loading && cal.error === null
 
   /** Starts the Google consent flow; a first connect and an access repair differ only in label. */
   const connectButton = (label: string): JSX.Element => (
@@ -65,9 +67,16 @@ export function CalendarConnectButton(props: CalendarConnectButtonProps): JSX.El
   )
 
   return (
-    <div style={box}>
+    <div style={onlyReading ? { ...box, ...INVISIBLE } : box}>
       {status === null
-        ? heading(cal.loading ? t.calendarLoading : t.calendarStatusUnavailable, null)
+        ? heading(
+            cal.loading ? (
+              <span style={INVISIBLE}>{t.calendarLoading}</span>
+            ) : (
+              t.calendarStatusUnavailable
+            ),
+            null,
+          )
         : disconnectPending
           ? heading(
               t.calendarDisconnecting,

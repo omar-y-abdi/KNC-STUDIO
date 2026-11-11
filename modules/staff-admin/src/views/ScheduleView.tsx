@@ -23,6 +23,7 @@ import { palette } from '@bladeblend/public-web/booking-styles'
 import { defaultClock } from '@bladeblend/public-web/configuration'
 import type { Lang } from '@bladeblend/public-web/localization'
 import { adminText } from '../adminStrings'
+import { INVISIBLE } from '../adminStyles'
 import { readWeek } from '../adapters/schedulesAdmin'
 import {
   addRecurringBreak,
@@ -423,7 +424,7 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
         <h2 style={s.sectionTitle}>
           {t.scheduleHeadingPrefix} · {props.barberName}
         </h2>
-        <div style={s.emptyState}>{t.scheduleLoading}</div>
+        <div style={{ ...s.emptyState, ...INVISIBLE }}>{t.scheduleLoading}</div>
       </section>
     )
   }

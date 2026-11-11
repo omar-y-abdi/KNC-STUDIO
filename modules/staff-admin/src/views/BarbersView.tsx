@@ -28,6 +28,7 @@ import { TypeToConfirmDialog } from '../TypeToConfirmDialog'
 import { useNarrow } from '../chrome'
 import type { Lang } from '@bladeblend/public-web/localization'
 import { adminText } from '../adminStrings'
+import { INVISIBLE } from '../adminStyles'
 import type { BarberAccountState, BarberEdit } from '../types'
 import type { AdminBarber, AdminBarberId, AdminStylesBundle } from './viewTypes'
 
@@ -632,7 +633,7 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
         ) : null}
 
         {load.kind === 'loading' ? (
-          <div style={s.emptyState}>{t.barbersLoading}</div>
+          <div style={{ ...s.emptyState, ...INVISIBLE }}>{t.barbersLoading}</div>
         ) : load.kind === 'error' ? (
           <div style={{ ...s.emptyState, color: s.errorText.color }}>{load.message}</div>
         ) : narrow ? (

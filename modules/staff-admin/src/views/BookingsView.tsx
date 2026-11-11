@@ -25,6 +25,7 @@ import { defaultClock } from '@bladeblend/public-web/configuration'
 import { stockholmWallClockDate } from '@bladeblend/public-web/scheduling-time'
 import type { Lang } from '@bladeblend/public-web/localization'
 import { adminText } from '../adminStrings'
+import { INVISIBLE } from '../adminStyles'
 import {
   cancelBooking,
   deleteBookings,
@@ -559,7 +560,7 @@ export function BookingsView(props: BookingsViewProps): JSX.Element {
         </div>
 
         {visibleLoad.kind === 'loading' ? (
-          <div style={s.emptyState}>{t.bookingsLoading}</div>
+          <div style={{ ...s.emptyState, ...INVISIBLE }}>{t.bookingsLoading}</div>
         ) : visibleLoad.kind === 'error' ? (
           <div style={{ ...s.emptyState, color: s.errorText.color }}>{visibleLoad.message}</div>
         ) : (

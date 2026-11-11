@@ -22,7 +22,7 @@ import type { Lang } from '@bladeblend/public-web/localization'
 import { adminText } from './adminStrings'
 import { palette } from '@bladeblend/public-web/booking-styles'
 import { PoleLogo } from '@bladeblend/public-web/pole-logo'
-import { buildAdminStyles } from './adminStyles'
+import { buildAdminStyles, INVISIBLE } from './adminStyles'
 import { LangSwitch, ThemeSwitch } from './chrome'
 import { ScheduleView } from './views/ScheduleView'
 import { useBarbers } from './useBarbers'
@@ -199,7 +199,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
 
   // The roster (for the owner's barber selector + resolving ids -> names in views). A barber doesn't
   // strictly need it, but the active-roster read is harmless (RLS lets them read active barbers).
-  const { barbers, reload: reloadBarbers } = useBarbers()
+  const { barbers, loading: rosterLoading, reload: reloadBarbers } = useBarbers()
 
   // The barber the owner is acting for. Defaults to the first active barber once the roster loads.
   // A barber always acts as their own linked id.
@@ -219,8 +219,8 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
 
   /** What the per-barber tabs show while no barber is resolved. */
   const noBarber = (
-    <section style={s.card}>
-      <p style={s.emptyState}>{t.scheduleNoBarber}</p>
+    <section style={rosterLoading ? { ...s.card, ...INVISIBLE } : s.card}>
+      <p style={s.emptyState}>{rosterLoading ? t.lazyLoading : t.scheduleNoBarber}</p>
     </section>
   )
 
@@ -464,7 +464,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
 
         <Suspense
           fallback={
-            <section style={s.card}>
+            <section style={{ ...s.card, ...INVISIBLE }}>
               <p style={s.emptyState}>{t.lazyLoading}</p>
             </section>
           }

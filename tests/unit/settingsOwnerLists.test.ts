@@ -716,6 +716,20 @@ describe('review moderation section', () => {
     expect(focusTarget()).toEqual(onRow('r2', 'first'))
   })
 
+  it('paints nothing while the list is read and keeps its place and its status', async () => {
+    api.listReviews.mockReturnValue(held(NO_ROWS).promise)
+    const ui = reviewsUi()
+    ui.toggle(sv.reviewsOpen)
+    await flush()
+
+    const reading = ui.render()
+    const status = reading.inner.find((node) => node.props['role'] === 'status')
+
+    expect(textOf(status)).toBe(sv.reviewsLoading)
+    expect(status?.props['style']).toEqual({ ...s.emptyState, opacity: 0 })
+    expect(textOf(reading.inner)).not.toContain(sv.reviewsEmpty)
+  })
+
   it('says so when there are no reviews', async () => {
     api.listReviews.mockResolvedValue(page([]))
 
@@ -1152,6 +1166,20 @@ describe('admin log section', () => {
 
     expect(api.listAuditLog.mock.calls).toEqual([[null], [cursor]])
     expect(rows(ui.render().inner)).toHaveLength(2)
+  })
+
+  it('paints nothing while the log is read and keeps its place and its status', async () => {
+    api.listAuditLog.mockReturnValue(held(NO_ROWS).promise)
+    const ui = auditUi()
+    ui.toggle(sv.auditOpen)
+    await flush()
+
+    const reading = ui.render()
+    const status = reading.inner.find((node) => node.props['role'] === 'status')
+
+    expect(textOf(status)).toBe(sv.auditLoading)
+    expect(status?.props['style']).toEqual({ ...s.emptyState, opacity: 0 })
+    expect(textOf(reading.inner)).not.toContain(sv.auditEmpty)
   })
 
   it('says so when the log is empty', async () => {

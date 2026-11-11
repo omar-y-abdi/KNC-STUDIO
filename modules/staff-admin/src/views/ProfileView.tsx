@@ -8,6 +8,7 @@ import { orderedAdminOperation } from '../orderedOperations'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import type { Lang } from '@bladeblend/public-web/localization'
 import { adminText } from '../adminStrings'
+import { INVISIBLE } from '../adminStyles'
 import { getBarberPhoto, removeBarberPhoto, uploadBarberPhoto } from '../adapters/barberPhotoAdmin'
 import { ConfirmDialog } from '../ConfirmDialog'
 import type { AdminBarberId, AdminStylesBundle } from './viewTypes'
@@ -137,7 +138,7 @@ export function ProfileView(props: ProfileViewProps): JSX.Element {
       <p style={s.sectionLead}>{t.profileLead}</p>
 
       {!targetLoaded ? (
-        <div style={s.emptyState}>{t.profileLoading}</div>
+        <div style={{ ...s.emptyState, ...INVISIBLE }}>{t.profileLoading}</div>
       ) : (
         <div
           style={{

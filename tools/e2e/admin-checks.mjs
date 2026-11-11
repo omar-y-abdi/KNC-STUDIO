@@ -1030,6 +1030,20 @@ async function verifyCalendarSync(page) {
   // read and the visible 15s poll are the only paths that may clear it.
   {
     const t = await mountCalendarHarness(page)
+    const frameOf = (text) =>
+      page
+        .getByRole('status')
+        .filter({ hasText: text })
+        .evaluate((status) => ({
+          opacity: globalThis.getComputedStyle(status.parentElement).opacity,
+          height: status.parentElement.getBoundingClientRect().height,
+        }))
+    // The first read paints nothing but keeps the frame's place and its status.
+    const reading = await frameOf(t.calendarLoading)
+    assert(
+      reading.opacity === '0' && reading.height > 0,
+      `Calendar frame painted during its first read: ${JSON.stringify(reading)}`,
+    )
     await waitCalendarCalls(page, 'statusCalls', 'a', 1, 'initial Calendar status read missing')
     await calendarControl(
       page,
@@ -1039,6 +1053,10 @@ async function verifyCalendarSync(page) {
       calendarStatusResult({ connected: true, googleEmail: 'barber@example.test' }),
     )
     await page.getByRole('status').filter({ hasText: t.calendarConnected }).waitFor()
+    assert(
+      (await frameOf(t.calendarConnected)).opacity === '1',
+      'Calendar frame stayed unpainted after its first read',
+    )
     await page.getByRole('button', { name: t.calendarDisconnect, exact: true }).click()
     await waitCalendarCalls(page, 'disconnectCalls', 'a', 1, 'disconnect mutation missing')
     await calendarControl(page, 'resolve-disconnect', 'a', 0, { ok: true })
