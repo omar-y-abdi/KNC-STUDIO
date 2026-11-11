@@ -1,6 +1,7 @@
 import { ADMIN_SCROLL_RESTORE_TIMEOUT_MS } from '../../modules/staff-admin/src/navigationState.ts'
 import { test, expect } from './fixtures.mjs'
 import { routeApi } from './route-api.mjs'
+import { barberFixture } from './builders.mjs'
 import assert from 'node:assert/strict'
 import { harnessOrigin } from './origins.mjs'
 
@@ -321,6 +322,135 @@ async function verifyDelayedRestore(page) {
   })
 }
 
+async function staffTourWrites(page) {
+  return page.evaluate(async () =>
+    (await import('/tools/e2e/admin-harness.tsx')).staffTourHarnessWrites(),
+  )
+}
+
+// The barber's first-run tutorial in the shell, with the schedule tab's reads answered here and
+// the progress kept by the harness port.
+async function verifyStaffTour(page) {
+  const origin = new URL(baseUrl).origin
+  const unexpected = []
+  const week = [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({
+    barber_id: 'preview-barber',
+    weekday,
+    working: true,
+    start_min: 540,
+    end_min: 1080,
+  }))
+  await routeApi(page.context(), [
+    [
+      '**/*',
+      async (route, headers) => {
+        const request = route.request()
+        const url = new URL(request.url())
+        if (url.origin === origin) return route.continue()
+        if (url.hostname !== 'admin-harness.invalid') return route.fallback()
+        const reply = (body) => route.fulfill({ status: 200, headers, body: JSON.stringify(body) })
+        if (request.method() === 'GET')
+          switch (url.pathname) {
+            case '/rest/v1/barbers':
+              return reply([
+                barberFixture({ id: 'preview-barber', name: 'Preview Barber', active: true }),
+              ])
+            case '/rest/v1/barber_schedules':
+              return reply(week)
+            case '/rest/v1/bookings':
+            case '/rest/v1/barber_time_off':
+            case '/rest/v1/barber_recurring_breaks':
+            case '/rest/v1/barber_slot_blocks':
+            case '/rest/v1/services':
+              return reply([])
+            default:
+              break
+          }
+        unexpected.push(`${request.method()} ${url.pathname}`)
+        return route.fulfill({
+          status: 500,
+          headers,
+          body: JSON.stringify({ message: 'Unexpected request in the staff tour check' }),
+        })
+      },
+    ],
+  ])
+  await page.goto(`${baseUrl}/tools/e2e/admin-harness.html`, { waitUntil: 'domcontentloaded' })
+  await page.evaluate(async () =>
+    (await import('/tools/e2e/admin-harness.tsx')).mountStaffTourHarness(),
+  )
+
+  const tour = page.getByRole('dialog')
+  const title = (name) => tour.getByRole('heading', { name, exact: true })
+  const inert = (selector) => page.locator(selector).evaluate((node) => node.inert)
+  const nav = 'nav.knc-admin-sidebar'
+  const main = '.knc-admin-shell > main'
+
+  await expect(title('Everything is in the menu')).toBeVisible()
+  await expect(tour.getByText('1 of 3', { exact: true })).toBeVisible()
+  assert(await inert(nav), 'The running tour left the nav usable')
+  assert(await inert(main), 'The running tour left the content usable')
+
+  await tour.getByRole('button', { name: 'Next', exact: true }).click()
+  await expect(title('Turn on the days you work')).toBeVisible()
+  await tour.getByRole('button', { name: 'Back', exact: true }).click()
+  await expect(title('Everything is in the menu')).toBeVisible()
+  await page.keyboard.press('ArrowRight')
+  await expect(title('Turn on the days you work')).toBeVisible()
+
+  await tour.getByRole('button', { name: 'Next', exact: true }).click()
+  await expect(title('Want to see this again?')).toBeVisible()
+  await tour.getByRole('button', { name: 'Done', exact: true }).click()
+  await expect(tour).toHaveCount(0)
+  assert(!(await inert(nav)), 'The finished tour left the nav inert')
+  assert(!(await inert(main)), 'The finished tour left the content inert')
+  await expect.poll(() => staffTourWrites(page)).toEqual([{ seen: ['overview'], removed: false }])
+
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Tutorial', exact: true })).toBeVisible()
+  const replay = page.getByRole('button', { name: 'Run it again', exact: true })
+  const remove = page.getByRole('button', { name: 'Remove', exact: true })
+  await expect(replay).toBeVisible()
+  await expect(remove).toBeVisible()
+
+  await replay.click()
+  await expect
+    .poll(() => staffTourWrites(page))
+    .toEqual([
+      { seen: ['overview'], removed: false },
+      { seen: [], removed: false },
+    ])
+  await expect(title('Everything is in the menu')).toBeVisible()
+  await expect(tour.getByText('1 of 3', { exact: true })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(tour).toHaveCount(0)
+  await expect
+    .poll(() => staffTourWrites(page))
+    .toEqual([
+      { seen: ['overview'], removed: false },
+      { seen: [], removed: false },
+      { seen: ['overview'], removed: false },
+    ])
+  assert(
+    (await page
+      .getByRole('button', { name: 'My schedule', exact: true })
+      .getAttribute('aria-current')) === 'page',
+    'Run it again did not switch to the schedule tab',
+  )
+
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await remove.click()
+  await expect
+    .poll(async () => (await staffTourWrites(page)).at(-1))
+    .toEqual({ seen: ['overview'], removed: true })
+  await expect(
+    page.getByText('Removed. It will not show until you start it again.', { exact: true }),
+  ).toBeVisible()
+  await expect(remove).toHaveCount(0)
+  await expect(replay).toBeVisible()
+  assert.deepEqual(unexpected, [], 'backend requests the staff tour check does not model')
+}
+
 async function mutationControl(page, action, target) {
   return page.evaluate(
     async ({ action, target }) => {
@@ -345,7 +475,7 @@ async function verifyMutationReentry(page, kind, reentry = 'target', failFirst =
     await page.getByRole('button', { name: 'Save', exact: true }).click()
   } else if (kind === 'profile') {
     await page
-      .locator('input[type="file"]')
+      .locator('#profile-photo-input')
       .setInputFiles({ name: 'first.png', mimeType: 'image/png', buffer: Buffer.from('first') })
   } else {
     await page.getByRole('button', { name: 'Cancel', exact: true }).click()
@@ -361,9 +491,9 @@ async function verifyMutationReentry(page, kind, reentry = 'target', failFirst =
   if (reentry === 'remount') await mutationControl(page, 'remount')
   else {
     await mutationControl(page, 'target', 'b')
-    await page.getByRole('heading', { name: /B$/ }).waitFor()
+    await page.getByRole('heading', { name: /B$/ }).first().waitFor()
     await mutationControl(page, 'target', 'a')
-    await page.getByRole('heading', { name: /A$/ }).waitFor()
+    await page.getByRole('heading', { name: /A$/ }).first().waitFor()
   }
   // Let the target effect run; the original write is still explicitly held before persistence.
   await afterPaint(page)
@@ -371,7 +501,7 @@ async function verifyMutationReentry(page, kind, reentry = 'target', failFirst =
     kind === 'services'
       ? page.getByRole('button', { name: 'Save', exact: true })
       : kind === 'profile'
-        ? page.locator('input[type="file"]')
+        ? page.locator('#profile-photo-input')
         : page.getByRole('button', { name: 'Cancel', exact: true })
   assert(
     (await mutable.count()) === 0 || (await mutable.first().isDisabled()),
@@ -401,9 +531,9 @@ async function verifyMutationReentry(page, kind, reentry = 'target', failFirst =
     )
   } else if (kind === 'profile') {
     if (!failFirst) await page.locator('img[src$="#first.png"]').waitFor()
-    else await page.locator('input[type="file"]').waitFor({ state: 'attached' })
+    else await page.locator('#profile-photo-input').waitFor({ state: 'attached' })
     await page
-      .locator('input[type="file"]')
+      .locator('#profile-photo-input')
       .setInputFiles({ name: 'latest.png', mimeType: 'image/png', buffer: Buffer.from('latest') })
     await page.locator('img[src$="#latest.png"]').waitFor()
     assert(
@@ -2916,6 +3046,7 @@ const privacyCases = [
 export {
   verifyNavigation,
   verifyDelayedRestore,
+  verifyStaffTour,
   verifyAdminSession,
   verifyMutationReentry,
   verifyDeliveryStatus,

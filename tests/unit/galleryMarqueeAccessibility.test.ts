@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   GalleryMarquee,
   resolvePointerEnd,
@@ -6,12 +6,32 @@ import {
 import { PlaceholderPhoto } from '../../modules/public-web/src/about/PlaceholderPhoto'
 import { palette } from '../../modules/public-web/src/booking/bookingStyles'
 import { aboutStrings } from '../../modules/public-web/src/i18n/index'
-import { useEffect, useState } from 'preact/hooks'
+import { useEffect, useLayoutEffect, useState } from 'preact/hooks'
 import { useGallery } from '../../modules/public-web/src/about/gallery/useGallery'
 import { supabaseGalleryAdapter } from '../../modules/public-web/src/about/gallery/supabaseGallery'
-import { nodes as elements, reset, type RenderedNode } from './helpers/fakeHooks'
+import type { GalleryPhoto } from '../../modules/public-web/src/about/gallery/port'
+import type * as NativeSurfaceModule from '../../modules/public-web/src/cms/NativeSurface'
+import {
+  nodes as elements,
+  mount,
+  ref,
+  render,
+  reset,
+  type RenderedNode,
+} from './helpers/fakeHooks'
+
+const native = vi.hoisted(() => ({ source: false }))
+vi.mock('../../modules/public-web/src/cms/NativeSurface', async (original) => ({
+  ...(await original<typeof NativeSurfaceModule>()),
+  useNativeSource: () => native.source,
+}))
 
 beforeEach(reset)
+afterEach(() => {
+  vi.useRealTimers()
+  vi.unstubAllGlobals()
+  native.source = false
+})
 
 describe('gallery marquee interaction contract', () => {
   it('does not select after pointer down, vertical move, then pointer up', () => {
@@ -102,6 +122,253 @@ describe('published gallery photos', () => {
     expect(portrait.props['aria-hidden']).toBe('true')
     expect(portrait.props.role).toBeUndefined()
     expect(portrait.props['aria-label']).toBeUndefined()
+  })
+})
+
+const U = undefined
+const cutsPhotos: readonly GalleryPhoto[] = [
+  {
+    id: 'cut',
+    url: '/cut.webp',
+    alt: 'Fade',
+    credit: { platform: 'instagram', handle: 'bnbstudio_gbg' },
+  },
+  { id: 'work', url: '/work.webp', alt: '', credit: { platform: 'tiktok', handle: 'one.tt' } },
+  { id: 'salon', url: '/salon.webp', alt: 'Chair' },
+]
+const plainPhotos: readonly GalleryPhoto[] = ['a', 'b', 'c', 'd', 'e', 'f'].map((id) => ({
+  id,
+  url: `/${id}.webp`,
+  alt: id,
+}))
+/** The sources of the plain row's twelve tiles when exactly `tiles` hold their photo. */
+const holding = (...tiles: number[]) =>
+  [...Array(12).keys()].map((j) => (tiles.includes(j) ? plainPhotos[j % 6]?.url : U))
+
+/** Renders a gallery's first row from an empty hook store, as often as asked. */
+function firstRow(
+  photos: readonly GalleryPhoto[],
+): (selectedKey?: string | null) => RenderedNode[] {
+  const gallery = GalleryMarquee({ photos, alt: 'Gallery photo', c: palette(false) })
+  const row = (gallery?.props.children as readonly RenderedNode[] | undefined)?.[0]
+  if (!row || typeof row.type !== 'function') throw new Error('Missing gallery row')
+  const component = row.type
+  reset()
+  return (selectedKey = null) => elements(render(() => component({ ...row.props, selectedKey })))
+}
+
+/** Runs the row's four layout effects from its last render, as the renderer does after it. */
+function layout(): void {
+  for (const [effect] of vi.mocked(useLayoutEffect).mock.calls.slice(-4)) effect()
+}
+
+function stubResizeObserver(): void {
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe = vi.fn()
+      disconnect = vi.fn()
+    },
+  )
+}
+
+/** Gives the plain row its 400 px width and 2688 px track (twelve tiles, 1344 px per loop half). */
+const measure = (): void =>
+  ref(1, { scrollWidth: 2688, parentElement: { clientWidth: 400 }, style: {} })
+
+/** The plain row after its first layout. */
+function measuredRow(): (selectedKey?: string | null) => RenderedNode[] {
+  stubResizeObserver()
+  const row = firstRow(plainPhotos)
+  row()
+  measure()
+  layout()
+  return row
+}
+
+const links = (tree: RenderedNode[]) => tree.filter((node) => node.type === 'a')
+const styles = (tree: RenderedNode[]) => tree.map((node) => node.props['style'])
+const sources = (tree: RenderedNode[]) =>
+  tree.filter((node) => node.type === 'img').map((node) => node.props['src'])
+const fold = (rows: '0fr' | '1fr', transition = 'grid-template-rows .36s ease') => ({
+  display: 'grid',
+  gridTemplateRows: rows,
+  transition,
+})
+
+function fire(node: RenderedNode | undefined, handler: string, event: object): void {
+  const listener = node?.props[handler]
+  if (typeof listener !== 'function') throw new Error(`Missing ${handler}`)
+  listener(event)
+}
+
+const pointer = (clientX: number) => ({
+  isPrimary: true,
+  button: 0,
+  pointerId: 1,
+  clientX,
+  clientY: 50,
+  preventDefault: vi.fn(),
+  currentTarget: {
+    setPointerCapture: vi.fn(),
+    releasePointerCapture: vi.fn(),
+    hasPointerCapture: () => true,
+  },
+})
+
+function drag(row: RenderedNode | undefined, fromX: number, toX: number): void {
+  fire(row, 'onPointerDown', pointer(fromX))
+  fire(row, 'onPointerMove', pointer(toX))
+  fire(row, 'onPointerUp', pointer(toX))
+}
+
+describe('gallery photo credit', () => {
+  it('unfolds the studio credit under the selected tile only, after laying it out folded', () => {
+    const row = firstRow(cutsPhotos)
+    expect(links(row())).toEqual([])
+    const folded = row('cut:0')
+    const [link] = links(folded)
+    expect(links(folded)).toHaveLength(1)
+    expect(link?.props).toMatchObject({
+      href: 'https://www.instagram.com/bnbstudio_gbg/',
+      target: '_blank',
+      rel: 'noopener noreferrer',
+      'aria-label': 'Instagram @bnbstudio_gbg',
+      children: '@bnbstudio_gbg',
+    })
+    expect(link?.props['tabIndex']).toBeUndefined()
+    expect(link?.props['style']).toEqual({
+      display: 'block',
+      padding: '8px 0',
+      textAlign: 'center',
+      fontSize: '13px',
+      fontWeight: 600,
+      color: palette(false).text,
+      textDecoration: 'none',
+    })
+    expect(styles(folded)).toContainEqual(fold('0fr'))
+    layout()
+    expect(styles(row('cut:0'))).toContainEqual(fold('1fr'))
+    row(null)
+    layout()
+    expect(links(row(null))).toEqual([])
+  })
+
+  it('credits a loop clone outside the Tab order and a work picture by its TikTok handle', () => {
+    const row = firstRow(cutsPhotos)
+    const [clone] = links(row('cut:3'))
+    expect(clone?.props['tabIndex']).toBe(-1)
+    expect(clone?.props['aria-label']).toBe('Instagram @bnbstudio_gbg')
+    expect(
+      links(row('work:1')).map((node) => [
+        node.props['href'],
+        node.props['aria-label'],
+        node.props['children'],
+      ]),
+    ).toEqual([['https://www.tiktok.com/@one.tt', 'TikTok @one.tt', '@one.tt']])
+    expect(row('salon:2').map((node) => node.type)).toEqual(row(null).map((node) => node.type))
+  })
+
+  it('keeps a press or key on the credit from selecting or dragging the tile', () => {
+    const [link] = links(firstRow(cutsPhotos)('cut:0'))
+    expect(link?.props['draggable']).toBe(false)
+    for (const handler of ['onPointerDown', 'onKeyDown']) {
+      const stopPropagation = vi.fn()
+      fire(link, handler, { stopPropagation })
+      expect(stopPropagation).toHaveBeenCalledOnce()
+    }
+  })
+
+  it('shows the credit without the unfold under reduced motion', () => {
+    vi.stubGlobal('window', { matchMedia: () => ({ matches: true }) })
+    const row = firstRow(cutsPhotos)
+    row('cut:0')
+    layout()
+    expect(styles(row('cut:0'))).toContainEqual(fold('1fr', 'none'))
+  })
+})
+
+describe('gallery image window', () => {
+  it('requests no photo before the row is measured, then only the tiles near its strip and their copies', () => {
+    stubResizeObserver()
+    const row = firstRow(plainPhotos)
+    expect(sources(row())).toEqual(holding())
+    layout()
+    expect(sources(row())).toEqual(holding())
+    measure()
+    layout()
+    expect(sources(row())).toEqual(holding(0, 1, 2, 5, 6, 7, 8, 11))
+  })
+
+  it('keeps every photo as the CMS source, before measurement and after tiles leave the window', () => {
+    native.source = true
+    vi.useFakeTimers()
+    stubResizeObserver()
+    const all = holding(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11)
+    const row = firstRow(plainPhotos)
+    expect(sources(row())).toEqual(all)
+    measure()
+    layout()
+    expect(sources(row())).toEqual(all)
+    ref(2, -300) // The track offset: tiles 0, 5, 6 and 11 leave the window.
+    row()
+    layout()
+    expect(vi.getTimerCount()).toBe(4)
+    vi.advanceTimersByTime(1500)
+    expect(sources(row())).toEqual(all)
+  })
+
+  it('keeps the photo of a tile that left the window for 1.5 s', () => {
+    vi.useFakeTimers()
+    const row = measuredRow()
+    ref(2, -300) // The track offset.
+    row()
+    layout()
+    const kept = holding(0, 1, 2, 3, 5, 6, 7, 8, 9, 11)
+    expect(sources(row())).toEqual(kept)
+    vi.advanceTimersByTime(1499)
+    expect(sources(row())).toEqual(kept)
+    vi.advanceTimersByTime(1)
+    expect(sources(row())).toEqual(holding(1, 2, 3, 7, 8, 9))
+  })
+
+  it('widens to five tiles a side from a drag until 2 s after it, then lets far tiles go', () => {
+    vi.useFakeTimers()
+    const row = measuredRow()
+    drag(row()[0], 100, 60)
+    const all = holding(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11)
+    expect(sources(row())).toEqual(all)
+    vi.advanceTimersByTime(1999)
+    expect(sources(row())).toEqual(all)
+    vi.advanceTimersByTime(1)
+    expect(sources(row())).toEqual(all)
+    vi.advanceTimersByTime(1500)
+    expect(sources(row())).toEqual(holding(0, 1, 2, 5, 6, 7, 8, 11))
+  })
+
+  it('keeps the selected tile loaded wherever it is in the loop', () => {
+    const row = measuredRow()
+    row('e:10')
+    layout()
+    expect(sources(row('e:10'))).toEqual(holding(0, 1, 2, 4, 5, 6, 7, 8, 10, 11))
+  })
+
+  it.each([
+    ['release', 4],
+    ['drag window', 1],
+  ] as const)('leaves no %s timer running after unmount', (pending, timers) => {
+    vi.useFakeTimers()
+    vi.stubGlobal('document', new EventTarget())
+    const row = measuredRow()
+    if (pending === 'release') {
+      ref(2, -300)
+      row()
+      layout()
+    } else drag(row()[0], 100, 60)
+    expect(vi.getTimerCount()).toBe(timers)
+    const unmount = mount()
+    unmount()
+    expect(vi.getTimerCount()).toBe(0)
   })
 })
 

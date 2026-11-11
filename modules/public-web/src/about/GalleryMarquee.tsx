@@ -1,4 +1,4 @@
-import { useNativeChild } from '../cms/NativeSurface'
+import { useNativeChild, useNativeSource } from '../cms/NativeSurface'
 // GalleryMarquee — two counter-scrolling, draggable photo rows for an About gallery section.
 //
 // Behaviour (per spec):
@@ -13,18 +13,30 @@ import { useNativeChild } from '../cms/NativeSurface'
 //    finger movements never shift the track. Only keyboard focus may reveal an offscreen tile.
 //
 // The scroll transform is written straight to the track ref inside requestAnimationFrame, so the
-// motion causes NO React re-renders; only selection (rare) is component state. prefers-reduced-motion
-// disables the auto-scroll (dragging still works).
+// motion causes NO React re-renders; only selection (rare) and the set of tiles holding a photo
+// (it changes when a tile crosses the window's edge, galleryWindow.ts) are component state. As the
+// CMS source every tile keeps its photo: Studio stores each captured tile's src.
+// prefers-reduced-motion disables the auto-scroll (dragging still works).
 
 import type { JSX } from 'preact'
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import type { Palette } from '../booking/bookingStyles'
 import { prefersReducedMotion } from '../ui/reducedMotion'
 import type { GalleryPhoto } from './gallery/port'
+import { creditLink } from './galleryCredit'
+import { wantedTiles, type WindowMode } from './galleryWindow'
 
 const TILE_W = 210
 const TILE_GAP = 14
 const SPEED = 34 // px per second
+const RELEASE_MS = 1500
+const DRAG_WINDOW_MS = 2000
+const NONE: ReadonlySet<number> = new Set()
+
+/** The physical tile index at the end of a tile key `${photoId}:${index}`. */
+const tileIndex = (key: string): number => Number(key.slice(key.lastIndexOf(':') + 1))
+
+const stopPropagation = (event: Event): void => event.stopPropagation()
 
 /** Image fill for a real gallery tile — covers the wrapper exactly (no letterboxing, no shift). */
 const IMG_STYLE: JSX.CSSProperties = {
@@ -75,6 +87,7 @@ export function resolvePointerEnd(
 
 function MarqueeRow(props: MarqueeRowProps): JSX.Element {
   const present = useNativeChild()
+  const source = useNativeSource()
   const rowRef = useRef<HTMLDivElement>(null)
   const trackRef = useRef<HTMLDivElement>(null)
   const offset = useRef(0)
@@ -91,6 +104,14 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
   const pausedRef = useRef(props.paused)
   const keyboardFocus = useRef(false)
   const reduce = useRef(prefersReducedMotion())
+  const width = useRef(0)
+  const count = useRef(0)
+  const wanted = useRef<ReadonlySet<number>>(NONE)
+  const releases = useRef(new Map<number, ReturnType<typeof setTimeout>>())
+  const windowMode = useRef<WindowMode>('auto')
+  const dragTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const focusedTile = useRef<number | null>(null)
+  const selectedKey = useRef(props.selectedKey)
 
   useLayoutEffect(() => {
     pausedRef.current = props.paused || keyboardFocus.current
@@ -107,13 +128,80 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
   // the row itself changes width (a window resize or a container that grows inside the page alike);
   // the state setter ignores an unchanged count, so a resize without a new count renders nothing.
   const [perHalf, setPerHalf] = useState(1)
+  const [loaded, setLoaded] = useState<ReadonlySet<number>>(NONE)
+  const [openCredit, setOpenCredit] = useState<string | null>(null)
+
+  // Runs on every move, resize, selection and focus change; touches state only when the set of
+  // wanted tiles changes. A tile that leaves it keeps its photo for RELEASE_MS.
+  const updateWanted = (): void => {
+    const always = [
+      selectedKey.current === null ? null : tileIndex(selectedKey.current),
+      focusedTile.current,
+    ].filter((tile) => tile !== null)
+    const next = wantedTiles(
+      {
+        offset: offset.current,
+        half: half.current,
+        width: width.current,
+        count: count.current,
+        mode: windowMode.current,
+      },
+      SPEED,
+      always,
+    )
+    const previous = wanted.current
+    if (next.size === previous.size && [...next].every((tile) => previous.has(tile))) return
+    wanted.current = next
+    const timers = releases.current
+    for (const tile of next) {
+      clearTimeout(timers.get(tile))
+      timers.delete(tile)
+    }
+    for (const tile of previous) {
+      if (next.has(tile)) continue
+      const release = (): void => {
+        timers.delete(tile)
+        setLoaded((current) =>
+          current.has(tile) ? new Set([...current].filter((t) => t !== tile)) : current,
+        )
+      }
+      timers.set(tile, setTimeout(release, RELEASE_MS))
+    }
+    setLoaded((current) =>
+      [...next].every((tile) => current.has(tile)) ? current : new Set([...current, ...next]),
+    )
+  }
+
+  const startDragWindow = (): void => {
+    clearTimeout(dragTimer.current)
+    windowMode.current = 'drag'
+  }
+  const endDragWindow = (): void => {
+    if (windowMode.current !== 'drag') return
+    clearTimeout(dragTimer.current)
+    dragTimer.current = setTimeout(() => {
+      windowMode.current = 'auto'
+      updateWanted()
+    }, DRAG_WINDOW_MS)
+  }
+
+  useEffect(
+    () => () => {
+      for (const timer of releases.current.values()) clearTimeout(timer)
+      clearTimeout(dragTimer.current)
+    },
+    [],
+  )
+
   useLayoutEffect(() => {
     const row = trackRef.current?.parentElement
     if (!row) return
     const compute = (): void => {
       const container = row.clientWidth
       const base = itemCount * (TILE_W + TILE_GAP)
+      width.current = container
       setPerHalf(base > 0 && container > 0 ? Math.max(1, Math.ceil(container / base)) : 1)
+      updateWanted()
     }
     compute()
     if (typeof ResizeObserver === 'undefined') {
@@ -130,7 +218,20 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
   useLayoutEffect(() => {
     const el = trackRef.current
     if (el) half.current = el.scrollWidth / 2
+    count.current = tiles.length
+    updateWanted()
   }, [props.photos, perHalf])
+
+  const selectedIndex = props.selectedKey === null ? -1 : tileIndex(props.selectedKey)
+  const credited =
+    props.selectedKey !== null && props.photos[selectedIndex % itemCount]?.credit !== undefined
+  useLayoutEffect(() => {
+    selectedKey.current = props.selectedKey
+    updateWanted()
+    // The credit mounts folded; laying that out first lets the unfold transition run.
+    if (credited) rowRef.current?.getBoundingClientRect()
+    setOpenCredit(credited ? props.selectedKey : null)
+  }, [props.selectedKey])
 
   // Wrap the offset back into (-half, 0] so the loop is endless in either direction.
   const wrap = (): void => {
@@ -163,6 +264,7 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
     moved.current = true
     lastDx.current = 0
     releasePointerCapture(e?.currentTarget ?? rowRef.current, id)
+    endDragWindow()
   }
 
   const onScroll = (): void => {
@@ -197,6 +299,7 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
         offset.current -= dir.current * SPEED * (dt / 1000)
         wrap()
         paint()
+        updateWanted()
       }
       raf = requestAnimationFrame(tick)
     }
@@ -266,6 +369,7 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
     // Keyboard focus keeps its separate reveal behavior.
     e.preventDefault()
     keyboardFocus.current = false
+    focusedTile.current = null
     pausedRef.current = props.paused
     dragging.current = true
     pointerId.current = e.pointerId
@@ -290,12 +394,14 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
         return
       }
       moved.current = true
+      startDragWindow()
     }
     lastDx.current = e.clientX - lastX.current
     lastX.current = e.clientX
     offset.current = startOffset.current + dx
     wrap()
     paint()
+    updateWanted()
   }
   const onPointerEnd = (e: JSX.TargetedPointerEvent<HTMLDivElement>): void => {
     if (!dragging.current || pointerId.current !== e.pointerId) return
@@ -313,6 +419,7 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
       if (key !== null) props.onSelect(key)
     }
     releasePointerCapture(e.currentTarget, id)
+    endDragWindow()
   }
 
   const onPointerCancel = (e: JSX.TargetedPointerEvent<HTMLDivElement>): void => {
@@ -331,6 +438,8 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
     if (row === null) return
     keyboardFocus.current = true
     pausedRef.current = true
+    const key = tile.getAttribute('data-tile-key')
+    focusedTile.current = key === null ? null : tileIndex(key)
     const bounds = row.getBoundingClientRect()
     const tileBounds = tile.getBoundingClientRect()
     const shift =
@@ -342,13 +451,16 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
     offset.current += shift - row.scrollLeft
     row.scrollLeft = 0
     paint()
+    updateWanted()
   }
 
   const onRowBlur = (e: JSX.TargetedFocusEvent<HTMLDivElement>): void => {
     const row = rowRef.current
     if (row !== null && e.relatedTarget instanceof Node && row.contains(e.relatedTarget)) return
     keyboardFocus.current = false
+    focusedTile.current = null
     pausedRef.current = props.paused
+    updateWanted()
   }
 
   const onTileKey =
@@ -404,6 +516,7 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
           const key = `${logicalKey}:${j}`
           const accessible = j < itemCount
           const selected = props.selectedKey === key
+          const credit = selected && photo.credit !== undefined ? creditLink(photo.credit) : null
           const tileStyle: JSX.CSSProperties = {
             flex: 'none',
             width: TILE_W + 'px',
@@ -433,7 +546,7 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
             >
               <div style={photoWrapStyle(props.c)}>
                 <img
-                  src={photo.url}
+                  src={source || loaded.has(j) ? photo.url : undefined}
                   alt={alt}
                   draggable={false}
                   style={IMG_STYLE}
@@ -441,6 +554,40 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
                   decoding="async"
                 />
               </div>
+              {credit !== null ? (
+                <div
+                  key="credit"
+                  style={{
+                    display: 'grid',
+                    gridTemplateRows: openCredit === key ? '1fr' : '0fr',
+                    transition: reduce.current ? 'none' : 'grid-template-rows .36s ease',
+                  }}
+                >
+                  <div style={{ overflow: 'hidden', minHeight: 0 }}>
+                    <a
+                      href={credit.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label={credit.label}
+                      tabIndex={accessible ? undefined : -1}
+                      draggable={false}
+                      onPointerDown={stopPropagation}
+                      onKeyDown={stopPropagation}
+                      style={{
+                        display: 'block',
+                        padding: '8px 0',
+                        textAlign: 'center',
+                        fontSize: '13px',
+                        fontWeight: 600,
+                        color: props.c.text,
+                        textDecoration: 'none',
+                      }}
+                    >
+                      {credit.text}
+                    </a>
+                  </div>
+                </div>
+              ) : null}
             </div>
           )
         })}

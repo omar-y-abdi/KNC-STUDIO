@@ -576,7 +576,10 @@ export function BookingsView(props: BookingsViewProps): JSX.Element {
                 marginTop: '12px',
               }}
             >
-              <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+              <div
+                data-tour="booking-sections"
+                style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}
+              >
                 {SECTION_ORDER.map((sec) => (
                   <button
                     key={sec}

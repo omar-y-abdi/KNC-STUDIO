@@ -168,11 +168,17 @@ async function settleImages(page) {
   await pollUntil(
     page,
     () =>
-      [...globalThis.document.images].every((image) => image.complete && image.naturalWidth > 0),
+      [...globalThis.document.images]
+        .filter((image) => image.getAttribute('src'))
+        .every((image) => image.complete && image.naturalWidth > 0),
     'every image to load',
   )
   await page.evaluate(() =>
-    Promise.all([...globalThis.document.images].map((image) => image.decode())),
+    Promise.all(
+      [...globalThis.document.images]
+        .filter((image) => image.getAttribute('src'))
+        .map((image) => image.decode()),
+    ),
   )
 }
 

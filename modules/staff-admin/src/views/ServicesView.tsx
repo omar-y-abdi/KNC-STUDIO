@@ -267,9 +267,11 @@ export function ServicesView(props: ServicesViewProps): JSX.Element {
     disabled: boolean,
     onClick: () => void,
     glyph: string,
+    tour?: 'service-move',
   ): JSX.Element => (
     <button
       type="button"
+      data-tour={tour}
       aria-label={label}
       title={label}
       disabled={disabled}
@@ -354,6 +356,7 @@ export function ServicesView(props: ServicesViewProps): JSX.Element {
             {numInput(row.durationMin, (v) => setField(row.id, { durationMin: v }), '104px')}
           </label>
           <label
+            data-tour={index === 0 ? 'service-active' : undefined}
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -406,6 +409,7 @@ export function ServicesView(props: ServicesViewProps): JSX.Element {
             mutationBusy || index === rows.length - 1,
             () => void move(index, 1),
             '↓',
+            index === 0 && rows.length >= 2 ? 'service-move' : undefined,
           )}
           <button
             type="button"
@@ -452,6 +456,7 @@ export function ServicesView(props: ServicesViewProps): JSX.Element {
 
           {/* Add form */}
           <div
+            data-tour="service-new"
             style={{
               border: s.card.border,
               borderRadius: '12px',

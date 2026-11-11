@@ -117,7 +117,12 @@ describe('a staff view while its data is read', () => {
 
   it.each([
     ['services', () => ServicesView(own), sv.svcLoading, [sv.svcEmpty]],
-    ['profile', () => ProfileView(own), sv.profileLoading, [sv.profileNoPhoto]],
+    [
+      'profile',
+      () => ProfileView({ ...own, isOwner: false, onRosterChanged: () => undefined }),
+      sv.profileLoading,
+      [sv.profileNoPhoto],
+    ],
     [
       'bookings',
       () =>

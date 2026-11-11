@@ -62,4 +62,30 @@ describe('barber social profile links', () => {
     link?.props.onClick({ stopPropagation })
     expect(stopPropagation).toHaveBeenCalledOnce()
   })
+
+  it('links a TikTok element to the TikTok profile beside the Instagram one', () => {
+    const result = barberSocialLinks(
+      h(
+        'div',
+        null,
+        h('span', { 'data-barber-social': 'instagram' }, '@', 'one'),
+        h('span', { 'data-barber-social': 'tiktok', key: 'tiktok' }, 'TikTok @', 'one.tt'),
+      ),
+    )
+    const [instagram, tiktok] = result.props.children as VNode<{ children: ComponentChild[] }>[]
+    expect(textOf(result)).toBe('@oneTikTok @one.tt')
+    expect(anchors(instagram?.props.children ?? []).map((node) => node.props.href)).toEqual([
+      'https://www.instagram.com/one/',
+    ])
+    const link = anchors(tiktok?.props.children ?? [])[0]
+    expect(link?.props.href).toBe('https://www.tiktok.com/@one.tt')
+    expect(link?.props.rel).toBe('noopener noreferrer')
+    expect(tiktok?.key).toBe('tiktok')
+  })
+
+  it('leaves an element without a handle without a link', () => {
+    const result = barberSocialLinks(h('span', { 'data-barber-social': 'instagram' }, null))
+    expect(textOf(result)).toBe('')
+    expect(anchors([result.props.children as ComponentChild])).toEqual([])
+  })
 })

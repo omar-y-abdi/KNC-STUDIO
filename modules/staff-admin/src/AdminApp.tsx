@@ -16,6 +16,7 @@ import { INVISIBLE } from './adminStyles'
 import { useTheme } from './useTheme'
 import { useAdminSession } from './useAdminSession'
 import { AdminLazySurface } from './AdminLazySurface'
+import { tourProgressPort } from './adapters/tourProgress'
 
 const AdminShell = lazy(() =>
   import('./AdminShell').then((module) => ({ default: module.AdminShell })),
@@ -59,6 +60,12 @@ export function AdminApp(): JSX.Element {
     )
   }
 
+  // The owner never reads or writes tutorial state.
+  const tutorial =
+    gate.profile.role === 'barber' && gate.profile.barberId !== null
+      ? { tourProgress: tourProgressPort }
+      : {}
+
   return (
     <>
       {error === null ? null : (
@@ -79,6 +86,7 @@ export function AdminApp(): JSX.Element {
           toggleMode={theme.toggleMode}
           setLang={theme.setLang}
           onSignOut={onSignOut}
+          {...tutorial}
         />
       </AdminLazySurface>
     </>

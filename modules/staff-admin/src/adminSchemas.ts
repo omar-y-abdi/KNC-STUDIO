@@ -62,6 +62,13 @@ export const profileRow = z.object({
   account_enabled: z.boolean(),
 })
 
+// --- staff_tour_progress (own row) ---------------------------------------------------------------
+// Zero rows or the caller's one row. Any string parses in `seen`; the adapter drops unknown tours.
+
+export const ownStaffTourProgressRows = z
+  .array(z.object({ seen: z.array(z.string()), removed: z.boolean() }))
+  .max(1)
+
 // --- barbers -------------------------------------------------------------------------------------
 
 export const barberRow = z.object({
@@ -345,6 +352,51 @@ export const imageDeleteResponse = z.object({
   ok: z.literal(true),
   pending: z.boolean(),
 })
+
+// --- barber self profile (staff_* functions, upload-image kind `barber_work`) ---------------------
+
+const barberProfileFields = z.object({
+  name: z.string(),
+  ig: z.string(),
+  tiktok: z.string(),
+  bio_sv: z.string(),
+  bio_en: z.string(),
+})
+export type BarberProfileFields = z.infer<typeof barberProfileFields>
+
+const profileDenied = z.object({ ok: z.literal(false), error: z.enum(['forbidden', 'not_found']) })
+
+export const staffBarberProfileResponse = z.discriminatedUnion('ok', [
+  z.object({
+    ok: z.literal(true),
+    profile: barberProfileFields,
+    work: z.array(z.object({ id: z.guid(), path: z.string().min(1), hidden: z.boolean() })),
+  }),
+  profileDenied,
+])
+
+export const staffUpdateBarberProfileResponse = z.discriminatedUnion('ok', [
+  z.object({ ok: z.literal(true), profile: barberProfileFields }),
+  z.object({
+    ok: z.literal(false),
+    error: z.enum(['forbidden', 'not_found', 'invalid_name', 'invalid_handle', 'invalid_bio']),
+  }),
+])
+
+export const staffSetBarberWorkPhotoHiddenResponse = z.discriminatedUnion('ok', [
+  z.object({ ok: z.literal(true) }),
+  profileDenied,
+])
+
+export const uploadBarberWorkResponse = z.object({
+  ok: z.literal(true),
+  kind: z.literal('barber_work'),
+  id: z.guid(),
+  path: z.string().min(1),
+  publicUrl: z.string().url(),
+})
+
+export const workDeleteResponse = z.object({ ok: z.literal(true) })
 
 // --- bookings (admin read) -----------------------------------------------------------------------
 // The full RLS-readable booking row (owner=all, barber=own). Contact is real PII the panel shows to

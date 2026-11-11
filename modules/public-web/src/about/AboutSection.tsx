@@ -12,7 +12,7 @@ import { PreviewPorts } from '../cms/PreviewPorts'
 // fallback neither persists nor invents a review.
 
 import type { JSX } from 'preact'
-import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { buildBookingStyles, palette, systemRed } from '../booking/bookingStyles'
 import { Turnstile, turnstileConfigured } from '../booking/Turnstile'
 import { FOCUS_CLS } from '../ui/pseudo'
@@ -26,6 +26,7 @@ import { PlaceholderPhoto } from './PlaceholderPhoto'
 import { useBarberMarquee } from './useBarberMarquee'
 import { barberSocialLinks } from './barberSocialLinks'
 import { GalleryMarquee } from './GalleryMarquee'
+import { cutsWithWork } from './galleryCredit'
 import { StarDisplay, StarRating } from './StarRating'
 import type { Rating, Review, ReviewDraft, ReviewError } from './reviews/domain'
 import { emptyReviewDraft } from './reviews/domain'
@@ -182,6 +183,15 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
   // Distinguish loading, unpublished galleries and read failures; only real photos are interactive.
   const salonPhotos = useGallery('salon', props.galleryPort, dataActive)
   const cutPhotos = useGallery('cuts', props.galleryPort, dataActive)
+  // Studio stores only gallery, barber-photos and cms-library references, and a barber's own
+  // additions stay outside the CMS document.
+  const cuts = useMemo(
+    () =>
+      cutPhotos.status === 'ready'
+        ? { ...cutPhotos, photos: cutsWithWork(cutPhotos.photos, nativeSource ? [] : roster) }
+        : cutPhotos,
+    [cutPhotos, roster, nativeSource],
+  )
 
   // Reviews list: server-published entries only. The offline fallback is intentionally empty.
   const [reviews, setReviews] = useState<readonly Review[]>([])
@@ -578,6 +588,8 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
             const b = entry.barber
             const copy = stylistCopyFor(entry, lang)
             const active = props.mobile && selectedBarber === b.id
+            const tiktok = nativeSource ? '' : (entry.tiktok ?? '')
+            const tiktokTrack = tiktok === '' ? '' : ` ${active ? '1fr' : '0fr'}`
             const infoTransition = reducedMotion
               ? 'none'
               : 'grid-template-rows .36s ease, opacity .24s ease'
@@ -660,12 +672,14 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
                       ? {
                           display: 'grid',
                           gridTemplateRows: copy
-                            ? `auto ${active ? '1fr' : '0fr'} ${active ? '1fr' : '0fr'}`
-                            : `auto ${active ? '1fr' : '0fr'}`,
+                            ? `auto ${active ? '1fr' : '0fr'} ${active ? '1fr' : '0fr'}${tiktokTrack}`
+                            : `auto ${active ? '1fr' : '0fr'}${tiktokTrack}`,
                           gap: active ? '3px' : 0,
                           transition: infoTransition,
                         }
-                      : { display: 'flex', flexDirection: 'column', gap: '3px' }
+                      : tiktok === ''
+                        ? { display: 'flex', flexDirection: 'column', gap: '3px' }
+                        : { display: 'grid', gap: '3px' }
                   }
                 >
                   <span style={{ fontWeight: 600, fontSize: '16px' }}>{b.name}</span>
@@ -680,7 +694,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
                       transition: reducedMotion ? 'none' : 'opacity .24s ease',
                     }}
                   >
-                    @{b.ig}
+                    {b.ig === '' ? null : `@${b.ig}`}
                   </span>
                   {copy ? (
                     <span
@@ -700,6 +714,23 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
                       {copy.role}
                     </span>
                   ) : null}
+                  {tiktok === '' ? null : (
+                    <span
+                      key="tiktok"
+                      data-barber-social="tiktok"
+                      aria-hidden={props.mobile ? !active : undefined}
+                      style={{
+                        fontSize: '12.5px',
+                        opacity: props.mobile ? (active ? 0.5 : 0) : 0.5,
+                        minHeight: 0,
+                        overflow: props.mobile ? 'hidden' : undefined,
+                        transition: reducedMotion ? 'none' : 'opacity .24s ease',
+                        gridRow: 3,
+                      }}
+                    >
+                      {`TikTok @${tiktok}`}
+                    </span>
+                  )}
                 </div>
                 {copy ? (
                   <p
@@ -725,7 +756,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
 
         {/* Customer-cuts gallery — the same interactive photo marquee. Full-bleed too. */}
         <h3 style={blockTitleStyle}>{tx.cutsTitle}</h3>
-        {gallery(cutPhotos, tx.cutsAlt)}
+        {gallery(cuts, tx.cutsAlt)}
 
         {/* Reviews */}
         <h3 style={blockTitleStyle}>{tx.reviewsTitle}</h3>

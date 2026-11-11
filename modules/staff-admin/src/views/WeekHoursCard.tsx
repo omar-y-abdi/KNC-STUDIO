@@ -61,6 +61,7 @@ export function WeekHoursCard(props: WeekHoursCardProps): JSX.Element {
     props.onChange(setDayHours(week, weekday, day?.startMin ?? DEFAULT_START_MIN, endMin))
   }
   const applyAllDays = (): void => props.onChange(sameTimeAllDays(week, bulkStart, bulkEnd))
+  const firstShownDay = DISPLAY_ORDER.find((wd) => week[wd] !== undefined)
 
   const saveLine = (): JSX.Element | null => {
     switch (weekSave.kind) {
@@ -225,6 +226,7 @@ export function WeekHoursCard(props: WeekHoursCardProps): JSX.Element {
           return (
             <div
               key={wd}
+              data-tour={wd === firstShownDay ? 'week-day' : undefined}
               style={{
                 display: 'flex',
                 flexDirection: narrow ? 'column' : 'row',

@@ -521,6 +521,7 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
         </div>
       ) : (
         <div
+          data-tour="day-hours"
           style={{
             display: 'grid',
             gridTemplateColumns: 'repeat(auto-fill, minmax(74px, 1fr))',

@@ -62,6 +62,33 @@ async function processActionNow(service: SupabaseClient, id: string): Promise<bo
   return completed.error === null && completed.data === true
 }
 
+const WORK_BUCKET = 'barber-work'
+const WORK_PAGE = 100
+
+/** The rows go with the barber by cascade; no job removes or retries their public objects. */
+async function removeWorkPictures(service: SupabaseClient, barberId: string): Promise<void> {
+  const bucket = service.storage.from(WORK_BUCKET)
+  for (;;) {
+    const page = await bucket.list(barberId, { limit: WORK_PAGE })
+    if (page.error !== null) {
+      console.error('admin-manage-barber: work picture listing failed', page.error.message)
+      return
+    }
+    if (page.data.length === 0) return
+
+    const removed = await bucket.remove(page.data.map((entry) => `${barberId}/${entry.name}`))
+    if (removed.error !== null) {
+      console.error('admin-manage-barber: work picture removal failed', removed.error.message)
+      return
+    }
+    if (removed.data.length === 0) {
+      console.error('admin-manage-barber: work picture removal made no progress')
+      return
+    }
+    if (page.data.length < WORK_PAGE) return
+  }
+}
+
 async function handle(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response('ok')
   if (req.method !== 'POST') return json({ ok: false, error: 'method_not_allowed' }, 405)
@@ -152,6 +179,7 @@ async function handle(req: Request): Promise<Response> {
   const queuedActionId = actionId(result, 'auth_action_id')
   const authCleanupPending =
     queuedActionId === null ? false : !(await processActionNow(service, queuedActionId))
+  await removeWorkPictures(service, body.barber_id)
   return json({
     ok: true,
     deleted_bookings: result.deleted_bookings,

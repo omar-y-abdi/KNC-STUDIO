@@ -273,6 +273,12 @@ describe('booking flow: barbers', () => {
     expect(view.statuses.map(text)).toEqual([''])
   })
 
+  it('shows a barber handle with its "@", and no bare "@" without one', () => {
+    const plain = { ...barber, barber: { id: 'b2', name: 'Barber Two', ig: '' } }
+    reads.roster.mockReturnValue({ roster: [barber, plain], status: 'ready', retry: retryRoster })
+    expect(screen(port).barbers.map(text)).toEqual(['BBarber One@one', 'BBarber Two'])
+  })
+
   it('shows a failed read as an alert with a retry, never as "no barbers"', () => {
     reads.roster.mockReturnValue({ roster: [], status: 'error', retry: retryRoster })
     const view = screen(port)

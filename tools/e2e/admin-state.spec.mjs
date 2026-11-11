@@ -2,6 +2,7 @@ import { test } from './fixtures.mjs'
 import {
   verifyNavigation,
   verifyDelayedRestore,
+  verifyStaffTour,
   verifyAdminSession,
   verifyMutationReentry,
   verifyDeliveryStatus,
@@ -18,6 +19,7 @@ test.use({ viewport: { width: 1280, height: 900 }, actionTimeout: 10000 })
 const cases = [
   ['navigation', verifyNavigation],
   ['delayed restore', verifyDelayedRestore],
+  ['staff tour', verifyStaffTour],
   ...[
     'focus',
     'poll',

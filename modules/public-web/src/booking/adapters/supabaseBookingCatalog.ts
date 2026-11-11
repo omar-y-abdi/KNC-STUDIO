@@ -15,6 +15,7 @@ import type { RosterBarber } from '../barbersPort'
 import { isPostgresChangesReady } from '../../backend/realtimeReady'
 
 const PHOTO_BUCKET = 'barber-photos'
+const WORK_BUCKET = 'barber-work'
 
 export interface BookingCatalog {
   readonly barbers: readonly RosterBarber[]
@@ -34,12 +35,22 @@ let catalogRevalidateRequested = false
 const catalogListeners = new Set<() => void>()
 let stopCatalogSubscription: (() => void) | null = null
 
-function toRoster(row: PublicBarberRow & { readonly photo_path: string | null }): RosterBarber {
+function toRoster(
+  row: PublicBarberRow & {
+    readonly photo_path: string | null
+    readonly tiktok?: string | undefined
+    readonly work?: readonly string[] | undefined
+  },
+): RosterBarber {
   const photoUrl = row.photo_path === null ? null : publicObjectUrl(PHOTO_BUCKET, row.photo_path)
   return {
     barber: { id: asBarberId(row.id), name: row.name, ig: row.ig },
     copy: { roleSv: row.role_sv, roleEn: row.role_en, bioSv: row.bio_sv, bioEn: row.bio_en },
     photoUrl,
+    ...(row.tiktok === undefined ? {} : { tiktok: row.tiktok }),
+    ...(row.work === undefined
+      ? {}
+      : { work: row.work.map((path) => publicObjectUrl(WORK_BUCKET, path)) }),
   }
 }
 

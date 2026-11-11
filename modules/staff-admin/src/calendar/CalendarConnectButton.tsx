@@ -55,9 +55,10 @@ export function CalendarConnectButton(props: CalendarConnectButtonProps): JSX.El
   const onlyReading = status === null && cal.loading && cal.error === null
 
   /** Starts the Google consent flow; a first connect and an access repair differ only in label. */
-  const connectButton = (label: string): JSX.Element => (
+  const connectButton = (label: string, tour?: 'calendar'): JSX.Element => (
     <button
       type="button"
+      data-tour={tour}
       style={{ ...s.primaryBtn, opacity: disabled ? 0.6 : 1 }}
       disabled={disabled}
       onClick={() => void cal.connect()}
@@ -117,7 +118,7 @@ export function CalendarConnectButton(props: CalendarConnectButtonProps): JSX.El
             </button>
           </>
         ) : (
-          connectButton(t.calendarConnect)
+          connectButton(t.calendarConnect, 'calendar')
         )}
         {disconnectPending || cal.error !== null ? (
           <button

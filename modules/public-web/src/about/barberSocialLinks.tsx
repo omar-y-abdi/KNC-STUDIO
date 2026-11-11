@@ -66,13 +66,14 @@ export function barberSocialLinks(tree: JSX.Element): JSX.Element {
     const props = child.props as Record<string, unknown>
     if (child.type === 'a') return child
     const kind = props['data-barber-social']
+    const profile = kind === 'instagram' || kind === 'tiktok' ? kind : undefined
     return cloneElement(
       child,
       {},
       visit(
         props['children'] as ComponentChild,
-        kind === 'instagram' ? 'instagram' : platform,
-        link || kind === 'instagram' || kind === 'bio',
+        profile ?? platform,
+        link || profile !== undefined || kind === 'bio',
         hidden || props['aria-hidden'] === true || props['aria-hidden'] === 'true',
       ),
     )

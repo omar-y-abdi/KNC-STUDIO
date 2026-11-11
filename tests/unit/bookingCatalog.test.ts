@@ -78,6 +78,7 @@ import {
   subscribeBookingCatalog,
 } from '../../modules/public-web/src/booking/adapters/supabaseBookingCatalog'
 import { asBarberId } from '../../modules/public-web/src/booking/domain'
+import { publicBookingCatalogResponse } from '../../packages/backend-contracts/src/rpcSchemas'
 import { unhandledRejectionsDuring } from './helpers/unhandledRejections'
 
 const channelOpened = () => vi.waitFor(() => expect(channel.subscribe).toHaveBeenCalled())
@@ -398,5 +399,98 @@ describe('shared public booking catalog', () => {
     expect(channel.on).not.toHaveBeenCalled()
     expect(channel.subscribe).not.toHaveBeenCalled()
     expect(removeChannel).not.toHaveBeenCalled()
+  })
+})
+
+describe('catalog TikTok handle and work pictures', () => {
+  const row = {
+    id: 'b1',
+    name: 'Barber One',
+    ig: 'one',
+    role_sv: 'Barberare',
+    role_en: 'Barber',
+    bio_sv: '',
+    bio_en: '',
+    active: true,
+    sort_order: 0,
+    photo_path: null,
+  }
+  const service = {
+    id: 's1',
+    barber_id: 'b1',
+    name: 'Cut',
+    price: 300,
+    duration_min: 30,
+    active: true,
+    sort_order: 0,
+    available_weekdays: [1],
+  }
+  const today = {
+    barber: { id: 'b1', name: 'Barber One', ig: 'one' },
+    copy: { roleSv: 'Barberare', roleEn: 'Barber', bioSv: '', bioEn: '' },
+    photoUrl: null,
+  }
+  const parse = (barber: Record<string, unknown>) =>
+    publicBookingCatalogResponse.safeParse({ barbers: [barber], services: [service] })
+  const load = async (barber: Record<string, unknown>) => {
+    rpc.mockResolvedValue({ data: { barbers: [barber], services: [service] }, error: null })
+    return refreshBookingCatalog()
+  }
+
+  it('parses a response of the older function exactly as before', () => {
+    const parsed = parse(row)
+    expect(parsed.success).toBe(true)
+    expect(parsed.data?.barbers[0]).toEqual(row)
+    expect(Object.keys(parsed.data?.barbers[0] ?? {})).not.toContain('tiktok')
+    expect(Object.keys(parsed.data?.barbers[0] ?? {})).not.toContain('work')
+  })
+
+  it('parses the handle and the work picture paths of the newer function', () => {
+    const parsed = parse({ ...row, tiktok: 'one.tt', work: ['b1/new.webp', 'b1/old.webp'] })
+    expect(parsed.data?.barbers[0]).toEqual({
+      ...row,
+      tiktok: 'one.tt',
+      work: ['b1/new.webp', 'b1/old.webp'],
+    })
+  })
+
+  it.each([
+    ['a string', 'b1/new.webp'],
+    ['a non-string entry', ['b1/new.webp', 7]],
+    ['null', null],
+  ])('drops a malformed work list (%s) and keeps the rest of the catalog', (_, work) => {
+    const parsed = parse({ ...row, tiktok: 5, work })
+    expect(parsed.success).toBe(true)
+    expect(parsed.data?.barbers[0]?.work).toBeUndefined()
+    expect(parsed.data?.barbers[0]?.tiktok).toBeUndefined()
+    expect(parsed.data?.services).toEqual([service])
+  })
+
+  it('maps an older response to the roster entry it always produced', async () => {
+    const catalog = await load(row)
+    expect(catalog.barbers).toEqual([today])
+    expect(Object.keys(catalog.barbers[0] ?? {})).toEqual(['barber', 'copy', 'photoUrl'])
+  })
+
+  it('maps the handle and public barber-work URLs, newest first, onto the roster entry', async () => {
+    const catalog = await load({ ...row, tiktok: 'one.tt', work: ['b1/new.webp', 'b1/old.webp'] })
+    expect(catalog.barbers).toEqual([
+      {
+        ...today,
+        tiktok: 'one.tt',
+        work: [
+          'https://example.supabase.co/storage/v1/object/public/barber-work/b1/new.webp',
+          'https://example.supabase.co/storage/v1/object/public/barber-work/b1/old.webp',
+        ],
+      },
+    ])
+  })
+
+  it('still loads the booking catalog when a work list is malformed', async () => {
+    const catalog = await load({ ...row, work: 'b1/new.webp' })
+    expect(catalog.barbers).toEqual([today])
+    expect(catalog.servicesByBarber.get(asBarberId('b1'))).toEqual([
+      { id: 's1', name: 'Cut', price: 300, dur: 30 },
+    ])
   })
 })

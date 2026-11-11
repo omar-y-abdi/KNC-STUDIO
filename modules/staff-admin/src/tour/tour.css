@@ -1,0 +1,34 @@
+@keyframes knc-tour-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes knc-tour-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.knc-tour-layer {
+  animation: knc-tour-fade 160ms ease-out;
+}
+
+.knc-tour-card-in {
+  animation: knc-tour-card-in 160ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .knc-tour-layer,
+  .knc-tour-card-in {
+    animation: none;
+  }
+}
