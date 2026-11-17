@@ -23,7 +23,7 @@ runs:
         ENGINES: ${{ inputs.engines }}
       run: |
         node --input-type=module -e 'import {readFileSync,appendFileSync} from "node:fs"; const version=JSON.parse(readFileSync("node_modules/playwright/package.json")).version; const engines=process.env.ENGINES.split(/\s+/).sort().join("-"); appendFileSync(process.env.GITHUB_OUTPUT, `key=knc-browsers-${process.env.RUNNER_OS}-${process.env.RUNNER_ARCH}-ubuntu24.04-${version}-${engines}\n`);'
-    - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       if: inputs.cache == 'true'
       with:
         path: ~/.cache/ms-playwright
