@@ -46,7 +46,7 @@
     "embla-carousel-auto-scroll": "8.6.0",
     "parse5": "8.0.1",
     "preact": "^10.29.1",
-    "wouter-preact": "^3.10.0"
+    "wouter-preact": "^3.13.0"
   },
   "scripts": {
     "check": "node ../../tools/modules/run.mjs public-web check",
