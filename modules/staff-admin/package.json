@@ -15,7 +15,7 @@
     "@bladeblend/public-web": "*",
     "@supabase/supabase-js": "2.119.0",
     "preact": "^10.29.1",
-    "wouter-preact": "^3.10.0",
+    "wouter-preact": "^3.13.0",
     "zod": "4.6.7"
   },
   "scripts": {
